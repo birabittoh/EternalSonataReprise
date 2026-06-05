@@ -13,7 +13,7 @@ overlays, hooks) so the game runs natively and can be modded like a PC port.
 
 Get the latest stable build from the [Releases](../../releases/latest) page.
 
-Nightly builds are available from [CI artifacts](../../actions/workflows/ci.yml).
+Nightly builds are available from [CI artifacts](https://nightly.link/birabittoh/EternalSonataReprise/workflows/ci/main?preview).
 
 Just place the downloaded executable next to the extracted `assets` directory and run it.
 
@@ -34,7 +34,7 @@ scoop install llvm cmake ninja
 ### 1. Clone
 
 ```bash
-git clone <this-repo-url>
+git clone https://github.com/birabittoh/EternalSonataReprise
 cd EternalSonataReprise
 ```
 
@@ -44,14 +44,14 @@ cd EternalSonataReprise
 python scripts/download-sdk.py
 ```
 
-This downloads the latest nightly and installs it into `sdk/<platform>/`.
+This downloads the latest nightly and installs it into `sdk`.
 
 ### 3. Provide your game
 
 Extract your legally dumped ISO directly into `assets/`:
 
 ```bash
-extract-xiso -d assets "Eternal Sonata (PAL).iso"
+extract-xiso -d assets "Eternal Sonata.iso"
 ```
 
 `assets/default.xex` must exist before running codegen.
