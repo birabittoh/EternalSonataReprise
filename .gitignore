@@ -1,0 +1,45 @@
+# Visual Studio / IDE droppings
+.vs/
+.vscode/
+EternalSonataReprise.code-workspace
+
+# Build output
+/out/
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.exe
+
+# rexglue migration backups
+CMakeLists.txt.bak
+src/main.cpp.bak
+
+# Generated recomp sources
+/generated/
+
+# Runtime artifacts — binary, logs, and bundled shared libraries
+/sdk/
+/logs/
+eternalsonata
+eternalsonata.exe
+eternalsonata.pdb
+eternalsonata.toml
+/*.so
+/*.dll
+
+# Game assets extracted from the user's ISO
+# (the ISO itself and anything derived from it must NEVER be committed)
+/*.iso
+/assets/
+!/assets/.gitkeep
+/out/iso_extract/
+
+# Third-party tools dropped by the user locally.
+# Ignore the tree, but keep the scripts and README we wrote.
+/tools/*
+!/tools/README.md
+!/tools/*.ps1
+
+# Locally built libraries
+/local/

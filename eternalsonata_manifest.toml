@@ -1,0 +1,10 @@
+[project]
+sdk_version = "0.8.1"
+name = "eternalsonata"
+
+[entrypoint]
+file_path = "assets/default.xex"
+out_directory_path = "generated"
+includes = [
+  "eternalsonata_config.toml",
+]

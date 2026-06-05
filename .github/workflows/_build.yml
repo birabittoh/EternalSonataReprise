@@ -1,0 +1,122 @@
+name: Build eternalsonata
+
+on:
+  workflow_call:
+    inputs:
+      publish_mode:
+        description: "'artifact' for CI workflow-artifact, 'release' for GitHub release"
+        required: true
+        type: string
+      artifact_name:
+        description: "Artifact name prefix when publish_mode is 'artifact'"
+        required: false
+        type: string
+        default: ""
+      tag:
+        description: "Release tag to embed in release artifact filenames"
+        required: false
+        type: string
+        default: ""
+
+env:
+  ASSETS_REPO: ${{ vars.ASSETS_REPO }}
+  ASSET_PATH: default.xex
+  ASSET_CACHE_KEY: codegen-assets-v1
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+            sdk_dir: win-amd64
+            artifact_suffix: windows-x64
+
+          - platform: linux
+            runner: ubuntu-latest
+            sdk_dir: linux-amd64
+            artifact_suffix: linux-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 20
+          sudo apt-get install -y ninja-build libgtk-3-dev libx11-xcb-dev
+
+      - name: Install LLVM, CMake, Ninja (Windows)
+        if: matrix.platform == 'windows'
+        run: choco install llvm cmake ninja -y
+
+      - name: Set up sccache
+        uses: hendrikmuhs/ccache-action@v1.2.22
+        with:
+          variant: sccache
+          key: ${{ matrix.platform }}-amd64
+
+      - name: Download ReXGlue SDK
+        shell: bash
+        run: python scripts/download-sdk.py sdk/${{ matrix.sdk_dir }} --pinned
+
+      - name: Cache XEX asset for codegen
+        id: asset-cache
+        uses: actions/cache@v5
+        with:
+          path: assets/${{ env.ASSET_PATH }}
+          key: ${{ env.ASSET_CACHE_KEY }}
+
+      - name: Fetch XEX asset
+        if: steps.asset-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.ASSETS_TOKEN }}
+        shell: bash
+        run: |
+          mkdir -p assets
+          gh api -H "Accept: application/vnd.github.raw" \
+            "repos/${{ env.ASSETS_REPO }}/contents/${{ env.ASSET_PATH }}" \
+            > "assets/${{ env.ASSET_PATH }}"
+          size=$(wc -c < "assets/${{ env.ASSET_PATH }}")
+          echo "Fetched ${{ env.ASSET_PATH }} ($size bytes)"
+          [ "$size" -ge 1048576 ] || { echo "Asset too small — fetch likely failed"; exit 1; }
+
+      - name: Build
+        shell: bash
+        run: python scripts/build.py --sdk-dir sdk/${{ matrix.sdk_dir }}
+
+      - name: sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats || true
+
+      - name: Package
+        shell: bash
+        run: |
+          if [ "${{ inputs.publish_mode }}" = "artifact" ]; then
+            out="${{ inputs.artifact_name }}-${{ matrix.artifact_suffix }}"
+          else
+            out="eternalsonata-${{ inputs.tag }}-${{ matrix.artifact_suffix }}"
+          fi
+          python scripts/build.py --package "${out}"
+
+      - name: Upload CI artifact
+        if: inputs.publish_mode == 'artifact'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: pkg/
+          if-no-files-found: error
+
+      - name: Upload release artifact
+        if: inputs.publish_mode == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: ${{ env.ARTIFACT_PATH }}
+          if-no-files-found: error

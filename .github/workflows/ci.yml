@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      short_sha: ${{ steps.sha.outputs.short_sha }}
+      date_hhmm: ${{ steps.sha.outputs.date_hhmm }}
+    steps:
+      - name: Get short SHA and timestamp
+        id: sha
+        run: |
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "date_hhmm=$(date +%Y%m%d-%H%M)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    uses: ./.github/workflows/_build.yml
+    with:
+      publish_mode: artifact
+      artifact_name: eternalsonata-${{ needs.prepare.outputs.date_hhmm }}-${{ needs.prepare.outputs.short_sha }}
+    secrets: inherit

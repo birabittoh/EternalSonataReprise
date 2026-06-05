@@ -1,0 +1,18 @@
+# Auto-detect text files and normalize to LF in the repo.
+* text=auto eol=lf
+
+# Script line endings
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+*.sh       text eol=lf
+
+# Binary-ish formats we don't want diffed
+*.ico      binary
+*.png      binary
+*.obj      binary
+*.bin      binary
+*.iso      binary
+
+# If we ever need to ship binaries in-repo, route them through LFS.
+*.exe filter=lfs diff=lfs merge=lfs -text
+*.pdb filter=lfs diff=lfs merge=lfs -text

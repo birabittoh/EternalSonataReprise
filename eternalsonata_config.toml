@@ -1,0 +1,39 @@
+# eternalsonata - ReXGlue codegen config
+#
+# Add named functions (indirect-call targets), midasm hooks, and CRT
+# addresses here once they are located in assets/default.xex.
+#
+# Example:
+#   [functions]
+#   0x8XXXXXXX = {name = "MyFunction"}
+#
+#   [[midasm_hook]]
+#   address = 0x8XXXXXXX
+#   name = "MyHook"
+#   registers = ["r3"]
+#   return = true
+#
+#   [rexcrt]
+#   memcpy  = 0x8XXXXXXX
+#   memset  = 0x8XXXXXXX
+#   memmove = 0x8XXXXXXX
+
+[functions]
+0x822B90D0 = { name = "sub_822B90D0" }  # tail-call target from 0x822B7274 (UnresolvedCall)
+
+# sub_8226F158 clears the GPU interrupt callback via VdSetGraphicsInterruptCallback(0,0)
+# then immediately reinitialises the ring buffer. The SDK dispatches the interrupt
+# synchronously during this window, so without this hook the first interrupt dispatches
+# to guest address 0 and crashes.
+[[midasm_hook]]
+address = 0x8226F294
+name = "EternalsonataPreserveInterruptCallback"
+jump_address = 0x8226F298
+
+# sub_82294600 loads a sub-object from this+4 and calls its virtual destructor/release
+# (vtable slot 10, offset 40). That vtable entry is not registered; skip the call
+# so the function can proceed to zero out this+4 and this+20 as normal.
+[[midasm_hook]]
+address = 0x82294628
+name = "EternalsonataSkipSubObjectRelease"
+jump_address = 0x8229462C
