@@ -34,6 +34,8 @@ eternalsonata.toml
 /assets/
 !/assets/.gitkeep
 /out/iso_extract/
+*.vert
+*.frag
 
 # Third-party tools dropped by the user locally.
 # Ignore the tree, but keep the scripts and README we wrote.
