@@ -1,6 +1,6 @@
 ---
 name: Patch / Mod request
-about: Suggest a patch or mod for KameoRePowered
+about: Suggest a patch or mod for Eternal Sonata: Reprise
 title: ''
 labels: enhancement
 assignees: ''
