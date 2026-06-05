@@ -19,7 +19,165 @@
 #   memmove = 0x8XXXXXXX
 
 [functions]
-0x822B90D0 = { name = "sub_822B90D0" }  # tail-call target from 0x822B7274 (UnresolvedCall)
+"0x822B90D0" = { name = "sub_822B90D0" }  # tail-call target from 0x822B7274 (UnresolvedCall)
+# ============================================================================
+# SDK WORKAROUND #1 -- REMOVE once the SDK fix is in the pinned nightly.
+#   Upstream fix: rexglue-sdk commit 6f9ff97 on branch fix/gapfill-split-bctr-thunks
+#   ("split GapFill regions on unconditional bctr"). The manifest pins
+#   sdk_version 0.8.1 / nightly-20260605-f22cd9dc, which predates the fix.
+#
+# Virtual-call forwarder thunks: 16-byte stubs
+#   (lwz r12,0(r3); lwz r11,slot(r12); mtctr r11; bctr) that dispatch through the
+#   object vtable. The big contiguous run is 0x82177D30-0x821783D0; a few more live
+#   elsewhere. Reached only via indirect (vtable) calls, and the game ships without
+#   RTTI, so the RTTI-based vtable scan misses them. Without the SDK fix GapFill
+#   never splits these bctr-terminated stubs into individual functions, so any
+#   vtable call into them traps: "Call to invalid or unregistered function".
+# ============================================================================
+"0x82177D30" = { name = "sub_82177D30" }
+"0x82177D40" = { name = "sub_82177D40" }
+"0x82177D50" = { name = "sub_82177D50" }
+"0x82177D60" = { name = "sub_82177D60" }
+"0x82177D70" = { name = "sub_82177D70" }
+"0x82177D80" = { name = "sub_82177D80" }
+"0x82177D90" = { name = "sub_82177D90" }
+"0x82177DA0" = { name = "sub_82177DA0" }
+"0x82177DB0" = { name = "sub_82177DB0" }
+"0x82177DC0" = { name = "sub_82177DC0" }
+"0x82177DD0" = { name = "sub_82177DD0" }
+"0x82177DE0" = { name = "sub_82177DE0" }
+"0x82177DF0" = { name = "sub_82177DF0" }
+"0x82177E00" = { name = "sub_82177E00" }
+"0x82177E10" = { name = "sub_82177E10" }
+"0x82177E20" = { name = "sub_82177E20" }
+"0x82177E30" = { name = "sub_82177E30" }
+"0x82177E40" = { name = "sub_82177E40" }
+"0x82177E50" = { name = "sub_82177E50" }
+"0x82177E60" = { name = "sub_82177E60" }
+"0x82177E70" = { name = "sub_82177E70" }
+"0x82177E80" = { name = "sub_82177E80" }
+"0x82177E90" = { name = "sub_82177E90" }
+"0x82177EA0" = { name = "sub_82177EA0" }
+"0x82177EB0" = { name = "sub_82177EB0" }
+"0x82177EC0" = { name = "sub_82177EC0" }
+"0x82177ED0" = { name = "sub_82177ED0" }
+"0x82177EE0" = { name = "sub_82177EE0" }
+"0x82177EF0" = { name = "sub_82177EF0" }
+"0x82177F00" = { name = "sub_82177F00" }
+"0x82177F10" = { name = "sub_82177F10" }
+"0x82177F20" = { name = "sub_82177F20" }
+"0x82177F30" = { name = "sub_82177F30" }
+"0x82177F40" = { name = "sub_82177F40" }
+"0x82177F50" = { name = "sub_82177F50" }
+"0x82177F60" = { name = "sub_82177F60" }
+"0x82177F70" = { name = "sub_82177F70" }
+"0x82177F80" = { name = "sub_82177F80" }
+"0x82177F90" = { name = "sub_82177F90" }
+"0x82177FA0" = { name = "sub_82177FA0" }
+"0x82177FB0" = { name = "sub_82177FB0" }
+"0x82177FC0" = { name = "sub_82177FC0" }
+"0x82177FD0" = { name = "sub_82177FD0" }
+"0x82177FE0" = { name = "sub_82177FE0" }
+"0x82177FF0" = { name = "sub_82177FF0" }
+"0x82178000" = { name = "sub_82178000" }
+"0x82178010" = { name = "sub_82178010" }
+"0x82178020" = { name = "sub_82178020" }
+"0x82178030" = { name = "sub_82178030" }
+"0x82178040" = { name = "sub_82178040" }
+"0x82178050" = { name = "sub_82178050" }
+"0x82178060" = { name = "sub_82178060" }
+"0x82178070" = { name = "sub_82178070" }
+"0x82178080" = { name = "sub_82178080" }
+"0x82178090" = { name = "sub_82178090" }
+"0x821780A0" = { name = "sub_821780A0" }
+"0x821780B0" = { name = "sub_821780B0" }
+"0x821780C0" = { name = "sub_821780C0" }
+"0x821780D0" = { name = "sub_821780D0" }
+"0x821780E0" = { name = "sub_821780E0" }
+"0x821780F0" = { name = "sub_821780F0" }
+"0x82178100" = { name = "sub_82178100" }
+"0x82178110" = { name = "sub_82178110" }
+"0x82178120" = { name = "sub_82178120" }
+"0x82178130" = { name = "sub_82178130" }
+"0x82178140" = { name = "sub_82178140" }
+"0x82178150" = { name = "sub_82178150" }
+"0x82178160" = { name = "sub_82178160" }
+"0x82178170" = { name = "sub_82178170" }
+"0x82178180" = { name = "sub_82178180" }
+"0x82178190" = { name = "sub_82178190" }
+"0x821781A0" = { name = "sub_821781A0" }
+"0x821781B0" = { name = "sub_821781B0" }
+"0x821781C0" = { name = "sub_821781C0" }
+"0x821781D0" = { name = "sub_821781D0" }
+"0x821781E0" = { name = "sub_821781E0" }
+"0x821781F0" = { name = "sub_821781F0" }
+"0x82178200" = { name = "sub_82178200" }
+"0x82178210" = { name = "sub_82178210" }
+"0x82178220" = { name = "sub_82178220" }
+"0x82178230" = { name = "sub_82178230" }
+"0x82178240" = { name = "sub_82178240" }
+"0x82178250" = { name = "sub_82178250" }
+"0x82178260" = { name = "sub_82178260" }
+"0x82178270" = { name = "sub_82178270" }
+"0x82178280" = { name = "sub_82178280" }
+"0x82178290" = { name = "sub_82178290" }
+"0x821782A0" = { name = "sub_821782A0" }
+"0x821782B0" = { name = "sub_821782B0" }
+"0x821782C0" = { name = "sub_821782C0" }
+"0x821782D0" = { name = "sub_821782D0" }
+"0x821782E0" = { name = "sub_821782E0" }
+"0x821782F0" = { name = "sub_821782F0" }
+"0x82178300" = { name = "sub_82178300" }
+"0x82178310" = { name = "sub_82178310" }
+"0x82178320" = { name = "sub_82178320" }
+"0x82178330" = { name = "sub_82178330" }
+"0x82178340" = { name = "sub_82178340" }
+"0x82178350" = { name = "sub_82178350" }
+"0x82178360" = { name = "sub_82178360" }
+"0x82178370" = { name = "sub_82178370" }
+"0x82178380" = { name = "sub_82178380" }
+"0x82178390" = { name = "sub_82178390" }
+"0x821783A0" = { name = "sub_821783A0" }
+"0x821783B0" = { name = "sub_821783B0" }
+"0x821783C0" = { name = "sub_821783C0" }
+"0x821783D0" = { name = "sub_821783D0" }
+"0x8219553C" = { name = "sub_8219553C" }
+"0x82195608" = { name = "sub_82195608" }
+"0x82195FE4" = { name = "sub_82195FE4" }
+"0x82196020" = { name = "sub_82196020" }
+"0x821BE330" = { name = "sub_821BE330" }
+"0x821C7D84" = { name = "sub_821C7D84" }
+"0x8228A1E4" = { name = "sub_8228A1E4" }
+"0x822A6D6C" = { name = "sub_822A6D6C" }
+"0x822A9798" = { name = "sub_822A9798" }
+"0x822B2910" = { name = "sub_822B2910" }
+"0x822B2958" = { name = "sub_822B2958" }
+
+# ============================================================================
+# SDK WORKAROUND #2 -- REMOVE once the SDK fix is in the pinned nightly.
+#   Upstream fix: rexglue-sdk commit 758356f on branch fix/gapfill-split-bctr-thunks
+#   ("split GapFill regions on unconditional b (tail branches)").
+#
+# Real functions that physically follow an unconditional tail-call `b` to a target
+#   not yet discovered (e.g. sub_822AF288: addi r3,r3,-4; b 0x822AFB68, immediately
+#   followed by the function at 0x822AF290). Without the SDK fix the GapFill segment
+#   swallows the following function and block discovery stops at the branch, leaving
+#   it unregistered -> "Call to invalid or unregistered function".
+# ============================================================================
+"0x820ED4F8" = { name = "sub_820ED4F8" }
+"0x821BBBC8" = { name = "sub_821BBBC8" }
+"0x8228D440" = { name = "sub_8228D440" }
+"0x822AE920" = { name = "sub_822AE920" }
+"0x822AF290" = { name = "sub_822AF290" }
+"0x822B7240" = { name = "sub_822B7240" }
+"0x822B7260" = { name = "sub_822B7260" }
+"0x822B7268" = { name = "sub_822B7268" }
+"0x822B8270" = { name = "sub_822B8270" }
+"0x822B9470" = { name = "sub_822B9470" }
+"0x822B9488" = { name = "sub_822B9488" }
+"0x822B9498" = { name = "sub_822B9498" }
+"0x822B94A0" = { name = "sub_822B94A0" }
+"0x822B94B0" = { name = "sub_822B94B0" }
 
 # sub_8226F158 clears the GPU interrupt callback via VdSetGraphicsInterruptCallback(0,0)
 # then immediately reinitialises the ring buffer. The SDK dispatches the interrupt
@@ -34,6 +192,6 @@ jump_address = 0x8226F298
 # (vtable slot 10, offset 40). That vtable entry is not registered; skip the call
 # so the function can proceed to zero out this+4 and this+20 as normal.
 [[midasm_hook]]
-address = 0x82294628
+address = 0x82294620
 name = "EternalsonataSkipSubObjectRelease"
 jump_address = 0x8229462C
