@@ -195,3 +195,16 @@ jump_address = 0x8226F298
 address = 0x82294620
 name = "EternalsonataSkipSubObjectRelease"
 jump_address = 0x8229462C
+
+# sub_82160DC8 walks an element tree, resolving each entry against the global
+# resource manager (sub_82176CD8 at guest singleton 0x824CF500). On a failed lookup
+# the game sets r31 = 0 and then unconditionally dereferences [r31+4] at 0x82160E70,
+# crashing (observed saving the game). On console the lookup never fails; in this
+# port a resource can be missing (same root cause as the blank-text issue). When
+# r31 is null, skip the entry -- exactly what the code does next for an unusable
+# entry (the r11&1 test falls through to loc_82160EE0).
+[[midasm_hook]]
+address = 0x82160E70
+name = "EternalsonataGuardNullResourceEntry"
+registers = ["r31"]
+jump_address_on_true = 0x82160EE0
