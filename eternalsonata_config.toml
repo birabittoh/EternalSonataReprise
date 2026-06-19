@@ -179,6 +179,18 @@
 "0x822B94A0" = { name = "sub_822B94A0" }
 "0x822B94B0" = { name = "sub_822B94B0" }
 
+# ============================================================================
+# memmove_s is intentionally absent: this title links memcpy_s but no standalone
+# 4-arg memmove_s -- every memmove caller is game code or an unrelated struct-arg
+# secure/locale routine, so there is no correct target to map.
+# ============================================================================
+[rexcrt]
+memcpy   = 0x822CF5B0
+memmove  = 0x822CE550
+memset   = 0x822CFB40
+memcpy_s = 0x822D5748
+XMemCpy  = 0x822530B8
+
 # sub_82294600 loads a sub-object from this+4 and calls its virtual destructor/release
 # (vtable slot 10, offset 40). That vtable entry is not registered; skip the call
 # so the function can proceed to zero out this+4 and this+20 as normal.
