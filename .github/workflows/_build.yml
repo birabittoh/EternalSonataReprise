@@ -88,7 +88,7 @@ jobs:
 
       - name: Build
         shell: bash
-        run: python scripts/build.py --sdk-dir sdk/${{ matrix.sdk_dir }}
+        run: python scripts/build.py --release --sdk-dir sdk/${{ matrix.sdk_dir }}
 
       - name: sccache stats
         if: always()

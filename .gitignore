@@ -27,6 +27,8 @@ eternalsonata.pdb
 eternalsonata.toml
 /*.so
 /*.dll
+/*.rdc
+/*.cap
 
 # Game assets extracted from the user's ISO
 # (the ISO itself and anything derived from it must NEVER be committed)
@@ -36,6 +38,7 @@ eternalsonata.toml
 /out/iso_extract/
 *.vert
 *.frag
+dumps/
 
 # Third-party tools dropped by the user locally.
 # Ignore the tree, but keep the scripts and README we wrote.
@@ -45,3 +48,7 @@ eternalsonata.toml
 
 # Locally built libraries
 /local/
+
+CLAUDE.md
+opencode.json
+.mcp.json

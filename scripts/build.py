@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import os
 import sys
 import glob
@@ -48,11 +49,12 @@ def find_clangxx():
     sys.exit(1)
 
 
-def run(args, **kwargs):
+def run(args, check=True, **kwargs):
     print(f"+ {' '.join(str(a) for a in args)}")
     result = subprocess.run(args, **kwargs)
-    if result.returncode != 0:
+    if result.returncode != 0 and check:
         sys.exit(result.returncode)
+    return result
 
 
 def load_manifest(path):
@@ -60,17 +62,68 @@ def load_manifest(path):
         return tomllib.load(f)
 
 
-def copy_runtime_libs(is_windows, sdk_dir):
+def compute_codegen_hash(manifest, manifest_path):
+    """Hash every input that determines codegen output."""
+    h = hashlib.sha256()
+
+    # 1. XEX binary
+    xex_path = manifest["entrypoint"]["file_path"]
+    with open(xex_path, "rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+
+    # 1b. Title-update delta patch, if staged. Codegen analyses base+patch, so the
+    #     patch is a codegen input; including it makes the stamp flip between
+    #     vanilla and --tu builds and re-runs codegen when the TU changes.
+    xexp_path = xex_path + "p"
+    if os.path.exists(xexp_path):
+        with open(xexp_path, "rb") as f:
+            while chunk := f.read(1 << 20):
+                h.update(chunk)
+
+    # 2. Include files (e.g. nocturnerecomp_config.toml)
+    for inc in manifest["entrypoint"].get("includes", []):
+        with open(inc, "rb") as f:
+            h.update(f.read())
+
+    # 3. Manifest itself, with sdk_version normalized out (codegen re-stamps it,
+    #    build.py blanks it again — either way the hash must be stable).
+    with open(manifest_path, "r") as f:
+        for line in f:
+            if not line.startswith("sdk_version"):
+                h.update(line.encode())
+
+    # 4. SDK identity
+    sdk_version_file = os.path.join(os.path.dirname(manifest_path), ".sdk-version")
+    if os.path.exists(sdk_version_file):
+        with open(sdk_version_file, "rb") as f:
+            h.update(f.read())
+
+    return h.hexdigest()
+
+
+def copy_runtime_libs(is_windows, sdk_dir, build_type):
+    # The SDK ships all build variants of each shared lib side by side
+    # (e.g. rexruntime.dll, rexruntimed.dll, rexruntimerd.dll for release,
+    # debug, and relwithdebinfo respectively) — only copy the one matching
+    # the variant we just built, identified by its filename suffix.
+    variant_suffix = {"release": "", "debug": "d", "relwithdebinfo": "rd"}[build_type]
+
     src_dir = os.path.join(sdk_dir, "bin" if is_windows else "lib")
-    suffix = ".dll" if is_windows else ".so"
+    ext = ".dll" if is_windows else ".so"
 
     if not os.path.isdir(src_dir):
         return
     for name in os.listdir(src_dir):
-        if name.endswith(suffix):
-            src = os.path.join(src_dir, name)
-            print(f"+ cp {src} {name}")
-            shutil.copy2(src, name)
+        if not name.endswith(ext):
+            continue
+        stem = name[: -len(ext)]
+        stem_suffix = "rd" if stem.endswith("rd") else "d" if stem.endswith("d") else ""
+        if stem_suffix != variant_suffix:
+            continue
+        src = os.path.join(src_dir, name)
+        print(f"+ cp {src} {name}")
+        shutil.copy2(src, name)
 
 
 def do_package(name, project_name, is_windows):
@@ -87,6 +140,22 @@ def do_package(name, project_name, is_windows):
         if os.path.isfile(src):
             print(f"+ cp {src} {pkg_dir}/")
             shutil.copy2(src, pkg_dir)
+
+    config_path = os.path.join(pkg_dir, f"{project_name}.toml")
+    print(f"+ write {config_path}")
+    with open(config_path, "w") as f:
+        f.write('gpu_plugin = "xenos"\n')
+        f.write('game_data_root = "assets"\n')
+        f.write("gpu_allow_invalid_fetch_constants = true\n")
+        f.write("d3d12_readback_resolve = true\n")
+        f.write("mnk_capture_mouse = false\n")
+        f.write("mnk_mode = true\n")
+        f.write('resolution = "720p"\n')
+        f.write("\n")
+        f.write("shader_dump_enabled = false\n")
+        f.write("texture_dump_enabled = false\n")
+        f.write('texture_dump_format = "png"\n')
+        f.write('texture_dump_skip_sizes = "512x256,1024x512,2048x1024,1920x1080,1280x720"\n')
 
     if is_windows:
         archive_path = f"{name}.zip"
@@ -113,7 +182,9 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--sdk-dir", default="sdk", help="Path to the ReXGlue SDK (default: sdk)")
     p.add_argument("--package", metavar="NAME", help="Package built output into NAME.zip (Windows) or NAME.tar.gz (Linux); skips the build")
-    p.add_argument("--debug", action="store_true", help="Build with debug symbols (uses the debug CMake preset)")
+    p.add_argument("--release", action="store_true", help="Build an optimized release without debug symbols (uses the release CMake preset); default is RelWithDebInfo")
+    p.add_argument("--force-codegen", action="store_true", help="Force codegen even if inputs are unchanged")
+    p.add_argument("--strict-codegen", action="store_true", help="Abort the build if codegen returns a non-zero exit code")
     return p.parse_args()
 
 
@@ -144,6 +215,11 @@ def main():
 
     sdk_dir = args.sdk_dir
     rexglue = os.path.join(sdk_dir, "bin", "rexglue.exe" if is_windows else "rexglue")
+
+    if not os.path.exists(rexglue):
+        print(f"SDK not found at '{sdk_dir}' — downloading pinned version...")
+        run([sys.executable, os.path.join(script_dir, "download-sdk.py"), os.path.abspath(sdk_dir), "--pinned"])
+
     xex_path = manifest["entrypoint"]["file_path"]
 
     if not os.path.exists(xex_path):
@@ -152,7 +228,8 @@ def main():
 
     check_deps()
 
-    preset = detect_preset("relwithdebinfo" if args.debug else "release")
+    build_type = "release" if args.release else "relwithdebinfo"
+    preset = detect_preset(build_type)
     exe_name = f"{project_name}.exe" if is_windows else project_name
     build_output = os.path.join("out", "build", preset, exe_name)
 
@@ -174,14 +251,41 @@ def main():
             print(f"+ rm {name}")
             os.remove(name)
 
-    run([rexglue, "codegen", manifest_path])
+    stamp_path = os.path.join("out", "codegen.stamp")
+    new_hash = compute_codegen_hash(load_manifest(manifest_path), manifest_path)
+    generated_present = os.path.exists(os.path.join("generated", "sources.cmake"))
+    old_hash = None
+    if os.path.exists(stamp_path):
+        with open(stamp_path, "r") as f:
+            old_hash = f.read().strip()
+
+    if not args.force_codegen and new_hash == old_hash and generated_present:
+        print("+ codegen inputs unchanged — skipping codegen (incremental build)")
+    else:
+        run([rexglue, "codegen", manifest_path], check=args.strict_codegen)
+
+        # codegen re-stamps sdk_version into the manifest it was given; blank it
+        # back out in the working tree.
+        with open(manifest_path, "r") as f:
+            lines = f.readlines()
+        with open(manifest_path, "w") as f:
+            for line in lines:
+                if line.startswith("sdk_version"):
+                    f.write('sdk_version = ""\n')
+                else:
+                    f.write(line)
+
+        os.makedirs("out", exist_ok=True)
+        with open(stamp_path, "w") as f:
+            f.write(new_hash)
+
     run(["cmake", "--preset", preset] + cmake_configure_args)
     run(["cmake", "--build", "--preset", preset, "--parallel", str(os.cpu_count() or 1)])
 
     print(f"+ cp {build_output} {exe_name}")
     shutil.copy2(build_output, exe_name)
 
-    copy_runtime_libs(is_windows, sdk_dir)
+    copy_runtime_libs(is_windows, sdk_dir, build_type)
 
 
 if __name__ == "__main__":

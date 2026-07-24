@@ -45,7 +45,24 @@ def main():
         env.setdefault("__VK_LAYER_NV_optimus", "NVIDIA_only")
 
     assets_path = os.path.join(root, "assets")
-    cmd = [exe_path, "--game_data_root", assets_path] + sys.argv[1:]
+    cmd = [exe_path, "--game_data_root", assets_path, "--gpu_plugin=xenos"]
+
+    # Title-update builds need the TU's data files (the replacement audio track)
+    # mounted as the update: device. scripts/build.py --tu extracts them to update/;
+    # mount it when present (harmless for vanilla — it won't exist).
+    update_path = os.path.join(root, "update")
+    if os.path.isdir(update_path):
+        cmd += ["--update_data_root", update_path]
+
+    # Mod overlay: pass the mods directory so the runtime can layer enabled mods
+    # over game data. Which mods are active is controlled by enabled_mods in the
+    # project's .toml config (not a CLI flag).
+    mods_path = os.path.join(root, "mods")
+    if os.path.isdir(mods_path):
+        cmd += ["--mods_data_root", mods_path]
+
+    cmd += sys.argv[1:]
+    print(f"Running {' '.join(cmd)}")
     sys.exit(subprocess.run(cmd, env=env).returncode)
 
 
