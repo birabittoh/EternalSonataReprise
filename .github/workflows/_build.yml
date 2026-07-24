@@ -36,15 +36,15 @@ jobs:
             sdk_dir: win-amd64
             artifact_suffix: windows-x64
 
-          - platform: linux
-            runner: ubuntu-latest
-            sdk_dir: linux-amd64
-            artifact_suffix: linux-x64
+          # - platform: linux
+          #   runner: ubuntu-latest
+          #   sdk_dir: linux-amd64
+          #   artifact_suffix: linux-x64
 
-          - platform: linux-arm64
-            runner: ubuntu-24.04-arm
-            sdk_dir: linux-arm64
-            artifact_suffix: linux-arm64
+          # - platform: linux-arm64
+          #   runner: ubuntu-24.04-arm
+          #   sdk_dir: linux-arm64
+          #   artifact_suffix: linux-arm64
 
     steps:
       - name: Checkout
