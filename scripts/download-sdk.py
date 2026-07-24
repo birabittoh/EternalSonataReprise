@@ -5,11 +5,12 @@ import json
 import shutil
 import platform
 import tempfile
+import time
 import zipfile
 import argparse
 from urllib.request import urlopen, Request
 
-REPO = "rexglue/rexglue-sdk"
+DEFAULT_REPO = "birabittoh/rexglue-sdk"
 
 
 def fetch_json(url):
@@ -45,10 +46,38 @@ def read_file_trim(path):
         return f.read().strip()
 
 
+def read_pinned(path):
+    """Read a two-line .sdk-version file (repo + tag).
+
+    Falls back to treating a single-line file as a bare tag
+    (backward compat with the old format).
+    """
+    text = read_file_trim(path)
+    lines = text.splitlines()
+    if len(lines) >= 2:
+        return lines[0].strip(), lines[1].strip()
+    return DEFAULT_REPO, lines[0].strip()
+
+
 def write_file(path, content):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w") as f:
         f.write(content)
+
+
+def rmtree_retry(path, attempts=5, delay=0.5):
+    """Deleting a directory tree on a Windows/Docker bind mount can transiently
+    fail with 'directory not empty' if another process (antivirus, an editor,
+    a concurrent build) still has a handle open somewhere underneath -- retry
+    a few times before giving up."""
+    for attempt in range(attempts):
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
 
 
 def download_file(url, dest):
@@ -77,6 +106,12 @@ def main():
         action="store_true",
         help="Use latest stable (non-nightly) release"
     )
+    parser.add_argument(
+        "--platform",
+        choices=["win-amd64", "linux-amd64", "linux-arm64"],
+        help="Override the auto-detected platform (e.g. to fetch the win-amd64 SDK "
+             "from a Linux cross-build container)"
+    )
 
     args = parser.parse_args()
 
@@ -87,14 +122,14 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     version_file = os.path.normpath(os.path.join(script_dir, "../.sdk-version"))
 
-    platform_id = detect_platform()
+    platform_id = args.platform or detect_platform()
 
     if pinned_mode:
-        target_tag = read_file_trim(version_file)
-        print(f"Fetching pinned release {target_tag} for {platform_id}...")
+        repo, target_tag = read_pinned(version_file)
+        print(f"Fetching pinned release {target_tag} from {repo} for {platform_id}...")
 
         data = fetch_json(
-            f"https://api.github.com/repos/{REPO}/releases/tags/{target_tag}"
+            f"https://api.github.com/repos/{repo}/releases/tags/{target_tag}"
         )
 
         asset_url = next(
@@ -104,10 +139,11 @@ def main():
         )
 
     elif stable_mode:
-        print(f"Fetching latest stable release for {platform_id}...")
+        repo = DEFAULT_REPO
+        print(f"Fetching latest stable release from {repo} for {platform_id}...")
 
         releases = fetch_json(
-            f"https://api.github.com/repos/{REPO}/releases?per_page=20"
+            f"https://api.github.com/repos/{repo}/releases?per_page=20"
         )
 
         stable = next(
@@ -123,10 +159,11 @@ def main():
         )
 
     else:
-        print(f"Fetching latest nightly release for {platform_id}...")
+        repo = DEFAULT_REPO
+        print(f"Fetching latest nightly release from {repo} for {platform_id}...")
 
         releases = fetch_json(
-            f"https://api.github.com/repos/{REPO}/releases?per_page=20"
+            f"https://api.github.com/repos/{repo}/releases?per_page=20"
         )
 
         nightly = next(
@@ -142,14 +179,15 @@ def main():
         )
 
     installed_version_file = os.path.join(out_dir, ".sdk-version")
+    version_stamp = f"{repo}\n{target_tag}"
 
     if os.path.exists(installed_version_file):
         installed_version = read_file_trim(installed_version_file)
-        if installed_version == target_tag:
-            print(f"SDK already at {target_tag}. Skipping download.")
+        if installed_version == version_stamp.strip():
+            print(f"SDK already at {target_tag} from {repo}. Skipping download.")
             return
 
-    print(f"Downloading {target_tag}...")
+    print(f"Downloading {target_tag} from {repo}...")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = os.path.join(tmpdir, "rexglue-sdk.zip")
@@ -171,14 +209,14 @@ def main():
 
         dest_dir = out_dir
         if os.path.exists(dest_dir):
-            shutil.rmtree(dest_dir)
+            rmtree_retry(dest_dir)
 
         shutil.move(
             os.path.join(extract_dir, inner_dirs[0]),
             dest_dir
         )
 
-    write_file(installed_version_file, target_tag)
+    write_file(installed_version_file, version_stamp)
     print(f"SDK installed to {dest_dir} ({target_tag})")
 
     if platform.system() == "Linux":
@@ -188,8 +226,8 @@ def main():
             print(f"Marked {bin_path} executable")
 
     if not pinned_mode:
-        write_file(version_file, target_tag)
-        print(f"Pinned version updated to {target_tag}")
+        write_file(version_file, version_stamp)
+        print(f"Pinned version updated to {target_tag} ({repo})")
 
 
 if __name__ == "__main__":
