@@ -30,6 +30,14 @@ eternalsonata.toml
 /*.rdc
 /*.cap
 
+# Embedded icon header/ico, rebuilt from assets/default.xex by scripts/gen-icon.py
+/src/icon.generated.h
+/src/icon.generated.ico
+
+# Windows exe-icon resource script, rewritten by CMake with an absolute path
+# to src/icon.generated.ico (see CMakeLists.txt)
+/src/eternalsonata.generated.rc
+
 # Game assets extracted from the user's ISO
 # (the ISO itself and anything derived from it must NEVER be committed)
 /*.iso
