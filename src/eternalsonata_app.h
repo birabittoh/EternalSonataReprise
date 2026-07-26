@@ -8,6 +8,9 @@
 #include <memory>
 
 #include <rex/rex_app.h>
+#include <rex/ui/window.h>
+
+#include "icon.generated.h"
 
 class EternalsonataApp : public rex::ReXApp {
  public:
@@ -20,7 +23,9 @@ class EternalsonataApp : public rex::ReXApp {
 
   void OnPreSetup(rex::RuntimeConfig& /*config*/) override {}
 
-  void OnPostSetup() override {}
+  void OnPostSetup() override {
+    window()->SetIcon(eternalsonata::kIconPNG, eternalsonata::kIconPNGSize);
+  }
 
   void OnShutdown() override {
   }
