@@ -151,6 +151,7 @@ def do_package(name, project_name, is_windows):
         f.write("mnk_capture_mouse = false\n")
         f.write("mnk_mode = true\n")
         f.write('resolution = "720p"\n')
+        f.write("fullscreen = false\n")
         f.write("\n")
         f.write("shader_dump_enabled = false\n")
         f.write("texture_dump_enabled = false\n")
