@@ -60,3 +60,8 @@ dumps/
 CLAUDE.md
 opencode.json
 .mcp.json
+
+# Extracted/decoded assets (regenerate with scripts/unpack_e.exe)
+/extracted/
+/repacked/
+__pycache__/
