@@ -161,12 +161,20 @@ block2     = rest of file                       four chained fixup tables
 ```
 
 `sub_820FF9C8` allocates `hdr[0x10] + 24` bytes and memcpy's the file's first
-`hdr[0x10] + 24` bytes into it, runs the two relocation lists, then copies
-`block2` into a second allocation and runs `sub_820FF748`, `sub_820FF838`, and
-`sub_820FF910` twice over it.
+`hdr[0x10] + 24` bytes into it — **starting from file offset 0**, so the
+24-byte header IS part of the image allocation. List entries in the relocation
+tables are therefore raw file offsets (not relative to `+0x18`). The loader
+then runs the two relocation lists, copies `block2` into a second allocation
+and runs `sub_820FF748`, `sub_820FF838`, and `sub_820FF910` twice over it.
 
-`block2`'s first table is `{u32be symbol_id, u32be patch_offset}` pairs sorted
-by `symbol_id` — an import/symbol fixup table.
+`block2` is four chained fixup tables. In `t0001.e`:
+- Table 1: 229 `{u32be symbol_id, u32be patch_offset}` pairs sorted by
+  `symbol_id` — an import/symbol fixup table.
+- Table 2: 7 pairs (same format).
+- Tables 3/4: empty (count = 0).
+
+No bulk-relative offsets were found in any block2 table — all patched offsets
+target the image, not the bulk.
 
 `sub_820FF6C0` stores each relocated dword **byte-reversed**, so relocated
 pointers end up little-endian in the stream while everything around them stays
@@ -202,21 +210,146 @@ pointer operand. `0x81` recurs as a statement/expression terminator.
 
 The opcode set is **not fully decoded**. See §7.
 
-### 3.4 Text blocks
+### 3.4 Text blocks — the `BTX ` section
 
-Text lives in the *bulk* section. `t0001.e` has 7 language blocks, each starting
-with a `<y6><l6><m1><name>\0` label record:
+Text lives in the *bulk* section, inside a self-describing `BTX ` blob (545 of
+the 678 `.e` files contain one). The reader is `sub_8223B780(btx, string_id)`
+in `default.xex`; the layout below is decompiled from it and verified by
+re-parsing `extracted/e/btldata/script/tutorial/t0001.e`.
+
+All fields are u32 big-endian. Offsets are **relative to the start of the
+struct that contains them**, never absolute.
 
 ```
-0x4074E4  Japanese (Shift-JIS)
-0x407F78  0x408D43  0x409B0D  0x40A876  0x40B6BE  0x40C51C
+BTX header (at `btx`)
+  +0x00  char[4]  'BTX '
+  +0x04  u32      offset to first language sub-block   (0x10 in practice)
+  +0x08  u32      total size of this whole BTX blob
+  +0x0C  u32      language sub-block count             (always 7)
+
+language sub-block (at `q`, first = btx + hdr[0x04])
+  +0x00  char[4]  language fourcc — 'JPN ' 'USA ' 'GBR ' 'FRA ' 'ITA '
+                                    'DEU ' 'ESP '
+  +0x04  u32      offset to the entry table            (0x14)
+  +0x08  u32      offset to the NEXT sub-block, relative to `q`
+  +0x0C  u32      total size of this sub-block's string data
+  +0x10  u32      entry count                          (36 in t0001.e)
+
+entry table (at `q + sub[0x04]`), `count` × 8 bytes
+  +0x00  u32      string_id
+  +0x04  u32      offset to the string, relative to `q`
+```
+
+Lookup is **by string id**: the reader linear-scans the entry table for
+`entry.id == string_id` and returns `q + entry.offset`. In practice every
+blob's ids turn out to be dense `0..count-1` and identical across all seven
+languages (checked over all 758 blobs), so an id doubles as an index — but
+the reader does not assume that, and a repacker need not either. The
+language is chosen at runtime by `off_822FF578[dword_8243D370]`, a 7-entry
+table of the fourccs above (index 0 = `JPN `, 1 = `USA `, … 6 = `ESP `) — see
+§3.4.1 for who supplies the string ids.
+
+Two gotchas, both of which will silently corrupt a naive parser:
+
+- The sub-block chain **may or may not self-terminate**, and both shapes ship.
+  In some files the last language's "next" is 0; in others (`t0001.e`) it
+  still points forward, past the end of the blob, into whatever follows.
+  Always bound the walk with `hdr[0x0C]` rather than waiting for a 0.
+- A file may hold **several BTX blobs**, packed back to back and 4-byte
+  aligned (`adg01.e` has two). Nothing found so far indexes them; the bulk
+  section has no directory of its own, so `scripts/btx.py` locates them by
+  scanning for the magic and validating by parse.
+
+`scripts/btx.py` implements all of the above:
+
+```bash
+python scripts/btx.py extracted/e/btldata/script/tutorial/t0001.e
+python scripts/btx.py --lang USA extracted/e/cfdata/adg01.e
+python scripts/btx.py --json "extracted/e/cfdata/*.e" > text.json
+```
+
+Across the 678 decoded files it finds **758 blobs in 545 files, 103,229
+strings**, with the blob count matching the raw `BTX ` magic count exactly —
+no parse failures and no false positives.
+
+### 3.4.2 Editing text
+
+`scripts/btx_edit.py` rewrites a string and rebuilds the blob (recomputing
+every entry offset, `next` link and size). Its serialiser reproduces all 758
+shipped blobs **byte-for-byte** when no edit is applied, so the layout above
+is exact.
+
+By default the entire blob is rebuilt and spliced in; any length change shifts
+everything that follows in the file. **This is now handled automatically** —
+the tool reads list B of the `.e` relocation table and adjusts every raw dword
+that points into the post-BTX area (the debug string pool) by `delta`, so the
+loader's `*(image + entry) += bulk_base` still lands on the right data.
+
+| edit | size | result |
+|---|---|---|
+| full replacement, blob grew 4 bytes | 4252040 | works |
+| full replacement, blob shrank 207 bytes | 4251829 | works |
+| `--preserve-size` | unchanged | works |
+
+The crash mechanism was: 47 of 64 list B entries held bulk offsets pointing
+into the region *after* the BTX blob (the debug string pool). Growing the blob
+shifted that data but the raw dwords embedded in the bytecode image stayed at
+their old values. The loader added `bulk_base` and produced the right absolute
+address, but the data at that address was now wrong — shifted by `delta` —
+so the script VM dereferenced garbage, producing a wild handler pointer like
+`0x52054163`.
+
+`--preserve-size` is still available as a safety valve: it keeps every
+sub-block at its original length and rewrites only the edited one, leaving
+every other byte of the file untouched. It buys room for a longer string by
+**deduplicating identical strings** within that sub-block so they share one
+copy (entry offsets are arbitrary, so the reader cannot tell), then NUL-pads
+the remainder. If a block has no duplicates to reclaim, the tool fails loudly:
+
+```bash
+python scripts/btx_edit.py <file.e> --lang ITA --id 1 \
+    --replace "così" "quindi" --preserve-size
+python scripts/repack_e.py <mod_tree> --only tutorial/t0001 --out repacked
 ```
 
 Strings are NUL-terminated. A newline is a **literal two-character `\` `n`**,
-not `0x0A`. Western blocks are single-byte (Latin-1-like — whether this is true
-Latin-1 or a custom glyph table is unverified; compare against `p1.fnt`).
+not `0x0A`. `JPN ` is Shift-JIS; the western blocks are single-byte
+(Latin-1-like — whether this is true Latin-1 or a custom glyph table is
+unverified; compare against `p1.fnt`).
 
-Immediately before each block is a table of `{u32be offset, u32be index}` pairs.
+Entry 0 in a tutorial file is a `<y6><l6><m1><name>\0` label record naming the
+file itself (`t0001`), so ids are dense from 0 and the first real line is id 1.
+
+### 3.4.1 Who supplies the string ids
+
+For battle/tutorial narration the id comes straight out of the battle manager
+singleton `dword_824D0440`:
+
+```
+party member records   base unk_824FD1A0 (= mgr + 183648), stride 81972,
+                       count = byte_824D0720
+                       record[0]      = character id, 1..10
+                       record[81698]  = i16 model/kind id
+
+enemy records          base unk_82539240 (= mgr + 461840), stride 32456,
+                       count = byte_824D0721
+                       sub-record at +429568, stride 16136, index at +461840
+                       sub[300]       = i16 enemy id
+```
+
+`sub_821ABC68(mgr, desc)` is the accessor. `desc` is the 2-field descriptor
+`{u32 kind, …, u8 slot@+4}` that the narration objects carry:
+
+```
+kind 0 (party)  string_id = party[slot].character_id - 1
+kind 1 (enemy)  string_id = enemy[slot].enemy_id + 9
+```
+
+`sub_821ABE88` then does `sub_8223B780("BTX ", string_id)` and hands the result
+to the label widget — so party ids 1..10 map to BTX ids 0..9 and enemy ids
+follow directly after. This is the missing link between the runtime and the
+text section; `docs/script-vm-notes.md` §5.3 covers the object pool that owns
+the descriptors.
 
 ### 3.5 Markup tags
 
@@ -252,6 +385,55 @@ and is identical across all 7 language blocks, so it is not localisable.
 Characters `n`..`z` dispatch through a 13-entry `bctr` jump table at
 `word_820821B8`, base `loc_821D5740`. Hex-Rays emits `__asm { bctr }` for it —
 read it with raw `disasm`.
+
+---
+
+## 3.6 Loading pipeline and custom content
+
+Traced end to end in IDA (`default.xex.i64`). No encryption anywhere in this
+chain — just the codecs in §2.
+
+1. **`sub_8210D168`** (TOC init, runs at boot) — opens `game:\index.vmtoc` via
+   `sub_82252458`, allocates a buffer sized to the file, reads it whole into
+   `dword_8244061C`, and sets `dword_82440820 = filesize/48` (record count).
+   Also builds `byte_82440620` = `"game:"` + trailing `\`, the root prefix
+   used for every asset open.
+2. **`sub_8210D080`** — the binary search described in §1, over
+   `dword_8244061C`/`dword_82440820` by lowercased path.
+3. **`sub_8210C9D8`** — the open primitive. Builds the full path (`host://`
+   passthrough, or `byte_82440620` + name → `game:\<path>`), opens it with
+   `sub_82252458`, *then* looks it up in the TOC:
+   - **found**: decoded size (`a1[6]`) = TOC `+32`, codec flag (`a1+16`
+     byte) = TOC `+36`.
+   - **not found**: falls back to raw/stored — decoded size = actual file
+     size via `sub_822528D8`, codec flag forced to `0`. This only fires if
+     the file open itself still succeeded, i.e. the file exists on disk at
+     that path.
+4. **`sub_820FF458`** — async load wrapper (used for `.e` and others):
+   allocates a job struct, calls `sub_8210C9D8` to resolve size/flag, queues
+   a decode job via **`sub_8210CC68`**.
+5. **`sub_8210CC68`** — reads the codec flag byte at `+16`; if nonzero, hands
+   off to a worker queue (`dword_82466108` via `sub_8210D5D8`) that runs the
+   range coder (`sub_8210DFA8`/`sub_8210E0F8`) and/or LZSS (`sub_8210E260`)
+   from §2.
+
+So the TOC is a **lookup table for size + codec flag**, not a manifest gate:
+a file with no TOC entry still loads (uncompressed, sized by `stat()`) as
+long as it exists on disk and something references its path.
+
+**Custom content:**
+
+- **Replacing an existing asset**: edit the decoded file, fix the `.e`
+  header's total-size field at `+0x0C` if the length changed, and repack
+  with `scripts/repack_e.py --in-place`. This is the verified route — same
+  path, TOC size/flag patched to match, decoder round-trip checked.
+- **Adding a brand-new path**: drop the file under `assets/` and it loads
+  raw/stored even with zero TOC entry, *provided* some other game data
+  (script, table) already references that path by name — nothing does yet
+  for genuinely new content. Use `scripts/repack_e.py --add-new` if you want
+  it to get a real TOC record (size/flag bookkeeping) instead of relying on
+  the fallback; it inserts a new 48-byte record in sorted order. Untested
+  at runtime.
 
 ---
 
@@ -301,6 +483,12 @@ Inspect a decoded `.e`'s section layout:
 
 ```bash
 python scripts/e_layout.py extracted/e/btldata/script/tutorial/t0001.e
+```
+
+Dump its text (see §3.4 for the format):
+
+```bash
+python scripts/btx.py --lang USA extracted/e/btldata/script/tutorial/t0001.e
 ```
 
 ---
@@ -365,14 +553,21 @@ record, but this has not been tested in-game.
 
 ## 7. Next steps
 
-**Script VM opcodes.** The likely interpreter is `sub_821C9FE0` (0x24E0 bytes),
-a 67-case computed-goto dispatcher. All 67 case addresses are derived in
-`docs/script-vm-notes.md`. The opcode is a **dword at `a1+4`, 1-based**, not
-a raw stream byte, so a fetch/decode step sits in front of it and has not been
-found — locate that first, since it defines the real instruction encoding.
-Then build a disassembler that walks the image from `+0x18` and run it over all
-678 files; consuming every file with no unknown opcode and no desync is a much
-stronger signal than eyeballing one file.
+**Script VM opcodes.** The interpreter is **`sub_820FFE28`** — found 2026-07-29
+from an lldb backtrace, not by static search; it is in the `.e` loader cluster,
+not near the battle FSMs where seven earlier rounds looked. It fetches a raw
+**byte** from the stream, advances the IP, and dispatches through a jump table
+for opcodes `0x00..0x89`. `sub_820FFCA0` initialises the IP to
+`image_base + 0x18`, confirming the VM executes the `.e` image from `+0x18`
+exactly as §3.3 assumed. (`sub_821C9FE0` was never the interpreter — it is a
+hardcoded FSM; see `docs/script-vm-notes.md` §1.5 and §7.)
+
+What remains is the opcode table itself: read the 0x8A-entry jump table's raw
+dwords with `get_bytes`, decompile handlers individually, and cross-check
+operand widths against §3.3's relocation-adjacency statistics. Then build a
+disassembler that walks the image from `+0x18` and run it over all 678 files;
+consuming every file with no unknown opcode and no desync is a much stronger
+signal than eyeballing one file.
 
 **Markup control-code consumer.** Where codes 1/2/13 are acted on is unknown. A
 scan of `0x821cc000..0x821e8000` for a compare against 13 found nothing, so the
@@ -386,15 +581,23 @@ glyph table, by decoding `p1.fnt` / `p1_g.fnt` and comparing glyph order against
 the byte values used in text. `GOTHIC_FONT` (`0x82082850`) and `MESSAGE_FONT`
 (`0x82082B68`) are the constants to cross-reference.
 
-**Language selection.** How one of the 7 language blocks is chosen is unknown;
-there should be an index in the header or in a table preceding the blocks.
+~~**Language selection.**~~ Solved — `off_822FF578[dword_8243D370]` selects a
+language fourcc and the reader walks the sub-block chain for it. See §3.4.
 
-**Bulk indexing.** Nothing yet explains how the image addresses into the bulk
-section. The `{u32be offset, u32be index}` tables before each text block are the
-obvious candidate; confirm the direction of that pairing.
+~~**Bulk indexing.**~~ Solved — the bulk `BTX ` section is addressed **by
+string id** through `sub_8223B780`, not by array index; the earlier
+"`{offset, index}` table" reading had the pair backwards (it is
+`{id, offset}`). See §3.4 and §3.4.1.
 
 **Untouched formats.** `.x3tex` and `.tex` have not been looked at at all.
 `.bop`/`.bmd` have loaders identified but no format documentation.
+
+**Who hands `sub_8223B780` a BTX pointer for a `.e` file?** The loader
+`sub_820FF9C8` copies only `hdr[0x10]+24` bytes — the image — so the bulk
+is streamed separately and something must know its offset. Note
+`sub_821ABE88` is **not** that path: it passes BTX blobs embedded in
+`default.xex` itself (`0x823857D0`, `0x82332D90` — same format, 7 languages,
+character-name tables). Not a blocker for text editing, but unanswered.
 
 **Range-coder encoder.** Only needed to keep repacked builds small. Requires
 mirroring `sub_8210E0F8`'s two normalisation loops exactly and requantising

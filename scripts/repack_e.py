@@ -33,6 +33,13 @@ usage:
   --in-place  write into --assets and patch assets/index.vmtoc directly
               (index.vmtoc is backed up to index.vmtoc.bak first)
   --out DIR   otherwise, write the new files + index.vmtoc into DIR
+  --add-new   also add a TOC record for any file under <src_dir> that has no
+              existing TOC entry, inserted in sorted order (see note below).
+
+Note: a genuinely new asset path does NOT strictly need a TOC record - the
+loader (sub_8210C9D8) falls back to raw/stored when the TOC lookup misses,
+sizing the read off the file itself. --add-new exists for the case where you
+want it to carry real size/flag bookkeeping like every other asset.
 """
 import argparse
 import os
@@ -190,6 +197,8 @@ def main(argv=None):
     ap.add_argument('--in-place', action='store_true',
                     help='write into --assets and patch its index.vmtoc')
     ap.add_argument('--out', default='repacked', help='output dir (without --in-place)')
+    ap.add_argument('--add-new', action='store_true',
+                    help='add TOC records for files in src_dir with no existing entry')
     args = ap.parse_args(argv)
 
     toc_path = os.path.join(args.assets, 'index.vmtoc')
@@ -239,6 +248,52 @@ def main(argv=None):
         total_out += len(blob)
         print('ok       %-44s %8d -> %8d  flag=%d' % (name, len(data), len(blob), flag))
 
+    if args.add_new:
+        existing = {n.lower().replace('\\', '/') for n, _ in recs if n}
+        for root, _, files in os.walk(args.src_dir):
+            for fn in files:
+                full = os.path.join(root, fn)
+                rel = os.path.relpath(full, args.src_dir).replace(os.sep, '\\')
+                norm = rel.lower().replace('\\', '/')
+                if args.only and args.only.lower().replace('\\', '/') not in norm:
+                    continue
+                if norm in existing:
+                    continue
+
+                name = rel.lower()
+                if len(name) > 31:
+                    print('SKIP     %s: path too long for the 32-byte TOC field' % rel)
+                    skipped += 1
+                    continue
+
+                data = open(full, 'rb').read()
+                warn = check_e_header(name, data)
+                if warn:
+                    print('WARN     %s: %s' % (name, warn))
+
+                blob, flag = encode(data)
+                back = unpack_e.unpack(blob, len(data), flag)
+                if back != data:
+                    print('FAIL     %s: round-trip mismatch (new entry)' % name)
+                    skipped += 1
+                    continue
+
+                dst = os.path.join(dest_root, name.replace('\\', '/'))
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                with open(dst, 'wb') as f:
+                    f.write(blob)
+
+                rec = bytearray(RECORD)
+                rec[0:len(name)] = name.encode('latin1')
+                struct.pack_into('>I', rec, 32, len(data))
+                rec[36] = flag
+                recs.append([name, rec])
+                existing.add(norm)
+                changed += 1
+                total_in += len(data)
+                total_out += len(blob)
+                print('new      %-44s %8d -> %8d  flag=%d' % (name, len(data), len(blob), flag))
+
     if not changed:
         print('nothing to do: no TOC entry had a matching file under %s' % args.src_dir)
         return 1
@@ -252,6 +307,10 @@ def main(argv=None):
     else:
         new_toc_path = os.path.join(dest_root, 'index.vmtoc')
         os.makedirs(dest_root, exist_ok=True)
+
+    # The device does a binary search over this array by lowercased path, so
+    # inserted records must keep the whole table sorted.
+    recs.sort(key=lambda nr: nr[0].lower())
 
     with open(new_toc_path, 'wb') as f:
         for _, rec in recs:
