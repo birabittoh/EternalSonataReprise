@@ -83,7 +83,56 @@ instantiated in several places, not one global structure.
 
 ---
 
-## 2. `sub_821C9FE0` — the 67-case dispatcher
+## 1.5 `sub_821C9FE0`/`sub_821C0300` are FSMs, not the interpreter
+
+> **Superseded in part (2026-07-29, see §7).** The title of this section used
+> to read "There is no central bytecode VM". That went too far. Everything
+> below is still correct — `sub_821C9FE0` and `sub_821C0300` really are
+> hardcoded state machines, not interpreters — but a real bytecode VM *does*
+> exist elsewhere in the binary: **`sub_820FFE28`**, found via an lldb
+> backtrace. See §7. Read this section as "these two functions are not it",
+> not as "there isn't one".
+
+`sub_821C0300` (0x22C8 bytes,
+also a slot in the per-object-type tick table alongside `sub_821C9FE0`) has
+the **exact same skeleton** as `sub_821C9FE0`:
+
+```
+lwz  r11, 4(r31)          ; state = *(a1+4)
+addi r11, r11, -1         ; 1-based
+cmplwi cr6, r11, 0x60     ; 97 states here vs 0x42 (67) in sub_821C9FE0
+bgt  cr6, <default>
+lhzx r0, word_82082528, index*2   ; own, separate jump table
+...
+mtctr / bctr
+```
+
+Case `01` in both functions is the same idiom too: `cmplwi cr6,r7,0 / beq
+<default> / li r11,8 / stw r11,4(r31) / b <epilogue>`.
+
+So this is not one interpreter — it's a **pattern that recurs across multiple
+independently compiled, hardcoded finite-state machines**, each with its own
+fixed case count and jump table, reached through the same per-object-type
+tick dispatch (`0x82087108`+). Each `.e` "script" most likely selects *which*
+pre-baked FSM function an object runs (by type/folder: AI scripts vs.
+dialogue/tutorial scripts likely map to different FSMs — `sub_821C9FE0` at 67
+states is a plausible fit for the AI executor, `sub_821C0300` at 97 states for
+something richer, e.g. the message/dialogue box). The `.e` image bytes almost
+certainly supply *data* the FSM's states read (text, resource ids, relocated
+pointers, parameters) — not instructions that drive control flow themselves.
+
+**This retires the "disassemble the `.e` image as a bytecode stream" plan.**
+The productive next steps are: (1) enumerate every entry in the
+`0x82087108`–`0x8208726C` tick table and identify which script *kind*
+(AI/tutorial/dialogue/etc.) maps to which FSM function, most likely by finding
+where an object's `a1+4` is *initialized* per instance; (2) for the FSM
+believed to own dialogue playback, map its states to the markup control codes
+(1/2/13) from §3 below — `sub_821C0300` is the current best candidate given
+its size and its own call to `sub_8218D408` (§2.1).
+
+---
+
+## 2. `sub_821C9FE0` — the 67-case dispatcher (hypothesis revised, see §2.1)
 
 `0x821C9FE0`, 0x24E0 bytes. The strongest candidate for the script VM.
 
@@ -133,7 +182,117 @@ All 67 case targets, derived from `word_820824A0` + base `loc_821CA078`:
 no-ops. `^` = `0x821CA4D4`, shared by `0x1d 0x23 0x28 0x31`. Ops
 `0x0b 0x0d 0x0f 0x1f` share `0x821CA67C`; ops `0x2a 0x2c` share `0x821CBC84`.
 
-### Suggested attack
+### 2.1 The fetch/decode step doesn't exist — the "opcode = bytecode" model is likely wrong
+
+Found by tracing `sub_821C9FE0`'s real (non-`.pdata`) data xrefs, which `xrefs_to`
+misses (same `lis`/`ori`-split blind spot as §5) but `find_bytes` on the raw
+pointer value `82 1C 9F E0` catches:
+
+- `0x820B1030` is a false lead — it's inside `.pdata` (PPC exception unwind
+  table), not a real call site.
+- `0x820871B0` is real: it's one slot in a flat function-pointer array running
+  roughly `0x82087108`–`0x8208726C`. That same array also contains
+  `sub_821ACBF8` — **the already-documented per-unit tutorial tick state
+  machine** (§4 "ruled out"). So this is a generic **per-object-type tick
+  dispatch table**, called once per frame per live object of that type; it is
+  not something invoked externally once per script instruction.
+
+Disasm of case `01` (`loc_821CA078`–`0x821ca13c`) and its fallthrough settles
+the fetch question: at `0x821ca128` it does `li r11, 7` / `stw r11, 4(r31)` —
+**hardcodes** the next state as the literal `7` and stores it straight into
+`a1+4`. The instructions immediately after that (`0x821ca138`–`0x821ca13c`)
+either jump to `loc_821CC4B0` or fall into `loc_821CA080`, which is `li r11,8`
+followed by `b loc_821CC4AC`. And `loc_821CC4AC` is **the function epilogue**:
+`stw r11, 4(r31)` then stack teardown and `b __restgprlr_23` — a return, not a
+loop back to the dispatch header at `0x821ca030`.
+
+So `sub_821C9FE0` runs **exactly one case per call** and returns. There is no
+internal loop, and no separate fetch/decode function feeding `a1+4` — each
+case computes or hardcodes its own successor state inline and writes it back
+for the *next* call. That fully explains why searching for a shared
+byte-stream decoder never found anything: it doesn't exist.
+
+**Revised hypothesis:** this is not a bytecode interpreter reading the `.e`
+image as an instruction stream at runtime. It reads more like a
+hand-authored-or-codegen'd finite-state machine that was compiled *from* the
+original script at build time, where each of the 67 states is native PPC code
+baked in as a case, and the `.e` image supplies only *data* (dialogue ids,
+relocated pointers, parameters) that individual states read — not control
+flow. The "opcode" dword at `a1+4` is a **state index into this function**,
+not a cursor position in the byte stream.
+
+**Corroborated** against cases `02` and `03` (`0x821ca140`, `0x821ca244`):
+both follow the same shape, and both add a **poll/park** variant not seen in
+case `01` — re-check a readiness condition (case `02`: bytes at
+`r30+0x83238`/`0x83239` and a call to `sub_8218D408`; case `03`: the return
+value of `sub_821C9090`) and either return with `a1+4` **unchanged** (park —
+same state re-entered next call) or write the next state and return. This is
+a poll-driven finite-state machine with explicit wait states, not a bytecode
+loop. `a1` is also a real object, not a plain struct: one path (`0x821ca288`)
+loads `a1`'s own vtable pointer at `+0`, then virtual-calls slot `+0x8C`.
+
+This shape — park in a state until some async condition clears, otherwise
+advance — is suspiciously similar to what the still-unlocated "markup
+control-code consumer" (§7 of `docs/asset-formats.md`: where codes 1/2/13,
+i.e. `<w>`/`<wNNNN>`/`<wv>`, actually get acted on) would need to look like.
+**Not confirmed**: `sub_821BA4B0`, called early in cases `01`/`06`, looked
+like a promising "is the voice clip done" check but decompiles to a generic
+reset helper (zeroes two fields across a small pointer array) — it is cleanup,
+not the wait condition. The real poll condition for case `02` is whatever
+`sub_8218D408` and the two bytes at `r30+0x83238/39` represent; that is the
+next thing to chase if pursuing the control-code-consumer angle through this
+function.
+
+Where `a1+4`'s *initial* value comes from per object instance (i.e. what
+selects which of the 67 states an object starts in, and by extension which
+fixed "program" it runs) is still unknown — the `sub_821C9FE0` xrefs are all
+indirect through the per-object-type tick table (`0x82087108`+), so finding
+the allocator/initializer for these objects (probably where `a1[0]`'s vtable
+gets assigned) is the next concrete step, not further case-by-case disasm.
+
+**`sub_821C0300` is not the dialogue system — walk that back.** Its own guard
+condition computes `base + 16136 * index`, and `sub_8219F698` (the documented
+`btldata\script\ai\*.e` loader) stores its async-read handles at the *same*
+16136-byte-stride unit struct, offsets `+16012`/`+16136`/`+32148`/`+32450`.
+So `sub_821C0300` operates on the same per-battle-unit struct family as the AI
+script loader — it's a sibling per-unit behavior FSM (97 states, larger scope
+than `sub_821C9FE0`'s 67), not a UI textbox controller. Its earlier-noted call
+to `sub_8218D408` is a shared helper, not evidence of a dialogue role.
+
+**Revised reading of `sub_821C9FE0` itself**, tying together the pieces above:
+its wait-gate (`sub_821C9090`, case `03`) computes a distance from
+`a1+68`/`a1+72` (a position) to a fixed point and feeds the result into the
+resource manager (`dword_824CF500`) via a handle at `object+81688` — the shape
+of **3D positional audio (distance-based volume) for a speaking unit**. And
+the motivating example in §6 below is a `<wv>`-terminated line from
+`btldata\script\tutorial\t0001.e` — **battle tutorial narration**, which is
+delivered through a battle unit, not a generic dialog box. Working hypothesis:
+`sub_821C9FE0` is the per-unit "tutorial narration" FSM, and its states
+implement things like "wait for this unit's voice line, using positional audio
+distance to know when it's done" — i.e. this may be exactly the missing
+markup control-code consumer, scoped to units running narrated `.e` scripts,
+rather than a general-purpose text renderer. Not yet proven; the concrete next
+check is whether `unk_82553699` (case 03's early-out flag) or the position
+fields at `a1+68/72` can be tied to a known battle-unit struct layout, and
+whether `sub_821C9FE0`'s tick-table slot is reached specifically for units
+with an active tutorial/dialogue `.e` script loaded.
+
+**Loader-side confirmation, still incomplete.** `sub_8219F698` (the AI script
+loader) is called from `sub_821ACBF8` itself — the tutorial per-unit tick
+state machine — at `0x821acff0`, inside a loop over every unit in the current
+party (bound = byte at `[unit_array+0x2A1]`, stride `0x7EC8` = 32,456 bytes
+per unit) that fires once per unit at battle/tutorial start. So the tutorial
+tick function is what kicks off each unit's AI-script load. What was **not**
+found in this pass: where the resulting FSM object's `a1+4` (state) and
+`a1[0]` (vtable, presumably pointing at the `sub_821C9FE0`/`sub_821C0300`
+family) get initialized once that async read completes — that almost
+certainly happens in whatever callback `sub_821BBED8`'s async read job invokes
+on completion, which hasn't been traced. That callback is the single most
+direct way to settle every open question in this section: it would show the
+exact object layout, which FSM function gets attached for which script kind,
+and the state number the FSM starts in.
+
+### Suggested attack (predates §2.1; revisit its premise before following it)
 
 1. Raw-`disasm` each case body; record opcode → operand widths → effect.
 2. Cross-check against real streams in `extracted/e/btldata/script/ai/*.e` —
@@ -270,6 +429,154 @@ machine with its own 23-case computed-goto at `0x82082730`, base `0x821ACEDC`)
 - Reopen with `idb_open` on `assets/default.xex`. If the lock cannot be
   acquired, kill the stale worker via its `pid` from `idb_list`.
 
+### 5.1 Async `.e` read job queue (partial trace, 2026-07-29)
+
+`sub_821BBED8(a1, a2, a3, a4)` is the generic async-read job submitter:
+
+- `a1` is a job-manager struct (called with `&unk_8255272C`); it holds up to 8
+  job slots, stride **344 bytes** (`v9 = &a1[86 * slot]`, 86 dwords = 344
+  bytes), found via a linear scan for the first slot whose dword at `+4` is 0.
+- `sub_8210C9D8(slot+16, filename)` does the actual read kickoff; slot's last
+  two dwords (`+340`, `+344`, i.e. indices 85/86 of the 87-dword slot) are set
+  to the literal `a3` (job type, always `9` at every call site seen) and `a4`
+  (buffer size, always `4096`). Returns the slot index as the "handle", or -1
+  if all 8 slots are busy.
+- Callers: `sub_8219F698` (AI script loader — stores the handle at
+  unit+16012/+32148, per §"highest-value next step" below) and
+  `sub_821ACBF8` (tutorial tick FSM, at `0x821adb0c`, four call sites for
+  primary/fallback AI + secondary/fallback AI scripts — same pattern,
+  confirms `sub_8219F698`'s call shape isn't unit-specific plumbing).
+- **Completion check found**: `sub_821ACBF8` (around `0x821ae0a0`) reads
+  `*((_DWORD *)&unk_82552738 + 86 * handle)` — `unk_82552738` is
+  `unk_8255272C + 12`, i.e. **the same 344-byte-stride array, offset to a
+  different field within each slot** (a "result ready" pointer/flag, separate
+  from the status dword at index 85). `handle` comes from a per-object byte
+  field at `v1+537148`. When set (and gated by flag bytes at `v1+537144`
+  `v1+537145`), it calls `sub_821422B0(dword_8243D89C, 20, 0.0)`.
+  - **Dead end for the FSM-construction question**: `sub_821422B0` is not an
+    object constructor. It calls `sub_8213FB80(dword_8243D89C+22416, 14, 1, 0,
+    0, &v10)` — shape matches a priority/event dispatch (arg `14` = message
+    id, `20`/`0.0` from the caller look like priority/volume). Most likely
+    this is the **tutorial voice-line trigger** firing once its `.e` script
+    data has arrived, not where `a1[0]`/`a1+4` (vtable/state) of the
+    `sub_821C9FE0`/`sub_821C0300` FSM objects get set.
+  - This does newly confirm the *shape* of completion detection though: poll
+    a slot-relative field in the `unk_8255272C`/`unk_82552738` job array by
+    stored handle index, gated by a couple of flag bytes on the owning
+    object. The still-missing FSM-attach point is presumably a **different**
+    reader of the same job array (there are 8 slots and only 4 producers
+    traced so far — `sub_8219F698`'s two handle fields haven't been traced to
+    a consumer yet).
+- **Dead-ended further**: `sub_821422B0` → `sub_8213FB80` turned out to be a
+  generic ring-buffer message-post helper. `dword_8243D89C` (the object it
+  posts to, at `+22416`) is a global message-hub singleton with **~100+**
+  tiny (0x50–0x300-byte) wrapper functions in `0x8213F000`–`0x82143600`, each
+  presumably posting one message type. This is a general event-bus
+  subsystem, unrelated to FSM construction — do not follow it further for
+  this question.
+
+### 5.2 FSM object construction found (2026-07-29, same session)
+
+Found by working backwards from `off_82087108` (the tick-table/vtable
+address) instead of forwards from the job queue.
+
+- **Constructor**: `sub_821A6DF0(a1)`. Confirms the object is real
+  C++-style: `*(_DWORD *)a1 = &off_82087108` (vtable pointer, first field),
+  `*(_DWORD *)(a1+4) = 1` (**initial state is 1**, not 0 — matches the
+  "1-based state, `-1` before range check" idiom noted in §1.5/§2.1). Also
+  zeroes/inits ~30 more fields (positions, flags, floats) — a plain POD-style
+  init, not per-script data.
+- **Spawner**: `sub_821A9F68(a1)`, the only caller of the constructor. Walks
+  up to 8 slots at `a1+533044` (a second bank of 8 at `a1+533056`, gated by
+  `*(BYTE*)(a1+737)`, same `a1` as `sub_821ACBF8`'s `v1` — this is the
+  battle/tutorial manager object, not a per-unit struct). For each empty slot
+  (`*v3 == 0`) whose request-type field at `a1+183648 + slot*81972` is in
+  `[1,10]`: `sub_820C0000(124)` allocates 124 bytes, `sub_821A6DF0`
+  constructs it, then two virtual calls: `vtable+28(obj, context_ptr,
+  slot_index)` (init, passing the per-slot request struct) and `vtable+4(obj,
+  8)` (purpose not traced — likely `SetState`/`Enqueue` with request kind 8).
+  **This is the "still-missing FSM attach point"** the previous session was
+  looking for — but it attaches to a shared 8(+8)-slot **narration-line
+  object pool** owned by the manager, not to individual battle units. Revises
+  the "per-unit tutorial FSM" framing in the current-best-hypothesis section
+  above — units aren't the owner; the manager's line-slot array is.
+- **Vtable layout** (raw dwords read from `0x82087108`, image-relative):
+  - `+0` (`0x82087108`) = `sub_821C9E78`
+  - `+168` (`0x820871B0`) = **`sub_821C9FE0`** (the 67-case dispatcher,
+    §2/§2.1)
+  - `+172` (`0x820871B4`) = `sub_821CCE70` — **the master per-frame Tick**,
+    called from `sub_821ACBF8`'s per-line loop (`(*(*v21)+172)(*v21)`), once
+    per active slot, every manager tick.
+  - `sub_821CCE70` decompiles cleanly (no `bctr` issue — it's not itself a
+    dispatch skeleton) and its body **calls `(*a1+168)(a1)`**, i.e. it calls
+    `sub_821C9FE0` as one virtual sub-step of its own update, alongside
+    `vtable+164`, `vtable+0`, and several dozen non-virtual helpers
+    (`sub_821966D0`, `sub_821C8E88`, `sub_821C6450`, etc. — not yet
+    individually identified). **This confirms `sub_821C9FE0` really is "one
+    state transition per tick" for these line objects, driven externally by
+    `sub_821CCE70`** — matches §2.1's finding exactly (no internal loop in
+    `sub_821C9FE0`, one state step per call).
+- Not yet identified: what `vtable+0`, `vtable+4`, `vtable+28`, `vtable+164`
+  do (only `+168`=`sub_821C9FE0` and `+172`=`sub_821CCE70` are named);
+  ~~what the 81,972-byte-stride request struct at `a1+183648` contains~~
+  (**answered in §5.3 — it is the party-member record array, and the guess
+  that it holds an `.e` filename/job handle was wrong**); and
+  whether `sub_821C0300` (97-case sibling FSM, thought in an earlier
+  self-correction to be a battle-unit AI FSM, see §1.5) is reached via an
+  analogous vtable+168-style slot in a **different** vtable — worth reading
+  that vtable's raw bytes the same way (`get_bytes`, not `disasm`, since IDA
+  doesn't mark every table slot as `.long`) once found.
+
+### 5.3 The "request struct" is the party-member table (2026-07-29)
+
+§5.2's open question — what lives at `a1+183648 + slot*81972` — is answered,
+and the answer reframes the whole pool. **It is not a script request. It is
+the battle party-member record array, and the field the spawner gates on is
+the character id.**
+
+- The manager `a1` is the global singleton **`dword_824D0440`**. IDA already
+  names the array base: `unk_824FD1A0` = `0x824D0440 + 0x2CD60` = manager +
+  183648. Once you search on the symbol instead of the folded offset, all 22
+  references are reachable via `xrefs_to`.
+- Layout (all confirmed by multiple independent readers):
+
+  | thing | base | stride | count |
+  |---|---|---|---|
+  | party members | `unk_824FD1A0` (mgr+183648) | 81972 | `byte_824D0720` |
+  | enemies | `unk_82539240` (mgr+461840) | 32456 | `byte_824D0721` |
+
+  `record[0]` = **character id, 1..10** (Eternal Sonata has exactly 10
+  playable characters). `record[81698]` = `i16` model/kind id.
+  `unk_82510FE8` (= mgr + 265128) is the `{cur, max}` HP pair in the same
+  records — `sub_821BAB70` computes `cur/max < 0.2` from it to pick a
+  low-health chatter line.
+- So `sub_821A9F68`'s `(unsigned)(*v4 - 1) <= 9` gate reads "this party slot
+  holds a valid character" — the pool is **one narration/label object per
+  live party member**, spawned at battle start. The `vtable+28` init
+  (`sub_821A6DD8`) is trivial and pins the mapping down:
+  `obj+0x20 = &record`, `obj+0x10 = slot index`, `obj+0x0C = 0`. Every
+  consumer (`sub_821C8B58`, `sub_821ABC68`, `sub_821ABE88`) reads the slot
+  back out of `obj+0x10` / `obj+0x20`.
+- **The link to the text section**: `sub_821ABC68(mgr, desc)` converts a
+  `{kind, slot}` descriptor into a BTX string id — `party.character_id - 1`
+  for kind 0, `enemy.enemy_id + 9` for kind 1 — and `sub_821ABE88` feeds that
+  to `sub_8223B780("BTX ", id)`, the bulk-section text lookup. That reader is
+  fully decoded in `docs/asset-formats.md` §3.4 and verified against
+  `t0001.e`; it also closes the "Bulk indexing" and "Language selection"
+  items in that document's §7.
+- Several functions read the character id as an enum, so the values are
+  characters, not opcodes: `sub_821AB7E0` branches on `== 7` and `== 8`,
+  `sub_821ABD78` on `== 3`, `sub_821BAB70` searches the array for ids
+  1/2/3/6/7/8 to find "which slot is character X".
+
+**Consequence for §5.1**: the job queue and the FSM pool are *not* two halves
+of one mechanism. The pool is keyed off party composition, not off loaded
+`.e` bytes, so the `sub_821BBED8` handles never reach it. Don't spend more
+time looking for that join.
+
+**Still open**: `vtable+0`, `vtable+4`, `vtable+164` on `off_82087108`; and
+locating `sub_821C0300`'s owning vtable (§5.2's last bullet, unchanged).
+
 ---
 
 ## 6. Worked example
@@ -286,3 +593,148 @@ basi del combattimento.<wv>
 
 It ends in `<wv>`, so it blocks for the length of its voice clip with no skip
 path — the motivation for the `sub_821D50A8` hook in §3.
+
+---
+
+## 7. The script bytecode VM: `sub_820FFE28` (2026-07-29)
+
+Found by accident, from an lldb backtrace of a crash caused by a hand-edited
+`.e` file — not by static search. Seven prior rounds of call-graph walking
+missed it because it is nowhere near the battle/tutorial FSMs; it sits in the
+`.e` loader cluster at `0x820FF000`–`0x82101FFF`, next to `sub_820FF9C8`.
+
+### The loop
+
+```c
+int sub_820FFE28(_DWORD *a1)          // a1 = VM context
+{
+  ...
+  do {
+    v4 = (unsigned __int8 *)a1[8];    // instruction pointer
+    v5 = *v4;                         // fetch one opcode BYTE
+    a1[8] = v4 + 1;                   // advance
+    if ( v5 <= 0x89 )
+      __asm { bctr }                  // computed-goto dispatch, 0x00..0x89
+    v6 = a1[2];
+  } while ( v6 == 1 );                // 1 = running
+  ...
+}
+```
+
+This is the fetch/decode step §7 of `docs/asset-formats.md` said "sits in
+front of the dispatcher and has not been found". The opcode really is **a
+raw byte from the stream**, 0x00..0x89 — matching the §3.3 statistics
+(`0x07 0x0a 0x0b 0x0c 0x0e 0x7a 0x89` take pointer operands, all ≤ 0x89).
+
+### Context layout
+
+The VM context is at `owner + 48`, so `a1[n]` below is `ctx + 4n`:
+
+| field | meaning |
+|---|---|
+| `ctx+0`  | script/module handle |
+| `ctx+4`  | slot id in the `unk_8241006C` 512-entry handle table |
+| `ctx+8`  | run state: 0 = finished, 1 = running, 2 = sleeping (`ctx+12` = countdown), 3 = done |
+| `ctx+12` | sleep counter, decremented per call while state 2 |
+| `ctx+24` | operand/eval stack pointer |
+| `ctx+32` | **instruction pointer** |
+| `ctx+40` | stack base |
+
+`sub_820FFCA0` (the init) sets the IP:
+
+```c
+*(_DWORD *)(a1 + 32) = *(_DWORD *)(sub_820FEED0(*(_DWORD *)a1) + 8) + 24;
+```
+
+`sub_820FEED0(handle)` returns the loaded-`.e` record; its `+8` is the base of
+the image allocation, and `+24` is `0x18` — **the VM executes the `.e` image
+starting at file offset 0x18**, exactly the region §3.3 profiled. One call to
+`sub_820FFE28` runs until the script yields, not one instruction.
+
+### Call path
+
+```
+sub_821ACBF8   tutorial FSM
+  sub_82101D70   allocate a 104-byte script object (vtable off_82082D08)
+    sub_821014E8   sub_820FFCA0 (init IP/stack) then sub_820FFE28 (run)
+```
+
+### Opcode table (hand-decoded)
+
+`word_82081F40` is a 138-entry `u16` table; `handler = 0x820FFEDC + table[op]`.
+This gives **138 opcodes `0x00..0x89`, 136 unique handlers**, spanning
+`0x820FFEDC..0x8210129C`. Two aliases share handlers: `0x03`/`0x07`
+→ `0x820FFF24`, and `0x38`/`0x39` → `0x8210070C`.
+
+The seven opcodes §3.3 identified as taking a 4-byte relocatable pointer
+operand land at:
+
+```
+0x07 -> 0x820FFF24    0x0C -> 0x82100134    0x89 -> 0x8210129C
+0x0A -> 0x8210009C    0x0E -> 0x821001D0
+0x0B -> 0x821000E8    0x7A -> 0x82100F64
+```
+
+Regenerate the full map with:
+
+```python
+# get_bytes(0x82081F40, 276) -> 138 BE u16s
+handler = 0x820FFEDC + table[opcode]
+```
+
+### VM dispatch
+
+The IP is at `ctx+32`. The fetch/decode/dispatch sequence:
+
+```asm
+0x820FFE9C  lwz  r11, 0x20(r31)     ; ip = ctx+32
+0x820FFEA0  lbz  r10, 0(r11)        ; op = *ip
+0x820FFEA4  addi r11, r11, 1        ; ip++
+0x820FFEA8  cmplwi cr6, r10, 0x89
+0x820FFEB0  bgt  loc_82101304       ; op > 0x89 -> skip, keep looping
+0x820FFEC0  lhzx r0, word_82081F40, op*2
+0x820FFED8  bctr                    ; handler = 0x820FFEDC + table[op]
+```
+
+### Next step for the opcode table
+
+The dispatch is `bctr` through a jump table, so Hex-Rays emits `__asm { bctr }`
+(§5's caveat). Read the table's raw dwords with `get_bytes` — 0x8A entries —
+then decompile handlers individually. That plus §3.3's relocation-adjacency
+statistics should settle operand widths quickly. This supersedes the
+"revisit its premise" note in §2.1: the premise was wrong, there *is* a fetch
+step, and it was just in a different neighbourhood.
+
+### Root cause: why growing a `.e` crashed (now fixed)
+
+The crash was **47 of 64 list B relocation entries** holding bulk offsets into
+the region *after* the BTX blob (the debug string pool). Growing the blob
+shifted that data but the raw dwords embedded in the image stayed at their old
+values. The loader (`sub_820FF6C0`) adds `bulk_base` at load time and produces
+the correct absolute address, but the data at that address was wrong (shifted
+by the blob's size delta), so `sub_820FFE28` read garbage and hit a wild
+opcode-handler pointer like `0x52054163`.
+
+The handoff's earlier "list A/B ruled out" conclusion was wrong — the check
+read at the wrong file position (the image allocation starts at `file[0]`,
+not `file[0x18]`, so the list entries are raw file offsets).
+
+Fixed in `scripts/btx_edit.py:fix_relocations()` — it parses list B, finds
+every entry whose raw dword points past the old BTX end, and adjusts it by
+`delta`. Applied automatically on every non-`--preserve-size` edit.
+
+### Catching a crash
+
+The crash needs a human to play to the first tutorial battle (~1 minute; no
+save files exist). `logs/` is useless — nothing flushes past
+`SetInterruptCallback` on a hard crash.
+
+```bash
+lldb -b -s cmds.lldb -- ./eternalsonata.exe --game_data_root assets --gpu_plugin=xenos
+# cmds.lldb:
+#   settings set interpreter.stop-command-source-on-error false
+#   run
+#   thread backtrace all
+#   register read ...
+#   quit
+```
