@@ -53,6 +53,7 @@ endif()
 set(ETERNALSONATA_SOURCES
     src/main.cpp
     src/eternalsonata_hooks.cpp
+    src/settings.cpp
     ${GENERATED_SOURCES}
     ${ETERNALSONATA_ICON_HEADER}
 )
