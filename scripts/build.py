@@ -148,15 +148,17 @@ def do_package(name, project_name, is_windows):
         f.write('game_data_root = "assets"\n')
         f.write("gpu_allow_invalid_fetch_constants = true\n")
         f.write("d3d12_readback_resolve = true\n")
+        f.write('swap_post_effect = "fxaa"\n')
         f.write("mnk_capture_mouse = false\n")
         f.write("mnk_mode = true\n")
-        f.write('resolution = "720p"\n')
+        f.write('resolution = "720p" # 720p, 1080p, 1440p\n')
+        f.write("resolution_scale = 1 # set to 2 for 1080p and so on\n")
         f.write("fullscreen = false\n")
         f.write("\n")
         f.write("shader_dump_enabled = false\n")
         f.write("texture_dump_enabled = false\n")
         f.write('texture_dump_format = "png"\n')
-        f.write('texture_dump_skip_sizes = "512x256,1024x512,2048x1024,1920x1080,1280x720"\n')
+        f.write('texture_dump_skip_sizes = "1280x720,640x360,720x720"\n')
 
     if is_windows:
         archive_path = f"{name}.zip"
