@@ -10,6 +10,7 @@
 #include <rex/rex_app.h>
 #include <rex/system/game_data_selector.h>
 #include <rex/ui/window.h>
+#include <rex/version.h>
 
 #include "icon.generated.h"
 
@@ -36,6 +37,7 @@ class EternalsonataApp : public rex::ReXApp {
 
   void OnPostSetup() override {
     window()->SetIcon(eternalsonata::kIconPNG, eternalsonata::kIconPNGSize);
+    window()->SetTitle("Eternal Sonata: Reprise " + std::string(REXGLUE_BUILD_TITLE));
   }
 
   void OnShutdown() override {
