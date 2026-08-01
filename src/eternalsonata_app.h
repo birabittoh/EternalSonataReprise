@@ -5,6 +5,10 @@
 
 #pragma once
 
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <deque>
 #include <memory>
 
 #include <rex/cvar.h>
@@ -52,6 +56,45 @@ class EternalsonataApp : public rex::ReXApp {
   void OnPostSetup() override {
     window()->SetIcon(eternalsonata::kIconPNG, eternalsonata::kIconPNGSize);
     window()->SetTitle("Eternal Sonata: Reprise " + std::string(REXGLUE_BUILD_TITLE));
+
+    // Wire the F3 debug overlay's "Guest" FPS line to the real guest present
+    // rate. Count guest frames at the per-swap boundary; the SDK's runtime
+    // uses the same callback to tick the mod registry, so chain through to
+    // keep that behavior while counting. The provider is only invoked while
+    // the F3 overlay is open (ImGui draw thread), so the window below is
+    // single-threaded; the swap counter itself is atomic.
+    auto* gs = runtime()->graphics_system();
+    if (gs) {
+      gs->SetHostSwapCallback([this] {
+        runtime()->mod_registry()->DispatchTick();
+        guest_swap_count_.fetch_add(1, std::memory_order_relaxed);
+      });
+    }
+    SetGuestFrameStats([this]() {
+      rex::ui::FrameStats stats;
+      const uint64_t count = guest_swap_count_.load(std::memory_order_relaxed);
+      const auto now = std::chrono::steady_clock::now();
+
+      // Trailing-window average over ~1s of wall time. The guest swap rate is
+      // usually close to the host ImGui draw rate, so a per-frame delta
+      // aliases (each UI frame catches 0 or 1 swaps -> the displayed value
+      // flickers between 0 and the real rate); averaging over a window fixes
+      // that.
+      stats_samples_.push_back({now, count});
+      const auto window = std::chrono::duration<double>(kStatsWindowSec);
+      while (stats_samples_.size() > 1 &&
+             std::chrono::duration<double>(now - stats_samples_.front().first) > window) {
+        stats_samples_.pop_front();
+      }
+      const double dt = std::chrono::duration<double>(now - stats_samples_.front().first).count();
+      const uint64_t frames = count - stats_samples_.front().second;
+      if (dt > 0.0 && frames > 0) {
+        stats.fps = static_cast<double>(frames) / dt;
+        stats.frame_time_ms = dt / static_cast<double>(frames) * 1000.0;
+      }
+      stats.frame_count = count;
+      return stats;
+    });
   }
 
   void OnShutdown() override {
@@ -65,4 +108,11 @@ class EternalsonataApp : public rex::ReXApp {
 
  private:
   std::filesystem::path user_settings_path() const { return user_data_root() / "settings.toml"; }
+
+  // Guest frame present count, bumped by the per-swap callback (any thread).
+  std::atomic<uint64_t> guest_swap_count_{0};
+  // Trailing window of (wall time, swap count) samples for the F3 "Guest" FPS
+  // line, keeping only samples within kStatsWindowSec (ImGui thread only).
+  static constexpr double kStatsWindowSec = 1.0;
+  std::deque<std::pair<std::chrono::steady_clock::time_point, uint64_t>> stats_samples_;
 };

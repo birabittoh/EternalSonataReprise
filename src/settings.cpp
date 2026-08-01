@@ -24,6 +24,22 @@
 #include <rex/ui/vulkan/provider.h>
 #endif
 
+// In-game frame-rate cap (see DrawFrameRateRow). The value is the target fps
+// the host limiter in eternalsonata_hooks.cpp holds the guest to, and which it
+// declares to the sim via byte_82465F90.
+//
+// Only divisors of 300 keep game speed exact: the sim advances `300 / rate`
+// clock units per frame, integer-divided. 30 and 60 are exact; 120 is not
+// (2.5 -> 2, i.e. ~20% slow motion), which is why no high-rate preset is
+// offered. "unlocked" disables the limiter and runs fast in proportion — a
+// frame-clocked engine has no speed-correct uncapped mode.
+//
+// Declared here (global scope) so the hooks can read it via
+// REXCVAR_DECLARE/REXCVAR_GET.
+REXCVAR_DEFINE_STRING(frame_rate, "30", "Eternal Sonata",
+                      "In-game scene/sim advance rate: 30 (original), 60, or unlocked")
+    .allowed({"30", "60", "unlocked"});
+
 namespace eternalsonata {
 
 namespace {
@@ -58,9 +74,9 @@ constexpr std::array kGameDefaults = {
 // the generic DrawCvarWidget path, but are still listed here so the generic
 // Reset-All / restart-tracking loops cover them; GetFlagInfo/ResetToDefault
 // etc. no-op harmlessly for "vulkan_device" on a build without Vulkan.
-constexpr std::array<const char*, 7> kBasicCvarNames = {
+constexpr std::array<const char*, 8> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
-    "input_backend", "gpu_backend", "vulkan_device"};
+    "input_backend", "gpu_backend", "vulkan_device", "frame_rate"};
 
 struct LanguageOption {
   const char* id;  // stringified XLanguage value, as stored by the cvar
@@ -86,6 +102,17 @@ constexpr std::array kLanguageOptions = {
     LanguageOption{"15", "NB (Norwegian)"},
     LanguageOption{"16", "NL (Dutch)"},
     LanguageOption{"17", "ZH (Simplified Chinese)"},
+};
+
+struct FrameRateOption {
+  const char* id;  // value stored by the frame_rate cvar
+  const char* label;
+};
+
+constexpr std::array kFrameRateOptions = {
+    FrameRateOption{"30", "30 FPS (original)"},
+    FrameRateOption{"60", "60 FPS"},
+    FrameRateOption{"unlocked", "Unlocked"},
 };
 
 // cvars rendered generically in the collapsed Advanced section, persisted to
@@ -165,6 +192,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     DrawResolutionRow();
     DrawRenderScaleRow();
     DrawLanguageRow();
+    DrawFrameRateRow();
     DrawInputBackendRow();
     DrawGpuBackendRow();
 #if REX_HAS_VULKAN
@@ -381,6 +409,45 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
           ImGui::SetItemDefaultFocus();
       }
       ImGui::EndCombo();
+    }
+    ImGui::PopID();
+  }
+
+  // Controls the frame rate the game runs at. The hooks in
+  // eternalsonata_hooks.cpp read the frame_rate cvar, declare that rate to the
+  // sim (byte_82465F90) and hold the present thread to it with a host limiter.
+  // Applied at runtime, no restart needed.
+  void DrawFrameRateRow() {
+    std::string current = rex::cvar::GetFlagByName("frame_rate");
+    int cur_idx = 0;
+    for (int i = 0; i < static_cast<int>(kFrameRateOptions.size()); ++i) {
+      if (current == kFrameRateOptions[i].id) {
+        cur_idx = i;
+        break;
+      }
+    }
+
+    ImGui::TextUnformatted("Frame Rate");
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "How often the in-game scene and simulation advance. The original "
+          "game is capped at 30 FPS; Unlocked runs as fast as the CPU and GPU "
+          "allow.");
+    }
+    ImGui::SameLine(180.0f);
+    // Match the combo boxes in this menu (Language, Input Backend, ...).
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::PushID("frame_rate");
+    int sel = cur_idx;
+    // Discrete 0..N-1 slider; format shows the label of the current option
+    // (re-evaluated per frame). NoInput keeps it snapping between presets.
+    if (ImGui::SliderInt("##v", &sel, 0,
+                         static_cast<int>(kFrameRateOptions.size()) - 1,
+                         kFrameRateOptions[sel].label,
+                         ImGuiSliderFlags_NoInput)) {
+      rex::cvar::SetFlagByName("frame_rate", kFrameRateOptions[sel].id,
+                               /*persist=*/true);
+      SaveBasic();
     }
     ImGui::PopID();
   }
