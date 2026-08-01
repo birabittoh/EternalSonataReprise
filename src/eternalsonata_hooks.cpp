@@ -1,5 +1,15 @@
 #include "generated/eternalsonata_init.h"
 
+#include <chrono>
+#include <string>
+#include <thread>
+
+#include <rex/cvar.h>
+
+// frame_rate cvar: "30" / "60" / "unlocked". Defined (and persisted) in
+// settings.cpp; declared here so the frame-driver hook can read it cheaply.
+REXCVAR_DECLARE(std::string, frame_rate);
+
 // ---------------------------------------------------------------------------
 // Debug hooks
 // ---------------------------------------------------------------------------
@@ -98,3 +108,186 @@ REX_HOOK_RAW(sub_821D50A8) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Frame-rate cap
+// ---------------------------------------------------------------------------
+
+// sub_8210A6B8 is the guest's *only* setter for the D3D presentation interval,
+// and the presentation interval is the actual frame cap:
+//
+//   void sub_8210A6B8(int /*unused*/, u8 fps) {
+//     if (fps) { u32 v = 60 / fps - 1;                 // 60 -> 0, 30 -> 1, 20 -> 2
+//                if (v <= 2) { D3D_SetPresentationInterval(dev, 1 << v);
+//                              byte_82465F90 = fps; } }
+//     else     { D3D_SetPresentationInterval(dev, 0x80000000 /*IMMEDIATE*/);
+//                byte_82465F90 = 60; }                 // dword_8243D374 == 60
+//   }
+//
+// sub_8225A9F0 is D3DDevice_SetPresentationInterval; 1/2/4 are
+// D3DPRESENT_INTERVAL_ONE/TWO/FOUR, 0x80000000 is IMMEDIATE. byte_82465F90 is
+// the game's own "current fps" value, used by the frame-time accumulator in the
+// present path (sub_8210AAD8 does `obj[280] += 300 / byte_82465F90`), i.e. the
+// game's clock is expressed in 1/300 s units and *is* frame-rate aware — which
+// is why changing the interval scales fps rather than game speed.
+//
+// Every caller (sub_820EDEF8, sub_82133130, sub_821BA630, sub_821E51B0,
+// sub_821E5470, plus the vtable slot at 0x820AD068) funnels through here, so
+// overriding the requested rate here overrides it everywhere. The stock game
+// asks for 30.
+//
+// NOTE on vsync: interval N means "present every Nth vblank", so a real
+// interval ties the frame rate to the SDK vblank pump, whose rate the `vsync`
+// cvar changes drastically. We therefore never use a real interval — see
+// ApplyFrameRate — and pace with a host limiter instead, which keeps the frame
+// rate independent of `vsync`. (The `vsync` cvar does not give host-side vsync
+// in any case: the D3D12 presenter always calls `Present(0, ...)`.)
+namespace {
+
+REX_IMPORT(__imp__sub_8225A9F0, g_sub_8225A9F0, void(u32, u32));
+
+// Maps the frame_rate cvar onto a target fps. 0 means "no limit".
+//
+// IMPORTANT — game speed is (actual fps / declared fps). The sim advances
+// `300 / byte_82465F90` clock units per presented frame (sub_8210AAD8), so the
+// rate we declare to the game must equal the rate we actually achieve, or the
+// whole game runs fast/slow in proportion. That is what the host limiter below
+// is for; the presentation interval alone cannot do it with vsync=false,
+// because the SDK's vblank pump fires in bursts and the interval wait is
+// satisfied immediately.
+//
+// Exactness caveat: `300 / rate` is integer division, so only divisors of 300
+// keep game speed exact — 20, 25, 30, 50, 60, 75, 100, 150. 120 is NOT one
+// (300/120 truncates 2.5 to 2), and was confirmed in-game to run ~20% slow
+// motion even when paced perfectly. Don't add a rate here that doesn't
+// divide 300.
+u8 RequestedFrameRate(u8 stock) {
+  const std::string& mode = REXCVAR_GET(frame_rate);
+  if (mode == "60")
+    return 60;
+  if (mode == "30")
+    return 30;
+  if (mode == "unlocked" || mode == "0")
+    return 0;
+  return stock;
+}
+
+}  // namespace
+
+namespace {
+
+// Applies the fps value by doing exactly what sub_8210A6B8 does. Must be called
+// with a live guest context (it calls into guest code).
+//
+// The call to sub_8225A9F0 goes through a rex::CallFrame, NOT the caller's ctx.
+// sub_8225A9F0 itself is a one-line field store (`device[13444] = interval`) and
+// cannot fault — but calling it with the caller's context leaves r3 holding its
+// return value (the device pointer). When this ran from the sub_8210AAD8 hook
+// below, that clobbered sub_8210AAD8's own r3 argument, and the original then
+// ran against the device pointer as if it were its object, faulting deep in
+// sub_82261AB0 on a wild `stw r9,12580(r31)`. CallFrame copies only r1/r13/
+// fpscr, so the callee's register writes don't leak back into ctx.
+void ApplyFrameRate(PPCContext& ctx, u8* base, u8 fps) {
+  const u32 device = REX_LOAD_U32(0x82465F68);
+  if (!device) {
+    return;  // Device not created yet; the init-time call will cover us.
+  }
+  rex::CallFrame frame{ctx};
+  if (fps) {
+    // Always IMMEDIATE, never a real presentation interval: the host limiter is
+    // the single frame gate. Using the interval as well would stack two gates,
+    // and the guest's interval wait is tied to the SDK vblank pump, whose rate
+    // depends on the `vsync` cvar (video_mode_refresh_rate when true, a ~1000 Hz
+    // burst pump when false). With both active and vsync=true, a frame that
+    // misses its vblank stalls a whole one, so actual < declared — and since
+    // game speed is (actual / declared), a dropped frame turns into slow motion
+    // rather than a hitch. Leaving pacing entirely to the limiter makes the
+    // frame rate independent of the vsync cvar, so vsync stays usable.
+    g_sub_8225A9F0(frame, base, device, 0x80000000u);
+    REX_STORE_U8(0x82465F90, fps);
+  } else {
+    // Unlocked: no limiter, so we cannot make declared == actual. Leave the
+    // sim's rate at the stock 60; the game will run fast in proportion to how
+    // far above 60 fps it renders. That is inherent to a frame-clocked engine.
+    g_sub_8225A9F0(frame, base, device, 0x80000000u);
+    REX_STORE_U8(0x82465F90, static_cast<u8>(REX_LOAD_U32(0x8243D374)));
+  }
+}
+
+// Last fps value we pushed into the device, so the per-frame re-apply below
+// only touches D3D state when the cvar actually changed.
+u8 g_applied_fps = 0xFF;
+
+// Host frame limiter. The guest present thread waits here until the frame's
+// deadline, so the achieved rate matches the rate declared to the sim above.
+// Sleeps to ~1.5 ms short of the deadline (Windows timer granularity is coarse
+// and nothing in the SDK raises it), then spins for the remainder.
+void LimitFrame(u8 fps) {
+  using clock = std::chrono::steady_clock;
+  static clock::time_point next_deadline{};
+
+  if (!fps) {
+    next_deadline = {};  // Unlocked: drop any stale deadline.
+    return;
+  }
+
+  const auto period = std::chrono::duration_cast<clock::duration>(
+      std::chrono::duration<double>(1.0 / static_cast<double>(fps)));
+  const auto now = clock::now();
+
+  // First frame, a rate change, or a long stall (loading screen, alt-tab):
+  // restart the cadence instead of trying to catch up on missed frames.
+  if (next_deadline == clock::time_point{} || now > next_deadline + period * 4) {
+    next_deadline = now + period;
+    return;
+  }
+
+  constexpr auto kSpinMargin = std::chrono::microseconds(1500);
+  if (next_deadline - now > kSpinMargin) {
+    std::this_thread::sleep_for((next_deadline - now) - kSpinMargin);
+  }
+  while (clock::now() < next_deadline) {
+    std::this_thread::yield();
+  }
+  next_deadline += period;
+}
+
+}  // namespace
+
+REX_HOOK_RAW(sub_8210A6B8) {
+  const u8 fps = RequestedFrameRate(static_cast<u8>(ctx.r4.u32));
+  ApplyFrameRate(ctx, base, fps);
+  g_applied_fps = fps;
+}
+
+// The game only calls sub_8210A6B8 at init and on a few scene transitions, so
+// overriding it alone means the settings slider does nothing until the next
+// such call. Re-apply from the present path instead, which runs every frame:
+// sub_8210AAD8 is the render pump's present (verified under a live breakpoint:
+// it hits every frame). The check is a cvar string compare against the last
+// applied value, and it only touches D3D when they differ.
+REX_EXTERN(__imp__sub_8210AAD8);
+
+REX_HOOK_RAW(sub_8210AAD8) {
+  const u8 fps = RequestedFrameRate(30);
+  if (fps != g_applied_fps) {
+    ApplyFrameRate(ctx, base, fps);
+    g_applied_fps = fps;
+    REXLOG_INFO("[fps-cap] applied frame_rate={} (interval arg {})", REXCVAR_GET(frame_rate), fps);
+  }
+  __imp__sub_8210AAD8(ctx, base);
+
+  // Pace after the present, so the wait covers the whole frame.
+  LimitFrame(fps);
+}
+
+// ---------------------------------------------------------------------------
+// Dead lead, kept as a note: sub_8223FB78
+// ---------------------------------------------------------------------------
+//
+// An earlier attempt hooked sub_8223FB78, believed to hold "the single FPS cap
+// in the whole image" (an `elapsed_us >= 30000` gate). That was wrong: IDA
+// reports exactly one xref to 0x8223FB78, at 0x820B2448, and that is a .pdata
+// unwind entry, not a dispatch-table slot. Nothing in the image references the
+// function as code or data, and a live breakpoint on it never hit. It is dead
+// code in this build. Do not resurrect that hook.
