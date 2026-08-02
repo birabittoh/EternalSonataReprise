@@ -11,15 +11,18 @@
 #include <deque>
 #include <memory>
 
+#include <imgui.h>
 #include <rex/cvar.h>
 #include <rex/discord_rpc.h>
 #include <rex/input/input_system.h>
 #include <rex/rex_app.h>
 #include <rex/system/game_data_selector.h>
 #include <rex/system/kernel_state.h>
+#include <rex/ui/imgui_theme.h>
 #include <rex/ui/window.h>
 #include <rex/version.h>
 
+#include "fonts.generated.h"
 #include "icon.generated.h"
 #include "room_presence.h"
 #include "settings.h"
@@ -52,6 +55,23 @@ class EternalsonataApp : public rex::ReXApp {
     settings.config_path = config_path();
 
     return rex::system::GameDataSelector::EnsureGameData(settings);
+  }
+
+  void OnConfigureFonts(ImFontAtlas* atlas) override {
+    atlas->AddFontDefault();
+
+    ImFontConfig cfg;
+    cfg.FontDataOwnedByAtlas = false;
+    atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kPTSerifRegularTTF),
+                                static_cast<int>(eternalsonata::kPTSerifRegularTTFSize), 16.0f, &cfg);
+  }
+
+  // The overlay's whole color palette is mathematically derived (see
+  // rex::ui::ApplyAccentTheme) from this single accent.
+  static constexpr ImVec4 kDefaultAccentColor = ImVec4(0x4F / 255.0f, 0x28 / 255.0f, 0x06 / 255.0f, 1.00f);
+
+  void OnConfigureStyle(ImGuiStyle& style) override {
+    rex::ui::ApplyAccentTheme(style, kDefaultAccentColor);
   }
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
