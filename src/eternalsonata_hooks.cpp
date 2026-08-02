@@ -4,11 +4,18 @@
 #include <string>
 #include <thread>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 #include <rex/cvar.h>
 
 // frame_rate cvar: "30" / "60" / "unlocked". Defined (and persisted) in
 // settings.cpp; declared here so the frame-driver hook can read it cheaply.
 REXCVAR_DECLARE(std::string, frame_rate);
+
 
 // ---------------------------------------------------------------------------
 // Debug hooks
@@ -161,12 +168,23 @@ REX_IMPORT(__imp__sub_8225A9F0, g_sub_8225A9F0, void(u32, u32));
 // (300/120 truncates 2.5 to 2), and was confirmed in-game to run ~20% slow
 // motion even when paced perfectly. Don't add a rate here that doesn't
 // divide 300.
+// The rate the guest last asked for. The stock game does not run at a single
+// rate: sub_82133130 (title) and sub_821E51B0 (the save menu, which saves the
+// old rate into byte_8243F232 to restore later) ask for 60, most of the game
+// asks for 30. Screens that ask for 60 have logic written for 60 presents per
+// second, so pinning them to 30 halves the ticks that logic gets while anything
+// driven by the wall clock is unaffected — that is what made the save slots
+// finish their slide-in while the player was still choosing.
+u8 g_guest_rate = 30;
+
+// "30" means stock: follow the guest's own request, which is 30 for gameplay and
+// 60 where the game asks for it. There is deliberately no option that pins every
+// screen to 30. "stock" is accepted as an alias for settings written while that
+// was the option's name.
 u8 RequestedFrameRate(u8 stock) {
   const std::string& mode = REXCVAR_GET(frame_rate);
   if (mode == "60")
     return 60;
-  if (mode == "30")
-    return 30;
   if (mode == "unlocked" || mode == "0")
     return 0;
   return stock;
@@ -194,16 +212,24 @@ void ApplyFrameRate(PPCContext& ctx, u8* base, u8 fps) {
   }
   rex::CallFrame frame{ctx};
   if (fps) {
-    // Always IMMEDIATE, never a real presentation interval: the host limiter is
-    // the single frame gate. Using the interval as well would stack two gates,
-    // and the guest's interval wait is tied to the SDK vblank pump, whose rate
-    // depends on the `vsync` cvar (video_mode_refresh_rate when true, a ~1000 Hz
-    // burst pump when false). With both active and vsync=true, a frame that
-    // misses its vblank stalls a whole one, so actual < declared — and since
-    // game speed is (actual / declared), a dropped frame turns into slow motion
-    // rather than a hitch. Leaving pacing entirely to the limiter makes the
-    // frame rate independent of the vsync cvar, so vsync stays usable.
-    g_sub_8225A9F0(frame, base, device, 0x80000000u);
+    // Use a real presentation interval whenever the rate can express one, and
+    // fall back to IMMEDIATE otherwise. The interval is NOT inert: sub_8225E818
+    // reads device[13444], maps it to 0/1/2/3, and packs it into the swap
+    // scheduler argument, where sub_8225E680 (vblank ISR, spinlocked on the
+    // kernel device object) adds it to the flip schedule:
+    //
+    //   v17 = last_flip_target + interval;
+    //   if (v17 <= vblank_count) { v17 = vblank_count; ... }
+    //   if (v17 == vblank_count) flip now; else queue in the pending-flip ring;
+    //
+    // With IMMEDIATE the interval term is 0, so every flip takes the "flip now"
+    // branch and the pending-flip ring goes unused — a different front-buffer
+    // publication pattern than stock, which matters because the title runs two
+    // front buffers (dword_82466100 / dword_82466104). Host pacing is the
+    // limiter's job either way; this only restores the guest's stock flip
+    // scheduling.
+    const u32 interval = (fps <= 60 && 60u % fps == 0) ? (60u / fps - 1u) : 3u;
+    g_sub_8225A9F0(frame, base, device, interval <= 2 ? (1u << interval) : 0x80000000u);
     REX_STORE_U8(0x82465F90, fps);
   } else {
     // Unlocked: no limiter, so we cannot make declared == actual. Leave the
@@ -217,6 +243,32 @@ void ApplyFrameRate(PPCContext& ctx, u8* base, u8 fps) {
 // Last fps value we pushed into the device, so the per-frame re-apply below
 // only touches D3D state when the cvar actually changed.
 u8 g_applied_fps = 0xFF;
+
+// Sleep for `d` without the ~15 ms granularity of a default Windows timer.
+// Nothing in the SDK raises the global timer resolution (no timeBeginPeriod
+// anywhere in the tree), and raising it process-wide is a heavy-handed thing to
+// do from a hook, so use a high-resolution waitable timer instead: it is
+// per-wait, needs no extra link library, and degrades to a normal sleep if the
+// OS is too old to support the flag.
+void PreciseSleep(std::chrono::steady_clock::duration d) {
+  if (d <= std::chrono::steady_clock::duration::zero()) {
+    return;
+  }
+#ifdef _WIN32
+  static HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr,
+                                               CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                               TIMER_ALL_ACCESS);
+  if (timer) {
+    LARGE_INTEGER due;  // negative = relative, in 100 ns units
+    due.QuadPart = -(std::chrono::duration_cast<std::chrono::nanoseconds>(d).count() / 100);
+    if (due.QuadPart < 0 && SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
+      WaitForSingleObject(timer, INFINITE);
+      return;
+    }
+  }
+#endif
+  std::this_thread::sleep_for(d);
+}
 
 // Host frame limiter. The guest present thread waits here until the frame's
 // deadline, so the achieved rate matches the rate declared to the sim above.
@@ -244,18 +296,33 @@ void LimitFrame(u8 fps) {
 
   constexpr auto kSpinMargin = std::chrono::microseconds(1500);
   if (next_deadline - now > kSpinMargin) {
-    std::this_thread::sleep_for((next_deadline - now) - kSpinMargin);
+    PreciseSleep((next_deadline - now) - kSpinMargin);
   }
   while (clock::now() < next_deadline) {
     std::this_thread::yield();
   }
+
+  // Never accumulate debt. If the wait overshot (coarse timer, a slow frame,
+  // anything), schedule the next deadline from now rather than from the missed
+  // one. Catching up would fire a burst of zero-wait presents, and because the
+  // game advances its sim clock by a fixed 300/rate units per present — not by
+  // elapsed time — such a burst runs the game's animation clock forward in a
+  // few milliseconds of wall time. That is what made save-slot slide-ins finish
+  // while the player was still choosing. Running a hair slow is harmless; a
+  // burst is not.
+  const auto after = clock::now();
   next_deadline += period;
+  if (next_deadline <= after) {
+    next_deadline = after + period;
+  }
 }
 
 }  // namespace
 
 REX_HOOK_RAW(sub_8210A6B8) {
-  const u8 fps = RequestedFrameRate(static_cast<u8>(ctx.r4.u32));
+  const u8 requested = static_cast<u8>(ctx.r4.u32);
+  g_guest_rate = requested ? requested : 60;
+  const u8 fps = RequestedFrameRate(g_guest_rate);
   ApplyFrameRate(ctx, base, fps);
   g_applied_fps = fps;
 }
@@ -269,7 +336,9 @@ REX_HOOK_RAW(sub_8210A6B8) {
 REX_EXTERN(__imp__sub_8210AAD8);
 
 REX_HOOK_RAW(sub_8210AAD8) {
-  const u8 fps = RequestedFrameRate(30);
+  // The original clobbers r3, so capture the render-pump object up front.
+  const u32 a1 = ctx.r3.u32;
+  const u8 fps = RequestedFrameRate(g_guest_rate);
   if (fps != g_applied_fps) {
     ApplyFrameRate(ctx, base, fps);
     g_applied_fps = fps;

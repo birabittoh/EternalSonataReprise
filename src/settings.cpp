@@ -37,8 +37,9 @@
 // Declared here (global scope) so the hooks can read it via
 // REXCVAR_DECLARE/REXCVAR_GET.
 REXCVAR_DEFINE_STRING(frame_rate, "30", "Eternal Sonata",
-                      "In-game scene/sim advance rate: 30 (original), 60, or unlocked")
-    .allowed({"30", "60", "unlocked"});
+                      "In-game scene/sim advance rate: 30 (as the game asks - 30 for gameplay, 60 "
+                      "on the title and the save menu), 60, or unlocked")
+    .allowed({"stock", "30", "60", "unlocked"});
 
 namespace eternalsonata {
 
@@ -57,12 +58,20 @@ constexpr std::array kGameDefaults = {
     DefaultValue{"game_data_root", "assets"},
     DefaultValue{"gpu_allow_invalid_fetch_constants", "true"},
     DefaultValue{"d3d12_readback_resolve", "true"},
+    // The game binds an 8-tile-wide render target at EDRAM tile 1720 whose draws
+    // give no usable height estimate, so it claims all 2048 tiles and takes
+    // ownership of the scene color target at tile 0 by wrapping. That range then
+    // resolves out of the wrong surface as zeros, which is the black cross-fade
+    // source on camera transitions and the black half of the save screenshot.
+    DefaultValue{"no_edram_wrap_claim", "true"},
     DefaultValue{"swap_post_effect", "fxaa"},
     DefaultValue{"mnk_capture_mouse", "false"},
     DefaultValue{"mnk_mode", "true"},
     DefaultValue{"resolution", "720p"},
     DefaultValue{"resolution_scale", "1"},
     DefaultValue{"fullscreen", "false"},
+    DefaultValue{"audio_mute", "false"},
+    DefaultValue{"audio_volume", "1"},
     DefaultValue{"shader_dump_enabled", "false"},
     DefaultValue{"texture_dump_enabled", "false"},
     DefaultValue{"texture_dump_format", "png"},
@@ -74,9 +83,38 @@ constexpr std::array kGameDefaults = {
 // the generic DrawCvarWidget path, but are still listed here so the generic
 // Reset-All / restart-tracking loops cover them; GetFlagInfo/ResetToDefault
 // etc. no-op harmlessly for "vulkan_device" on a build without Vulkan.
-constexpr std::array<const char*, 8> kBasicCvarNames = {
+constexpr std::array<const char*, 10> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
-    "input_backend", "gpu_backend", "vulkan_device", "frame_rate"};
+    "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
+    "audio_mute", "audio_volume"};
+
+// audio_volume is stored (and applied to samples by the SDL audio driver) as
+// linear amplitude, but human loudness perception is roughly logarithmic --
+// a linear slider (amplitude == percent/100) would spend most of its travel
+// on barely-perceptible changes near the top end and cram all the audible
+// range into the last few percent at the bottom. Map the displayed 0-100%
+// through a dB curve instead: -40dB at 0% (quiet enough to treat as silence
+// below) up to 0dB (full amplitude) at 100%, evenly spaced in dB rather than
+// in amplitude.
+constexpr double kMinVolumeDb = -40.0;
+
+double VolumeAmplitudeFromPercent(int percent) {
+  if (percent <= 0)
+    return 0.0;
+  if (percent >= 100)
+    return 1.0;
+  double db = kMinVolumeDb * (100 - percent) / 100.0;
+  return std::pow(10.0, db / 20.0);
+}
+
+int VolumePercentFromAmplitude(double amplitude) {
+  if (amplitude <= 0.0)
+    return 0;
+  double db = 20.0 * std::log10(amplitude);
+  if (db <= kMinVolumeDb)
+    return 0;
+  return std::clamp(static_cast<int>(std::lround(100.0 - db * 100.0 / kMinVolumeDb)), 0, 100);
+}
 
 struct LanguageOption {
   const char* id;  // stringified XLanguage value, as stored by the cvar
@@ -110,14 +148,17 @@ struct FrameRateOption {
 };
 
 constexpr std::array kFrameRateOptions = {
-    FrameRateOption{"30", "30 FPS (original)"},
+    // "30" follows the game's own requests rather than pinning every screen to
+    // 30: the title and the save menu ask for 60, and their logic is written for
+    // it. The host limiter paces whatever is asked for, so speed stays correct.
+    FrameRateOption{"30", "30 FPS"},
     FrameRateOption{"60", "60 FPS"},
     FrameRateOption{"unlocked", "Unlocked"},
 };
 
 // cvars rendered generically in the collapsed Advanced section, persisted to
 // the app's normal cvar config (eternalsonata.toml).
-constexpr std::array<const char*, 9> kAdvancedCvarNames = {
+constexpr std::array<const char*, 10> kAdvancedCvarNames = {
     "shader_dump_enabled",
     "texture_dump_enabled",
     "texture_dump_format",
@@ -127,6 +168,7 @@ constexpr std::array<const char*, 9> kAdvancedCvarNames = {
     "swap_post_effect",
     "gpu_allow_invalid_fetch_constants",
     "d3d12_readback_resolve",
+    "no_edram_wrap_claim",
 };
 
 // resolution_scale value that renders at "100%" (native) for a given display
@@ -148,6 +190,14 @@ std::vector<std::string> BasicCvarNames() {
   return std::vector<std::string>(kBasicCvarNames.begin(), kBasicCvarNames.end());
 }
 
+// Populated once by InitSettingsCaches() at startup; CuratedSettingsDialog
+// reads from these instead of re-enumerating GPU plugins/Vulkan devices
+// every time the F4 overlay is opened.
+std::vector<std::string> g_gpu_plugin_names_cache;
+#if REX_HAS_VULKAN
+std::vector<rex::ui::vulkan::DeviceInfo> g_vulkan_devices_cache;
+#endif
+
 class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
  public:
   CuratedSettingsDialog(rex::ui::ImGuiDrawer* drawer, rex::ui::Window* window,
@@ -159,9 +209,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         user_settings_path_(std::move(user_settings_path)),
         app_config_path_(std::move(app_config_path)),
         input_system_(input_system) {
-    gpu_plugin_names_ = rex::system::EnumerateGpuPlugins();
+    gpu_plugin_names_ = g_gpu_plugin_names_cache;
 #if REX_HAS_VULKAN
-    vulkan_devices_ = rex::ui::vulkan::EnumerateDevices();
+    vulkan_devices_ = g_vulkan_devices_cache;
 #endif
   }
 
@@ -191,6 +241,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     DrawFullscreenRow();
     DrawResolutionRow();
     DrawRenderScaleRow();
+    DrawAudioMuteRow();
+    DrawAudioVolumeRow();
     DrawLanguageRow();
     DrawFrameRateRow();
     DrawInputBackendRow();
@@ -289,6 +341,48 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
+  void DrawAudioMuteRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("audio_mute");
+    if (!entry)
+      return;
+    ImGui::TextUnformatted("Mute Audio");
+    ImGui::SameLine(180.0f);
+    ImGui::PushID("audio_mute");
+    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
+      SaveBasic();
+    }
+    ImGui::PopID();
+  }
+
+  // audio_volume is a Double cvar (0.0-1.0 linear amplitude, applied directly
+  // to samples by the SDL audio driver); DrawCvarWidget's generic Double path
+  // is a plain InputDouble box, not a slider, so this draws its own row the
+  // same way DrawRenderScaleRow does for resolution_scale -- displaying and
+  // editing a perceptually-spaced percentage (see VolumeAmplitudeFromPercent)
+  // rather than the raw amplitude directly.
+  void DrawAudioVolumeRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("audio_volume");
+    if (!entry)
+      return;
+    const auto* mute_entry = rex::cvar::GetFlagInfo("audio_mute");
+    if (mute_entry && mute_entry->getter() == "true")
+      return;
+
+    int percent = VolumePercentFromAmplitude(std::atof(entry->getter().c_str()));
+
+    ImGui::TextUnformatted("Volume");
+    ImGui::SameLine(180.0f);
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::PushID("audio_volume");
+    bool changed = ImGui::SliderInt("##v", &percent, 0, 100, "%d%%");
+    if (changed) {
+      rex::cvar::SetFlagByName("audio_volume", std::to_string(VolumeAmplitudeFromPercent(percent)),
+                               /*persist=*/true);
+      SaveBasic();
+    }
+    ImGui::PopID();
+  }
+
   void DrawResolutionRow() {
     const auto* entry = rex::cvar::GetFlagInfo("resolution");
     if (!entry)
@@ -307,20 +401,16 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::SameLine(180.0f);
     ImGui::SetNextItemWidth(160.0f);
     ImGui::PushID("resolution");
-    if (ImGui::BeginCombo("##v", kOptions[cur_idx])) {
-      for (int i = 0; i < static_cast<int>(kOptions.size()); ++i) {
-        bool selected = (i == cur_idx);
-        if (ImGui::Selectable(kOptions[i], selected)) {
-          rex::cvar::SetFlagByName("resolution", kOptions[i], /*persist=*/true);
-          rex::cvar::SetFlagByName("resolution_scale",
-                                   std::to_string(ResolutionScaleFor(kOptions[i])),
-                                   /*persist=*/true);
-          SaveBasic();
-        }
-        if (selected)
-          ImGui::SetItemDefaultFocus();
-      }
-      ImGui::EndCombo();
+    int sel = cur_idx;
+    // Discrete slider, matching DrawFrameRateRow: snaps between presets
+    // rather than allowing arbitrary drag positions.
+    if (ImGui::SliderInt("##v", &sel, 0, static_cast<int>(kOptions.size()) - 1, kOptions[sel],
+                         ImGuiSliderFlags_NoInput)) {
+      rex::cvar::SetFlagByName("resolution", kOptions[sel], /*persist=*/true);
+      rex::cvar::SetFlagByName("resolution_scale",
+                               std::to_string(ResolutionScaleFor(kOptions[sel])),
+                               /*persist=*/true);
+      SaveBasic();
     }
     ImGui::PopID();
   }
@@ -665,6 +755,13 @@ void ApplySettingDefaults() {
   for (const auto& d : kGameDefaults) {
     rex::cvar::SetDefaultValue(d.cvar, d.value);
   }
+}
+
+void InitSettingsCaches() {
+  g_gpu_plugin_names_cache = rex::system::EnumerateGpuPlugins();
+#if REX_HAS_VULKAN
+  g_vulkan_devices_cache = rex::ui::vulkan::EnumerateDevices();
+#endif
 }
 
 std::unique_ptr<rex::ui::ImGuiDialog> CreateSettingsDialog(
