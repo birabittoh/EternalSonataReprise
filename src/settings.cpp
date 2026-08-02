@@ -28,18 +28,58 @@
 // the host limiter in eternalsonata_hooks.cpp holds the guest to, and which it
 // declares to the sim via byte_82465F90.
 //
-// Only divisors of 300 keep game speed exact: the sim advances `300 / rate`
-// clock units per frame, integer-divided. 30 and 60 are exact; 120 is not
-// (2.5 -> 2, i.e. ~20% slow motion), which is why no high-rate preset is
-// offered. "unlocked" disables the limiter and runs fast in proportion — a
-// frame-clocked engine has no speed-correct uncapped mode.
+// 60 is the highest rate this engine can express, and there is no preset above
+// it because none can exist. A rate has to satisfy three constraints at once:
+//
+//   - Fit in a byte. byte_82465F90 is a u8, so 300 truncates to 44.
+//   - Divide 300, or `300 / rate` truncates and game speed is wrong. 120 gives
+//     2.5 -> 2 (~20% slow motion, confirmed in-game); 180 gives 1.67 -> 1,
+//     which is 0.6x speed even on a PC that renders 180 perfectly.
+//   - Divide 60, to stay on the authored grid. `300 / rate` is the step added
+//     per frame and the content is written around the stock 30 (step 10) and
+//     60 (step 5), so the step has to stay a multiple of 5. 75 -> 4, 100 -> 3
+//     and 150 -> 2 all come off that grid, and the character models visibly
+//     twitch even though game speed is arithmetically exact.
+//
+// 75/100/150 fail the third, 180 fails the second, 300 fails the first. A 150
+// preset was tried and removed for exactly this reason. Players who want to get
+// through content faster hold the fast-forward key instead (see TurboHeld in
+// eternalsonata_hooks.cpp).
+//
+// "unlocked" disables the limiter and runs fast in proportion — a frame-clocked
+// engine has no speed-correct uncapped mode.
+//
+// 60 frame-skips adaptively (see AdaptiveFrameRate): if the host can't sustain
+// it, the declared rate drops through 30 and 20 — both divisors of 60, so both
+// on-grid — and the game skips frames at correct speed rather than running the
+// sim in slow motion, then climbs back once there is headroom. The rungs are
+// fixed rather than derived from the player's refresh rate on purpose: the
+// authored cadence is a property of the content, so the game should behave the
+// same on every monitor.
 //
 // Declared here (global scope) so the hooks can read it via
 // REXCVAR_DECLARE/REXCVAR_GET.
 REXCVAR_DEFINE_STRING(frame_rate, "30", "Eternal Sonata",
                       "In-game scene/sim advance rate: 30 (as the game asks - 30 for gameplay, 60 "
-                      "on the title and the save menu), 60, or unlocked")
+                      "on the title and the save menu), 60, or unlocked. 60 automatically skips "
+                      "frames if the PC can't sustain it, to avoid slow motion.")
     .allowed({"stock", "30", "60", "unlocked"});
+
+// Escape hatch for the adaptive ladder. With this false, the selected rate is
+// pinned and never steps down — the pre-adaptive behaviour, where a host that
+// can't keep up runs the sim in slow motion rather than skipping frames. Worth
+// having because a false step-down is far more visible than mild slow motion.
+REXCVAR_DEFINE_BOOL(adaptive_framerate, true, "Eternal Sonata",
+                    "Let the 60 frame rate setting drop to a lower rate when the PC can't "
+                    "keep up, instead of running in slow motion");
+
+// Per-second frame pacing summary, off by default. Answers, in one line: what
+// rate are we declaring to the sim, how many presents/sec are we actually
+// getting, how long does a frame's work really take, and what is the adaptive
+// ladder doing about it. See the present hook in eternalsonata_hooks.cpp.
+REXCVAR_DEFINE_BOOL(frame_debug, false, "Eternal Sonata",
+                    "Log a per-second frame pacing summary (declared rate, achieved presents/sec, "
+                    "frame work time, adaptive ladder state)");
 
 namespace eternalsonata {
 
@@ -235,10 +275,11 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     DrawFullscreenRow();
     DrawResolutionRow();
     DrawRenderScaleRow();
+    DrawFrameRateRow();
+    DrawAdaptiveFrameRateRow();
     DrawAudioMuteRow();
     DrawAudioVolumeRow();
     DrawLanguageRow();
-    DrawFrameRateRow();
     DrawInputBackendRow();
     DrawGpuBackendRow();
 #if REX_HAS_VULKAN
@@ -533,6 +574,35 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
                                /*persist=*/true);
       SaveBasic();
     }
+    ImGui::PopID();
+  }
+
+  // Companion to the Frame Rate row above, and only meaningful next to it: it
+  // governs what happens when the selected rate can't be sustained. Greyed out
+  // for "30" and "Unlocked", which have nothing to step down to -- "30" already
+  // follows the game's own requests, and "Unlocked" has no limiter at all.
+  void DrawAdaptiveFrameRateRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("adaptive_framerate");
+    if (!entry)
+      return;
+    const bool applies = rex::cvar::GetFlagByName("frame_rate") == "60";
+
+    ImGui::BeginDisabled(!applies);
+    ImGui::TextUnformatted("Adaptive Frame Rate");
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          applies ? "If the PC can't hold 60 FPS, drop to 30 and then 20 rather than running "
+                    "the game in slow motion. Returns to 60 once there is headroom again."
+                  : "Only applies to the 60 FPS setting.");
+    }
+    ImGui::SameLine(180.0f);
+    ImGui::PushID("adaptive_framerate");
+    ImGui::BeginDisabled(!applies);
+    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
+      SaveBasic();
+    }
+    ImGui::EndDisabled();
     ImGui::PopID();
   }
 
