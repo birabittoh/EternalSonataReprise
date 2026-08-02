@@ -30,6 +30,13 @@ namespace eternalsonata {
 // loaded), so a saved config or CLI/env override still takes precedence.
 void ApplySettingDefaults();
 
+// Enumerates GPU plugins and (if built with Vulkan) Vulkan physical devices
+// once, caching the results for CreateSettingsDialog. Both enumerations load
+// GPU plugin DLLs / query the driver, so this is meant to run once at
+// startup (e.g. from OnPostSetup) rather than every time the settings
+// overlay is opened.
+void InitSettingsCaches();
+
 // Creates the curated settings overlay. `user_settings_path` is where the
 // friendly settings (Fullscreen, Resolution) are persisted;
 // `app_config_path` is where everything else (the Advanced section) is
