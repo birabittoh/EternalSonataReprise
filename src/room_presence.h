@@ -20,13 +20,16 @@
 // only real transitions -- see eternalsonata_hooks.cpp for details.
 //
 // Ids are normalized (lowercase, ".e" stripped) and translated through the
-// static table generated from the cfdata BTX files. Event/scene ids
-// ("e%04d") map to "Main Menu". Changes are pushed to rex::discord_rpc's
-// SetDetails so the SDK's own worker thread does the actual Discord IPC.
+// static table generated from the cfdata BTX files. Event/scene ids ("e%04d")
+// map to "In Main Menu", and nothing loaded yet to "Loading...". Changes are
+// pushed to rex::discord_rpc's SetDetails so the SDK's own worker thread does
+// the actual Discord IPC.
 //
-// The presence's second row (state), in precedence order: a battle is
-// "In Battle", else a loaded field is "Overworld", else "In Main Menu", else
-// "Starting...". Battle is tracked separately because the field stays loaded
+// The presence's second row (state) qualifies the first: a battle is
+// "Fighting...", a loaded field is "Exploring...", and outside a field it is
+// left empty, because the first row already says everything there is to say
+// ("Loading..." / "In Main Menu") and repeating it just prints the same text
+// twice. Battle is tracked separately because the field stays loaded
 // underneath one, so "is a field loaded" cannot tell the two apart. See
 // room_presence.cpp for why the game's scene-mode register drives only the
 // *end* of a battle and nothing else.
@@ -70,7 +73,7 @@ class RoomPresence {
   // Called from the guest-thread map-dispatcher hook (sub_820FD998 with a null
   // name, see eternalsonata_hooks.cpp) when the game tears the field map down.
   // Clears the "a field is loaded" flag that NotifyAreaLoad sets, so the state
-  // row can leave "Overworld" when the player returns to a menu screen.
+  // row can leave "Exploring..." when the player returns to a menu screen.
   void NotifyFieldTeardown();
 
   // Called from the guest-thread battle-entry hook (sub_820FDB80, see
