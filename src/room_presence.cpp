@@ -31,26 +31,49 @@ constexpr uint32_t kAreaIdGuestAddress = 0x8244B500;
 // Longest area id ("e3120_120") is well under this.
 constexpr uint32_t kAreaIdMaxLength = 32;
 
-// Guest virtual address of the map-region buffer (map manager 0x824D0480 +
-// 0x2CBB0): the single writer-verified "which field map is loaded" copy.
-// Only switches on a real map transition, funneled through the game's own
-// dispatcher, which strcmp's against this buffer and no-ops if unchanged.
-// Lowercased filename with its .bop extension ("ktm90.bop"); empty/all-zero
-// means no field map is currently loaded (title/menu screens). This is what
-// gates which area-id source Tick() trusts.
-constexpr uint32_t kMapRegionGuestAddress = 0x824FD030;
-constexpr uint32_t kMapRegionMaxLength = 128;
+// The map-region buffer at 0x824FD030 (map manager 0x824D0480 + 0x2CBB0) is
+// the game's own "which field map is loaded" copy, and looks like the obvious
+// way to tell "a field is loaded" -- but it is not usable here and is
+// deliberately not read. Session-log-verified: it stayed empty for the whole
+// of Tenuto Village while the loader hooks were concurrently reporting real
+// area loads there, and only became non-empty ("ktm90.bop") out on the field.
+// Its sole writer, sub_8219FF58, returns early unless the SYSN singleton
+// (dword_8244B9A0) is present, which is the likely reason. field_active_,
+// driven by the loader hooks, is used instead.
 
-// Guest virtual address of the scene-mode byte (byte 3 of dword_824C74C8,
-// the map/field manager's mode register). Polling it produces a noticeable
-// lag on state transitions and can get stuck showing a stale mode after
-// battle ends; unresolved.
-//   4 = battle active, 3 = field/overworld, 5 = menu/event screen,
-//   2 = loading/init, 0 = nothing loaded (boot).
-constexpr uint32_t kSceneModeGuestAddress = 0x824C74CB;
-
-// Last scene-mode byte seen by Tick().
-uint8_t g_last_scene_mode = 0xFF;
+// The game's scene mode is a request/apply pair of adjacent globals, not a
+// single register:
+//
+//   dword_824C74C4  requested mode  \  written together, as a unit, by every
+//   dword_824C74CC  request pending /  real transition
+//   dword_824C74C8  applied mode
+//
+// Every transition writes the new mode into C4 and sets CC to 1
+// (sub_820FDB80 battle entry, sub_820FDFC0 field load, sub_820E7B38
+// event/menu start, and the battle-end writers). Confirmed by IDA: *nothing*
+// in default.xex writes C8 through a direct reference except the
+// initialize-to-zero in sub_822E0540 -- every other reference to C8 reads it,
+// mostly as `C4 = C8` (re-request the current mode after a failure). C8 is
+// applied indirectly, later, by whatever consumes the pending flag.
+//
+// Mode values (runtime-verified): 4 = battle active, 3 = field/overworld,
+// 5 = menu/event screen, 2 = loading/init, 0 = no request pending.
+//
+// C4 cannot be polled, which is why the transitions below are hooks. It is
+// written as a plain `stw` of a small int (0x820FDF94: `li r10, 4` / `stw r10,
+// C4`), but is cleared again as soon as the request is consumed -- faster than
+// one rendered frame, and Tick() runs on the host swap. Session-log-verified
+// over two full runs: every sampled tick read 0, including across transitions
+// that demonstrably happened.
+//
+// C8 does not mean what its documented "4 = battle active" reading suggests.
+// Session-log-verified across three battles in two runs: for a battle's whole
+// duration it reads 3 (field), and it turns 4 only as the battle *ends* --
+// consistently ~50s after the entry hook, immediately before the post-battle
+// screen. So mode 4 is the end-of-battle edge, and that is what Tick() uses to
+// leave "In Battle". Entry cannot come from here (C8 still reads 3 well after
+// the battle has begun); it comes from the sub_820FDB80 hook.
+constexpr uint32_t kSceneModeAppliedGuestAddress = 0x824C74CB;
 
 std::string ReadGuestCString(rex::memory::Memory* memory, uint32_t guest_address,
                              size_t max_len) {
@@ -65,8 +88,7 @@ uint8_t ReadGuestU8(rex::memory::Memory* memory, uint32_t guest_address) {
 
 // Fold an area id to its canonical table key: strip a trailing ".e" extension
 // (the map loaders pass "cfdata\<id>.e" filenames) and lowercase the rest.
-// The loaders are not consistent about case -- the same area arrives as both
-// "kts01.e" and "KTM04.e" -- while AreaNameTable() is keyed lowercase.
+// The loaders are not consistent about case while AreaNameTable() is keyed lowercase.
 std::string NormalizeAreaId(std::string id) {
   if (id.size() > 3 && id.compare(id.size() - 2, 2, ".e") == 0) {
     id.resize(id.size() - 2);
@@ -97,29 +119,29 @@ void RoomPresence::Tick() {
   }
   auto* memory = kernel_state_->memory();
 
-  // Which area-id source is authoritative depends on whether a field map is
-  // loaded. 0x824FD030 is the single writer-verified "which map is loaded"
-  // copy: non-empty (e.g. "ktm90.bop") means the player is inside a field map -- including in-field cutscenes, which keep the map
-  // loaded -- and the area id captured by the map-loader hooks is
-  // authoritative (the loaders never write byte_8244B500). Empty means the
-  // map was torn down; then byte_8244B500 tells us whether we are on a
-  // menu/event screen (sub_820FCC80 wrote it, "E%04d.e" and friends). If
-  // neither buffer is set, the game is in the middle of a transition/loading
-  // (previous map down, next not up yet), so keep showing the last known
-  // field area rather than "Title Screen".
-  std::string map_region = ReadGuestCString(memory, kMapRegionGuestAddress, kMapRegionMaxLength);
+  uint8_t scene_mode = ReadGuestU8(memory, kSceneModeAppliedGuestAddress);
 
-  // Scene-mode byte, logged on change so state-row behavior stays checkable in
-  // logs/eternalsonata_*.log (the Discord overlay only shows the resulting
-  // label; the raw value is useful when the mapping needs tuning).
-  uint8_t scene_mode = ReadGuestU8(memory, kSceneModeGuestAddress);
-  if (scene_mode != g_last_scene_mode) {
-    g_last_scene_mode = scene_mode;
-    REXLOG_INFO("[presence] mode={} map='{}'", scene_mode, map_region);
+  bool battle_active;
+  bool field_active;
+  {
+    std::lock_guard<std::mutex> lock(area_mutex_);
+    // Mode 4 is the end-of-battle edge, not the battle itself (see above).
+    if (battle_active_ && scene_mode == 4) {
+      battle_active_ = false;
+    }
+    battle_active = battle_active_;
+    field_active = field_active_;
   }
 
+  // Which area-id source is authoritative depends on whether a field map is
+  // loaded. While one is, the id captured by the map-loader hooks wins (the
+  // loaders never write byte_8244B500), including through in-field cutscenes,
+  // which keep the field loaded. Otherwise byte_8244B500 tells us whether we
+  // are on a menu/event screen (sub_820FCC80 wrote it, "E%04d.e" and
+  // friends). If neither is set the game is mid-transition, so keep showing
+  // the last known field area rather than falling back to "Title Screen".
   std::string area_id;
-  if (!map_region.empty()) {
+  if (field_active) {
     std::lock_guard<std::mutex> lock(area_mutex_);
     area_id = field_area_id_;
   } else {
@@ -133,18 +155,31 @@ void RoomPresence::Tick() {
   }
   area_id = NormalizeAreaId(std::move(area_id));
 
-  // Second row (state): the scene-mode byte is the only signal that can tell
-  // "In Battle" from "Overworld", because the map-region buffer stays loaded
-  // through a battle. Runtime-verified modes: 4 = battle, 3 = field, 5 =
-  // menu/event, 2 = loading, 0 = nothing loaded. Field play keeps the map
-  // loaded (including in-field cutscenes), so gate "Overworld" on that rather
-  // than on mode 3 -- the byte only dips to 3 during transitions.
+  // Event/scene file (the "E%04d.e" family): these carry no banner of their
+  // own and are only ever reached from the menu/event branch above (the field
+  // loaders only pass field ids to the capture), so this effectively
+  // identifies the title screen and its menus. No table entry ever matches
+  // this pattern. Both rows key off it.
+  const bool is_event_area = area_id.size() >= 2 && area_id[0] == 'e' &&
+                             std::isdigit(static_cast<unsigned char>(area_id[1]));
+
+  // Second row (state). The battle flag wins: a battle keeps the field loaded
+  // under it, so field_active stays true throughout and cannot distinguish the
+  // two on its own. Otherwise a loaded field is "Overworld" (including
+  // in-field cutscenes, which the game runs at mode 5 without tearing the
+  // field down -- another reason not to key this off the mode).
+  //
+  // With no field loaded we are on a menu/event screen. Prefer the details row
+  // for that judgement rather than the mode: is_event_area is derived from the
+  // id the game itself loaded, whereas mode 5 only arrives once the menu has
+  // finished coming up, which left the row reading "Starting..." for the whole
+  // boot-to-title stretch while the details row already said "Main Menu".
   std::string state;
-  if (scene_mode == 4) {
+  if (battle_active) {
     state = "In Battle";
-  } else if (!map_region.empty()) {
+  } else if (field_active) {
     state = "Overworld";
-  } else if (scene_mode == 5) {
+  } else if (is_event_area || scene_mode == 5) {
     state = "In Main Menu";
   } else {
     state = "Starting...";
@@ -176,13 +211,7 @@ void RoomPresence::Tick() {
     return;
   }
 
-  // Event/scene file (the "E%04d.e" family): these carry no banner of their
-  // own and are only ever chosen from the menu/event branch above (the field
-  // loaders only pass field ids to the capture), so this effectively maps the
-  // title screen and its menus to a stable label. No table entry ever matches
-  // this pattern.
-  if (area_id.size() >= 2 && area_id[0] == 'e' &&
-      std::isdigit(static_cast<unsigned char>(area_id[1]))) {
+  if (is_event_area) {
     rex::discord_rpc::SetDetails("Main Menu");
     return;
   }
@@ -199,12 +228,35 @@ void RoomPresence::Tick() {
 }
 
 void RoomPresence::NotifyAreaLoad(const char* area_id) {
+  // A real area transition cannot happen mid-battle, so this doubles as a
+  // backstop: if every hooked teardown path misses, walking into the next area
+  // still clears a stuck "In Battle".
+  NotifyBattleEnd();
   std::lock_guard<std::mutex> lock(area_mutex_);
+  field_active_ = true;
   std::string id = area_id ? area_id : "";
   if (id == field_area_id_) {
     return;
   }
   field_area_id_ = std::move(id);
+}
+
+void RoomPresence::NotifyBattleStart() {
+  std::lock_guard<std::mutex> lock(area_mutex_);
+  battle_active_ = true;
+}
+
+void RoomPresence::NotifyBattleEnd() {
+  std::lock_guard<std::mutex> lock(area_mutex_);
+  battle_active_ = false;
+}
+
+void RoomPresence::NotifyFieldTeardown() {
+  std::lock_guard<std::mutex> lock(area_mutex_);
+  // field_area_id_ is deliberately kept: the details row falls back to the
+  // last known field area during a transition, rather than flashing
+  // "Starting..." between the teardown and the next area load.
+  field_active_ = false;
 }
 
 RoomPresence& GetRoomPresence() {
