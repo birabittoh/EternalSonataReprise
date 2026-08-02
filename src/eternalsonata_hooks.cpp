@@ -383,9 +383,6 @@ void CaptureFieldArea(PPCContext& ctx, uint8_t* base) {
   if (!id_addr) {
     return;
   }
-  if ((ctx.r5.u32 & kRealTransitionFlagMask) != kRealTransitionFlagMask) {
-    return;
-  }
   char id[16] = {};
   for (u32 i = 0; i < sizeof(id) - 1; ++i) {
     const u8 c = REX_LOAD_U8(id_addr + i);
@@ -393,6 +390,9 @@ void CaptureFieldArea(PPCContext& ctx, uint8_t* base) {
       break;
     }
     id[i] = static_cast<char>(c);
+  }
+  if ((ctx.r5.u32 & kRealTransitionFlagMask) != kRealTransitionFlagMask) {
+    return;
   }
   eternalsonata::GetRoomPresence().NotifyAreaLoad(id);
 }
@@ -411,6 +411,42 @@ REX_EXTERN(__imp__sub_820FB420);
 REX_HOOK_RAW(sub_820FB420) {
   CaptureFieldArea(ctx, base);
   __imp__sub_820FB420(ctx, base);
+}
+
+// sub_820FDB80 is battle entry: its last act, on every path (no early return
+// before it), is to request scene mode 4 --
+//   0x820FDF94  li  r10, 4
+//   0x820FDF9C  stw r10, dword_824C74C4(r11)
+// -- so reaching it means a battle is starting. The request itself cannot be
+// polled: it is consumed and cleared faster than one rendered frame (see
+// room_presence.cpp), which is why this is a hook and not a memory read.
+REX_EXTERN(__imp__sub_820FDB80);
+
+REX_HOOK_RAW(sub_820FDB80) {
+  eternalsonata::GetRoomPresence().NotifyBattleStart();
+  __imp__sub_820FDB80(ctx, base);
+}
+
+// There is deliberately no battle-*exit* hook. The obvious candidates
+// (sub_821AB1A0, sub_821A61F0, sub_82229098, sub_8223EA48, sub_8223F3C0,
+// sub_8223F898, sub_821DD4D0) all request scene mode 3 conditionally, and
+// hooking them was tried: sub_821AB1A0 is the one that fires, but it fires
+// ~2.8s *into* the battle -- the length of the entry transition -- not at the
+// end. Exit is detected in Tick() instead; see room_presence.cpp.
+
+// sub_820FD998 is the single map-transition funnel: every map load and unload
+// goes through it. Called with a null name (r4 == 0) it takes the full
+// teardown path, freeing all four map slots -- i.e. "no field map is loaded any more". That is the edge that
+// takes the state row back out of "Overworld"; without it the flag
+// NotifyAreaLoad sets would never clear and every menu after the first field
+// load would still read as "Overworld".
+REX_EXTERN(__imp__sub_820FD998);
+
+REX_HOOK_RAW(sub_820FD998) {
+  if (ctx.r4.u32 == 0) {
+    eternalsonata::GetRoomPresence().NotifyFieldTeardown();
+  }
+  __imp__sub_820FD998(ctx, base);
 }
 
 // ---------------------------------------------------------------------------
