@@ -1,0 +1,569 @@
+adg01	Adagio Swamp: West Side
+adg02	Adagio Swamp: East Side
+adg40	
+adt01	Andante: Entrance
+adt02	Andante
+adt03	Andante: Cemetery Entrance
+adt40	Andante: Residence
+adt41	Andante: Infirmary
+adt42	Andante: Meeting Room
+adt43	Andante: Residence
+adt44	Andante: Storage Room
+agg01	Agogo Village
+agg02	Agogo Village: Cave Front
+agg40	Agogo Village: Salsa and March's House
+agg41	Agogo Village: Item Shop
+agg60	
+agn01	Agogo Forest: Middle North
+agn02	Agogo Forest: North
+agn03	Agogo Forest: Middle North
+agn04	Agogo Forest: North
+ags01	Agogo Forest: South
+ags02	Agogo Forest: Middle South
+ags03	Agogo Forest: South
+ags04	Agogo Forest: Middle South
+ara01	Aria Temple: Entrance
+ara02	Aria Temple: Gallery of Earth
+ara03	Aria Temple: Gallery of Air
+ara04	Aria Temple: Corridor
+ara05	Aria Temple: Gallery of Heaven
+ara06	Aria Temple: Corridor
+ara07	Aria Temple: Gallery of Light
+atn01	Andantino's Secret Passage: North Section 1
+atn02	Andantino's Secret Passage: North Section 2
+atn03	Andantino's Secret Passage: North Section 3
+atn04	Andantino's Secret Passage: Cave - North
+atn05	Andantino's Secret Passage: Cavern - South
+atn06	Andantino's Secret Passage: South Section
+bel01	Sharp Mountains: Base
+bel02	Sharp Mountains: Second Point
+bel03	Sharp Mountains: Sixth Point
+bel04	Sharp Mountains: Eighth Point
+bel05	Sharp Mountains: Summit
+bel40	Sharp Mountains: Mountain Lodge
+bqf01	Baroque Ship: Deck
+bqf40	Baroque Ship: Drawing Room
+bqf41	Baroque Ship: Guest Room
+bqf42	Baroque Ship: Bedroom
+bqf43	Baroque Ship: Bedroom
+bqf44	Baroque Ship: Guest Room
+bqf45	Baroque Ship: Drawing Room
+bqf47	Baroque Ship: East Hallway
+bqf48	Baroque Ship: West Hallway
+bqf60	
+bqj01	Baroque Castle: Audience Chamber
+bqj02	Baroque Castle: First Floor - Main Hall
+bqj03	Baroque Castle: Drawing Room
+bqj04	Baroque Castle: Guest Room
+bqj05	Baroque Castle: Guest Room
+bqj06	Baroque Castle: Guest Room
+bqj07	Baroque Castle: Guest Room
+bqj08	Baroque Castle: Guest Room
+bqj09	Baroque Castle: Guest Room
+bqj10	Baroque Castle: Guest Room
+bqj11	Baroque Castle: Guest Room
+bqj12	Baroque Castle: Prince Crescendo's Room
+bqj13	Baroque Castle: Princess Serenade's Room
+bqj14	Baroque Castle: Office
+bqj15	Baroque Castle: Laboratory
+bqj16	Baroque Castle: Second Floor Hallway
+bqj17	Baroque Castle: First Floor - West Hallway
+bqj18	Baroque Castle: First Floor - East Hallway
+bqj60	
+bqm01	Baroque City: Entrance
+bqm02	Baroque City: Main Street
+bqm03	Baroque City: Castle Gate
+bqm40	Baroque City: Residence
+bqm41	Baroque City: Guest Room
+bqm42	Baroque City: Guest Room
+bqm43	Baroque City: Bar
+bqm44	Baroque City: Wine Cellar
+bqm45	Baroque City: Hotel Ensemble
+bqm46	Baroque City: Warp Room
+bqm49	Baroque Castle: Side Garden
+cbl01	Cello Tree
+cbl02	Cowbell Heights
+cbs01	Cabasa Bridge
+cnt01	Cantabile Inn: Front
+cnt02	Cantabile Inn: Front
+cnt03	Cantabile Inn: Front
+cnt40	Cantabile Inn
+cnt41	Cantabile Inn: Guest Room
+cnt42	Cantabile Inn: Guest Room
+cst01	Celesta Forest: Entrance
+cst02	Celesta Forest: West Side
+cst03	Celesta Forest: Middle
+cst04	Celesta Forest: East Side
+dld01	Double Reed Tower: West Tower - First Floor
+dld02	Double Reed Tower: West Tower - Second Floor
+dld03	Double Reed Tower: West Tower - Third Floor
+dld04	Double Reed Tower: West Tower - Fourth Floor
+dld05	Double Reed Tower: West Tower - Fifth Floor
+dld06	Double Reed Tower: West Tower - Sixth Floor
+dld07	Double Reed Tower: West Tower - Seventh Floor
+dld08	Double Reed Tower: East Tower - First Floor
+dld09	Double Reed Tower: East Tower - Second Floor
+dld10	Double Reed Tower: East Tower - Third Floor
+dld11	Double Reed Tower: East Tower - Fourth Floor
+dld12	Double Reed Tower: East Tower - Fifth Floor
+dld13	Double Reed Tower: West Tower - Sixth Floor
+dld14	Double Reed Tower: West Tower - Seventh Floor
+dld15	Double Reed Tower: Base
+dld16	Hourglass Road
+dld17	Top Floor: Core
+dld18	Double Reed Tower: Base
+e0010	
+e0010_010	
+e0020	
+e0020_010	
+e0020_020	
+e0020_030	
+e0020_040	
+e0020_050	
+e0020_060	
+e0020_065	
+e0020_070	
+e0030	
+e0040	
+e0041	
+e1000	
+e1005	
+e1010	
+e1020	
+e1030	
+e1030_010	
+e1040	
+e1050	
+e1055	
+e1060	
+e1070	
+e1080	
+e1080_010	
+e1080_020	
+e1080_030	
+e1080_040	
+e1090	
+e1090_010	
+e1100	
+e1101	
+e1110	
+e1120	
+e1130	
+e1130_010	
+e1140	
+e1140_010	
+e1141	
+e1150	
+e1160	
+e1170	
+e1170_010	
+e1170_020	
+e1180	
+e1190	
+e1195	
+e1200	
+e1210	
+e1220	
+e1230	
+e1235	
+e1240	
+e1250	
+e1260	
+e1270	
+e1280	
+e1280_010	
+e1280_020	
+e2000	
+e2010	
+e2010_010	
+e2020	
+e2030	
+e2035	
+e2040	
+e2050	
+e2060	
+e2070	
+e2080	
+e2080_010	
+e2090	
+e2100	
+e2102	
+e2103	
+e2104	
+e2107	
+e2108	
+e2110	
+e2115	
+e2120	
+e2130	
+e2140	
+e2150	
+e2160	
+e2170	
+e2180	
+e2190	
+e2200	
+e2210	
+e2220	
+e3000	
+e3010	
+e3020	
+e3030	
+e3040	
+e3050	
+e3060	
+e3070	
+e3075	
+e3080	
+e3090	
+e3090_010	
+e3100	
+e3110	
+e3120	
+e3120_010	
+e3120_020	
+e3120_030	
+e3120_040	
+e3120_050	
+e3120_060	
+e3120_070	
+e3120_080	
+e3120_090	
+e3120_100	
+e3120_110	
+e3120_120	
+e4000	
+e4010	
+e4020	
+e4030	
+e4040	
+e4050	
+e4060	
+e4070	
+e4070_010	
+e4080	
+e4090	
+e4090_010	
+e4100	
+e4110	
+e4120	
+e4130	
+e4140	
+e4150	
+e4160	
+e4170	
+e4180	
+e4190	
+e4200	
+e5000	
+e5010	
+e5020	
+e5030	
+e5040	
+e5050	
+e5060	
+e5070	
+e5080	
+e5090	
+e5100	
+e5110	
+e5120	
+e5120_010	
+e5130	
+e5130_010	
+e5140	
+e5150	
+e5160	
+e5170	
+e5180	
+e5190	
+e5200	
+e5210	
+e6000	
+e6010	
+e6020	
+e6020_010	
+e6020_020	
+e6030	
+e6030_010	
+e6040	
+e6050	
+e6060	
+e6060_010	
+e6060_020	
+e6060_030	
+e6060_040	
+e6070	
+e7000	
+e7010	
+e7020	
+e7030	
+e7040	
+e7050	
+e7060	
+e7070	
+e7080	
+e7080_010	
+e7090	
+e7100	
+e8000	
+e8005	
+e8010	
+e8010_010	
+e8020	
+e8040	
+e8050	
+e8050_005	
+e8050_010	
+e8050_020	
+e8050_030	
+e8060	
+e8060_010	
+e8070	
+e9002	
+e9004	
+e9005	
+e9007	
+e9009	
+e9011	
+e9013	
+e9014	
+e9015	
+e9018	
+e9019	
+e9021	
+e9022	
+e9024	
+e9025	
+e9027	
+e9028	
+e9029	
+e9030	
+e9031	
+e9033	
+e9034	
+e9035	
+e9036	
+e9037	
+e9038	
+elg01	Elegy of the Moon: East
+elg02	Elegy of the Moon: West
+elg03	Elegy of the Moon: Distortion
+eve01	
+fmt01	Fort Fermata: Central Road - South
+fmt02	Fort Fermata: West Side
+fmt03	Fort Fermata: East Side
+fmt04	Fort Fermata: Small Room
+fmt05	Fort Fermata: Small Room
+fmt06	
+fmt07	Fort Fermata: Small Room
+fmt08	Fort Fermata: Small Room
+fmt09	Fort Fermata: Moving Room
+fmt10	Fort Fermata: West Side
+fmt11	Fort Fermata: East Side
+fmt12	Fort Fermata: West Side
+fmt13	Fort Fermata: East Side
+fmt14	Fort Fermata: Central Road - North
+fmt15	Fort Fermata: Over Central Road
+ftj01	
+ftj02	
+ftj40	Forte Castle: Dungeon
+ftm01	Forte City
+ftm02	Forte City: West
+ftm03	Forte City: Castle Gate
+ftm04	Forte City
+ftm05	Forte City: West
+ftm06	Forte City: Castle Gate
+ftm40	Forte City: Residence
+ftm41	Forte City: Inn
+ftm42	Forte City: Tavern
+ftm43	Forte City: Residence
+ftm44	Forte City: Inn
+ftm45	Forte City: Tavern
+ftm64	
+gls01	Glissando Cliffs: Area 1
+gls02	Glissando Cliffs: Area 2
+gls03	Glissando Cliffs: Area 3
+gls04	Glissando Cliffs: Area 4
+gls05	Glissando Cliffs: Area 1
+gls06	Glissando Cliffs: Area 2
+gls07	Glissando Cliffs: Area 3
+gls08	Glissando Cliffs: Area 4
+hno01	Hanon Hills: South
+hno02	Hanon Hills: Midway
+hno03	Hanon Hills: North
+ktm01	Heaven's Mirror Forest: Entrance
+ktm02	Heaven's Mirror Forest: South
+ktm03	Heaven's Mirror Forest: Middle South
+ktm04	Heaven's Mirror Forest: Middle North
+ktm05	Heaven's Mirror Forest: North
+ktm06	Heaven's Mirror Forest: Entrance
+ktm07	Heaven's Mirror Forest: North
+ktm08	Heaven's Mirror Forest: Middle South
+ktm09	Heaven's Mirror Forest: Middle South
+ktm10	Heaven's Mirror Forest: North
+kts01	Heaven's Mirror Field
+kts02	Heaven's Mirror Field
+kzf01	Pirate Ship Dolce: Deck
+kzf40	Pirate Ship Dolce: Basement Level 1 - Hallway
+kzf41	Pirate Ship Dolce: Basement Level 1 - Cabin
+kzf42	Pirate Ship Dolce: Basement Level 1 - Cabin
+kzf43	Pirate Ship Dolce: Basement Level 1 - Cabin
+kzf44	Pirate Ship Dolce: Basement Level 1 - Cabin
+kzf45	Pirate Ship Dolce: Basement Level 1 - Cabin
+kzf46	Pirate Ship Dolce: Basement Level 1 - Cabin
+kzf47	Pirate Ship Dolce: Basement Level 2 - Hallway
+kzf48	Pirate Ship Dolce: Basement Level 2 - Cabin
+kzf49	Pirate Ship Dolce: Basement Level 2 - Cabin
+kzf50	Pirate Ship Dolce: Basement Level 2 - Cabin
+kzf51	Pirate Ship Dolce: Basement Level 2 - Cargo Hold
+kzf52	Pirate Ship Dolce: Basement Level 2 - Pantry
+kzf53	Pirate Ship Dolce: Basement Level 3 - Hallway
+kzf54	Pirate Ship Dolce: Basement Level 3 - Cabin
+kzf55	Pirate Ship Dolce: Basement Level 3 - Cargo Hold
+kzf56	Pirate Ship Dolce: Basement Level 3 - Cabin
+kzf57	Pirate Ship Dolce: Basement Level 3 - Cabin
+kzf58	Pirate Ship Dolce: Basement Level 3 - Cabin
+kzf59	Pirate Ship Dolce: Basement Level 3 - Cabin
+kzf60	Pirate Ship Dolce: Basement Level 4 - Hallway
+kzf61	Pirate Ship Dolce: Basement Level 4 - Cabin
+kzf62	Pirate Ship Dolce: Basement Level 4 - Cabin
+kzf63	Pirate Ship Dolce: Basement Level 4 - Cabin
+kzf64	Pirate Ship Dolce: Basement Level 4 - Cabin
+kzf65	Pirate Ship Dolce: Basement Level 4 - Cabin
+kzf66	Pirate Ship Dolce: Basement Level 4 - Cabin
+kzf67	Pirate Ship Dolce: Basement Level 4 - Cabin
+kzf68	Pirate Ship Dolce: Basement Level 4 - Cabin
+kzf69	Pirate Ship: Back Hallway
+kzf70	Pirate Ship Dolce: Treasure Room
+kzf71	
+lib	
+lnt01	Lento Cemetery: Main Road
+lnt02	Lento Cemetery: Gone Too Soon Graveyard
+lnt03	Lento Cemetery: Blockheads' Boneyard
+lnt04	Lento Cemetery: Warrior's Burial Ground
+lnt05	Lento Cemetery: Old Age Acres
+lnt06	Lento Cemetery: Back Road
+lnt07	Lento Cemetery: Entrance to Spring
+lnt08	Lento Cemetery: Simile Spring
+nis01	Noise Dunes: Entrance
+nis02	Noise Dunes
+nis03	Noise Dunes: Oasis
+nis04	Noise Dunes: Tower Entrance
+prs01	
+roc01	Mt. Rock: Entrance
+roc02	Mt. Rock: Base
+roc03	Mt. Rock: Main Area
+roc04	Mt. Rock: Main Mineshaft
+roc05	Mt. Rock: Secondary Area
+roc06	Mt. Rock: Secondary Mineshaft
+roc07	Mt. Rock: Tertiary Area
+roc08	Mt. Rock: Tertiary Mineshaft
+roc09	Mt. Rock: Canyon
+roc10	Mt. Rock: Near the Summit
+roc11	Mt. Rock: Summit
+rtd01	Ritardando
+rtd02	
+rtd03	Ritardando: Cave
+rtd04	Ritardando: Underground Path
+rtd41	Ritardando: Secret Hideout
+rtd42	Ritardando: Bakery
+rtd43	Ritardando: Pharmacy
+rtd44	Ritardando: Residence
+rtd45	Ritardando: Item Shop
+rtd46	Ritardando: Mandolin Church
+rtk01	Mandolin Church Catacombs: South Section
+rtk02	Mandolin Church Catacombs: East Section
+rtk03	Mandolin Church Catacombs: North Section
+rtk04	Mandolin Church Grotto: South Section
+rtk05	Mandolin Church Grotto: Middle Section
+rtk06	Mandolin Church Grotto: North Section
+rtk07	Mandolin Church Grotto: Depths
+rty01	Ritardando Sewers: West Side
+rty02	Ritardando Sewers: Center
+rty03	Ritardando Sewers: East Side
+rty04	Ritardando Sewers: Rear Section
+rvb01	Lake Reverb: Shore
+rvb02	Lake Reverb: Trail
+rvb40	
+rvb41	Lake Reverb: Andantino's Hideout
+svh01	Chorus Plains: South Side
+svh02	Chorus Plains: South Lake
+svh03	Chorus Plains: East Lake
+svh04	Chorus Plains: North Side
+svh40	Chorus Plains: Viola's House
+svh60	
+tcd01	To Coda Ruins: Betrayal Island
+tcd02	To Coda Ruins: False Pride Island
+tcd03	To Coda Ruins: Conceit Island
+tcd04	To Coda Ruins: Resentment Island
+tcd05	To Coda Ruins: Jealousy Island
+tcd06	To Coda Ruins: Suspicion Island
+tcd07	To Coda Ruins: Distress Island
+tcd08	To Coda Ruins: Sincerity Island
+tnk01	Path to Tenuto: South Section
+tnk02	Path to Tenuto: North Section
+tnt01	Game Clear Data
+tnt02	Tenuto Village: Flower Field
+tnt03	Tenuto Village: Flower Field
+tnt04	Tenuto Village
+tnt05	Tenuto Village
+tnt06	
+tnt40	Tenuto Village: Polka's House
+tnt41	Tenuto Village: Residence
+tnt42	Tenuto Village: Residence
+tnt43	Tenuto Village: Residence
+tnt44	Tenuto Village: Residence
+tnt45	Tenuto Village: Polka's House
+tnt60	
+tnt61	
+uns01	Mysterious Unison: Basement Level %d
+uns02	Mysterious Unison: Basement Level %d
+uns03	Mysterious Unison: Basement Level %d
+uns04	Mysterious Unison: Basement Level %d
+uns05	Mysterious Unison: Basement Level %d
+uns06	Mysterious Unison: Basement Level %d
+uns07	Mysterious Unison: Basement Level %d
+uns08	Mysterious Unison: Basement Level %d
+uns09	Mysterious Unison: Basement Level %d
+uns10	Mysterious Unison: Basement Level %d
+uns11	Mysterious Unison: Basement Level %d
+uns12	Mysterious Unison: Basement Level %d
+uns13	Mysterious Unison: Basement Level %d
+uns14	Mysterious Unison: Basement Level %d
+uns15	Mysterious Unison: Basement Level %d
+uns16	Mysterious Unison: Basement Level %d
+uns17	Mysterious Unison: Basement Level %d
+uns18	Mysterious Unison: Basement Level %d
+uns19	Mysterious Unison: Basement Level %d
+uns20	Mysterious Unison: Basement Level %d
+uns21	Mysterious Unison: Basement Level %d
+uns22	Mysterious Unison: Basement Level %d
+uns23	Mysterious Unison: Basement Level %d
+wau01	Wah Lava Cave: North Entrance
+wau02	Wah Lava Cave: North Side 1
+wau03	Wah Lava Cave: North Side 2
+wau04	Wah Lava Cave: Middle 1
+wau05	Wah Lava Cave: Middle 2
+wau06	Wah Lava Cave: Middle 3
+wau07	Wah Lava Cave: South Side 1
+wau08	Wah Lava Cave: South Side 2
+wau09	Wah Lava Cave: South Entrance
+wbk01	Woodblock Groves: South
+wbk02	Woodblock Groves: South Center
+wbk03	Woodblock Groves: North Center
+wbk04	Woodblock Groves: North
+wbk05	Woodblock Groves: Waterfall
+xlp01	Xylophone Tower: First Floor
+xlp02	Xylophone Tower: First Floor - Spiral
+xlp03	Xylophone Tower: First Floor - Landing
+xlp04	Xylophone Tower: Second Floor
+xlp05	Xylophone Tower: Second Floor - Spiral
+xlp06	Xylophone Tower: Second Floor - Landing
+xlp07	Xylophone Tower: Third Floor
+xlp08	Xylophone Tower: Third Floor - Spiral
+xlp09	Xylophone Tower: Third Floor - Landing
+xlp10	Xylophone Tower: Top Floor
+xlp11	Xylophone Tower: Secret Room
+zzz01	Go where?
+zzz02	

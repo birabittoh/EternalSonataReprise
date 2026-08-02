@@ -35,6 +35,10 @@ eternalsonata.toml
 /src/icon.generated.ico
 /src/version.generated.h.in
 
+# Area-name table for the Discord presence, rebuilt from docs/cfdata_names.txt
+# by scripts/gen-area-names.py
+/src/area_names.generated.h
+
 # Windows exe-icon resource script, rewritten by CMake with an absolute path
 # to src/icon.generated.ico (see CMakeLists.txt)
 /src/eternalsonata.generated.rc
