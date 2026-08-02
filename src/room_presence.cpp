@@ -71,7 +71,7 @@ constexpr uint32_t kAreaIdMaxLength = 32;
 // duration it reads 3 (field), and it turns 4 only as the battle *ends* --
 // consistently ~50s after the entry hook, immediately before the post-battle
 // screen. So mode 4 is the end-of-battle edge, and that is what Tick() uses to
-// leave "In Battle". Entry cannot come from here (C8 still reads 3 well after
+// leave "Fighting...". Entry cannot come from here (C8 still reads 3 well after
 // the battle has begun); it comes from the sub_820FDB80 hook.
 constexpr uint32_t kSceneModeAppliedGuestAddress = 0x824C74CB;
 
@@ -159,30 +159,25 @@ void RoomPresence::Tick() {
   // own and are only ever reached from the menu/event branch above (the field
   // loaders only pass field ids to the capture), so this effectively
   // identifies the title screen and its menus. No table entry ever matches
-  // this pattern. Both rows key off it.
+  // this pattern.
   const bool is_event_area = area_id.size() >= 2 && area_id[0] == 'e' &&
                              std::isdigit(static_cast<unsigned char>(area_id[1]));
 
   // Second row (state). The battle flag wins: a battle keeps the field loaded
   // under it, so field_active stays true throughout and cannot distinguish the
-  // two on its own. Otherwise a loaded field is "Overworld" (including
+  // two on its own. Otherwise a loaded field is "Exploring..." (including
   // in-field cutscenes, which the game runs at mode 5 without tearing the
   // field down -- another reason not to key this off the mode).
   //
-  // With no field loaded we are on a menu/event screen. Prefer the details row
-  // for that judgement rather than the mode: is_event_area is derived from the
-  // id the game itself loaded, whereas mode 5 only arrives once the menu has
-  // finished coming up, which left the row reading "Starting..." for the whole
-  // boot-to-title stretch while the details row already said "Main Menu".
+  // Outside a field there is no second-row information the first row does not
+  // already carry ("Loading..." / "In Main Menu"), so leave it empty rather
+  // than restating it. rex::discord_rpc omits empty fields from the activity
+  // payload entirely, which is what actually clears the row in the overlay.
   std::string state;
   if (battle_active) {
-    state = "In Battle";
+    state = "Fighting...";
   } else if (field_active) {
-    state = "Overworld";
-  } else if (is_event_area || scene_mode == 5) {
-    state = "In Main Menu";
-  } else {
-    state = "Starting...";
+    state = "Exploring...";
   }
 
   // Battle entry does not change the area id (same map stays loaded), so the
@@ -204,15 +199,15 @@ void RoomPresence::Tick() {
   last_area_id_ = area_id;
 
   if (area_id.empty()) {
-    // Nothing loaded yet: boot logos, before the title event (E%04d.e)
+    // Nothing loaded yet: the boot logos, before the title event (E%04d.e)
     // populates byte_8244B500. The actual title screen and its menus are
     // labeled by the event-file branch below.
-    rex::discord_rpc::SetDetails("Starting...");
+    rex::discord_rpc::SetDetails("Loading...");
     return;
   }
 
   if (is_event_area) {
-    rex::discord_rpc::SetDetails("Main Menu");
+    rex::discord_rpc::SetDetails("In Main Menu");
     return;
   }
 
@@ -230,7 +225,7 @@ void RoomPresence::Tick() {
 void RoomPresence::NotifyAreaLoad(const char* area_id) {
   // A real area transition cannot happen mid-battle, so this doubles as a
   // backstop: if every hooked teardown path misses, walking into the next area
-  // still clears a stuck "In Battle".
+  // still clears a stuck "Fighting...".
   NotifyBattleEnd();
   std::lock_guard<std::mutex> lock(area_mutex_);
   field_active_ = true;

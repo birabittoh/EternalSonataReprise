@@ -437,9 +437,9 @@ REX_HOOK_RAW(sub_820FDB80) {
 // sub_820FD998 is the single map-transition funnel: every map load and unload
 // goes through it. Called with a null name (r4 == 0) it takes the full
 // teardown path, freeing all four map slots -- i.e. "no field map is loaded any more". That is the edge that
-// takes the state row back out of "Overworld"; without it the flag
+// takes the state row back out of "Exploring..."; without it the flag
 // NotifyAreaLoad sets would never clear and every menu after the first field
-// load would still read as "Overworld".
+// load would still read as "Exploring...".
 REX_EXTERN(__imp__sub_820FD998);
 
 REX_HOOK_RAW(sub_820FD998) {
