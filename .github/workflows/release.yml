@@ -36,6 +36,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: "Eternal Sonata: Reprise ${{ github.ref_name }}"
+          body: "# Get the game on [Goopie](https://goopie.xyz/#/library/eternalsonata)!\n\n"
           files: release-assets/*
           generate_release_notes: true
           fail_on_unmatched_files: true
