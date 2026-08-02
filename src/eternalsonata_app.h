@@ -54,7 +54,11 @@ class EternalsonataApp : public rex::ReXApp {
     return rex::system::GameDataSelector::EnsureGameData(settings);
   }
 
-  void OnPreSetup(rex::RuntimeConfig& /*config*/) override {}
+  void OnPreSetup(rex::RuntimeConfig& config) override {
+    // Identifies this project to the SDK's mod manager overlay ("All" tab)
+    // as the goopie.xyz `recompName` to query the public mod catalog for
+    config.catalog_name = "eternalsonata";
+  }
 
   void OnPostSetup() override {
     // Seed the GPU plugin/Vulkan device lists once here rather than every
