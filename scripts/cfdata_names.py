@@ -3,7 +3,7 @@
 
 The display name of a field area lives in its `cfdata` area file (e.g.
 `cfdata/tnk01.e`) as BTX string id 0 of the map-info section (usually the
-*last* BTX section; see LOCATIONS.md "Display names"). Earlier code wrongly
+*last* BTX section). Earlier code wrongly
 took the first section's string 0, which for multi-section files is the shared
 "Handed over %s" blob (empty string 0) or a dialogue/UI prompt.
 

@@ -121,7 +121,7 @@ def fix_relocations(out, base, old_btx_size, delta):
     Without this fix the relocated pointer targets the correct *absolute*
     address but the data at that address is wrong (shifted by delta).  The
     script VM then reads garbage and a wild-handler pointer like 0x52054163
-    appears — see HANDOFF.md.
+    appears.
     """
     magic = struct.unpack_from(">I", out, 0)[0]
     if magic not in (0x180, 0x181):

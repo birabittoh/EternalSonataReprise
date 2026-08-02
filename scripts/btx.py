@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Decode the `BTX ` text sections of a *decoded* .e file (post unpack_e).
 
-Layout is from sub_8223B780 in default.xex; see docs/asset-formats.md 3.4.
+Layout is from sub_8223B780 in default.xex.
 All fields are u32 big-endian, all offsets relative to their own struct.
 
     BTX header          language sub-block           entry table
@@ -32,8 +32,7 @@ import sys
 LANGS = ["JPN ", "USA ", "GBR ", "FRA ", "ITA ", "DEU ", "ESP "]
 
 # JPN blocks are Shift-JIS; the western ones are single-byte. cp1252 is a
-# working assumption -- see the "Character encoding" item in
-# docs/asset-formats.md 7, which is not yet settled against p1.fnt.
+# working assumption, not yet settled against p1.fnt.
 CODECS = {"JPN ": "shift_jis"}
 DEFAULT_CODEC = "cp1252"
 

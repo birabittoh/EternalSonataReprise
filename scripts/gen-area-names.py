@@ -2,7 +2,7 @@
 """Generate src/area_names.generated.h from docs/cfdata_names.txt.
 
 Embeds the id -> display-name table (the map-info BTX string 0 of each
-area's cfdata file; see LOCATIONS.md "Display names") so the runtime
+area's cfdata file) so the runtime
 Discord presence can translate the game's current-area id (byte_8244B500)
 into a human-readable name. Only ids carrying a real banner are listed;
 event/support files (eXXXX, *60, zzz02, ...) are skipped.
@@ -45,7 +45,7 @@ def main():
         "namespace eternalsonata {",
         "",
         '// Maps a cfdata area id (e.g. "tnk01") to its display name (the map-info',
-        '// BTX string 0 of the area\'s cfdata file; see LOCATIONS.md "Display names").',
+        "// BTX string 0 of the area's cfdata file).",
         "// Only ids carrying a real banner are listed; event/support files (eXXXX,",
         "// *60, zzz02, ...) have no entry.",
         "inline const std::unordered_map<std::string, const char*>& AreaNameTable() {",
