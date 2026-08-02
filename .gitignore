@@ -39,6 +39,9 @@ eternalsonata.toml
 # by scripts/gen-area-names.py
 /src/area_names.generated.h
 
+# Embedded overlay font, rebuilt from src/fonts/*.ttf by scripts/gen-fonts.py
+/src/fonts.generated.h
+
 # Windows exe-icon resource script, rewritten by CMake with an absolute path
 # to src/icon.generated.ico (see CMakeLists.txt)
 /src/eternalsonata.generated.rc
@@ -70,3 +73,6 @@ opencode.json
 /extracted/
 /repacked/
 __pycache__/
+
+# Mods
+/mods/
