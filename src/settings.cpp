@@ -121,25 +121,13 @@ struct LanguageOption {
   const char* label;
 };
 
-// XLanguage IDs per the Xbox 360 kernel's user_language cvar (src/kernel/xam/
-// xam_user.cpp); note 10 is intentionally absent (not a valid XLanguage).
+// XLanguage IDs per the Xbox 360 kernel's user_language cvar
 constexpr std::array kLanguageOptions = {
-    LanguageOption{"1", "EN (English)"},
-    LanguageOption{"2", "JA (Japanese)"},
-    LanguageOption{"3", "DE (German)"},
-    LanguageOption{"4", "FR (French)"},
-    LanguageOption{"5", "ES (Spanish)"},
-    LanguageOption{"6", "IT (Italian)"},
-    LanguageOption{"7", "KO (Korean)"},
-    LanguageOption{"8", "ZH (Traditional Chinese)"},
-    LanguageOption{"9", "PT (Portuguese)"},
-    LanguageOption{"11", "PL (Polish)"},
-    LanguageOption{"12", "RU (Russian)"},
-    LanguageOption{"13", "SV (Swedish)"},
-    LanguageOption{"14", "TR (Turkish)"},
-    LanguageOption{"15", "NB (Norwegian)"},
-    LanguageOption{"16", "NL (Dutch)"},
-    LanguageOption{"17", "ZH (Simplified Chinese)"},
+    LanguageOption{"1", "English"},
+    LanguageOption{"3", "German"},
+    LanguageOption{"4", "French"},
+    LanguageOption{"5", "Spanish"},
+    LanguageOption{"6", "Italian"},
 };
 
 struct FrameRateOption {
