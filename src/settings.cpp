@@ -64,6 +64,12 @@ constexpr std::array kGameDefaults = {
     // resolves out of the wrong surface as zeros, which is the black cross-fade
     // source on camera transitions and the black half of the save screenshot.
     DefaultValue{"no_edram_wrap_claim", "true"},
+    // The SDK's vblank pump ties the presentation-interval wait to vsync, so
+    // with vsync on the host limiter's "60" declared rate only ever achieves
+    // the display's vblank-gated actual rate; on a 60 Hz-capped/throttled path
+    // that reads as a real fps half of what's declared, which the frame-clocked
+    // sim turns directly into half-speed motion (game speed = actual/declared).
+    DefaultValue{"vsync", "false"},
     DefaultValue{"swap_post_effect", "fxaa"},
     DefaultValue{"mnk_capture_mouse", "false"},
     DefaultValue{"mnk_mode", "true"},
