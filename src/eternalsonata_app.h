@@ -12,13 +12,16 @@
 #include <memory>
 
 #include <rex/cvar.h>
+#include <rex/discord_rpc.h>
 #include <rex/input/input_system.h>
 #include <rex/rex_app.h>
 #include <rex/system/game_data_selector.h>
+#include <rex/system/kernel_state.h>
 #include <rex/ui/window.h>
 #include <rex/version.h>
 
 #include "icon.generated.h"
+#include "room_presence.h"
 #include "settings.h"
 
 class EternalsonataApp : public rex::ReXApp {
@@ -54,6 +57,10 @@ class EternalsonataApp : public rex::ReXApp {
   void OnPreSetup(rex::RuntimeConfig& /*config*/) override {}
 
   void OnPostSetup() override {
+    // Seed the GPU plugin/Vulkan device lists once here rather than every
+    // time the F4 settings overlay is opened (see settings.cpp).
+    eternalsonata::InitSettingsCaches();
+
     window()->SetIcon(eternalsonata::kIconPNG, eternalsonata::kIconPNGSize);
     window()->SetTitle("Eternal Sonata: Reprise " + std::string(REXGLUE_BUILD_TITLE));
 
@@ -95,9 +102,17 @@ class EternalsonataApp : public rex::ReXApp {
       stats.frame_count = count;
       return stats;
     });
+
+    // Discord Rich Presence: reports the field area the player is currently
+    // in, updated once per guest frame (area id read from byte_8244B500 and
+    // translated through the cfdata name table). See src/room_presence.h/.cpp.
+    auto* ks = rex::system::kernel_state();
+    eternalsonata::GetRoomPresence().Bind(ks, runtime());
   }
 
   void OnShutdown() override {
+    // Stop the Discord presence worker and clear the presence on exit.
+    rex::discord_rpc::Stop();
   }
 
   std::unique_ptr<rex::ui::ImGuiDialog> OnCreateUserSettingsOverlay() override {

@@ -12,6 +12,8 @@
 
 #include <rex/cvar.h>
 
+#include "room_presence.h"
+
 // frame_rate cvar: "30" / "60" / "unlocked". Defined (and persisted) in
 // settings.cpp; declared here so the frame-driver hook can read it cheaply.
 REXCVAR_DECLARE(std::string, frame_rate);
@@ -38,7 +40,7 @@ REX_HOOK_RAW(sub_82254060) { ctx.r3.u64 = 0; }
 // buffer at 0x8244C188 is only ever zeroed, and the console vtable
 // off_82082DDC holds just a destructor and a nullsub - no render, input, or
 // command-dispatch method survives in the binary.  An on-screen console has to
-// be built host-side; see docs/debug-hooks.md.
+// be built host-side.
 
 // ---------------------------------------------------------------------------
 // Skippable message waits
@@ -348,6 +350,67 @@ REX_HOOK_RAW(sub_8210AAD8) {
 
   // Pace after the present, so the wait covers the whole frame.
   LimitFrame(fps);
+}
+
+// ---------------------------------------------------------------------------
+// Field area tracking (Discord Rich Presence)
+// ---------------------------------------------------------------------------
+
+// sub_820FAFB0 and sub_820FB420 are the map manager's field-area loaders:
+// each receives the area id (a "cfdata\<id>.e" filename like "ktm01.e") in r4
+// and loads the area's cfdata + maptex, caching only a 4-byte code
+// (dword_8244B934 / the map object). The generic cfdata loader that writes
+// byte_8244B500 (sub_820FCC80) is used only by the menu/event path, so during
+// normal field play the id never reaches guest static data (which is why the
+// old byte_8244B500-only presence showed "Title Screen" in-field). Hook both
+// loaders to forward the id to RoomPresence, which drives the Discord overlay;
+// see room_presence.cpp for the precedence rules.
+namespace {
+
+// sub_820FAFB0/sub_820FB420's r5 (a3) argument carries a flags word whose
+// 0xA000 bits distinguish a real transition from a speculative gate-proximity
+// preload. Session-log-verified (walking up to, waiting at, then entering a
+// house): the real village load and the real house entry both had r5 =
+// 0xA100 / 0xA001 (0xA000 bits set); every proximity-only preload call --
+// including the reverse preload of the exterior the game issues right after
+// the real entry, so you can step back out seamlessly -- had r5 = 0x10 (bits
+// clear). Caller address alone doesn't work: the same trigger-table wrapper
+// (sub_820ECC30) fires for both real and speculative calls.
+constexpr uint32_t kRealTransitionFlagMask = 0xA000u;
+
+void CaptureFieldArea(PPCContext& ctx, uint8_t* base) {
+  const u32 id_addr = ctx.r4.u32;
+  if (!id_addr) {
+    return;
+  }
+  if ((ctx.r5.u32 & kRealTransitionFlagMask) != kRealTransitionFlagMask) {
+    return;
+  }
+  char id[16] = {};
+  for (u32 i = 0; i < sizeof(id) - 1; ++i) {
+    const u8 c = REX_LOAD_U8(id_addr + i);
+    if (!c) {
+      break;
+    }
+    id[i] = static_cast<char>(c);
+  }
+  eternalsonata::GetRoomPresence().NotifyAreaLoad(id);
+}
+
+}  // namespace
+
+REX_EXTERN(__imp__sub_820FAFB0);
+
+REX_HOOK_RAW(sub_820FAFB0) {
+  CaptureFieldArea(ctx, base);
+  __imp__sub_820FAFB0(ctx, base);
+}
+
+REX_EXTERN(__imp__sub_820FB420);
+
+REX_HOOK_RAW(sub_820FB420) {
+  CaptureFieldArea(ctx, base);
+  __imp__sub_820FB420(ctx, base);
 }
 
 // ---------------------------------------------------------------------------
