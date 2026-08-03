@@ -97,7 +97,9 @@ constexpr std::array kGameDefaults = {
     DefaultValue{"gpu_plugin", "xenos"},
     DefaultValue{"game_data_root", "assets"},
     DefaultValue{"gpu_allow_invalid_fetch_constants", "true"},
+    DefaultValue{"d3d12_readback_memexport", "true"},
     DefaultValue{"d3d12_readback_resolve", "true"},
+    DefaultValue{"clear_memory_page_state", "true"},
     // The game binds an 8-tile-wide render target at EDRAM tile 1720 whose draws
     // give no usable height estimate, so it claims all 2048 tiles and takes
     // ownership of the scene color target at tile 0 by wrapping. That range then
