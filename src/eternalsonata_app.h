@@ -78,6 +78,16 @@ class EternalsonataApp : public rex::ReXApp {
     // Identifies this project to the SDK's mod manager overlay ("All" tab)
     // as the goopie.xyz `recompName` to query the public mod catalog for
     config.catalog_name = "eternalsonata";
+
+    // Lets the SDK's AutoUpdater (F1 mod manager overlay) check
+    // github.com/birabittoh/EternalSonataReprise's Releases for a newer build
+    // and offer to download + apply it. "{tag}"/"{platform}" are substituted
+    // by the SDK.
+    config.update_asset_format = "eternalsonata-{tag}-{platform}";
+    config.update_repo = "birabittoh/EternalSonataReprise";
+
+    // One-shot toast shown top-left as the game starts
+    config.startup_hint = "Press F4 to open settings.";
   }
 
   void OnPostSetup() override {
