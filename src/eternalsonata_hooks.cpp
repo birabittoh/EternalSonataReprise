@@ -175,7 +175,7 @@ REX_IMPORT(__imp__sub_8225A9F0, g_sub_8225A9F0, void(u32, u32));
 // to run ~20% slow motion even when paced perfectly. Dividing 300 is necessary
 // but NOT sufficient: the rate must also divide 60 to stay on the content's
 // authored grid, which rules out 25/50/75/100/150 even though they are exact.
-// See the ladder comment below. In practice 60 is the ceiling and 20 the floor.
+// See the ladder comment below. In practice 60 is the ceiling and 30 the floor.
 // The rate the guest last asked for. The stock game does not run at a single
 // rate: sub_82133130 (title) and sub_821E51B0 (the save menu, which saves the
 // old rate into byte_8243F232 to restore later) ask for 60, most of the game
@@ -250,8 +250,9 @@ u8 RequestedFrameRate(u8 stock) {
 // ---------------------------------------------------------------------------
 
 // Fallback ladder. Every rung divides 60, so the per-frame step stays on the
-// content's 5-unit grid (60 -> 5, 30 -> 10, 20 -> 15). 20 is the floor; below
-// that the cure is worse than the disease.
+// content's 5-unit grid (60 -> 5, 30 -> 10). 30 is the floor: it's the game's
+// own stock gameplay rate, which the content is built for; 20 was dropped
+// because the game isn't built for it.
 //
 // 60 is the only adaptive target, and it is also the highest rate this engine
 // can express at all. Three independent constraints agree on that ceiling: the
@@ -265,7 +266,7 @@ const u8* g_rungs = nullptr;
 size_t g_rung_count = 0;
 
 bool BuildLadder(u8 target) {
-  static constexpr u8 k60[] = {60, 30, 20};
+  static constexpr u8 k60[] = {60, 30};
   if (target == 60) {
     g_rungs = k60;
     g_rung_count = std::size(k60);
@@ -343,10 +344,21 @@ constexpr std::chrono::microseconds PeriodFor(u8 fps) {
 // present hook (sub_8210AAD8) should. The scene-transition hook (sub_8210A6B8)
 // calls this too, but only wants the rung currently in force for the rate it
 // is applying.
-u8 AdaptiveFrameRate(u8 requested, bool measure) {
+//
+// `stock` is what the guest itself asked for (g_guest_rate), independent of
+// the frame_rate cvar. Screens the stock game paces at 60 (title, save menu)
+// are not what the ladder exists to protect. It exists to soften gameplay,
+// which stock paces at 30 and the "60" option boosts to 60. So when stock is
+// already 60, act vanilla and hand back 60 untouched, leaving the ladder's
+// state (built for the gameplay rate) alone rather than dragging those
+// screens down to whatever rung gameplay perf last settled on.
+u8 AdaptiveFrameRate(u8 requested, u8 stock, bool measure) {
   if (!REXCVAR_GET(adaptive_framerate)) {
     g_ladder_target = 0;  // Rebuild from the top if it is switched back on.
     return requested;
+  }
+  if (stock == 60) {
+    return 60;
   }
   if (g_ladder_target != requested) {
     // First use, or the user changed the setting: rebuild and start at the top.
@@ -675,7 +687,7 @@ void ReportFramePacing(u8* base, u8 fps) {
 REX_HOOK_RAW(sub_8210A6B8) {
   const u8 requested = static_cast<u8>(ctx.r4.u32);
   g_guest_rate = requested ? requested : 60;
-  const u8 fps = AdaptiveFrameRate(RequestedFrameRate(g_guest_rate), /*measure=*/false);
+  const u8 fps = AdaptiveFrameRate(RequestedFrameRate(g_guest_rate), g_guest_rate, /*measure=*/false);
   ApplyFrameRate(ctx, base, fps);
   g_applied_fps = fps;
 }
@@ -691,7 +703,7 @@ REX_EXTERN(__imp__sub_8210AAD8);
 REX_HOOK_RAW(sub_8210AAD8) {
   // The original clobbers r3, so capture the render-pump object up front.
   const u32 a1 = ctx.r3.u32;
-  const u8 fps = AdaptiveFrameRate(RequestedFrameRate(g_guest_rate), /*measure=*/true);
+  const u8 fps = AdaptiveFrameRate(RequestedFrameRate(g_guest_rate), g_guest_rate, /*measure=*/true);
   if (fps != g_applied_fps) {
     ApplyFrameRate(ctx, base, fps);
     g_applied_fps = fps;
