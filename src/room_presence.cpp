@@ -31,12 +31,6 @@ constexpr uint32_t kAreaIdGuestAddress = 0x8244B500;
 // Longest area id ("e3120_120") is well under this.
 constexpr uint32_t kAreaIdMaxLength = 32;
 
-// Guest virtual address of the party level (byte_8243FBFC). New game and
-// chapter init write 1; the pause-menu Party Level screen commits the
-// selected level (edit buffer dword_8243F364) to it on confirm. Static data,
-// so no heap guard is needed; vanilla image only.
-constexpr uint32_t kPartyLevelGuestAddress = 0x8243FBFC;
-
 // The map-region buffer at 0x824FD030 (map manager 0x824D0480 + 0x2CBB0) is
 // the game's own "which field map is loaded" copy, and looks like the obvious
 // way to tell "a field is loaded" -- but it is not usable here and is
@@ -80,6 +74,18 @@ constexpr uint32_t kPartyLevelGuestAddress = 0x8243FBFC;
 // leave "Fighting...". Entry cannot come from here (C8 still reads 3 well after
 // the battle has begun); it comes from the sub_820FDB80 hook.
 constexpr uint32_t kSceneModeAppliedGuestAddress = 0x824C74CB;
+
+// Guest virtual address of the party level (low byte of the big-endian
+// dword_8243F3EC, same convention as kSceneModeAppliedGuestAddress above).
+// New game and chapter init write 1 (sub_820FDFC0 and its duplicates).
+// Identified via sub_82228410, a party-rank UI draw routine with a
+// fallthrough switch (case 1, 2, 3, 4, 5) on dword_8243F3EC that lights up
+// one more rank icon per case -- the classic "N-star rating" pattern for a
+// Party Level display. Live-verified 2026-08-04: reads 2 while the in-game
+// X-button status screen shows "Party Level 2", no offset needed. (The
+// earlier byte_8243FBFC guess was wrong -- its own logic only ever handles
+// 3 states, but Party Level goes 1-6.)
+constexpr uint32_t kPartyLevelGuestAddress = 0x8243F3EF;
 
 std::string ReadGuestCString(rex::memory::Memory* memory, uint32_t guest_address,
                              size_t max_len) {
@@ -186,12 +192,12 @@ void RoomPresence::Tick() {
     state = "Exploring...";
   }
   if (!state.empty()) {
-    // Append the party level (byte_8243FBFC) so the state row reads e.g.
-    // "Exploring... Group Lv. 3". The pause-menu Party Level screen commits
-    // new values to this byte, and Tick() re-reads it every frame, so a level
-    // change shows up through the same state_changed detection as the base text.
+    // Append the party level (dword_8243F3EC, see kPartyLevelGuestAddress)
+    // so the state row reads e.g. "Exploring... Party Lv. 2". Tick()
+    // re-reads it every frame, so a level change shows up through the same
+    // state_changed detection as the base text.
     const uint8_t party_level = ReadGuestU8(memory, kPartyLevelGuestAddress);
-    state += " Group Lv. " + std::to_string(party_level);
+    state += " Party Lv. " + std::to_string(party_level);
   }
 
   // Battle entry does not change the area id (same map stays loaded), so the
