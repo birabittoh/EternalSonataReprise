@@ -30,7 +30,7 @@
 // left empty, because the first row already says everything there is to say
 // ("Loading..." / "In Main Menu") and repeating it just prints the same text
 // twice. While a state row is shown it is suffixed with the current party
-// level read from byte_8243FBFC (" Group Lv. N"). Battle is tracked
+// level read from dword_8243F3EC (" Party Lv. N"). Battle is tracked
 // separately because the field stays loaded underneath one, so "is a field
 // loaded" cannot tell the two apart. See room_presence.cpp for why the game's
 // scene-mode register drives only the *end* of a battle and nothing else.
