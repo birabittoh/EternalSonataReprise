@@ -2,9 +2,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <cstring>
 #include <iterator>
 #include <string>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -16,12 +19,14 @@
 #include <rex/cvar.h>
 
 #include "room_presence.h"
+#include "settings.h"
 
 // frame_rate cvar: "30" / "60" / "unlocked". Defined (and persisted) in
 // settings.cpp; declared here so the frame-driver hook can read it cheaply.
 REXCVAR_DECLARE(std::string, frame_rate);
 REXCVAR_DECLARE(bool, frame_debug);
 REXCVAR_DECLARE(bool, adaptive_framerate);
+REXCVAR_DECLARE(bool, menu_scan);
 
 
 // ---------------------------------------------------------------------------
@@ -700,6 +705,14 @@ REX_HOOK_RAW(sub_8210A6B8) {
 // applied value, and it only touches D3D when they differ.
 REX_EXTERN(__imp__sub_8210AAD8);
 
+// Defined further down with the rest of the memory differ. Polled from the
+// present path as well as the menu path so the manual F9-F12 hotkeys work from
+// anywhere, not only while a menu is up.
+namespace {
+void ScanPollKeys(u8* base);
+void ScanTick(u8* base);
+}  // namespace
+
 REX_HOOK_RAW(sub_8210AAD8) {
   // The original clobbers r3, so capture the render-pump object up front.
   const u32 a1 = ctx.r3.u32;
@@ -709,6 +722,8 @@ REX_HOOK_RAW(sub_8210AAD8) {
     g_applied_fps = fps;
   }
   __imp__sub_8210AAD8(ctx, base);
+  ScanPollKeys(base);
+  ScanTick(base);
 
   // Pace after the present, so the wait covers the whole frame. Passing 0 while
   // fast-forwarding skips the wait entirely; LimitFrame also drops its stale
@@ -825,3 +840,890 @@ REX_HOOK_RAW(sub_820FD998) {
 // unwind entry, not a dispatch-table slot. Nothing in the image references the
 // function as code or data, and a live breakpoint on it never hit. It is dead
 // code in this build. Do not resurrect that hook.
+
+// ---------------------------------------------------------------------------
+// Native "Fullscreen" row in the Options screen
+// ---------------------------------------------------------------------------
+//
+// Screens are static display lists walked by sub_821F2F38 (full derivation in
+// docs/debug-hooks.md §14): a stream of variable-length records, each tagged
+// at +0 with `type = index * 100`, dispatched through word_82082428 and ended
+// by a record whose type is 0xFFFF. A text label is type 200, 0x28 bytes, with
+// a BTX string id at +4 and absolute X/Y at +8/+0xC.
+//
+// Because every record carries its own absolute position, a row can simply be
+// appended: we copy the Options list, add two text records (label + value)
+// before a fresh terminator, and point the interpreter at the copy. The two
+// records use synthetic string ids that no BTX block defines, and the
+// sub_8223B780 hook below answers them directly - so no game data is repacked
+// and no asset has to be rebuilt.
+//
+// SCOPE: this makes the row *draw*. Cursor/selection handling lives elsewhere
+// and has not been reverse engineered, so the row is not yet selectable - it
+// reflects the fullscreen cvar but cannot yet change it from the pad.
+
+namespace {
+
+constexpr u32 kOptionsList = 0x8205E880u;  // Options display list
+constexpr u32 kOptionsListBytes = 0x868u;  // up to, excluding, its terminator
+
+// Splice point: just past the whole Sottotitoli row group - its label
+// (0x8205EF64), the "Si" and "NO" value records, and the type-600 underline -
+// i.e. guest 0x8205EFEC. Sottotitoli is the closest analogue to what we are
+// adding (a boolean row), so inserting here puts our records in exactly the
+// drawing state the real rows are in. Appending at the end of the list instead
+// made the label render offset from its own cursor position.
+constexpr u32 kInsertOffset = 0x76Cu;
+constexpr u32 kTextRecord = 200u;          // type 200 = text label
+constexpr u32 kTextRecordBytes = 0x28u;
+// Type 100 is a whole family: its handler at 0x821F35DC sub-dispatches on
+// `type - 100` across 21 shapes (word_820823E0). Plain 100 is the highlight
+// bar, {100, sprite, height, y, 1000, 1000, -1}, 0x1C bytes.
+//
+// `+4` is NOT an X coordinate. The handler at 0x821F3610 loads it with `lwz`
+// and passes it to sub_821EF0E8 as an integer, while `+8` and `+0xC` go
+// through fcfid into floats - so +4 is a sprite/resource id, and a bar carries
+// no authored X at all (the row handler positions it). Writing a coordinate
+// there makes sub_821EF0E8 fail, and it stores its -1 into the id array while
+// still bumping the count - which crashes the per-frame walk a few seconds
+// later. Reuse the game's own sprite id.
+constexpr u32 kIconRecord = 100u;
+constexpr u32 kIconRecordBytes = 0x1Cu;
+
+// The bar is a **type-110** record - the 100 family, subtype 10 - at list
+// offset 0x6C4: {110, 234, 490, 285, 1000, 1000, -1}. Sprite 234, x 490 (the
+// left option's column) and y 285 (the row's own display y). It sits *before*
+// the row's text, because the bar draws behind it.
+//
+// Two wrong turns, recorded so they are not repeated:
+//   - type 600 ({600, 120, 328, 950} at 0x75C) creates nothing at all - the id
+//     count did not even move. It is the underline, as originally named.
+//   - type 100 subtype 0 ({100, 350, ...} at 0x76C) is the small subtitle
+//     ICON, one per row. Right family, wrong subtype.
+// Only the 100 family creates entries in the id array; text (200) and 600 do
+// not, which is why our three text records never disturbed the row indices.
+// Clone the whole stock block, not just the bar record. A bar on its own comes
+// out visibly darker than the stock ones: the {2101, 2100, 1} record before it
+// sets the draw state the type-100 family handler branches on (the r27 test at
+// 0x821F3610), and the {2} after it restores that state. Emitting the bar
+// outside the pair leaves it drawing with whatever blend the preceding icon
+// record left behind.
+constexpr u32 kBarRecordOffset = 0x6B8u;  // {2101,2100,1} + bar + {2}
+constexpr u32 kBarRecordBytes = 0x2Cu;
+constexpr int32_t kBarShrinkFixup = 7;    // see kBarInitY below
+constexpr u32 kBarBlockYOffset = 0x18u;   // the bar record's y within the block
+// Authored the way the stock records are - the row's own display y, as
+// Sottotitoli uses 285 - plus the shrink compensation below.
+constexpr int32_t kFsBarDisplayY = 385 + kBarShrinkFixup;
+// +0x10 / +0x14 of a type-100-family record are a size scale in thousandths
+// (the stock records carry 1000, and the two at list offset 0x580 carry 949).
+constexpr u32 kBarBlockWOffset = 0x1Cu;
+constexpr u32 kBarBlockHOffset = 0x20u;
+// Bar placement, taken from the game rather than measured.
+//
+// sub_82200FE8 is the Options screen init, and it places every bar itself with
+// sub_82178A88 - an instant set - so the y authored in the display-list record
+// never decides where a bar ends up. That is why the record's y could not be
+// made to agree with the runtime one: there are two coordinate spaces, and the
+// record is in neither.
+//
+//   slot   init x                         init y   handler y (sub_82201620)
+//   +84    base + 200*(1-byte_8243FBFC)      895      155
+//   +88    base + 200*dword_8243F368         945      205
+//   +92    base + 200*(BYTE2(FC04)^1)       1205      465
+//   +120   base + 200*(1-BYTE1(FC04))       1155      415
+//
+// The two spaces differ by a constant 740 on every row. Our row follows
+// Subtitles (415) and Voce (465) on the same 50px pitch, so it is 515 in
+// handler space and 515 + 740 = 1255 in init space. The x formula is the same
+// in both: base for the left option, base + 200 for the right.
+//
+// Bar size: 650 x 800 thousandths of the stock bar, measured against the real
+// rows. +0x10 / +0x14 of a type-100-family record are that scale (the stock
+// records carry 1000; the two at list offset 0x580 carry 949).
+// Dumping the stock Subtitles bar object next to ours (see DumpHighlightBars)
+// showed them identical but for two things: y, differing by exactly the 100 of
+// two row pitches, and the scale at +0x4C/+0x50 - 1.0/1.0 stock against our
+// 0.65/0.80. So the leftover "few pixels too high" is entirely the height
+// scale: the sprite is anchored at its top, so shrinking it lifts the bottom
+// edge and the bar's centre rises by (1 - scale) * height / 2. The correction
+// is 7px, settled against the real rows - close to the 5px a 50px-tall bar
+// would predict, so the sprite is a little taller than the row pitch. Applied
+// to all three y values so they stay in step.
+constexpr int32_t kBarInitY = 1255 + kBarShrinkFixup;  // sub_82178A88 space
+constexpr int32_t kBarMoveY = 515 + kBarShrinkFixup;   // sub_82179F78 space
+constexpr int32_t kBarWidth = 600;
+constexpr int32_t kBarHeight = 800;
+
+// Moving the bar. sub_82201620 does exactly this on every value change:
+//   sub_82179F78(&dword_824CF500, id, &{x, y, 0}, 0.0, 14.0, 14.0, 14.0)
+// with r10 = 15 (the call site at 0x82201B34 sets it; it lands in the params
+// block as a mode field, so it is not optional). The two float constants are
+// flt_82016120 = 0.0 and flt_820AAC3C = 14.0, read out of the image.
+//
+// x = base + 200 * option_index, where base is language dependent, and the
+// runtime y is the record's display y + 130 (stock: record 285 -> move 415).
+constexpr u32 kTextRegistry = 0x824CF500u;
+constexpr u32 kBarMoveMode = 15u;
+constexpr double kBarMoveSpeed = 14.0;
+constexpr int32_t kBarColumnStride = 200;
+constexpr u32 kLanguage = 0x8243D370u;
+
+u32 g_fs_bar_id = 0xFFFFFFFFu;  // registry id of our row's bar
+u32 g_fs_vec = 0;               // guest scratch for the {x, y, z} argument
+constexpr u32 kListTerminator = 0x0000FFFFu;
+
+// Synthetic BTX ids, far above any real entry (the xex block defines 211) so
+// they can never collide with a genuine lookup.
+constexpr u32 kFsLabelId = 900u;
+constexpr u32 kFsValueId = 901u;   // left value slot  (X=490), the "yes" option
+constexpr u32 kFsValue2Id = 902u;  // right value slot (X=690), the "no" option
+
+// The Sottotitoli row's own value strings - "Si" (130) and "NO" (131) - reused
+// so the Fullscreen row reads identically and stays localised.
+constexpr u32 kBtxYes = 130u;
+constexpr u32 kBtxNo = 131u;
+
+u32 g_fs_list = 0;   // guest address of the extended display list
+u32 g_fs_label = 0;    // guest address of "Fullscreen"
+bool g_fs_failed = false;
+bool g_options_active = false;  // Options screen was the last one built
+bool g_bar_dumped = false;      // bar objects already dumped for this entry
+
+// Selection geometry, measured at runtime (see docs §14). The Options screen's
+// bottom group is id 2, holding two sub-items at screen y 430 and 480; screen
+// y is display y + 145, so the appended row at display Y=385 sits at y=530.
+constexpr u32 kOptGroupId = 2;
+constexpr u32 kOptGroupCount = 2;   // rows the group ships with
+constexpr int32_t kOptRowX = 550;   // cursor column for every Options row
+constexpr int32_t kOptRow0Y = 430;  // Sottotitoli, used to identify the group
+constexpr int32_t kOptRow1Y = 480;  // Voce
+constexpr int32_t kFsRowY = 530;    // our row, one 50px step below Voce
+constexpr u8 kFsRowIndex = 2;       // our sub-index within group 2
+constexpr u8 kSubtitleRowIndex = 0;  // Sottotitoli, the reference two-option row
+
+// Pad state. sub_821281B8 polls an array of 4 pad objects at 0x824BB418,
+// stride 464; sub_82128310 fills each one: +424 = buttons held this frame,
+// +8 = previous, +428 = newly pressed this frame, +432 = pressed-or-repeat,
+// +436 = released. We want the +428 edge so one press is one toggle.
+constexpr u32 kPad0 = 0x824BB418u;
+constexpr u32 kPadPressed = 428u;
+constexpr u32 kBtnDPadLeft = 0x0004u;
+constexpr u32 kBtnDPadRight = 0x0008u;
+constexpr u32 kBtnA = 0x1000u;
+// sub_82128310 also folds the left stick into synthetic bits; confirmed live:
+// 0x10000/0x20000 = up/down, 0x40000/0x80000 = left/right. Matching only the
+// d-pad meant stick input never reached the handler.
+constexpr u32 kBtnStickLeft = 0x40000u;
+constexpr u32 kBtnStickRight = 0x80000u;
+constexpr u32 kLeftMask = kBtnDPadLeft | kBtnStickLeft;
+constexpr u32 kRightMask = kBtnDPadRight | kBtnStickRight;
+
+bool FullscreenEnabled();
+
+REX_IMPORT(__imp__sub_82179F78, g_move_object,
+           void(double, double, double, double, u32, u32, u32, u32, u32, u32, u32, u32));
+
+// sub_82178A88(&registry, id, &{x,y,z}, 0, 0, -1) - the instant placement the
+// screen init uses, with no animation.
+REX_IMPORT(__imp__sub_82178A88, g_set_object_pos, void(u32, u32, u32, u32, u32, u32));
+
+// sub_821F6580(root, id) -> object. The id->object resolver sub_82200FE8 itself
+// uses on these same ids.
+REX_IMPORT(__imp__sub_821F6580, g_resolve_object, u32(u32, u32));
+
+// Slides our row's highlight bar onto the active option. Called on Options
+// entry (so the bar starts on the right side) and on every toggle.
+// `move` picks the mechanism: the animated slide the row handler uses on a
+// value change, or the instant set the screen init uses when Options opens.
+void MoveFullscreenBar(u8* base, bool on, bool move) {
+  if (g_fs_bar_id == 0xFFFFFFFFu || !g_fs_vec) {
+    return;
+  }
+  // Mirror sub_82201620's own base-X selection. Its third case (language >= 7)
+  // reads an uninitialised local, so it is deliberately not reproduced.
+  const u32 lang = REX_LOAD_U32(kLanguage);
+  const int32_t base_x = (lang >= 3 && lang < 5) ? 530 : 480;
+  // Left option is "Si" (fullscreen on), right is "NO" - matching the record
+  // pair the row draws.
+  const int32_t x = base_x + (on ? 0 : kBarColumnStride);
+
+  const auto put = [&](u32 off, float v) {
+    u32 bits;
+    std::memcpy(&bits, &v, sizeof(bits));
+    REX_STORE_U32(g_fs_vec + off, bits);
+  };
+  put(0, static_cast<float>(x));
+  put(4, static_cast<float>(move ? kBarMoveY : kBarInitY));
+  put(8, 0.0f);
+
+  if (move) {
+    g_move_object(0.0, kBarMoveSpeed, kBarMoveSpeed, kBarMoveSpeed, kTextRegistry,
+                  g_fs_bar_id, g_fs_vec, 0, 0, 0, 0, kBarMoveMode);
+  } else {
+    g_set_object_pos(kTextRegistry, g_fs_bar_id, g_fs_vec, 0, 0, 0xFFFFFFFFu);
+  }
+}
+
+void MoveFullscreenBar(u8* base, bool on, bool move);
+
+void SetFullscreen(u8* base, bool on) {
+  MoveFullscreenBar(base, on, /*move=*/true);
+  if (FullscreenEnabled() == on) {
+    return;
+  }
+  // settings.cpp owns the window and the settings file, so the cvar update,
+  // the actual window mode change and persistence all happen there.
+  eternalsonata::SetFullscreenSetting(on);
+  REXLOG_INFO("[options] fullscreen -> {}", on ? "true" : "false");
+}
+
+bool FullscreenEnabled() {
+  const auto* entry = rex::cvar::GetFlagInfo("fullscreen");
+  return entry && entry->getter() == "true";
+}
+
+void WriteGuestString(u8* base, u32 at, const char* s) {
+  for (u32 i = 0;; ++i) {
+    REX_STORE_U8(at + i, static_cast<u8>(s[i]));
+    if (!s[i]) {
+      return;
+    }
+  }
+}
+
+void WriteTextRecord(u8* base, u32 at, u32 id, int32_t x, int32_t y) {
+  REX_STORE_U32(at + 0x00, kTextRecord);
+  REX_STORE_U32(at + 0x04, id);
+  REX_STORE_U32(at + 0x08, static_cast<u32>(x));
+  REX_STORE_U32(at + 0x0C, static_cast<u32>(y));
+  REX_STORE_U32(at + 0x10, 300);  // width, as on every other row
+  REX_STORE_U32(at + 0x14, 48);   // height
+  REX_STORE_U32(at + 0x18, 0);
+  REX_STORE_U32(at + 0x1C, kTextRecordBytes);
+  REX_STORE_U32(at + 0x20, 0xFFFFFFFFu);
+  REX_STORE_U32(at + 0x24, 1);
+}
+
+// Clone the stock Subtitles bar record verbatim and move it to our row's y.
+// Cloning rather than hand-writing keeps every field we have not identified
+// (notably the width at +0xC) at whatever the game already uses.
+void WriteBarRecord(u8* base, u32 at, int32_t y) {
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(kOptionsList + kBarRecordOffset),
+              kBarRecordBytes);
+  REX_STORE_U32(at + kBarBlockYOffset, static_cast<u32>(y));
+  REX_STORE_U32(at + kBarBlockWOffset, static_cast<u32>(kBarWidth));
+  REX_STORE_U32(at + kBarBlockHOffset, static_cast<u32>(kBarHeight));
+}
+
+// Builds the extended list. Existing rows sit on a 50px pitch (..., 285, 335),
+// and the value column is X=490 - the same X as Inglese on the Voice row - so
+// the new row lands at Y=385 directly below Voice.
+//
+// The contents are rewritten on every Options entry rather than built once.
+// That costs nothing (it is a memcpy of 0x868 bytes) and keeps the row's
+// value text in step with the cvar, since the interpreter only reads the list
+// at screen construction.
+void EnsureFullscreenRow(u8* base) {
+  if (g_fs_failed) {
+    return;
+  }
+  auto* mem = rex::system::kernel_memory();
+  if (!mem) {
+    g_fs_failed = true;
+    return;
+  }
+
+  // Sized for the optional bar record whether or not it is enabled, so the
+  // allocation can be reused across rebuilds.
+  const u32 bytes = kOptionsListBytes + 3 * kTextRecordBytes + kBarRecordBytes +
+                    static_cast<u32>(sizeof(u32));
+  if (!g_fs_list) {
+    g_fs_list = mem->SystemHeapAlloc(bytes, 0x20);
+    g_fs_label = mem->SystemHeapAlloc(64, 0x20);
+    if (!g_fs_list || !g_fs_label) {
+      g_fs_failed = true;
+      REXLOG_WARN("[options] fullscreen row: guest allocation failed");
+      return;
+    }
+    WriteGuestString(base, g_fs_label, "Fullscreen");
+    g_fs_vec = mem->SystemHeapAlloc(16, 0x20);
+  }
+  const u32 list = g_fs_list;
+
+  // Insert, do not append. Records past the last row set drawing state, so a
+  // row appended at the very end inherits that trailing state and renders in
+  // the wrong place (observed: label offset from the cursor, which sat
+  // correctly at y=530). Splicing the two records in immediately after the
+  // Sottotitoli record keeps them in the same state as the real rows.
+  std::memcpy(REX_RAW_ADDR(list), REX_RAW_ADDR(kOptionsList), kInsertOffset);
+  u32 at = list + kInsertOffset;
+  // Mirror the Sottotitoli row exactly: label at X=120 and *both* options drawn
+  // side by side at X=490 / X=690, rather than a single value that swaps.
+  WriteTextRecord(base, at, kFsLabelId, 120, 385);
+  at += kTextRecordBytes;
+  WriteTextRecord(base, at, kFsValueId, 490, 385);
+  at += kTextRecordBytes;
+  WriteTextRecord(base, at, kFsValue2Id, 690, 385);
+  at += kTextRecordBytes;
+
+  // The stock bar record sits at exactly kInsertOffset, and it is the *last*
+  // object-creating record in the list - everything after it is the
+  // 1500/1502 selection block. That matters: sub_82201620 indexes the id array
+  // at screen+0x4C **positionally** (elements 2/3/4 and 11), so a bar inserted
+  // anywhere earlier would renumber the stock rows and move their highlights.
+  // Copy the stock record through first, then append ours, so we take the next
+  // free index and shift nothing.
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(kOptionsList + kInsertOffset),
+              kIconRecordBytes);
+  at += kIconRecordBytes;
+  WriteBarRecord(base, at, kFsBarDisplayY);
+  at += kBarRecordBytes;
+  const u32 rest = kInsertOffset + kIconRecordBytes;
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(kOptionsList + rest),
+              kOptionsListBytes - rest);
+  at += kOptionsListBytes - rest;
+  REX_STORE_U32(at, kListTerminator);
+
+  REXLOG_INFO("[options] fullscreen row built (list=0x{:08X} strings=0x{:08X})",
+              list, g_fs_label);
+}
+
+}  // namespace
+
+// sub_8223B780(blob, string_id) -> char*: the BTX text lookup. Answer our two
+// synthetic ids ourselves and let every real id fall through untouched.
+REX_EXTERN(__imp__sub_8223B780);
+
+REX_HOOK_RAW(sub_8223B780) {
+  const u32 sid = ctx.r4.u32;
+  if (sid == kFsLabelId && g_fs_label) {
+    ctx.r3.u32 = g_fs_label;
+    return;
+  }
+  if (sid == kFsValueId || sid == kFsValue2Id) {
+    // Both options are drawn, as on the Sottotitoli row. Reuse the game's own
+    // strings so they read "Si"/"NO" in whatever language is active: rewrite r4
+    // and let the stock lookup do the work, keeping localisation free.
+    const bool yes_slot = (sid == kFsValueId);
+    ctx.r4.u32 = yes_slot ? kBtxYes : kBtxNo;
+    __imp__sub_8223B780(ctx, base);
+
+    // NOTE: an earlier attempt marked the inactive option by prefixing the
+    // game's "<g>" tag (seen in strings like "<g>You have no score pieces.").
+    // That tag is NOT interpreted here - it rendered literally, which is why
+    // the dimmed option appeared shifted three characters right. Both options
+    // are therefore drawn plain; indicating which one is active still needs the
+    // game's own highlight mechanism (see docs §14, open work).
+    return;
+  }
+  __imp__sub_8223B780(ctx, base);
+}
+
+// sub_821F2F38(a1, list, ...): the display-list interpreter. Swap the Options
+// list for our extended copy; every other screen is left alone.
+REX_EXTERN(__imp__sub_821F2F38);
+
+REX_HOOK_RAW(sub_821F2F38) {
+  // The interpreter runs once per screen build, so the list it is handed is a
+  // reliable "which screen is up" signal for the selection patch below.
+  // Measured: this fires exactly once per Options entry, not per frame - so
+  // the display list is a build step and nothing in it can animate. Anything
+  // that moves while the screen is up (the cursor, the value highlight) is a
+  // live object driven elsewhere.
+  g_options_active = (ctx.r4.u32 == kOptionsList);
+  g_bar_dumped = false;  // re-dump the bar objects on each Options entry
+  if (g_options_active) {
+    EnsureFullscreenRow(base);
+    if (g_fs_list) {
+      ctx.r4.u32 = g_fs_list;
+    }
+  }
+  __imp__sub_821F2F38(ctx, base);
+}
+
+// ---------------------------------------------------------------------------
+// Value-highlight hunt: live memory differ
+// ---------------------------------------------------------------------------
+//
+// The bar that marks a two-option row's active choice is still unidentified
+// (docs/debug-hooks.md §14). Every static lead was ruled out, and the one
+// targeted diff that was tried only covered 0x800 bytes of the 0x824D0440
+// config struct - which does not even hold the Subtitles setting, or that diff
+// would have caught it. So do it properly: snapshot *all* committed guest
+// memory in state A, again in state B, and intersect across repeated toggles.
+// Whatever survives is the state the highlight is driven by; from there a
+// watchpoint on the survivor finds the code that reads it.
+//
+// Workflow (keys are polled here because this hook runs every menu frame):
+//   F9  - capture state A   (e.g. Sottotitoli = Si)
+//   F10 - capture state B   (e.g. Sottotitoli = NO)
+//   F11 - report surviving candidates
+//   F12 - reset the hunt
+// Alternate F9/F10 across several toggles; the candidate set collapses fast.
+//
+// This is a debug tool, inert unless those keys are pressed.
+
+namespace {
+
+// Guest virtual memory, plus the 4 KiB view of the physical heap. The
+// 0xA0000000 and 0xC0000000 views alias the same physical pages as 0xE0000000,
+// so scanning them would only produce duplicate hits.
+constexpr struct {
+  u32 lo, hi;
+} kScanRanges[] = {{0x82000000u, 0xA0000000u}, {0xE0000000u, 0xFB000000u}};
+constexpr u32 kScanPage = 0x1000u;
+
+struct ScanCandidate {
+  u32 addr;
+  u32 a;  // raw big-endian, as stored in guest memory
+  u32 b;
+};
+
+std::vector<u32> g_scan_pages;      // committed page bases, collected once
+std::vector<u32> g_scan_snap;       // state-A snapshot, kScanPage/4 dwords each
+std::vector<ScanCandidate> g_scan_cands;
+bool g_scan_have_a = false;
+bool g_scan_have_cands = false;
+size_t g_scan_last_size = 0;  // convergence tracking for the auto-report
+int g_scan_stable = 0;
+bool g_scan_reported = false;
+
+// Collects the committed pages once. Uncommitted pages must be skipped: the
+// guest address space is reserved as one big host range, so touching a page
+// that was never committed faults.
+void ScanCollectPages() {
+  auto* mem = rex::system::kernel_memory();
+  if (!mem) {
+    return;
+  }
+  g_scan_pages.clear();
+  for (const auto& r : kScanRanges) {
+    for (u32 p = r.lo; p < r.hi; p += kScanPage) {
+      auto* heap = mem->LookupHeap(p);
+      if (!heap) {
+        continue;
+      }
+      u32 protect = 0;
+      if (!heap->QueryProtect(p, &protect) || protect == 0) {
+        continue;
+      }
+      g_scan_pages.push_back(p);
+    }
+  }
+  REXLOG_INFO("[scan] {} committed pages ({} MiB)", g_scan_pages.size(),
+              (g_scan_pages.size() * kScanPage) >> 20);
+}
+
+// REX_RAW_ADDR, not `base + addr`: the physical views above 0xE0000000 carry a
+// +0x1000 host offset on Windows.
+inline u32 ScanRead(u8* base, u32 addr) {
+  u32 v;
+  std::memcpy(&v, REX_RAW_ADDR(addr), sizeof(v));
+  return v;  // kept raw (big-endian); only swapped when reported
+}
+
+void ScanCaptureA(u8* base) {
+  if (g_scan_pages.empty()) {
+    ScanCollectPages();
+    if (g_scan_pages.empty()) {
+      return;
+    }
+  }
+  if (g_scan_have_cands) {
+    // Filter: a real candidate must return to its state-A value.
+    const size_t before = g_scan_cands.size();
+    std::erase_if(g_scan_cands, [&](const ScanCandidate& c) {
+      return ScanRead(base, c.addr) != c.a;
+    });
+    REXLOG_INFO("[scan] A: {} -> {} candidates", before, g_scan_cands.size());
+    return;
+  }
+  g_scan_snap.resize(g_scan_pages.size() * (kScanPage / sizeof(u32)));
+  for (size_t i = 0; i < g_scan_pages.size(); ++i) {
+    std::memcpy(&g_scan_snap[i * (kScanPage / sizeof(u32))],
+                REX_RAW_ADDR(g_scan_pages[i]), kScanPage);
+  }
+  g_scan_have_a = true;
+  REXLOG_INFO("[scan] baseline A captured");
+}
+
+void ScanCaptureB(u8* base) {
+  if (!g_scan_have_a) {
+    REXLOG_WARN("[scan] press F9 for a state-A baseline first");
+    return;
+  }
+  if (g_scan_have_cands) {
+    const size_t before = g_scan_cands.size();
+    std::erase_if(g_scan_cands, [&](const ScanCandidate& c) {
+      return ScanRead(base, c.addr) != c.b;
+    });
+    REXLOG_INFO("[scan] B: {} -> {} candidates", before, g_scan_cands.size());
+    return;
+  }
+  // First B: everything that moved since the baseline becomes a candidate.
+  constexpr size_t kDwords = kScanPage / sizeof(u32);
+  for (size_t i = 0; i < g_scan_pages.size(); ++i) {
+    const u32 page = g_scan_pages[i];
+    const u32* snap = &g_scan_snap[i * kDwords];
+    for (size_t j = 0; j < kDwords; ++j) {
+      const u32 now = ScanRead(base, page + static_cast<u32>(j * 4));
+      if (now != snap[j]) {
+        g_scan_cands.push_back({page + static_cast<u32>(j * 4), snap[j], now});
+      }
+    }
+  }
+  g_scan_have_cands = true;
+  g_scan_snap.clear();
+  g_scan_snap.shrink_to_fit();
+  REXLOG_INFO("[scan] {} initial candidates", g_scan_cands.size());
+}
+
+// Dumps every survivor to a file - the set converges to a few hundred, which is
+// far too many for the log but trivial to grep offline. Values are shown as
+// hex, signed int and float, because a menu coordinate could plausibly be any
+// of the three.
+void ScanReport(u8* base) {
+  FILE* f = std::fopen("logs/scan_candidates.txt", "w");
+  if (!f) {
+    REXLOG_WARN("[scan] cannot open logs/scan_candidates.txt");
+    return;
+  }
+  std::fprintf(f, "# addr        A(hex)     A(int)   A(float)      B(hex)     B(int)   B(float)\n");
+  for (const auto& c : g_scan_cands) {
+    const u32 a = __builtin_bswap32(c.a);
+    const u32 b = __builtin_bswap32(c.b);
+    float af, bf;
+    std::memcpy(&af, &a, 4);
+    std::memcpy(&bf, &b, 4);
+    std::fprintf(f, "0x%08X  0x%08X %10d %12g   0x%08X %10d %12g\n", c.addr, a,
+                 static_cast<int32_t>(a), af, b, static_cast<int32_t>(b), bf);
+  }
+  std::fclose(f);
+  REXLOG_INFO("[scan] {} candidates written to logs/scan_candidates.txt",
+              g_scan_cands.size());
+}
+
+void ScanReset() {
+  g_scan_cands.clear();
+  g_scan_snap.clear();
+  g_scan_snap.shrink_to_fit();
+  g_scan_have_a = false;
+  g_scan_have_cands = false;
+  g_scan_last_size = 0;
+  g_scan_stable = 0;
+  g_scan_reported = false;
+  REXLOG_INFO("[scan] reset");
+}
+
+// Auto-capture, driven by the Subtitles row itself. A two-option row is
+// idempotent per direction: left always selects the left option, right the
+// right one. So "left pressed" is unambiguously state A and "right pressed" is
+// state B, no matter what order they come in - the user just parks the cursor
+// on Subtitles and alternates left/right, and the candidate set collapses on
+// its own. Captures are deferred a few frames so the value (and the bar) have
+// settled before the snapshot.
+int g_scan_pending = 0;   // frames left before the deferred capture
+bool g_scan_pending_a = false;
+
+void ScanOnRowInput(u8* base, bool left) {
+  g_scan_pending = 4;
+  g_scan_pending_a = left;
+}
+
+void ScanTick(u8* base) {
+  if (g_scan_pending && --g_scan_pending == 0) {
+    if (g_scan_pending_a) {
+      ScanCaptureA(base);
+    } else {
+      ScanCaptureB(base);
+    }
+    // Auto-report once the set stops shrinking. Waiting for some small
+    // threshold is wrong - the true answer set has a floor (a few hundred
+    // addresses genuinely alternate with the setting), so "converged" is the
+    // real signal, not "small". Dumping again on every later capture would
+    // also let a stray press overwrite a good dump with an empty one.
+    if (g_scan_have_cands) {
+      g_scan_stable = (g_scan_cands.size() == g_scan_last_size) ? g_scan_stable + 1 : 0;
+      g_scan_last_size = g_scan_cands.size();
+      if (g_scan_stable == 3 && !g_scan_reported && !g_scan_cands.empty()) {
+        g_scan_reported = true;
+        ScanReport(base);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Highlight-bar dump
+// ---------------------------------------------------------------------------
+//
+// sub_82201620 (the Options row input handler) reaches a row's highlight bar as
+// `*(u32*)(root[709] + N)` with N = 84/88/92 for the page-1 rows, 120 for
+// Subtitles and 92 for Voice - where `root` is dword_824400E4 and `[709]` is
+// the same `4 * (page + 709)` slot sub_821F2F38 allocates the 1744-byte screen
+// object into. Walk that chain and dump what is actually there: the object's
+// vtable identifies its class, which is what a new bar would have to be built
+// as. Runs once per Options entry, gated behind menu_scan.
+constexpr u32 kUiRoot = 0x824400E4u;
+constexpr u32 kScreenSlotBase = 709u;
+constexpr u32 kBarOffsets[] = {84, 88, 92, 120};
+
+inline bool GuestPtr(u32 v) { return v >= 0x82000000u && v < 0xFB000000u; }
+
+void DumpHighlightBars(u8* base) {
+  const u32 root = REX_LOAD_U32(kUiRoot);
+  if (!GuestPtr(root)) {
+    return;
+  }
+  const u32 page = REX_LOAD_U8(root + 2833);
+  const u32 screen = REX_LOAD_U32(root + 4 * (page + kScreenSlotBase));
+  REXLOG_INFO("[bar] root=0x{:08X} page={} screen=0x{:08X}", root, page, screen);
+  if (!GuestPtr(screen)) {
+    return;
+  }
+
+  // The four "bar" offsets are not separate fields at all: 84/88/92/120 are
+  // simply elements 2/3/4/11 of one array of registry ids at +0x4C, filled in
+  // display-list order. Log the array and its count byte directly, so a
+  // controlled A/B can be read straight out of the log.
+  u32 n = 0;
+  std::string ids;
+  for (; n < 24; ++n) {
+    const u32 id = REX_LOAD_U32(screen + 0x4C + 4 * n);
+    if (id == 0xFFFFFFFFu) {
+      break;
+    }
+    ids += fmt::format("{:02X} ", id);
+  }
+  REXLOG_INFO("[bar] count@0x17C={} ids@0x4C({})= {}",
+              REX_LOAD_U8(screen + 0x17C), n, ids);
+
+  // Resolve the stock Subtitles bar and ours, and dump both. Comparing the two
+  // objects field by field is how the residual vertical offset gets fixed
+  // exactly: whatever field differs by something other than the 50px row pitch
+  // is the one the height scale is disturbing.
+  const u32 stock_id = REX_LOAD_U32(screen + 120);
+  for (int which = 0; which < 2; ++which) {
+    const u32 id = which ? g_fs_bar_id : stock_id;
+    if (id == 0xFFFFFFFFu) {
+      continue;
+    }
+    const u32 obj = g_resolve_object(root, id);
+    REXLOG_INFO("[bar] {} bar id=0x{:X} obj=0x{:08X}", which ? "ours" : "stock",
+                id, obj);
+    if (!GuestPtr(obj)) {
+      continue;
+    }
+    for (u32 o = 0; o < 0x80; o += 0x10) {
+      REXLOG_INFO("[bar]   +0x{:02X}: {:08X} {:08X} {:08X} {:08X}", o,
+                  REX_LOAD_U32(obj + o), REX_LOAD_U32(obj + o + 4),
+                  REX_LOAD_U32(obj + o + 8), REX_LOAD_U32(obj + o + 12));
+    }
+  }
+
+  for (const u32 off : kBarOffsets) {
+    const u32 obj = REX_LOAD_U32(screen + off);
+    if (!GuestPtr(obj)) {
+      REXLOG_INFO("[bar] screen+{:3} = 0x{:08X} (not an object)", off, obj);
+      continue;
+    }
+    // +0 is the vtable on every object in this UI (sub_820E64F0 sets it), so
+    // it is the class fingerprint - and it is a static address, which means it
+    // can be looked up in IDA to find the constructor and thence the record
+    // handler that builds one.
+    const u32 vtable = REX_LOAD_U32(obj);
+    REXLOG_INFO("[bar] screen+{:3} -> obj=0x{:08X} vtable=0x{:08X}", off, obj,
+                vtable);
+    for (u32 row = 0; row < 0x60; row += 0x10) {
+      REXLOG_INFO("[bar]   +0x{:02X}: {:08X} {:08X} {:08X} {:08X}", row,
+                  REX_LOAD_U32(obj + row), REX_LOAD_U32(obj + row + 4),
+                  REX_LOAD_U32(obj + row + 8), REX_LOAD_U32(obj + row + 12));
+    }
+  }
+
+  // Dump the whole 1744-byte screen object. The four known slots hold small
+  // integers, not pointers - they are registry ids (sub_82179F78 forwards its
+  // second argument straight to sub_821771F8 as an id), so the rest of the
+  // struct is where any *other* per-row id lives. Diffing this file with and
+  // without the probe bar record is what identifies our row's id.
+  static int s_dump_index = 0;
+  char path[128];
+  std::snprintf(path, sizeof(path), "logs/screen_dump_%d.txt", s_dump_index++);
+  FILE* f = std::fopen(path, "w");
+  if (!f) {
+    return;
+  }
+  std::fprintf(f, "# screen object 0x%08X (1744 bytes)\n", screen);
+  for (u32 o = 0; o < 1744; o += 16) {
+    std::fprintf(f, "+0x%04X  %08X %08X %08X %08X\n", o, REX_LOAD_U32(screen + o),
+                 REX_LOAD_U32(screen + o + 4), REX_LOAD_U32(screen + o + 8),
+                 REX_LOAD_U32(screen + o + 12));
+  }
+  std::fclose(f);
+  REXLOG_INFO("[bar] screen object written to {}", path);
+}
+
+// Edge-detected hotkeys. GetAsyncKeyState is fine to call from the guest
+// thread; nothing here runs unless a key is actually pressed.
+void ScanPollKeys(u8* base) {
+#ifdef _WIN32
+  static const struct {
+    int vk;
+    void (*fn)(u8*);
+  } kKeys[] = {
+      {VK_F9, &ScanCaptureA},
+      {VK_F10, &ScanCaptureB},
+      {VK_F11, &ScanReport},
+      {VK_F12, [](u8*) { ScanReset(); }},
+  };
+  static bool s_down[std::size(kKeys)] = {};
+  for (size_t i = 0; i < std::size(kKeys); ++i) {
+    const bool down = (GetAsyncKeyState(kKeys[i].vk) & 0x8000) != 0;
+    if (down && !s_down[i]) {
+      kKeys[i].fn(base);
+    }
+    s_down[i] = down;
+  }
+#else
+  (void)base;
+#endif
+}
+
+}  // namespace
+
+// sub_821F62B8 is the per-frame cursor update for the menu. We piggyback on it
+// to keep the Fullscreen row selectable (the screen resets the group's count
+// on every rebuild) and to handle input while the cursor sits on that row.
+REX_EXTERN(__imp__sub_821F62B8);
+
+REX_HOOK_RAW(sub_821F62B8) {
+  __imp__sub_821F62B8(ctx, base);
+
+  if (!g_options_active || !g_fs_list) {
+    return;
+  }
+  if (!g_bar_dumped) {
+    g_bar_dumped = true;
+    // Our bar record is appended after every stock object-creating record, so
+    // our id is always the last entry of the array at screen+0x4C.
+    const u32 root = REX_LOAD_U32(kUiRoot);
+    if (root >= 0x82000000u && root < 0xFB000000u) {
+      const u32 page = REX_LOAD_U8(root + 2833);
+      const u32 screen = REX_LOAD_U32(root + 4 * (page + kScreenSlotBase));
+      if (screen >= 0x82000000u && screen < 0xFB000000u) {
+        u32 last = 0xFFFFFFFFu;
+        for (u32 i = 0; i < 24; ++i) {
+          const u32 id = REX_LOAD_U32(screen + 0x4C + 4 * i);
+          if (id == 0xFFFFFFFFu) {
+            break;
+          }
+          last = id;
+        }
+        g_fs_bar_id = last;
+        REXLOG_INFO("[options] fullscreen bar id = 0x{:X}", g_fs_bar_id);
+      }
+    }
+    // Place the bar the way the screen init places the stock ones: instantly,
+    // in init space. No settling delay - sub_82178A88 is not an animation.
+    MoveFullscreenBar(base, FullscreenEnabled(), /*move=*/false);
+    if (REXCVAR_GET(menu_scan)) {
+      DumpHighlightBars(base);
+    }
+  }
+  const u32 menu = REX_LOAD_U32(0x824400E8u);
+  if (menu < 0x82000000u || menu >= 0xFB000000u) {
+    return;
+  }
+
+  // Find the Options screen's bottom group and give it one more row. Each node
+  // is {id @ +0, subitem block @ +4, subitem pointer array @ +8, count byte @
+  // +0x0C (mirrored at +0x0D), current index @ +0x2C, next @ +0x30}. The array
+  // is pre-allocated with 10 slots; unused ones are parked at the sentinel
+  // (10000 + i, 10000 + i), so no allocation is needed - only a position and a
+  // bigger count.
+  //
+  // The count check also makes this idempotent: after patching, count is 3, so
+  // it stops matching until the screen is rebuilt (which resets it to 2).
+  for (u32 i = REX_LOAD_U32(menu + 392);
+       i >= 0x82000000u && i < 0xFB000000u; i = REX_LOAD_U32(i + 48)) {
+    if (REX_LOAD_U32(i) != kOptGroupId ||
+        REX_LOAD_U8(i + 0x0C) != kOptGroupCount) {
+      continue;
+    }
+    const u32 arr = REX_LOAD_U32(i + 8);
+    if (arr < 0x82000000u || arr >= 0xFB000000u) {
+      continue;
+    }
+    const u32 s0 = REX_LOAD_U32(arr);
+    const u32 s1 = REX_LOAD_U32(arr + 4);
+    const u32 s2 = REX_LOAD_U32(arr + 8);
+    if (s0 < 0x82000000u || s1 < 0x82000000u || s2 < 0x82000000u ||
+        s2 >= 0xFB000000u) {
+      continue;
+    }
+    // Confirm this really is the Options bottom group before writing.
+    if (static_cast<int32_t>(REX_LOAD_U32(s0 + 8)) != kOptRow0Y ||
+        static_cast<int32_t>(REX_LOAD_U32(s1 + 8)) != kOptRow1Y) {
+      continue;
+    }
+
+    REX_STORE_U32(s2 + 4, static_cast<u32>(kOptRowX));
+    REX_STORE_U32(s2 + 8, static_cast<u32>(kFsRowY));
+    REX_STORE_U8(i + 0x0C, kOptGroupCount + 1);
+    REX_STORE_U8(i + 0x0D, kOptGroupCount + 1);
+    REXLOG_INFO("[options] fullscreen row made selectable (node=0x{:08X} slot=0x{:08X} y={})",
+                i, s2, kFsRowY);
+    break;
+  }
+
+  // Toggle on A / left / right, but only while the cursor is actually parked on
+  // our row: group 2 selected and its sub-index on our slot. The game has no
+  // handler of its own for this index, so nothing else consumes the press.
+  if (REX_LOAD_U32(menu + 396) != kOptGroupId) {
+    return;
+  }
+  for (u32 i = REX_LOAD_U32(menu + 392);
+       i >= 0x82000000u && i < 0xFB000000u; i = REX_LOAD_U32(i + 48)) {
+    if (REX_LOAD_U32(i) != kOptGroupId) {
+      continue;
+    }
+    const u8 row = REX_LOAD_U8(i + 0x2C);
+
+    // The just-pressed mask stays set for a whole guest frame, so latch on our
+    // own observation of the transition - this stays correct even if the cursor
+    // update runs more than once per frame.
+    static u32 s_prev_pressed = 0;
+    const u32 pressed = REX_LOAD_U32(kPad0 + kPadPressed);
+    const u32 fresh = pressed & ~s_prev_pressed;
+    s_prev_pressed = pressed;
+
+    // Subtitles (row 0 of this group) is the reference two-option row for the
+    // highlight hunt - it is a stock row, so its value and highlight move
+    // through the game's own code path.
+    if (row == kSubtitleRowIndex && REXCVAR_GET(menu_scan)) {
+      if (fresh & kLeftMask) {
+        ScanOnRowInput(base, true);
+      } else if (fresh & kRightMask) {
+        ScanOnRowInput(base, false);
+      }
+    }
+
+    if (row != kFsRowIndex) {
+      return;
+    }
+
+    // Match how a real two-option row behaves: left picks the left option
+    // ("Si", fullscreen on), right picks the right one ("NO", off). Only A
+    // flips. Previously any of the three toggled, so holding or mashing a
+    // direction flapped the setting instead of settling on one choice.
+    if (fresh & kLeftMask) {
+      SetFullscreen(base, true);
+    } else if (fresh & kRightMask) {
+      SetFullscreen(base, false);
+    } else if (fresh & kBtnA) {
+      SetFullscreen(base, !FullscreenEnabled());
+    }
+    return;
+  }
+}

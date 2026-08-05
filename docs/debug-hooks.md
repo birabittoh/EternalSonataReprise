@@ -450,7 +450,7 @@ Guest addresses are translated through `base + offset + REX_PHYS_HOST_OFFSET(add
 
 ```bash
 python scripts/build.py     # runs codegen + cmake build
-python scripts/run.py       # runs the built binary
+./eternalsonata.exe         # runs the built binary
 ```
 
 ---
@@ -503,5 +503,476 @@ python scripts/run.py       # runs the built binary
 
 ---
 
-*Last updated: 2026-07-29 — dormancy verdict re-verified independently; dead
-console hooks removed from `src/eternalsonata_hooks.cpp`.*
+## 14. Options Screen (native settings rows)
+
+Groundwork for exposing SDK cvars (starting with `fullscreen`) as native rows in
+the game's own Options screen, rather than only in the ImGui overlay
+(`src/settings.cpp`).
+
+### Corrections to earlier notes
+
+An earlier pass recorded a set of conclusions that are **wrong**. They are listed
+here so they are not re-derived:
+
+- **`sub_821D5CC0` is NOT the Options screen handler.** It is the text/glyph
+  layout and rendering routine: it walks a character buffer (`v132`),
+  special-cases char 32 (space) for word wrap, and emits per-glyph quads into an
+  array at `a1 + 20140` with a 28-byte stride. The claimed "screen row list of
+  triples at `+0x110`" and "8-entry registry table at `+0x88D0`" do not exist —
+  those offsets were being read out of a glyph buffer.
+- Do **not** call guest functions (e.g. `sub_82176CD8`) re-entrantly from inside
+  a draw hook via `rex::CallFrame`. The reverted probe set did this and the game
+  crashed on startup.
+
+### Verified findings
+
+- **`sub_821C9FE0` is a 67-case state dispatcher** on `*(a1 + 4)`, reached via
+  `bctr`. Hex-Rays does not resolve the jump table; recover it manually:
+  - offsets: `word_820824A0`, 67 × big-endian `u16`
+  - target: `0x821CA078 + word_820824A0[state - 1]`
+  - `0x821CC4B0` is the default/exit target (states 38, 45, 55).
+  - **…but it is never called.** A hook on it did not fire once across a full
+    boot + title + menu session (2026-08-05). Like `sub_8223FB78` (§ frame cap),
+    it is dead code in this build. It is *not* "the options dispatcher" —
+    do not build on it. This also explains why the earlier probe set logged no
+    settings ticks.
+- **BTX string ids are the registry keys.** `sub_82176CD8(registry, sid)` is
+  called with the BTX string id in `r4`; a log-only hook on it works and is
+  safe. Boot resolves sids 0..36; the rest of the Options range (37..54)
+  resolves later, when the menu is first opened.
+- **`dword_824CF500`** is the text/task registry; `sub_82176CD8(registry, key)`
+  resolves a numeric message id to a task. `dword_824D0440` is the config base.
+- **`sub_821A9F00` is a generic accessor** (60+ call sites across the whole UI),
+  not Options-specific. It is not a useful anchor for locating the screen.
+- **Options row labels** live in the packed UI message blob as consecutive
+  entries in the English block:
+
+  | Address | Label |
+  |---|---|
+  | `0x8203316C` | `Item Set` |
+  | `0x8203317A` | `Attack Button` |
+  | `0x82033188` | `Audio Output` |
+  | `0x82033195` | `Volume` |
+  | `0x8203319C` | `Piano Music` |
+  | `0x820331A8` | `Music` |
+  | `0x820331AE` | `Battle Camera` |
+  | `0x820331BC` | `Vibration` |
+  | `0x820331C6` | `Voice` |
+
+  Value strings for these rows sit nearby (e.g. `Stereo` `0x820334AD`,
+  `5.1ch Surround` `0x820334B9`).
+
+- These strings have **no xrefs and no absolute pointer table** — the blob is a
+  contiguous run of NUL-terminated strings (character names → `Main Menu`
+  `0x820330FA` → `Items` `0x82033104` → …), addressed by *ordinal message id*,
+  not by pointer. There are ~9 language copies (`Option` matches at
+  `0x820331DD`, `0x8203377F`, `0x8203405E`, …).
+
+### How screens are actually built (runtime-verified, 2026-08-05)
+
+Static search failed here; all of the below came from a safe log-only probe.
+
+- **`sub_8223B780(blob, string_id) -> char*`** is the BTX lookup (see
+  `scripts/btx.py`). Hooking it and logging the *returned string* is the
+  reliable way to identify a screen — far better than guessing from ids.
+- **Ids are language-independent.** The running build is Italian
+  (`off_822FF578[dword_8243D370]`), and id 35 resolved to `Pulsante Attacca`,
+  37 `Volume`, 39 `Musica`, 40 `Fotoc. battaglia`, 43/44 `Giapponese`/`Inglese`
+  — matching the USA block decoded statically. So the id table holds for any
+  language.
+- **Multiple BTX blobs exist.** The xex blob at `0x82031A00` holds the menu and
+  Options text; the `.e` files carry their own (ids > 210 come from those).
+  Dedup probes per `(blob, id)`, never per id.
+- **The Options screen is real and confirmed**: ids 197 `Opzioni`, 201
+  `Sottotitoli`, 54 `Conferma e torna al menu`, 144 `Effetti sonori`. Note the
+  live row set is *not* what the USA string order suggests — there is a
+  Subtitles row and **no Vibration row**.
+
+#### The display-list mechanism
+
+- **`sub_821F2F38(a1, list, ...)`** is a generic UI display-list interpreter,
+  not a screen. The same call site (`0x821F4048`) draws the Menu, Player
+  Controls and Options screens. `list` (r4, kept in r30) is a **variable-length
+  record stream**: the function advances r30 by 8 / 0xC / 0x10 / 0x14 / 0x18 /
+  0x1C depending on record type. For text records, `list+4` is the BTX id
+  (`lwz r4, 4(r30)` at `0x821F3FC8` feeding `sub_8223B780`).
+- **`sub_821EC050`** is the screen driver. It calls the interpreter from
+  `0x821ECC38`, passing a different **static** display list per screen —
+  observed `0x8205E880` and `0x8205F108` (id 65 = `Cambia pagina`). The lists
+  live in the `0x8205xxxx` data region.
+
+This is the mechanism a new row has to use: extend (a copy of) the Options
+screen's display list with one more text record and point the interpreter at it.
+
+#### Text record format (decoded 2026-08-05)
+
+The Options display list lives at `0x8205E880`; its rows run from the title
+record at `0x8205E9AC` to at least `0x8205EF64`, ending before the next list at
+`0x8205F108`. A **text label record is 0x28 bytes**:
+
+| Offset | Type | Meaning | Volume | Musica | Effetti sonori |
+|---|---|---|---|---|---|
+| `+0x00` | u32 | record type — `0xC8` = text label | 0xC8 | 0xC8 | 0xC8 |
+| `+0x04` | u32 | **BTX string id** | 37 | 39 | 144 |
+| `+0x08` | s32 | X | 120 | 490 | 490 |
+| `+0x0C` | s32 | Y | 135 | 135 | 185 |
+| `+0x10` | s32 | width | 300 | 300 | 300 |
+| `+0x14` | s32 | height | 48 | 48 | 48 |
+| `+0x18` | u32 | (0) | 0 | 0 | 0 |
+| `+0x1C` | u32 | record size (0x28) | 40 | 40 | 40 |
+| `+0x20` | s32 | (-1) | -1 | -1 | -1 |
+| `+0x24` | u32 | (1) | 1 | 1 | 1 |
+
+Verified record addresses (runtime): title id 197 `0x8205E9AC`, Battle Camera
+id 40 `0x8205EA58`, Volume id 37 `0x8205EB88`, Music id 39 `0x8205EBB0`, Sound
+Effects id 144 `0x8205EBE8`, Subtitles id 201 `0x8205EF64`.
+
+Page-1 rows form a grid at X = 120 / 490 / 690, ending with the Voice row
+(id 42, Y=335) whose values are `Inglese` (id 44, X=490) and `Giapponese`
+(id 43, X=690) — confirmed in-game as the last row. Immediately after
+`Giapponese` the stream switches to **type `0x64` records, 0x1C bytes**
+(`{0x64, x, 0x32, y, 0x3E8, 0x3E8, -1}`), which matches the interpreter's
+`addi r30, r30, 0x1C`. Between text groups sit 0x10-byte records of type
+`0x258`.
+
+So record **type is at `+0x00`** and length is type-dependent: `0xC8` → 0x28,
+`0x64` → 0x1C, `0x258` → 0x10.
+
+Two hypotheses that were tested and are **false** — do not re-derive them:
+- `+0x24` is *not* a page index: `Sottotitoli` (id 201, a different page from
+  the Voice row) also has `+0x24 = 1`.
+- `+0x1C` holding `0x28` is not a general size field; it only happens to equal
+  the record length for `0xC8` records (a `0x64` record is only 0x1C long, so
+  `+0x1C` lies outside it).
+
+Probe trick that produced this: `r30` is callee-saved, so inside a
+`sub_8223B780` hook whose `lr` is in `sub_821F2F38`, `ctx.r30` still holds the
+record pointer the interpreter is walking.
+
+#### List bounds and the implemented row
+
+- Dispatch: `type = index * 100`, `index = type / 100` (`li r10, 100; divw`),
+  bounds-checked `> 0x1F`, jump table `word_82082428` (32 entries).
+- **Terminator: a record whose type field is `0xFFFF`** (checked at
+  `0x821F3150`; `0xFFFF / 100 = 655` also falls out of the jump table range).
+- The Options list runs `0x8205E880` … terminator at `0x8205F0E8`, i.e. **0x868
+  bytes** of records. There is no slack before the next structure, so the list
+  must be *copied* to be extended, not patched in place.
+
+`src/eternalsonata_hooks.cpp` implements a native **Fullscreen** row on this:
+copy the list into `SystemHeapAlloc` memory, append two type-200 records
+(label X=120, value X=490, Y=385) plus a fresh `0xFFFF`, swap the pointer in a
+`sub_821F2F38` hook when the incoming list is the Options one, and answer two
+synthetic string ids (900/901) from a `sub_8223B780` hook. Verified in-game:
+the row renders, no crash, no game data touched.
+
+#### Screen build vs. per-frame draw
+
+The display list is walked **once, at screen construction**, not per frame:
+`sub_821EC050` turns records into text objects via `sub_82176398`, and those
+objects are what draw each frame. Consequence: a value sampled while building
+(like the fullscreen cvar) is fixed until the screen is reopened — confirmed
+in-game, the row updates after a reload.
+
+#### Selection is a separate structure (why the row is not selectable)
+
+`sub_821F62B8` is the per-frame cursor update. It walks a **linked list of
+selectable items** rooted at `dword_824400E8 + 392`:
+
+| Offset | Meaning |
+|---|---|
+| `+0x00` | item id (compared against the current selection) |
+| `+0x2C` | flag (`0xFF` ⇒ cursor parked at 0,0) |
+| `+0x30` | next item |
+
+The current selection id lives at `dword_824400E8 + 396`. Position comes from
+`sub_82200298(menu, &x, &y)`, and the cursor is placed at `y - 50` (the row
+pitch) via `sub_821E9918` / `sub_821E9A00`.
+
+A row in the display list therefore *draws* but is not *selectable* — the two
+systems are independent. Making the Fullscreen row usable needs a node added to
+this list plus a handler for its id.
+
+This *is* the Options cursor (an earlier note doubted it: the four nodes all
+read `x=y=10000` because that is the parked sentinel used while the cursor is
+hidden — real coordinates appear once it moves).
+
+#### Group / sub-item layout (runtime-verified)
+
+Each node is a **group** of rows; `+0x2C` is the highlighted row *within* the
+group:
+
+| Offset | Meaning |
+|---|---|
+| `+0x00` | group id |
+| `+0x04` | sub-item block base (sub-items are 0x10 bytes each) |
+| `+0x08` | sub-item pointer array |
+| `+0x0C` | active count (mirrored at `+0x0D`) |
+| `+0x14` | previous group id (up) |
+| `+0x20` | next group id (down), `-1` on the last group |
+| `+0x2C` | index of the highlighted sub-item |
+| `+0x30` | next node |
+
+`sub_82200298` reads the cursor position from `array[index] + 4 / + 8`. The
+array is **pre-allocated with 10 slots**; unused ones are parked at the
+sentinel `(10000 + i, 10000 + i)`, so adding a row needs no allocation — set a
+spare slot's x/y and raise the count byte.
+
+Options groups: **id 3** = 3 rows at screen y 275/325/375, **id 2** = 2 rows at
+430/480 and is the last group (`+0x20 == -1`). Screen y = display y + 145
+(Sottotitoli 285→430, Voce 335→480).
+
+#### The value highlight — SOLVED (2026-08-05)
+
+A two-option row (Sottotitoli, Voce, and our Fullscreen row) draws **both**
+choices side by side — label at X=120, options at X=490 and X=690 — and the game
+marks the active one with a brighter background bar that slides horizontally the
+moment the value changes, with no screen rebuild.
+
+Everything below was tested against a live Sottotitoli toggle and **ruled out**
+before the answer was found; do not re-derive them:
+
+| Hypothesis | Result |
+|---|---|
+| It is the row cursor moving | No — the cursor is vertical only, and the row's sub-item stays at `x=550` throughout |
+| The sub-item coordinates change | No — `group 2 sub[0]` never moved while toggling |
+| A second selection group drives it | No — group 1 exists but stays `count=0`, parked, on this screen |
+| It is positioned via `sub_821E9918` / `sub_821E9A00` | No — hooking both, they are called **only** for the row cursor, never on a value toggle |
+| It is a display-list record the game repositions | No — the interpreter runs **once per screen entry** (measured), so nothing in the list can animate |
+| The value lives in the `0x824D0440` config struct | No — the setting lives in `0x8243FC04` (see below); that earlier 0x800-byte diff was simply looking in the wrong place |
+
+**How it was found.** Guessing was the problem, so the search was made
+exhaustive: a full-memory differ (`menu_scan` cvar, "Value-highlight hunt" in
+`src/eternalsonata_hooks.cpp`) snapshots all committed guest memory on every
+left press and again on every right press, and intersects across toggles. A
+two-option row is idempotent per direction, so left is unambiguously state A and
+right state B regardless of press order. 334 MiB collapsed to 724 stable
+addresses in ~3 s, of which only these were not pad state:
+
+```
+0x8243FC04  byte +1: 1 -> 0                  the Subtitles setting itself
+0xF008DBF0  float 530 -> 730                 the bar's X
+0xF0271750..0xF0271790  530/730, 631/849, 101/119   its quad: x, right edge, width
+```
+
+An lldb write-watchpoint on the bar X (host `0x1F008EBF0`) then gave the
+per-frame draw path (`sub_82177A08` → `sub_82177878` → `sub_821649E8`), and
+IDA xrefs on the setting byte led to the real prize.
+
+**`sub_82201620` is the Options row input handler.** It resolves everything:
+
+- **Row identity is the 4th field of the `1502` selection record** (see the next
+  section): `id = *(u8*)(group_node + 44)`. On the second group the handler adds
+  10, so Sottotitoli is `10` and Voce is `11`.
+- **Settings live in `dword_8243FC04`, one byte per row**: `BYTE1`
+  (`0x8243FC05`) is Subtitles, `BYTE2` (`0x8243FC06`) is Voice. Page-1 rows use
+  separate globals `dword_8243F364` / `dword_8243F368` / `dword_8243F36C`.
+- **The bar object is a field of the screen object**, `dword_824400E4[709] + N`:
+  `+120` for Subtitles, `+92` for Voice, `+84 / +88 / +92` for the page-1 rows.
+  (`[709]` is the same `4 * (idx + 709)` slot `sub_821F2F38` allocates.)
+- **`sub_82179F78(&dword_824CF500, bar_obj, &xyz, 0.0, 14.0, 14.0, 14.0)` moves
+  the bar** — a float `{x, y, z}` vector by pointer. This is the call the whole
+  hunt was looking for.
+- **Geometry**: `x = base + 200 * option_index`, where `base` is
+  language-dependent — `530` for `dword_8243D370` in 3..4, `480` otherwise (a
+  seventh case reads an uninitialised local). `y` is a per-row constant: `155`,
+  `205`, `255` for page-1 rows, **`415` for Subtitles, `465` for Voice** — i.e.
+  display Y + 130. This matches the scanned `530 -> 730` exactly.
+- `sub_82202358(n)` applies setting `n` after the change; `sub_821425D8(..., 5,
+  0, 0)` plays the change SFX.
+
+So a two-option row needs three things: a settings byte, a bar object, and a
+case in this handler. Our Fullscreen row has the first (the cvar) and the third
+(our own hook), and is missing **only the bar object**.
+
+#### The bar is a registry *id*, not a pointer
+
+Dumped live (`menu_scan`, `DumpHighlightBars` in `eternalsonata_hooks.cpp`).
+`root = dword_824400E4`, `page = *(u8*)(root + 2833)`,
+`screen = *(u32*)(root + 4 * (page + 709))` — the 1744-byte object
+`sub_821F2F38` allocates. The four "bar" slots hold **small integers**:
+
+```
+screen+ 84 = 0x48   screen+ 88 = 0x49   screen+ 92 = 0x68   screen+120 = 0x7D
+```
+
+That matches `sub_82179F78`, which does nothing but pack its float args and
+call `sub_821771F8(&dword_824CF500, id, params, 0, 0, -1)` — the second
+argument is passed straight through as an **id into the `dword_824CF500`
+registry**, the same registry `sub_82176CD8` and `sub_82178698` index. So a bar
+is a registered task, and giving our row one means getting an id minted for it.
+
+Ids are allocated sequentially per screen build and **accumulate across the
+session** — a second Options entry shifted every id in the screen object by a
+uniform +283. Any A/B on this dump has to normalise by that offset first.
+
+The screen object is a set of id arrays with count bytes at exactly the offsets
+`sub_821F2F38` zeroes (72, 380, 640, …); e.g. count at `+0x17C` (380) with its
+id array at `+0x180` (384).
+
+#### The bar, end to end (implemented)
+
+A row's highlight bar needs three things, all now in place for the Fullscreen
+row:
+
+1. **A bar object**, created by a **type-110** record — the 100 family, subtype
+   10. The stock Subtitles one is at list offset `0x6C4`:
+   `{110, 234, 490, 285, 1000, 1000, -1}` = sprite 234, x 490 (the left
+   option's column), y 285 (the row's display y), and a size scale in
+   thousandths at `+0x10`/`+0x14`.
+2. **The surrounding state block.** The bar is not a lone record; it sits
+   between `{2101, 2100, 1}` at `0x6B8` and `{2}` at `0x6E0`. That pair sets
+   and restores the draw state the type-100 family handler branches on (the
+   `r27` test at `0x821F3610`). Emitted outside it, the bar draws visibly
+   **darker** than the stock ones. Clone the whole `0x6B8..0x6E4` block.
+3. **Placement**, which the display-list record does *not* decide. Two
+   different calls in two different coordinate spaces:
+   - **`sub_82200FE8` is the Options screen init**, and it places every bar
+     with `sub_82178A88(&dword_824CF500, id, &{x,y,z}, 0, 0, -1)` — an instant
+     set, no animation.
+   - **`sub_82201620` moves it on a value change** with `sub_82179F78`.
+
+   | slot | init x | init y | handler y |
+   |---|---|---|---|
+   | +84 | `base + 200*(1 - byte_8243FBFC)` | 895 | 155 |
+   | +88 | `base + 200*dword_8243F368` | 945 | 205 |
+   | +92 | `base + 200*(BYTE2(FC04) ^ 1)` | 1205 | 465 |
+   | +120 | `base + 200*(1 - BYTE1(FC04))` | 1155 | 415 |
+
+   The two spaces differ by a constant **740** on every row, and `base` is the
+   language-dependent 530/480. The Fullscreen row continues the 50px pitch
+   after Subtitles (415) and Voce (465): **515 handler, 1255 init**.
+
+Do not try to derive the bar's position from the y authored in its record —
+the record's y is in neither space, and chasing it is what produced a round of
+"a few pixels off" guessing before `sub_82200FE8` was found.
+
+Ordering matters as much as content: the id array at `screen+0x4C` is indexed
+**positionally** (`sub_82201620` uses elements 2/3/4/11), so a bar record must
+be appended *after* every stock object-creating record or the stock rows are
+renumbered and their highlights move. Only the 100 family creates entries —
+text (200) and 600 do not, which is why the row's three text records never
+disturbed the indices.
+
+Implemented in `src/eternalsonata_hooks.cpp`: the row's copy of the display
+list appends a cloned bar block at 600x800 thousandths, `MoveFullscreenBar`
+places it on entry with `sub_82178A88` and slides it on toggle with
+`sub_82179F78`.
+
+The one thing not readable from the game is the 7px vertical fixup. Dumping
+the stock Subtitles bar object beside ours (`DumpHighlightBars`) showed them
+identical but for y - differing by exactly the 100 of two row pitches, so
+correct - and the scale at `+0x4C`/`+0x50`, 1.0/1.0 stock against our
+0.60/0.80. The bar sprite is anchored at its top, so shrinking it lifts the
+bottom edge and the centre rises by `(1 - scale) * height / 2`; 7px settles it,
+close to the 5px a 50px-tall bar predicts, so the sprite is slightly taller
+than the row pitch. The fixup is applied to all three y values (record, init
+and move) so the opening and snapped positions stay in step.
+
+Object layout, for reference: `+0x3C` x, `+0x40` y, `+0x4C`/`+0x50` x/y scale
+as floats - which is what confirms `+0x10`/`+0x14` of the record are that scale
+in thousandths.
+
+#### Type-100 records do NOT mint a bar — and crash the screen
+
+Tested directly: `fs_row_bar` appends `{100, x, 50, y, 1000, 1000, -1}` (the
+exact shape the Options list already carries) to the Fullscreen row's copy of
+the list. Result, after normalising the +283 id shift:
+
+- **Every id array is byte-identical** with and without the record — no object
+  was registered.
+- The **count byte at `+0x17C` went 13 → 14** — something counted the record.
+- The game **crashed a few seconds after entering Options**, consistent with
+  per-frame code iterating 14 entries against an array that only has 13 valid
+  ones.
+
+So a bare type-100 subtype-0 record is not self-sufficient. Type 100 is a
+family — the handler at `0x821F35DC` sub-dispatches on `type - 100` over 21
+entries via `word_820823E0` — and its subtype-0 path at `0x821F3610` branches on
+`r27` (loop state carried between records, `clrlwi. r11, r27, 24`) and reads
+`record+0x18` as a handle. Whatever earlier record sets that state is missing at
+our insertion point.
+
+**Do not fire more record shapes at the game to find out.** Read the subtype-0
+handler at `0x821F3610` (and what writes `r27` in the interpreter loop) first,
+then place the record where its preconditions hold.
+
+Once a bar id exists, driving it is already understood: call
+`sub_82179F78(&dword_824CF500, id, {base + 200*i, 515, 0}, 0, 14, 14, 14)` from
+the existing `sub_821F62B8` hook — the same per-frame context `sub_82201620`
+calls it from, and our row's display Y of 385 puts its bar at Y 515.
+
+#### Disproved here — do not retry
+
+- **The cursor does not move between a row's two options.** Toggling
+  Sottotitoli between `Sì` and `NO` leaves its sub-item at `x=550`
+  throughout; it only changes when the screen tears down. Whatever marks the
+  active choice is *not* the sub-item coordinates, and is still unidentified.
+- **`<g>` is not interpreted as markup by these labels.** Prefixing a value
+  string with it renders the three characters literally (which shows up as the
+  text being shifted ~3 characters right). Menu strings such as
+  `<g><m2>Opzioni` are stored with tags, but the Options row path does not
+  expand them.
+- **The `fullscreen` cvar is inert on its own.** `FlagEntry` has no change
+  callback and nothing watches the value, so setting it does not change the
+  window — `rex::ui::Window::SetFullscreen()` must be called as well (see
+  `eternalsonata::SetFullscreenSetting` in `settings.cpp`).
+
+#### Pad state
+
+`sub_821281B8` polls 4 pad objects at `0x824BB418`, stride 464.
+`sub_82128310` fills each: `+424` held, `+8` previous, **`+428` newly pressed**,
+`+432` pressed-or-repeat, `+436` released. It folds the left stick into
+synthetic bits alongside the d-pad — confirmed live: `0x1000` = A,
+`0x10000`/`0x20000` = up/down, **`0x40000`/`0x80000` = left/right**. Matching
+only the d-pad bits (`0x4`/`0x8`) misses stick input entirely.
+
+#### The selectable-item list is declared in the display list
+
+Open question 1 below is also answered. The groups are not built by code — they
+are records in the same display list, sitting between the last row's text
+records and the terminator (Options: `0x8205F008` … `0x8205F0E8`). All four
+types divide to jump-table index 15:
+
+| Type | Layout | Meaning |
+|---|---|---|
+| `1500` | `{1500, group_id}` | begin group |
+| `1502` | `{1502, x, y, row_id}` | one selectable row, at screen x/y |
+| `1501` | `{1501}` | end of the group's items |
+| `1503` | `{1503, group_id, up, ?, ?, down}` | navigation links |
+
+Decoded from the Options list, exactly matching what was measured at runtime:
+
+```
+1500 0    1502 550 165 1   1502 550 215 2   1501  1503 0 -5 -1 -1 -5
+1500 3    1502 550 275 1   1502 550 325 2   1502 550 375 3  1501  1503 3 0 -1 -1 2
+1500 2    1502 550 430 5   1502 550 480 4   1501  1503 2 3 -1 -1 -1
+```
+
+`x = 550` is the cursor column; the y values are the screen rows; the 4th field
+is the **row id** `sub_82201620` switches on (Sottotitoli `5`, Voce `4`, +10 on
+this group). So a new row should be declared with a `1502` record in the copied
+list rather than by the runtime count-bump the hook currently does in
+`sub_821F62B8` — that hack works, but it is patching around the real mechanism.
+
+### Open work
+
+1. ~~Find what builds the selectable-item list~~ — done, it is declared by
+   `1500`/`1502`/`1501`/`1503` records in the display list (above). Migrate the
+   runtime count-bump in `sub_821F62B8` to a `1502` record at `(550, 530)`.
+2. ~~Hook confirm/left-right handling to flip the cvar~~ — done, implemented on
+   the pad edge in the `sub_821F62B8` hook.
+3. ~~Give the row a highlight bar~~ — done; see "The bar, end to end" above.
+   The bar is a live object, so no screen rebuild is needed on toggle.
+The native Fullscreen row is complete: it draws, is selectable, toggles the
+cvar, and carries a highlight bar that starts on the active option and slides
+between them.
+
+---
+
+*Last updated: 2026-08-05 — added §14; corrected the `sub_821D5CC0` misreading
+and recovered the `sub_821C9FE0` jump table. Later the same day: solved the
+value highlight (`sub_82201620` / `sub_82179F78`), found the settings globals at
+`0x8243FC04`, decoded the `1500`/`1502` selection records, and implemented the
+Fullscreen row's own highlight bar (type-110 record + `sub_82200FE8`'s init
+placement).*

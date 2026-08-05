@@ -83,6 +83,16 @@ REXCVAR_DEFINE_BOOL(frame_debug, false, "Eternal Sonata",
                     "Log a per-second frame pacing summary (declared rate, achieved presents/sec, "
                     "frame work time, adaptive ladder state)");
 
+// Debug aid for reverse-engineering the Options screen: with this on, every
+// left/right press on the Subtitles row snapshots all committed guest memory
+// and intersects it against the previous snapshots of the *other* value, which
+// narrows down where a row's value (and the highlight bar that follows it)
+// actually lives. Costs a full memory diff per press, so it is off by default.
+// See the "Value-highlight hunt" section in eternalsonata_hooks.cpp.
+REXCVAR_DEFINE_BOOL(menu_scan, false, "Eternal Sonata",
+                    "Debug: diff guest memory across Subtitles row toggles to locate menu "
+                    "value state (logs candidates)");
+
 namespace eternalsonata {
 
 namespace {
@@ -223,6 +233,12 @@ int ResolutionScaleFor(const std::string& resolution) {
     return 4;
   return 1;  // 720p, and fallback for anything unrecognized.
 }
+
+// Remembered from CreateSettingsDialog so settings changed outside the overlay
+// - e.g. the native Fullscreen row in the game's own Options screen - can be
+// persisted to the same file the overlay writes. See SaveUserSettings.
+std::filesystem::path g_user_settings_path;
+rex::ui::Window* g_window = nullptr;
 
 std::vector<std::string> BasicCvarNames() {
   return std::vector<std::string>(kBasicCvarNames.begin(), kBasicCvarNames.end());
@@ -906,10 +922,39 @@ void InitSettingsCaches() {
 #endif
 }
 
+void BindSettingsTargets(rex::ui::Window* window,
+                         std::filesystem::path user_settings_path) {
+  g_window = window;
+  g_user_settings_path = std::move(user_settings_path);
+}
+
+void SaveUserSettings() {
+  if (g_user_settings_path.empty()) {
+    return;
+  }
+  rex::cvar::SaveConfigSubset(g_user_settings_path, BasicCvarNames());
+}
+
+void SetFullscreenSetting(bool enabled) {
+  auto* entry = rex::cvar::GetFlagInfo("fullscreen");
+  if (!entry || !entry->setter || (entry->getter() == "true") == enabled) {
+    return;
+  }
+  entry->setter(enabled ? "true" : "false");
+  // The cvar is only a value - nothing in FlagEntry applies it - so the window
+  // has to be told separately, exactly as the overlay's own row does.
+  if (g_window) {
+    g_window->SetFullscreen(enabled);
+  }
+  SaveUserSettings();
+}
+
 std::unique_ptr<rex::ui::ImGuiDialog> CreateSettingsDialog(
     rex::ui::ImGuiDrawer* drawer, rex::ui::Window* window,
     std::filesystem::path user_settings_path, std::filesystem::path app_config_path,
     rex::input::InputSystem* input_system) {
+  g_user_settings_path = user_settings_path;
+  g_window = window;
   return std::make_unique<CuratedSettingsDialog>(drawer, window, std::move(user_settings_path),
                                                  std::move(app_config_path), input_system);
 }
