@@ -867,7 +867,20 @@ REX_HOOK_RAW(sub_820FD998) {
 
 namespace {
 
-constexpr u32 kOptionsList = 0x8205E880u;  // Options display list
+// The Options display list is duplicated once per language - same byte
+// layout, different address - rather than sharing one list with
+// language-independent string ids the way BTX text lookups do. Live-tested
+// 2026-08-06 by watching sub_821F2F38's actual argument per language (ids
+// found empirically, not derivable from the language byte's own switch below -
+// this is a different value entirely, an argument computed by the screen's
+// caller). Indexed by LanguageIndex() below: en, de, fr, es, it.
+constexpr u32 kOptionsListByLang[5] = {
+    0x8202F388u,  // en
+    0x820723F8u,  // de
+    0x82068648u,  // fr
+    0x8206D520u,  // es
+    0x8205E880u,  // it
+};
 constexpr u32 kOptionsListBytes = 0x868u;  // up to, excluding, its terminator
 
 // Splice point: just past the whole Sottotitoli row group - its label
@@ -987,17 +1000,58 @@ constexpr u32 kRowSidStride = 10u;
 constexpr u32 kBtxYes = 130u;
 constexpr u32 kBtxNo = 131u;
 
+// Row labels are authored text (there is no stock BTX analogue for
+// "Resolution"/"Frame Rate"/"Fullscreen"), so unlike the boolean values above
+// they cannot ride the game's own localisation for free - each language needs
+// its own literal. Index matches LanguageIndex() below: en, de, fr, es, it.
+//
+// Accents are written as raw CP1252/Latin-1 byte escapes rather than UTF-8
+// source characters: the stock EFIGS text in the game's own BTX blocks is
+// single-byte, and writing multi-byte UTF-8 into a single-byte text record
+// would render as two garbled glyphs instead of one accented one. Verify
+// in-game per language - this is the one part of the row that cannot be
+// cross-checked against a stock string the way the boolean values are.
+struct LocalizedLabel {
+  const char* text[5];
+};
+
+// Which language is active is derived from *which of the 5 known list
+// addresses matched* (see kOptionsListByLang), not from dword_8243D370's own
+// switch - that byte's numbering doesn't correspond to XLanguage kernel ids in
+// any way that was confirmed reliable (verified Italian, guessed the other
+// three, and two of those guesses were wrong - see 2026-08-06 in
+// docs/debug-hooks.md). Address matching sidesteps the guess entirely: the
+// list address is what sub_821F2F38 actually branches on, so matching against
+// it directly is ground truth, not an inference from an unrelated byte.
+int OptionsListIndex(u32 list_addr) {
+  for (int i = 0; i < static_cast<int>(std::size(kOptionsListByLang)); ++i) {
+    if (kOptionsListByLang[i] == list_addr) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+constexpr LocalizedLabel kLabelResolution = {
+    {"Resolution", "Aufl\xF6sung", "R\xE9solution", "Resoluci\xF3n", "Risoluzione"}};
+constexpr LocalizedLabel kLabelFrameRate = {
+    {"Frame Rate", "Bildrate", "Fr\xE9quence", "Fotogramas", "Framerate"}};
+constexpr LocalizedLabel kLabelFullscreen = {
+    {"Fullscreen", "Vollbild", "Plein \xE9" "cran", "Pantalla completa", "Schermo intero"}};
+
 // One entry per value a row can hold. `literal` non-null means we author that
 // exact text ourselves (used where there is no stock analogue, e.g. "60
 // FPS"); `literal == nullptr` means reuse the stock BTX string `btx_id`
-// (localised for free) - that is how the boolean rows get "Si"/"NO".
+// (localised for free) - that is how the boolean rows get "Si"/"NO". Values
+// here (FPS figures, resolution names) are conventionally left untranslated
+// even in localised menus, so unlike labels they need no per-language table.
 struct OptionValue {
   const char* literal;
   u32 btx_id;
 };
 
 struct OptionRow {
-  const char* label;
+  const LocalizedLabel* label;
   const OptionValue* values;
   u8 value_count;
   int (*get_index)();                    // active value, 0-based
@@ -1026,11 +1080,11 @@ constexpr int32_t kWideBarWidth = 900;         // fits "30 FPS"/"60 FPS"-length 
 constexpr int32_t kResolutionBarWidth = 750;   // fits "1080p"/"1440p", narrower than kWideBarWidth
 
 constexpr OptionRow kOptionRows[] = {
-    {"Resolution", kResolutionValues, 3, &ResolutionGetIndex, &ResolutionSetIndex,
+    {&kLabelResolution, kResolutionValues, 3, &ResolutionGetIndex, &ResolutionSetIndex,
      kResolutionBarWidth},
-    {"Frame Rate", kFrameRateValues, 2, &FrameRateGetIndex, &FrameRateSetIndex,
+    {&kLabelFrameRate, kFrameRateValues, 2, &FrameRateGetIndex, &FrameRateSetIndex,
      kWideBarWidth},
-    {"Fullscreen", kBoolValues, 2, &FullscreenGetIndex, &FullscreenSetIndex,
+    {&kLabelFullscreen, kBoolValues, 2, &FullscreenGetIndex, &FullscreenSetIndex,
      kStockBarWidth},
 };
 constexpr u32 kOptionRowCount = static_cast<u32>(std::size(kOptionRows));
@@ -1050,7 +1104,6 @@ bool g_bar_dumped = false;      // bar objects already dumped for this entry
 // y is display y + 145, so row r sits at 530 + 50*r.
 constexpr u32 kOptGroupId = 2;
 constexpr u32 kOptGroupCount = 2;   // stock rows the group ships with
-constexpr int32_t kOptRowX = 550;   // cursor column for every Options row
 constexpr int32_t kOptRow0Y = 430;  // Sottotitoli, used to identify the group
 constexpr int32_t kOptRow1Y = 480;  // Voce
 constexpr u8 kSubtitleRowIndex = 0;  // Sottotitoli, the reference two-option row
@@ -1192,8 +1245,8 @@ void WriteTextRecord(u8* base, u32 at, u32 id, int32_t x, int32_t y) {
 // Clone the stock Subtitles bar record verbatim and move it to our row's y.
 // Cloning rather than hand-writing keeps every field we have not identified
 // (notably the width at +0xC) at whatever the game already uses.
-void WriteBarRecord(u8* base, u32 at, int32_t y, int32_t width) {
-  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(kOptionsList + kBarRecordOffset),
+void WriteBarRecord(u8* base, u32 at, u32 src_list, int32_t y, int32_t width) {
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + kBarRecordOffset),
               kBarRecordBytes);
   REX_STORE_U32(at + kBarBlockYOffset, static_cast<u32>(y));
   REX_STORE_U32(at + kBarBlockWOffset, static_cast<u32>(width));
@@ -1212,7 +1265,7 @@ int32_t RowBarDisplayY(u32 row) {
 // That costs nothing (it is a memcpy of under 0x900 bytes) and keeps each
 // row's value text in step with its cvar, since the interpreter only reads
 // the list at screen construction.
-void EnsureOptionRows(u8* base) {
+void EnsureOptionRows(u8* base, int lang_idx) {
   if (g_fs_failed) {
     return;
   }
@@ -1241,7 +1294,6 @@ void EnsureOptionRows(u8* base) {
         REXLOG_WARN("[options] native rows: guest allocation failed");
         return;
       }
-      WriteGuestString(base, g_label_addr[r], kOptionRows[r].label);
       for (u32 v = 0; v < kOptionRows[r].value_count; ++v) {
         const OptionValue& val = kOptionRows[r].values[v];
         if (!val.literal) {
@@ -1260,12 +1312,25 @@ void EnsureOptionRows(u8* base) {
   }
   const u32 list = g_fs_list;
 
+  // The source Options list is per-language (see kOptionsListByLang) - same
+  // byte layout at a different address - so every copy below reads from
+  // whichever one is active right now rather than a single fixed address.
+  const u32 src_list = kOptionsListByLang[lang_idx];
+
+  // Labels are rewritten every entry (not just on first allocation) so a
+  // language change while playing takes effect the next time Options opens,
+  // matching the game's own text - and matching how the values below are
+  // already rebuilt every entry to stay in step with their cvars.
+  for (u32 r = 0; r < kOptionRowCount; ++r) {
+    WriteGuestString(base, g_label_addr[r], kOptionRows[r].label->text[lang_idx]);
+  }
+
   // Insert, do not append. Records past the last row set drawing state, so a
   // row appended at the very end inherits that trailing state and renders in
   // the wrong place (observed: label offset from the cursor, which sat
   // correctly at y=530). Splicing the records in immediately after the
   // Sottotitoli record keeps them in the same state as the real rows.
-  std::memcpy(REX_RAW_ADDR(list), REX_RAW_ADDR(kOptionsList), kInsertOffset);
+  std::memcpy(REX_RAW_ADDR(list), REX_RAW_ADDR(src_list), kInsertOffset);
   u32 at = list + kInsertOffset;
 
   // Mirror the Sottotitoli row's layout for every row: label at X=120 and
@@ -1288,15 +1353,15 @@ void EnsureOptionRows(u8* base) {
   // anywhere earlier would renumber the stock rows and move their highlights.
   // Copy the stock record through first, then append ours, so each row's bar
   // takes the next free index and nothing shifts.
-  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(kOptionsList + kInsertOffset),
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + kInsertOffset),
               kIconRecordBytes);
   at += kIconRecordBytes;
   for (u32 r = 0; r < kOptionRowCount; ++r) {
-    WriteBarRecord(base, at, RowBarDisplayY(r), kOptionRows[r].bar_width);
+    WriteBarRecord(base, at, src_list, RowBarDisplayY(r), kOptionRows[r].bar_width);
     at += kBarRecordBytes;
   }
   const u32 rest = kInsertOffset + kIconRecordBytes;
-  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(kOptionsList + rest),
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + rest),
               kOptionsListBytes - rest);
   at += kOptionsListBytes - rest;
   REX_STORE_U32(at, kListTerminator);
@@ -1364,10 +1429,11 @@ REX_HOOK_RAW(sub_821F2F38) {
   // the display list is a build step and nothing in it can animate. Anything
   // that moves while the screen is up (the cursor, the value highlight) is a
   // live object driven elsewhere.
-  g_options_active = (ctx.r4.u32 == kOptionsList);
+  const int lang_idx = OptionsListIndex(ctx.r4.u32);
+  g_options_active = (lang_idx >= 0);
   g_bar_dumped = false;  // re-dump the bar objects on each Options entry
   if (g_options_active) {
-    EnsureOptionRows(base);
+    EnsureOptionRows(base, lang_idx);
     if (g_fs_list) {
       ctx.r4.u32 = g_fs_list;
     }
@@ -1825,9 +1891,15 @@ REX_HOOK_RAW(sub_821F62B8) {
       continue;
     }
 
+    // The cursor column x is per-language (confirmed by diffing the raw
+    // display lists 2026-08-06: Italian/French author 550, English 500), so
+    // it has to be read from a stock row rather than hardcoded - a mismatch
+    // here is what made Down-navigation skip straight over the new rows in
+    // English/German/Spanish despite the count byte being patched correctly.
+    const u32 opt_x = REX_LOAD_U32(s0 + 4);
     for (u32 r = 0; r < kOptionRowCount; ++r) {
       const int32_t y = kOptRow1Y + kRowYStep * static_cast<int32_t>(r + 1);
-      REX_STORE_U32(srow[r] + 4, static_cast<u32>(kOptRowX));
+      REX_STORE_U32(srow[r] + 4, opt_x);
       REX_STORE_U32(srow[r] + 8, static_cast<u32>(y));
     }
     REX_STORE_U8(i + 0x0C, static_cast<u8>(kOptGroupCount + kOptionRowCount));
