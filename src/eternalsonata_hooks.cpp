@@ -1022,15 +1022,16 @@ constexpr OptionValue kResolutionValues[3] = {{"720p", 0}, {"1080p", 0}, {"1440p
 constexpr const char* kResolutionIds[3] = {"720p", "1080p", "1440p"};
 
 constexpr int32_t kStockBarWidth = 600;
-constexpr int32_t kWideBarWidth = 900;  // fits "1080p"/"1440p"-length text
+constexpr int32_t kWideBarWidth = 900;         // fits "30 FPS"/"60 FPS"-length text
+constexpr int32_t kResolutionBarWidth = 750;   // fits "1080p"/"1440p", narrower than kWideBarWidth
 
 constexpr OptionRow kOptionRows[] = {
-    {"Fullscreen", kBoolValues, 2, &FullscreenGetIndex, &FullscreenSetIndex,
-     kStockBarWidth},
+    {"Resolution", kResolutionValues, 3, &ResolutionGetIndex, &ResolutionSetIndex,
+     kResolutionBarWidth},
     {"Frame Rate", kFrameRateValues, 2, &FrameRateGetIndex, &FrameRateSetIndex,
      kWideBarWidth},
-    {"Resolution", kResolutionValues, 3, &ResolutionGetIndex, &ResolutionSetIndex,
-     kWideBarWidth},
+    {"Fullscreen", kBoolValues, 2, &FullscreenGetIndex, &FullscreenSetIndex,
+     kStockBarWidth},
 };
 constexpr u32 kOptionRowCount = static_cast<u32>(std::size(kOptionRows));
 
