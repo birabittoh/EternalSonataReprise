@@ -842,7 +842,7 @@ REX_HOOK_RAW(sub_820FD998) {
 // code in this build. Do not resurrect that hook.
 
 // ---------------------------------------------------------------------------
-// Native "Fullscreen" row in the Options screen
+// Native option rows in the Options screen
 // ---------------------------------------------------------------------------
 //
 // Screens are static display lists walked by sub_821F2F38 (full derivation in
@@ -851,16 +851,19 @@ REX_HOOK_RAW(sub_820FD998) {
 // by a record whose type is 0xFFFF. A text label is type 200, 0x28 bytes, with
 // a BTX string id at +4 and absolute X/Y at +8/+0xC.
 //
-// Because every record carries its own absolute position, a row can simply be
-// appended: we copy the Options list, add two text records (label + value)
-// before a fresh terminator, and point the interpreter at the copy. The two
+// Because every record carries its own absolute position, rows can simply be
+// appended: we copy the Options list, add a label + N value text records per
+// row before a fresh terminator, and point the interpreter at the copy. The
 // records use synthetic string ids that no BTX block defines, and the
 // sub_8223B780 hook below answers them directly - so no game data is repacked
 // and no asset has to be rebuilt.
 //
-// SCOPE: this makes the row *draw*. Cursor/selection handling lives elsewhere
-// and has not been reverse engineered, so the row is not yet selectable - it
-// reflects the fullscreen cvar but cannot yet change it from the pad.
+// Rows are table-driven (kOptionRows below): each has a label, an ordered
+// list of values (drawn side by side, exactly as the stock two-option rows
+// do), and get/set callbacks that resolve to whichever index is active. A
+// value can either author its own literal text (for values with no stock
+// analogue, e.g. "60 FPS") or reuse a stock BTX id (for "Si"/"NO", which stay
+// localised for free). See docs/debug-hooks.md §14 for the underlying RE.
 
 namespace {
 
@@ -910,11 +913,8 @@ constexpr u32 kIconRecordBytes = 0x1Cu;
 // record left behind.
 constexpr u32 kBarRecordOffset = 0x6B8u;  // {2101,2100,1} + bar + {2}
 constexpr u32 kBarRecordBytes = 0x2Cu;
-constexpr int32_t kBarShrinkFixup = 7;    // see kBarInitY below
+constexpr int32_t kBarShrinkFixup = 7;    // see below
 constexpr u32 kBarBlockYOffset = 0x18u;   // the bar record's y within the block
-// Authored the way the stock records are - the row's own display y, as
-// Sottotitoli uses 285 - plus the shrink compensation below.
-constexpr int32_t kFsBarDisplayY = 385 + kBarShrinkFixup;
 // +0x10 / +0x14 of a type-100-family record are a size scale in thousandths
 // (the stock records carry 1000, and the two at list offset 0x580 carry 949).
 constexpr u32 kBarBlockWOffset = 0x1Cu;
@@ -933,10 +933,10 @@ constexpr u32 kBarBlockHOffset = 0x20u;
 //   +92    base + 200*(BYTE2(FC04)^1)       1205      465
 //   +120   base + 200*(1-BYTE1(FC04))       1155      415
 //
-// The two spaces differ by a constant 740 on every row. Our row follows
-// Subtitles (415) and Voce (465) on the same 50px pitch, so it is 515 in
-// handler space and 515 + 740 = 1255 in init space. The x formula is the same
-// in both: base for the left option, base + 200 for the right.
+// The two spaces differ by a constant 740 on every row. Rows follow Subtitles
+// (415) and Voce (465) on the same 50px pitch, so row r's handler-space y is
+// 515 + 50*r and its init-space y is that + 740. The x formula is the same in
+// both spaces: base + 200 * value_index.
 //
 // Bar size: 650 x 800 thousandths of the stock bar, measured against the real
 // rows. +0x10 / +0x14 of a type-100-family record are that scale (the stock
@@ -949,10 +949,7 @@ constexpr u32 kBarBlockHOffset = 0x20u;
 // edge and the bar's centre rises by (1 - scale) * height / 2. The correction
 // is 7px, settled against the real rows - close to the 5px a 50px-tall bar
 // would predict, so the sprite is a little taller than the row pitch. Applied
-// to all three y values so they stay in step.
-constexpr int32_t kBarInitY = 1255 + kBarShrinkFixup;  // sub_82178A88 space
-constexpr int32_t kBarMoveY = 515 + kBarShrinkFixup;   // sub_82179F78 space
-constexpr int32_t kBarWidth = 600;
+// to every y value so they stay in step.
 constexpr int32_t kBarHeight = 800;
 
 // Moving the bar. sub_82201620 does exactly this on every value change:
@@ -961,7 +958,7 @@ constexpr int32_t kBarHeight = 800;
 // block as a mode field, so it is not optional). The two float constants are
 // flt_82016120 = 0.0 and flt_820AAC3C = 14.0, read out of the image.
 //
-// x = base + 200 * option_index, where base is language dependent, and the
+// x = base + 200 * value_index, where base is language dependent, and the
 // runtime y is the record's display y + 130 (stock: record 285 -> move 415).
 constexpr u32 kTextRegistry = 0x824CF500u;
 constexpr u32 kBarMoveMode = 15u;
@@ -969,37 +966,92 @@ constexpr double kBarMoveSpeed = 14.0;
 constexpr int32_t kBarColumnStride = 200;
 constexpr u32 kLanguage = 0x8243D370u;
 
-u32 g_fs_bar_id = 0xFFFFFFFFu;  // registry id of our row's bar
-u32 g_fs_vec = 0;               // guest scratch for the {x, y, z} argument
 constexpr u32 kListTerminator = 0x0000FFFFu;
 
+// Row layout: 50px pitch starting just below Voce (285, 335), matching the
+// stock rows' own pitch.
+constexpr int32_t kRowY0 = 385;
+constexpr int32_t kRowYStep = 50;
+constexpr int32_t kRowXLabel = 120;
+constexpr int32_t kRowXValue0 = 490;  // first value column; +200 per index
+constexpr u32 kMaxRowValues = 3;
+
 // Synthetic BTX ids, far above any real entry (the xex block defines 211) so
-// they can never collide with a genuine lookup.
-constexpr u32 kFsLabelId = 900u;
-constexpr u32 kFsValueId = 901u;   // left value slot  (X=490), the "yes" option
-constexpr u32 kFsValue2Id = 902u;  // right value slot (X=690), the "no" option
+// they can never collide with a genuine lookup. Row r's label is
+// kRowSidBase + kRowSidStride*r; its value i is one past that, +i.
+constexpr u32 kRowSidBase = 900u;
+constexpr u32 kRowSidStride = 10u;
 
 // The Sottotitoli row's own value strings - "Si" (130) and "NO" (131) - reused
-// so the Fullscreen row reads identically and stays localised.
+// so boolean rows read identically to the stock ones and stay localised.
 constexpr u32 kBtxYes = 130u;
 constexpr u32 kBtxNo = 131u;
 
+// One entry per value a row can hold. `literal` non-null means we author that
+// exact text ourselves (used where there is no stock analogue, e.g. "60
+// FPS"); `literal == nullptr` means reuse the stock BTX string `btx_id`
+// (localised for free) - that is how the boolean rows get "Si"/"NO".
+struct OptionValue {
+  const char* literal;
+  u32 btx_id;
+};
+
+struct OptionRow {
+  const char* label;
+  const OptionValue* values;
+  u8 value_count;
+  int (*get_index)();                    // active value, 0-based
+  void (*set_index)(u8* base, int idx);  // apply a newly selected value
+  // Highlight bar width, thousandths of the stock bar (see kBarWidth). Wider
+  // literal values (e.g. "1080p") need a wider bar than the stock "Si"/"NO"
+  // width to actually cover the text.
+  int32_t bar_width;
+};
+
+int FullscreenGetIndex();
+void FullscreenSetIndex(u8* base, int idx);
+int FrameRateGetIndex();
+void FrameRateSetIndex(u8* base, int idx);
+int ResolutionGetIndex();
+void ResolutionSetIndex(u8* base, int idx);
+
+constexpr OptionValue kBoolValues[2] = {{nullptr, kBtxYes}, {nullptr, kBtxNo}};
+constexpr OptionValue kFrameRateValues[2] = {{"30 FPS", 0}, {"60 FPS", 0}};
+constexpr const char* kFrameRateIds[2] = {"30", "60"};
+constexpr OptionValue kResolutionValues[3] = {{"720p", 0}, {"1080p", 0}, {"1440p", 0}};
+constexpr const char* kResolutionIds[3] = {"720p", "1080p", "1440p"};
+
+constexpr int32_t kStockBarWidth = 600;
+constexpr int32_t kWideBarWidth = 900;  // fits "1080p"/"1440p"-length text
+
+constexpr OptionRow kOptionRows[] = {
+    {"Fullscreen", kBoolValues, 2, &FullscreenGetIndex, &FullscreenSetIndex,
+     kStockBarWidth},
+    {"Frame Rate", kFrameRateValues, 2, &FrameRateGetIndex, &FrameRateSetIndex,
+     kWideBarWidth},
+    {"Resolution", kResolutionValues, 3, &ResolutionGetIndex, &ResolutionSetIndex,
+     kWideBarWidth},
+};
+constexpr u32 kOptionRowCount = static_cast<u32>(std::size(kOptionRows));
+
+u32 g_bar_id[kOptionRowCount] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};  // per-row bar registry id
+u32 g_label_addr[kOptionRowCount] = {};                                   // per-row label string
+u32 g_value_addr[kOptionRowCount][kMaxRowValues] = {};  // per-row literal value strings
+u32 g_bar_vec = 0;  // shared guest scratch for the {x, y, z} move argument
+
 u32 g_fs_list = 0;   // guest address of the extended display list
-u32 g_fs_label = 0;    // guest address of "Fullscreen"
 bool g_fs_failed = false;
 bool g_options_active = false;  // Options screen was the last one built
 bool g_bar_dumped = false;      // bar objects already dumped for this entry
 
 // Selection geometry, measured at runtime (see docs §14). The Options screen's
 // bottom group is id 2, holding two sub-items at screen y 430 and 480; screen
-// y is display y + 145, so the appended row at display Y=385 sits at y=530.
+// y is display y + 145, so row r sits at 530 + 50*r.
 constexpr u32 kOptGroupId = 2;
-constexpr u32 kOptGroupCount = 2;   // rows the group ships with
+constexpr u32 kOptGroupCount = 2;   // stock rows the group ships with
 constexpr int32_t kOptRowX = 550;   // cursor column for every Options row
 constexpr int32_t kOptRow0Y = 430;  // Sottotitoli, used to identify the group
 constexpr int32_t kOptRow1Y = 480;  // Voce
-constexpr int32_t kFsRowY = 530;    // our row, one 50px step below Voce
-constexpr u8 kFsRowIndex = 2;       // our sub-index within group 2
 constexpr u8 kSubtitleRowIndex = 0;  // Sottotitoli, the reference two-option row
 
 // Pad state. sub_821281B8 polls an array of 4 pad objects at 0x824BB418,
@@ -1019,8 +1071,6 @@ constexpr u32 kBtnStickRight = 0x80000u;
 constexpr u32 kLeftMask = kBtnDPadLeft | kBtnStickLeft;
 constexpr u32 kRightMask = kBtnDPadRight | kBtnStickRight;
 
-bool FullscreenEnabled();
-
 REX_IMPORT(__imp__sub_82179F78, g_move_object,
            void(double, double, double, double, u32, u32, u32, u32, u32, u32, u32, u32));
 
@@ -1032,43 +1082,50 @@ REX_IMPORT(__imp__sub_82178A88, g_set_object_pos, void(u32, u32, u32, u32, u32, 
 // uses on these same ids.
 REX_IMPORT(__imp__sub_821F6580, g_resolve_object, u32(u32, u32));
 
-// Slides our row's highlight bar onto the active option. Called on Options
-// entry (so the bar starts on the right side) and on every toggle.
-// `move` picks the mechanism: the animated slide the row handler uses on a
-// value change, or the instant set the screen init uses when Options opens.
-void MoveFullscreenBar(u8* base, bool on, bool move) {
-  if (g_fs_bar_id == 0xFFFFFFFFu || !g_fs_vec) {
+// Slides row `row`'s highlight bar onto value `value_index`. Called on
+// Options entry (so each bar starts on the active value) and on every
+// change. `move` picks the mechanism: the animated slide the row handler
+// uses on a value change, or the instant set the screen init uses when
+// Options opens.
+void MoveOptionBar(u8* base, u32 row, int value_index, bool move) {
+  if (row >= kOptionRowCount || g_bar_id[row] == 0xFFFFFFFFu || !g_bar_vec) {
     return;
   }
   // Mirror sub_82201620's own base-X selection. Its third case (language >= 7)
   // reads an uninitialised local, so it is deliberately not reproduced.
   const u32 lang = REX_LOAD_U32(kLanguage);
   const int32_t base_x = (lang >= 3 && lang < 5) ? 530 : 480;
-  // Left option is "Si" (fullscreen on), right is "NO" - matching the record
-  // pair the row draws.
-  const int32_t x = base_x + (on ? 0 : kBarColumnStride);
+  const int32_t x = base_x + value_index * kBarColumnStride;
+  const int32_t handler_y =
+      kRowY0 + kRowYStep * static_cast<int32_t>(row) + 130 + kBarShrinkFixup;
+  const int32_t y = move ? handler_y : handler_y + 740;
 
   const auto put = [&](u32 off, float v) {
     u32 bits;
     std::memcpy(&bits, &v, sizeof(bits));
-    REX_STORE_U32(g_fs_vec + off, bits);
+    REX_STORE_U32(g_bar_vec + off, bits);
   };
   put(0, static_cast<float>(x));
-  put(4, static_cast<float>(move ? kBarMoveY : kBarInitY));
+  put(4, static_cast<float>(y));
   put(8, 0.0f);
 
   if (move) {
     g_move_object(0.0, kBarMoveSpeed, kBarMoveSpeed, kBarMoveSpeed, kTextRegistry,
-                  g_fs_bar_id, g_fs_vec, 0, 0, 0, 0, kBarMoveMode);
+                  g_bar_id[row], g_bar_vec, 0, 0, 0, 0, kBarMoveMode);
   } else {
-    g_set_object_pos(kTextRegistry, g_fs_bar_id, g_fs_vec, 0, 0, 0xFFFFFFFFu);
+    g_set_object_pos(kTextRegistry, g_bar_id[row], g_bar_vec, 0, 0, 0xFFFFFFFFu);
   }
 }
 
-void MoveFullscreenBar(u8* base, bool on, bool move);
+bool FullscreenEnabled() {
+  const auto* entry = rex::cvar::GetFlagInfo("fullscreen");
+  return entry && entry->getter() == "true";
+}
 
-void SetFullscreen(u8* base, bool on) {
-  MoveFullscreenBar(base, on, /*move=*/true);
+int FullscreenGetIndex() { return FullscreenEnabled() ? 0 : 1; }
+
+void FullscreenSetIndex(u8* base, int idx) {
+  const bool on = (idx == 0);
   if (FullscreenEnabled() == on) {
     return;
   }
@@ -1078,9 +1135,35 @@ void SetFullscreen(u8* base, bool on) {
   REXLOG_INFO("[options] fullscreen -> {}", on ? "true" : "false");
 }
 
-bool FullscreenEnabled() {
-  const auto* entry = rex::cvar::GetFlagInfo("fullscreen");
-  return entry && entry->getter() == "true";
+int FrameRateGetIndex() {
+  const std::string cur = REXCVAR_GET(frame_rate);
+  for (int i = 0; i < static_cast<int>(std::size(kFrameRateIds)); ++i) {
+    if (cur == kFrameRateIds[i]) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+void FrameRateSetIndex(u8* base, int idx) {
+  eternalsonata::SetFrameRateSetting(kFrameRateIds[idx]);
+  REXLOG_INFO("[options] frame_rate -> {}", kFrameRateIds[idx]);
+}
+
+int ResolutionGetIndex() {
+  const auto* entry = rex::cvar::GetFlagInfo("resolution");
+  const std::string cur = entry ? entry->getter() : std::string();
+  for (int i = 0; i < static_cast<int>(std::size(kResolutionIds)); ++i) {
+    if (cur == kResolutionIds[i]) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+void ResolutionSetIndex(u8* base, int idx) {
+  eternalsonata::SetResolutionSetting(kResolutionIds[idx]);
+  REXLOG_INFO("[options] resolution -> {}", kResolutionIds[idx]);
 }
 
 void WriteGuestString(u8* base, u32 at, const char* s) {
@@ -1108,23 +1191,27 @@ void WriteTextRecord(u8* base, u32 at, u32 id, int32_t x, int32_t y) {
 // Clone the stock Subtitles bar record verbatim and move it to our row's y.
 // Cloning rather than hand-writing keeps every field we have not identified
 // (notably the width at +0xC) at whatever the game already uses.
-void WriteBarRecord(u8* base, u32 at, int32_t y) {
+void WriteBarRecord(u8* base, u32 at, int32_t y, int32_t width) {
   std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(kOptionsList + kBarRecordOffset),
               kBarRecordBytes);
   REX_STORE_U32(at + kBarBlockYOffset, static_cast<u32>(y));
-  REX_STORE_U32(at + kBarBlockWOffset, static_cast<u32>(kBarWidth));
+  REX_STORE_U32(at + kBarBlockWOffset, static_cast<u32>(width));
   REX_STORE_U32(at + kBarBlockHOffset, static_cast<u32>(kBarHeight));
 }
 
-// Builds the extended list. Existing rows sit on a 50px pitch (..., 285, 335),
-// and the value column is X=490 - the same X as Inglese on the Voice row - so
-// the new row lands at Y=385 directly below Voice.
+int32_t RowBarDisplayY(u32 row) {
+  return kRowY0 + kRowYStep * static_cast<int32_t>(row) + kBarShrinkFixup;
+}
+
+// Builds the extended list: every kOptionRows entry gets a label + N value
+// text records at its own 50px-pitch row, then every row's bar record,
+// appended after the stock icon record (see the ordering rule below).
 //
 // The contents are rewritten on every Options entry rather than built once.
-// That costs nothing (it is a memcpy of 0x868 bytes) and keeps the row's
-// value text in step with the cvar, since the interpreter only reads the list
-// at screen construction.
-void EnsureFullscreenRow(u8* base) {
+// That costs nothing (it is a memcpy of under 0x900 bytes) and keeps each
+// row's value text in step with its cvar, since the interpreter only reads
+// the list at screen construction.
+void EnsureOptionRows(u8* base) {
   if (g_fs_failed) {
     return;
   }
@@ -1134,88 +1221,133 @@ void EnsureFullscreenRow(u8* base) {
     return;
   }
 
-  // Sized for the optional bar record whether or not it is enabled, so the
-  // allocation can be reused across rebuilds.
-  const u32 bytes = kOptionsListBytes + 3 * kTextRecordBytes + kBarRecordBytes +
-                    static_cast<u32>(sizeof(u32));
+  u32 bytes = kOptionsListBytes + kIconRecordBytes + static_cast<u32>(sizeof(u32));
+  for (const OptionRow& row : kOptionRows) {
+    bytes += kTextRecordBytes + row.value_count * kTextRecordBytes + kBarRecordBytes;
+  }
+
   if (!g_fs_list) {
     g_fs_list = mem->SystemHeapAlloc(bytes, 0x20);
-    g_fs_label = mem->SystemHeapAlloc(64, 0x20);
-    if (!g_fs_list || !g_fs_label) {
+    if (!g_fs_list) {
       g_fs_failed = true;
-      REXLOG_WARN("[options] fullscreen row: guest allocation failed");
+      REXLOG_WARN("[options] native rows: guest allocation failed");
       return;
     }
-    WriteGuestString(base, g_fs_label, "Fullscreen");
-    g_fs_vec = mem->SystemHeapAlloc(16, 0x20);
+    for (u32 r = 0; r < kOptionRowCount; ++r) {
+      g_label_addr[r] = mem->SystemHeapAlloc(64, 0x20);
+      if (!g_label_addr[r]) {
+        g_fs_failed = true;
+        REXLOG_WARN("[options] native rows: guest allocation failed");
+        return;
+      }
+      WriteGuestString(base, g_label_addr[r], kOptionRows[r].label);
+      for (u32 v = 0; v < kOptionRows[r].value_count; ++v) {
+        const OptionValue& val = kOptionRows[r].values[v];
+        if (!val.literal) {
+          continue;
+        }
+        g_value_addr[r][v] = mem->SystemHeapAlloc(64, 0x20);
+        if (!g_value_addr[r][v]) {
+          g_fs_failed = true;
+          REXLOG_WARN("[options] native rows: guest allocation failed");
+          return;
+        }
+        WriteGuestString(base, g_value_addr[r][v], val.literal);
+      }
+    }
+    g_bar_vec = mem->SystemHeapAlloc(16, 0x20);
   }
   const u32 list = g_fs_list;
 
   // Insert, do not append. Records past the last row set drawing state, so a
   // row appended at the very end inherits that trailing state and renders in
   // the wrong place (observed: label offset from the cursor, which sat
-  // correctly at y=530). Splicing the two records in immediately after the
+  // correctly at y=530). Splicing the records in immediately after the
   // Sottotitoli record keeps them in the same state as the real rows.
   std::memcpy(REX_RAW_ADDR(list), REX_RAW_ADDR(kOptionsList), kInsertOffset);
   u32 at = list + kInsertOffset;
-  // Mirror the Sottotitoli row exactly: label at X=120 and *both* options drawn
-  // side by side at X=490 / X=690, rather than a single value that swaps.
-  WriteTextRecord(base, at, kFsLabelId, 120, 385);
-  at += kTextRecordBytes;
-  WriteTextRecord(base, at, kFsValueId, 490, 385);
-  at += kTextRecordBytes;
-  WriteTextRecord(base, at, kFsValue2Id, 690, 385);
-  at += kTextRecordBytes;
+
+  // Mirror the Sottotitoli row's layout for every row: label at X=120 and
+  // every value drawn side by side from X=490, 200px apart.
+  for (u32 r = 0; r < kOptionRowCount; ++r) {
+    const int32_t y = kRowY0 + kRowYStep * static_cast<int32_t>(r);
+    WriteTextRecord(base, at, kRowSidBase + kRowSidStride * r, kRowXLabel, y);
+    at += kTextRecordBytes;
+    for (u32 v = 0; v < kOptionRows[r].value_count; ++v) {
+      WriteTextRecord(base, at, kRowSidBase + kRowSidStride * r + 1 + v,
+                       kRowXValue0 + static_cast<int32_t>(v) * kBarColumnStride, y);
+      at += kTextRecordBytes;
+    }
+  }
 
   // The stock bar record sits at exactly kInsertOffset, and it is the *last*
   // object-creating record in the list - everything after it is the
   // 1500/1502 selection block. That matters: sub_82201620 indexes the id array
   // at screen+0x4C **positionally** (elements 2/3/4 and 11), so a bar inserted
   // anywhere earlier would renumber the stock rows and move their highlights.
-  // Copy the stock record through first, then append ours, so we take the next
-  // free index and shift nothing.
+  // Copy the stock record through first, then append ours, so each row's bar
+  // takes the next free index and nothing shifts.
   std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(kOptionsList + kInsertOffset),
               kIconRecordBytes);
   at += kIconRecordBytes;
-  WriteBarRecord(base, at, kFsBarDisplayY);
-  at += kBarRecordBytes;
+  for (u32 r = 0; r < kOptionRowCount; ++r) {
+    WriteBarRecord(base, at, RowBarDisplayY(r), kOptionRows[r].bar_width);
+    at += kBarRecordBytes;
+  }
   const u32 rest = kInsertOffset + kIconRecordBytes;
   std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(kOptionsList + rest),
               kOptionsListBytes - rest);
   at += kOptionsListBytes - rest;
   REX_STORE_U32(at, kListTerminator);
 
-  REXLOG_INFO("[options] fullscreen row built (list=0x{:08X} strings=0x{:08X})",
-              list, g_fs_label);
+  REXLOG_INFO("[options] {} native rows built (list=0x{:08X})", kOptionRowCount, list);
 }
 
 }  // namespace
 
-// sub_8223B780(blob, string_id) -> char*: the BTX text lookup. Answer our two
+// sub_8223B780(blob, string_id) -> char*: the BTX text lookup. Answer our
 // synthetic ids ourselves and let every real id fall through untouched.
 REX_EXTERN(__imp__sub_8223B780);
 
 REX_HOOK_RAW(sub_8223B780) {
   const u32 sid = ctx.r4.u32;
-  if (sid == kFsLabelId && g_fs_label) {
-    ctx.r3.u32 = g_fs_label;
-    return;
-  }
-  if (sid == kFsValueId || sid == kFsValue2Id) {
-    // Both options are drawn, as on the Sottotitoli row. Reuse the game's own
-    // strings so they read "Si"/"NO" in whatever language is active: rewrite r4
-    // and let the stock lookup do the work, keeping localisation free.
-    const bool yes_slot = (sid == kFsValueId);
-    ctx.r4.u32 = yes_slot ? kBtxYes : kBtxNo;
-    __imp__sub_8223B780(ctx, base);
-
-    // NOTE: an earlier attempt marked the inactive option by prefixing the
-    // game's "<g>" tag (seen in strings like "<g>You have no score pieces.").
-    // That tag is NOT interpreted here - it rendered literally, which is why
-    // the dimmed option appeared shifted three characters right. Both options
-    // are therefore drawn plain; indicating which one is active still needs the
-    // game's own highlight mechanism (see docs §14, open work).
-    return;
+  if (sid >= kRowSidBase) {
+    const u32 rel = sid - kRowSidBase;
+    const u32 row = rel / kRowSidStride;
+    const u32 sub = rel % kRowSidStride;
+    if (row < kOptionRowCount) {
+      const OptionRow& def = kOptionRows[row];
+      if (sub == 0) {
+        if (g_label_addr[row]) {
+          ctx.r3.u32 = g_label_addr[row];
+          return;
+        }
+      } else if (sub - 1 < def.value_count) {
+        const u32 v = sub - 1;
+        const OptionValue& val = def.values[v];
+        if (val.literal) {
+          if (g_value_addr[row][v]) {
+            ctx.r3.u32 = g_value_addr[row][v];
+            return;
+          }
+        } else {
+          // Reuse the game's own string so it reads correctly in whatever
+          // language is active: rewrite r4 and let the stock lookup do the
+          // work, keeping localisation free.
+          //
+          // NOTE: an earlier attempt marked the inactive option by prefixing
+          // the game's "<g>" tag (seen in strings like "<g>You have no score
+          // pieces."). That tag is NOT interpreted here - it rendered
+          // literally, which is why the dimmed option appeared shifted three
+          // characters right. Every option is therefore drawn plain;
+          // indicating which one is active still needs the game's own
+          // highlight mechanism (see docs §14, open work).
+          ctx.r4.u32 = val.btx_id;
+          __imp__sub_8223B780(ctx, base);
+          return;
+        }
+      }
+    }
   }
   __imp__sub_8223B780(ctx, base);
 }
@@ -1234,7 +1366,7 @@ REX_HOOK_RAW(sub_821F2F38) {
   g_options_active = (ctx.r4.u32 == kOptionsList);
   g_bar_dumped = false;  // re-dump the bar objects on each Options entry
   if (g_options_active) {
-    EnsureFullscreenRow(base);
+    EnsureOptionRows(base);
     if (g_fs_list) {
       ctx.r4.u32 = g_fs_list;
     }
@@ -1499,13 +1631,13 @@ void DumpHighlightBars(u8* base) {
   REXLOG_INFO("[bar] count@0x17C={} ids@0x4C({})= {}",
               REX_LOAD_U8(screen + 0x17C), n, ids);
 
-  // Resolve the stock Subtitles bar and ours, and dump both. Comparing the two
-  // objects field by field is how the residual vertical offset gets fixed
-  // exactly: whatever field differs by something other than the 50px row pitch
-  // is the one the height scale is disturbing.
+  // Resolve the stock Subtitles bar and row 0's (Fullscreen's), and dump
+  // both. Comparing the two objects field by field is how the residual
+  // vertical offset gets fixed exactly: whatever field differs by something
+  // other than the 50px row pitch is the one the height scale is disturbing.
   const u32 stock_id = REX_LOAD_U32(screen + 120);
   for (int which = 0; which < 2; ++which) {
-    const u32 id = which ? g_fs_bar_id : stock_id;
+    const u32 id = which ? g_bar_id[0] : stock_id;
     if (id == 0xFFFFFFFFu) {
       continue;
     }
@@ -1593,8 +1725,8 @@ void ScanPollKeys(u8* base) {
 }  // namespace
 
 // sub_821F62B8 is the per-frame cursor update for the menu. We piggyback on it
-// to keep the Fullscreen row selectable (the screen resets the group's count
-// on every rebuild) and to handle input while the cursor sits on that row.
+// to keep the native rows selectable (the screen resets the group's count on
+// every rebuild) and to handle input while the cursor sits on one of them.
 REX_EXTERN(__imp__sub_821F62B8);
 
 REX_HOOK_RAW(sub_821F62B8) {
@@ -1605,28 +1737,38 @@ REX_HOOK_RAW(sub_821F62B8) {
   }
   if (!g_bar_dumped) {
     g_bar_dumped = true;
-    // Our bar record is appended after every stock object-creating record, so
-    // our id is always the last entry of the array at screen+0x4C.
+    // Bar records are appended in row order after every stock object-creating
+    // record, so our ids are always the last kOptionRowCount entries of the
+    // array at screen+0x4C, in row order.
     const u32 root = REX_LOAD_U32(kUiRoot);
     if (root >= 0x82000000u && root < 0xFB000000u) {
       const u32 page = REX_LOAD_U8(root + 2833);
       const u32 screen = REX_LOAD_U32(root + 4 * (page + kScreenSlotBase));
       if (screen >= 0x82000000u && screen < 0xFB000000u) {
-        u32 last = 0xFFFFFFFFu;
-        for (u32 i = 0; i < 24; ++i) {
-          const u32 id = REX_LOAD_U32(screen + 0x4C + 4 * i);
+        u32 ids[32];
+        u32 n = 0;
+        for (; n < std::size(ids); ++n) {
+          const u32 id = REX_LOAD_U32(screen + 0x4C + 4 * n);
           if (id == 0xFFFFFFFFu) {
             break;
           }
-          last = id;
+          ids[n] = id;
         }
-        g_fs_bar_id = last;
-        REXLOG_INFO("[options] fullscreen bar id = 0x{:X}", g_fs_bar_id);
+        if (n >= kOptionRowCount) {
+          for (u32 r = 0; r < kOptionRowCount; ++r) {
+            g_bar_id[r] = ids[n - kOptionRowCount + r];
+          }
+        }
+        REXLOG_INFO("[options] bar ids: {:x} {:x} {:x}", g_bar_id[0], g_bar_id[1],
+                    g_bar_id[2]);
       }
     }
-    // Place the bar the way the screen init places the stock ones: instantly,
-    // in init space. No settling delay - sub_82178A88 is not an animation.
-    MoveFullscreenBar(base, FullscreenEnabled(), /*move=*/false);
+    // Place every bar the way the screen init places the stock ones:
+    // instantly, in init space. No settling delay - sub_82178A88 is not an
+    // animation.
+    for (u32 r = 0; r < kOptionRowCount; ++r) {
+      MoveOptionBar(base, r, kOptionRows[r].get_index(), /*move=*/false);
+    }
     if (REXCVAR_GET(menu_scan)) {
       DumpHighlightBars(base);
     }
@@ -1636,15 +1778,16 @@ REX_HOOK_RAW(sub_821F62B8) {
     return;
   }
 
-  // Find the Options screen's bottom group and give it one more row. Each node
-  // is {id @ +0, subitem block @ +4, subitem pointer array @ +8, count byte @
-  // +0x0C (mirrored at +0x0D), current index @ +0x2C, next @ +0x30}. The array
-  // is pre-allocated with 10 slots; unused ones are parked at the sentinel
-  // (10000 + i, 10000 + i), so no allocation is needed - only a position and a
-  // bigger count.
+  // Find the Options screen's bottom group and give it kOptionRowCount more
+  // rows. Each node is {id @ +0, subitem block @ +4, subitem pointer array @
+  // +8, count byte @ +0x0C (mirrored at +0x0D), current index @ +0x2C, next @
+  // +0x30}. The array is pre-allocated with 10 slots; unused ones are parked
+  // at the sentinel (10000 + i, 10000 + i), so no allocation is needed - only
+  // a position and a bigger count.
   //
-  // The count check also makes this idempotent: after patching, count is 3, so
-  // it stops matching until the screen is rebuilt (which resets it to 2).
+  // The count check also makes this idempotent: after patching, count no
+  // longer matches kOptGroupCount, so it stops matching until the screen is
+  // rebuilt (which resets the count to kOptGroupCount).
   for (u32 i = REX_LOAD_U32(menu + 392);
        i >= 0x82000000u && i < 0xFB000000u; i = REX_LOAD_U32(i + 48)) {
     if (REX_LOAD_U32(i) != kOptGroupId ||
@@ -1657,9 +1800,8 @@ REX_HOOK_RAW(sub_821F62B8) {
     }
     const u32 s0 = REX_LOAD_U32(arr);
     const u32 s1 = REX_LOAD_U32(arr + 4);
-    const u32 s2 = REX_LOAD_U32(arr + 8);
-    if (s0 < 0x82000000u || s1 < 0x82000000u || s2 < 0x82000000u ||
-        s2 >= 0xFB000000u) {
+    if (s0 < 0x82000000u || s0 >= 0xFB000000u || s1 < 0x82000000u ||
+        s1 >= 0xFB000000u) {
       continue;
     }
     // Confirm this really is the Options bottom group before writing.
@@ -1668,18 +1810,36 @@ REX_HOOK_RAW(sub_821F62B8) {
       continue;
     }
 
-    REX_STORE_U32(s2 + 4, static_cast<u32>(kOptRowX));
-    REX_STORE_U32(s2 + 8, static_cast<u32>(kFsRowY));
-    REX_STORE_U8(i + 0x0C, kOptGroupCount + 1);
-    REX_STORE_U8(i + 0x0D, kOptGroupCount + 1);
-    REXLOG_INFO("[options] fullscreen row made selectable (node=0x{:08X} slot=0x{:08X} y={})",
-                i, s2, kFsRowY);
+    u32 srow[kOptionRowCount];
+    bool ok = true;
+    for (u32 r = 0; r < kOptionRowCount; ++r) {
+      const u32 s = REX_LOAD_U32(arr + 8 + 4 * r);
+      if (s < 0x82000000u || s >= 0xFB000000u) {
+        ok = false;
+        break;
+      }
+      srow[r] = s;
+    }
+    if (!ok) {
+      continue;
+    }
+
+    for (u32 r = 0; r < kOptionRowCount; ++r) {
+      const int32_t y = kOptRow1Y + kRowYStep * static_cast<int32_t>(r + 1);
+      REX_STORE_U32(srow[r] + 4, static_cast<u32>(kOptRowX));
+      REX_STORE_U32(srow[r] + 8, static_cast<u32>(y));
+    }
+    REX_STORE_U8(i + 0x0C, static_cast<u8>(kOptGroupCount + kOptionRowCount));
+    REX_STORE_U8(i + 0x0D, static_cast<u8>(kOptGroupCount + kOptionRowCount));
+    REXLOG_INFO("[options] {} native rows made selectable (node=0x{:08X})",
+                kOptionRowCount, i);
     break;
   }
 
-  // Toggle on A / left / right, but only while the cursor is actually parked on
-  // our row: group 2 selected and its sub-index on our slot. The game has no
-  // handler of its own for this index, so nothing else consumes the press.
+  // Handle input, but only while the cursor is actually parked on one of our
+  // rows: group 2 selected and its sub-index at or past kOptGroupCount. The
+  // game has no handler of its own for those indices, so nothing else
+  // consumes the press.
   if (REX_LOAD_U32(menu + 396) != kOptGroupId) {
     return;
   }
@@ -1709,20 +1869,33 @@ REX_HOOK_RAW(sub_821F62B8) {
       }
     }
 
-    if (row != kFsRowIndex) {
+    if (row < kOptGroupCount || row - kOptGroupCount >= kOptionRowCount) {
       return;
     }
+    const u32 opt_row = row - kOptGroupCount;
+    const OptionRow& def = kOptionRows[opt_row];
+    const int cur = def.get_index();
+    int next = cur;
 
-    // Match how a real two-option row behaves: left picks the left option
-    // ("Si", fullscreen on), right picks the right one ("NO", off). Only A
-    // flips. Previously any of the three toggled, so holding or mashing a
-    // direction flapped the setting instead of settling on one choice.
+    // Match how a real two-option row behaves: left steps toward the first
+    // value, right toward the last (clamped at the ends, not wrapping) - for
+    // a boolean row that is exactly "left picks Si, right picks NO". A cycles
+    // forward through every value, wrapping.
     if (fresh & kLeftMask) {
-      SetFullscreen(base, true);
+      if (cur > 0) {
+        next = cur - 1;
+      }
     } else if (fresh & kRightMask) {
-      SetFullscreen(base, false);
+      if (cur < static_cast<int>(def.value_count) - 1) {
+        next = cur + 1;
+      }
     } else if (fresh & kBtnA) {
-      SetFullscreen(base, !FullscreenEnabled());
+      next = (cur + 1) % static_cast<int>(def.value_count);
+    }
+
+    if (next != cur) {
+      def.set_index(base, next);
+      MoveOptionBar(base, opt_row, next, /*move=*/true);
     }
     return;
   }
