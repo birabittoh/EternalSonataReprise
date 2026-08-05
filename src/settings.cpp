@@ -143,10 +143,10 @@ constexpr std::array kGameDefaults = {
 // the generic DrawCvarWidget path, but are still listed here so the generic
 // Reset-All / restart-tracking loops cover them; GetFlagInfo/ResetToDefault
 // etc. no-op harmlessly for "vulkan_device" on a build without Vulkan.
-constexpr std::array<const char*, 10> kBasicCvarNames = {
+constexpr std::array<const char*, 11> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
-    "audio_mute", "audio_volume"};
+    "audio_mute", "audio_volume", "adaptive_framerate"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -946,6 +946,36 @@ void SetFullscreenSetting(bool enabled) {
   if (g_window) {
     g_window->SetFullscreen(enabled);
   }
+  SaveUserSettings();
+}
+
+void SetFrameRateSetting(const char* value) {
+  auto* entry = rex::cvar::GetFlagInfo("frame_rate");
+  if (!entry || !entry->setter || entry->getter() == value) {
+    return;
+  }
+  entry->setter(value);
+  SaveUserSettings();
+}
+
+void SetAdaptiveFramerateSetting(bool enabled) {
+  auto* entry = rex::cvar::GetFlagInfo("adaptive_framerate");
+  if (!entry || !entry->setter || (entry->getter() == "true") == enabled) {
+    return;
+  }
+  entry->setter(enabled ? "true" : "false");
+  SaveUserSettings();
+}
+
+void SetResolutionSetting(const char* value) {
+  auto* res_entry = rex::cvar::GetFlagInfo("resolution");
+  auto* scale_entry = rex::cvar::GetFlagInfo("resolution_scale");
+  if (!res_entry || !res_entry->setter || !scale_entry || !scale_entry->setter ||
+      res_entry->getter() == value) {
+    return;
+  }
+  res_entry->setter(value);
+  scale_entry->setter(std::to_string(ResolutionScaleFor(value)));
   SaveUserSettings();
 }
 

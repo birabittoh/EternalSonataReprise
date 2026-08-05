@@ -37,6 +37,43 @@ void ApplySettingDefaults();
 // overlay is opened.
 void InitSettingsCaches();
 
+// Persists the "basic" settings (Fullscreen, Resolution, ...) to the same file
+// the overlay writes, using the path captured by CreateSettingsDialog. Exists
+// so settings changed outside the overlay - notably the native Fullscreen row
+// added to the game's own Options screen in eternalsonata_hooks.cpp - survive a
+// restart. No-op if CreateSettingsDialog has not run yet.
+void SaveUserSettings();
+
+// Binds the window and settings file that SetFullscreenSetting/SaveUserSettings
+// act on. Call this at startup (OnPostSetup). The F4 overlay is created lazily,
+// so capturing these in CreateSettingsDialog alone leaves the native Options
+// row unable to apply or persist anything until the overlay has been opened
+// once - which is exactly how it behaved before this existed.
+void BindSettingsTargets(rex::ui::Window* window,
+                         std::filesystem::path user_settings_path);
+
+// Applies the fullscreen setting end to end: updates the cvar, applies it to
+// the window (the cvar alone is inert - nothing in FlagEntry watches it), and
+// persists. Used by the native Fullscreen row in the game's Options screen.
+void SetFullscreenSetting(bool enabled);
+
+// Applies the frame-rate cap end to end: updates the frame_rate cvar
+// ("30"/"60"/"unlocked") and persists. Used by the native Frame Rate row in
+// the game's Options screen; the value itself is applied by the host limiter
+// in eternalsonata_hooks.cpp, which reads the cvar directly.
+void SetFrameRateSetting(const char* value);
+
+// Applies the adaptive-frame-rate toggle end to end: updates the
+// adaptive_framerate cvar and persists. Used by the native Adaptive Frame
+// Rate row in the game's Options screen.
+void SetAdaptiveFramerateSetting(bool enabled);
+
+// Applies a named resolution end to end: updates the resolution cvar and the
+// paired resolution_scale cvar (see ResolutionScaleFor), and persists. `value`
+// is one of "720p"/"1080p"/"1440p"/"4K". Used by the native Resolution row in
+// the game's Options screen.
+void SetResolutionSetting(const char* value);
+
 // Creates the curated settings overlay. `user_settings_path` is where the
 // friendly settings (Fullscreen, Resolution) are persisted;
 // `app_config_path` is where everything else (the Advanced section) is

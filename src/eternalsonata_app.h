@@ -95,6 +95,11 @@ class EternalsonataApp : public rex::ReXApp {
     // time the F4 settings overlay is opened (see settings.cpp).
     eternalsonata::InitSettingsCaches();
 
+    // Bind the window/settings file now rather than waiting for the F4 overlay
+    // to be constructed, so the native Fullscreen row in the game's own Options
+    // screen can apply and persist from a cold start.
+    eternalsonata::BindSettingsTargets(window(), user_settings_path());
+
     window()->SetIcon(eternalsonata::kIconPNG, eternalsonata::kIconPNGSize);
     window()->SetTitle("Eternal Sonata: Reprise " + std::string(REXGLUE_BUILD_TITLE));
 
