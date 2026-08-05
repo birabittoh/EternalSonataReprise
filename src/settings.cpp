@@ -669,31 +669,26 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   }
 
   // Companion to the Frame Rate row above, and only meaningful next to it: it
-  // governs what happens when the selected rate can't be sustained. Greyed out
-  // for "30" and "Unlocked", which have nothing to step down to -- "30" already
-  // follows the game's own requests, and "Unlocked" has no limiter at all.
+  // governs what happens when the selected rate can't be sustained. Hidden
+  // for "30" and "Unlocked", which have nothing to step down to
   void DrawAdaptiveFrameRateRow() {
     const auto* entry = rex::cvar::GetFlagInfo("adaptive_framerate");
     if (!entry)
       return;
-    const bool applies = rex::cvar::GetFlagByName("frame_rate") == "60";
+    if (rex::cvar::GetFlagByName("frame_rate") != "60")
+      return;
 
-    ImGui::BeginDisabled(!applies);
     ImGui::TextUnformatted("Adaptive Frame Rate");
-    ImGui::EndDisabled();
     if (ImGui::IsItemHovered()) {
       ImGui::SetTooltip(
-          applies ? "If the PC can't hold 60 FPS, drop to 30 and then 20 rather than running "
-                    "the game in slow motion. Returns to 60 once there is headroom again."
-                  : "Only applies to the 60 FPS setting.");
+          "If the PC can't hold 60 FPS, drop to 30 and then 20 rather than running "
+          "the game in slow motion. Returns to 60 once there is headroom again.");
     }
     ImGui::SameLine(180.0f);
     ImGui::PushID("adaptive_framerate");
-    ImGui::BeginDisabled(!applies);
     if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
       SaveBasic();
     }
-    ImGui::EndDisabled();
     ImGui::PopID();
   }
 
