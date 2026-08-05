@@ -985,8 +985,14 @@ constexpr u32 kListTerminator = 0x0000FFFFu;
 // stock rows' own pitch.
 constexpr int32_t kRowY0 = 385;
 constexpr int32_t kRowYStep = 50;
-constexpr int32_t kRowXLabel = 120;
-constexpr int32_t kRowXValue0 = 490;  // first value column; +200 per index
+constexpr int32_t kRowXLabel = 120;   // same in every language (verified: label x doesn't shift)
+// The value column's *base* x is per-language (Italian/French 490, English
+// 440, ... - confirmed 2026-08-06 by diffing the stock Sottotitoli record
+// across languages), so it is read at runtime from that very record rather
+// than hardcoded; hardcoding it (as this constant briefly was) is what put
+// every non-Italian/French row's values visibly right of the real column.
+// The 200px stride between columns does not shift, only the base does.
+constexpr u32 kSottotitoliValue1Offset = 0x70Cu;  // "Si" text record, right after Sottotitoli's label
 constexpr u32 kMaxRowValues = 3;
 
 // Synthetic BTX ids, far above any real entry (the xex block defines 211) so
@@ -1316,6 +1322,8 @@ void EnsureOptionRows(u8* base, int lang_idx) {
   // byte layout at a different address - so every copy below reads from
   // whichever one is active right now rather than a single fixed address.
   const u32 src_list = kOptionsListByLang[lang_idx];
+  const int32_t value_base_x =
+      static_cast<int32_t>(REX_LOAD_U32(src_list + kSottotitoliValue1Offset + 8));
 
   // Labels are rewritten every entry (not just on first allocation) so a
   // language change while playing takes effect the next time Options opens,
@@ -1334,14 +1342,15 @@ void EnsureOptionRows(u8* base, int lang_idx) {
   u32 at = list + kInsertOffset;
 
   // Mirror the Sottotitoli row's layout for every row: label at X=120 and
-  // every value drawn side by side from X=490, 200px apart.
+  // every value drawn side by side from the language's real value column,
+  // 200px apart.
   for (u32 r = 0; r < kOptionRowCount; ++r) {
     const int32_t y = kRowY0 + kRowYStep * static_cast<int32_t>(r);
     WriteTextRecord(base, at, kRowSidBase + kRowSidStride * r, kRowXLabel, y);
     at += kTextRecordBytes;
     for (u32 v = 0; v < kOptionRows[r].value_count; ++v) {
       WriteTextRecord(base, at, kRowSidBase + kRowSidStride * r + 1 + v,
-                       kRowXValue0 + static_cast<int32_t>(v) * kBarColumnStride, y);
+                       value_base_x + static_cast<int32_t>(v) * kBarColumnStride, y);
       at += kTextRecordBytes;
     }
   }
