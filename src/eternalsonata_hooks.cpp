@@ -1001,11 +1001,6 @@ constexpr u32 kMaxRowValues = 3;
 constexpr u32 kRowSidBase = 900u;
 constexpr u32 kRowSidStride = 10u;
 
-// The Sottotitoli row's own value strings - "Si" (130) and "NO" (131) - reused
-// so boolean rows read identically to the stock ones and stay localised.
-constexpr u32 kBtxYes = 130u;
-constexpr u32 kBtxNo = 131u;
-
 // Row labels are authored text (there is no stock BTX analogue for
 // "Resolution"/"Frame Rate"/"Fullscreen"), so unlike the boolean values above
 // they cannot ride the game's own localisation for free - each language needs
@@ -1042,8 +1037,6 @@ constexpr LocalizedLabel kLabelResolution = {
     {"Resolution", "Aufl\xF6sung", "R\xE9solution", "Resoluci\xF3n", "Risoluzione"}};
 constexpr LocalizedLabel kLabelFrameRate = {
     {"Frame Rate", "Bildrate", "Fr\xE9quence", "Fotogramas", "Framerate"}};
-constexpr LocalizedLabel kLabelFullscreen = {
-    {"Fullscreen", "Vollbild", "Plein \xE9" "cran", "Pantalla completa", "Schermo intero"}};
 
 // One entry per value a row can hold. `literal` non-null means we author that
 // exact text ourselves (used where there is no stock analogue, e.g. "60
@@ -1068,20 +1061,16 @@ struct OptionRow {
   int32_t bar_width;
 };
 
-int FullscreenGetIndex();
-void FullscreenSetIndex(u8* base, int idx);
 int FrameRateGetIndex();
 void FrameRateSetIndex(u8* base, int idx);
 int ResolutionGetIndex();
 void ResolutionSetIndex(u8* base, int idx);
 
-constexpr OptionValue kBoolValues[2] = {{nullptr, kBtxYes}, {nullptr, kBtxNo}};
 constexpr OptionValue kFrameRateValues[2] = {{"30 FPS", 0}, {"60 FPS", 0}};
 constexpr const char* kFrameRateIds[2] = {"30", "60"};
 constexpr OptionValue kResolutionValues[3] = {{"720p", 0}, {"1080p", 0}, {"1440p", 0}};
 constexpr const char* kResolutionIds[3] = {"720p", "1080p", "1440p"};
 
-constexpr int32_t kStockBarWidth = 600;
 constexpr int32_t kWideBarWidth = 900;         // fits "30 FPS"/"60 FPS"-length text
 constexpr int32_t kResolutionBarWidth = 750;   // fits "1080p"/"1440p", narrower than kWideBarWidth
 
@@ -1090,13 +1079,12 @@ constexpr OptionRow kOptionRows[] = {
      kResolutionBarWidth},
     {&kLabelFrameRate, kFrameRateValues, 2, &FrameRateGetIndex, &FrameRateSetIndex,
      kWideBarWidth},
-    {&kLabelFullscreen, kBoolValues, 2, &FullscreenGetIndex, &FullscreenSetIndex,
-     kStockBarWidth},
 };
 constexpr u32 kOptionRowCount = static_cast<u32>(std::size(kOptionRows));
 
-u32 g_bar_id[kOptionRowCount] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};  // per-row bar registry id
-u32 g_label_addr[kOptionRowCount] = {};                                   // per-row label string
+// per-row bar registry id, all "unset" until the Options screen resolves them
+u32 g_bar_id[kOptionRowCount] = {0xFFFFFFFFu, 0xFFFFFFFFu};
+u32 g_label_addr[kOptionRowCount] = {};  // per-row label string
 u32 g_value_addr[kOptionRowCount][kMaxRowValues] = {};  // per-row literal value strings
 u32 g_bar_vec = 0;  // shared guest scratch for the {x, y, z} move argument
 
@@ -1175,24 +1163,6 @@ void MoveOptionBar(u8* base, u32 row, int value_index, bool move) {
   } else {
     g_set_object_pos(kTextRegistry, g_bar_id[row], g_bar_vec, 0, 0, 0xFFFFFFFFu);
   }
-}
-
-bool FullscreenEnabled() {
-  const auto* entry = rex::cvar::GetFlagInfo("fullscreen");
-  return entry && entry->getter() == "true";
-}
-
-int FullscreenGetIndex() { return FullscreenEnabled() ? 0 : 1; }
-
-void FullscreenSetIndex(u8* base, int idx) {
-  const bool on = (idx == 0);
-  if (FullscreenEnabled() == on) {
-    return;
-  }
-  // settings.cpp owns the window and the settings file, so the cvar update,
-  // the actual window mode change and persistence all happen there.
-  eternalsonata::SetFullscreenSetting(on);
-  REXLOG_INFO("[options] fullscreen -> {}", on ? "true" : "false");
 }
 
 int FrameRateGetIndex() {
@@ -1707,7 +1677,7 @@ void DumpHighlightBars(u8* base) {
   REXLOG_INFO("[bar] count@0x17C={} ids@0x4C({})= {}",
               REX_LOAD_U8(screen + 0x17C), n, ids);
 
-  // Resolve the stock Subtitles bar and row 0's (Fullscreen's), and dump
+  // Resolve the stock Subtitles bar and row 0's (Resolution's), and dump
   // both. Comparing the two objects field by field is how the residual
   // vertical offset gets fixed exactly: whatever field differs by something
   // other than the 50px row pitch is the one the height scale is disturbing.
