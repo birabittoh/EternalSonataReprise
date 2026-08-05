@@ -930,20 +930,6 @@ void SaveUserSettings() {
   rex::cvar::SaveConfigSubset(g_user_settings_path, BasicCvarNames());
 }
 
-void SetFullscreenSetting(bool enabled) {
-  auto* entry = rex::cvar::GetFlagInfo("fullscreen");
-  if (!entry || !entry->setter || (entry->getter() == "true") == enabled) {
-    return;
-  }
-  entry->setter(enabled ? "true" : "false");
-  // The cvar is only a value - nothing in FlagEntry applies it - so the window
-  // has to be told separately, exactly as the overlay's own row does.
-  if (g_window) {
-    g_window->SetFullscreen(enabled);
-  }
-  SaveUserSettings();
-}
-
 void SetFrameRateSetting(const char* value) {
   auto* entry = rex::cvar::GetFlagInfo("frame_rate");
   if (!entry || !entry->setter || entry->getter() == value) {
