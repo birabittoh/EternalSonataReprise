@@ -906,6 +906,27 @@ constexpr u32 kTextRecordBytes = 0x28u;
 constexpr u32 kIconRecord = 100u;
 constexpr u32 kIconRecordBytes = 0x1Cu;
 
+// Type 600 is the grey rule between rows: {600, x, y, width}, 0x10 bytes,
+// emitted last in a row's group. The stock Sottotitoli one at 0x75C is
+// {600, 120, 328, 950} against a row whose text sits at y=285 - so a rule is
+// drawn 43px below its own row's text and spans the full menu width, whatever
+// that row's label and values are.
+//
+// They separate rather than underline: every stock row group ends with one
+// EXCEPT the last row of a section (the row at y=335, the one directly above
+// ours, has no 600 record). So each rule is really "above the next row", which
+// is why we emit ours above each row rather than below - that gives the
+// previously-last stock row the separator it now needs, and correctly leaves
+// no rule under our own bottom row.
+//
+// A 600 record creates no entry in the screen's id array (that is the "creates
+// nothing at all" note above - it is a draw command, not an object), which is
+// why adding these is safe: unlike a type-100 record they cannot renumber the
+// highlight bars.
+constexpr u32 kSepRecordOffset = 0x75Cu;
+constexpr u32 kSepRecordBytes = 0x10u;
+constexpr u32 kSepYOffset = 0x08u;  // y within the record
+
 // The bar is a **type-110** record - the 100 family, subtype 10 - at list
 // offset 0x6C4: {110, 234, 490, 285, 1000, 1000, -1}. Sprite 234, x 490 (the
 // left option's column) and y 285 (the row's own display y). It sits *before*
@@ -1229,6 +1250,15 @@ void WriteBarRecord(u8* base, u32 at, u32 src_list, int32_t y, int32_t width) {
   REX_STORE_U32(at + kBarBlockHOffset, static_cast<u32>(kBarHeight));
 }
 
+// Clone the stock row separator and move it to our row's y, same reasoning as
+// WriteBarRecord: cloning keeps x and width at whatever the game already uses
+// (120 / 950 in every language) instead of hardcoding them here.
+void WriteSeparatorRecord(u8* base, u32 at, u32 src_list, int32_t y) {
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + kSepRecordOffset),
+              kSepRecordBytes);
+  REX_STORE_U32(at + kSepYOffset, static_cast<u32>(y));
+}
+
 int32_t RowBarDisplayY(u32 row) {
   return kRowY0 + kRowYStep * static_cast<int32_t>(row) + kBarShrinkFixup;
 }
@@ -1253,7 +1283,8 @@ void EnsureOptionRows(u8* base, int lang_idx) {
 
   u32 bytes = kOptionsListBytes + kIconRecordBytes + static_cast<u32>(sizeof(u32));
   for (const OptionRow& row : kOptionRows) {
-    bytes += kTextRecordBytes + row.value_count * kTextRecordBytes + kBarRecordBytes;
+    bytes += kTextRecordBytes + row.value_count * kTextRecordBytes + kSepRecordBytes +
+             kBarRecordBytes;
   }
 
   if (!g_fs_list) {
@@ -1294,6 +1325,14 @@ void EnsureOptionRows(u8* base, int lang_idx) {
   const u32 src_list = kOptionsListByLang[lang_idx];
   const int32_t value_base_x =
       static_cast<int32_t>(REX_LOAD_U32(src_list + kSottotitoliValue1Offset + 8));
+  // How far below a row's text its separator sits, taken from the stock
+  // Sottotitoli group (text y=285, rule y=328) rather than hardcoded, so it
+  // tracks the game if the row metrics differ per language.
+  const int32_t stock_row_y =
+      static_cast<int32_t>(REX_LOAD_U32(src_list + kSottotitoliValue1Offset + 0x0C));
+  const int32_t stock_sep_y =
+      static_cast<int32_t>(REX_LOAD_U32(src_list + kSepRecordOffset + kSepYOffset));
+  const int32_t sep_dy = stock_sep_y - stock_row_y;
 
   // Labels are rewritten every entry (not just on first allocation) so a
   // language change while playing takes effect the next time Options opens,
@@ -1313,7 +1352,10 @@ void EnsureOptionRows(u8* base, int lang_idx) {
 
   // Mirror the Sottotitoli row's layout for every row: label at X=120 and
   // every value drawn side by side from the language's real value column,
-  // 200px apart.
+  // 200px apart. Each row also gets the separator that belongs *above* it -
+  // drawn where the preceding row's rule would sit, one row pitch up - so the
+  // stock row we now follow gets separated from us and our bottom row is left
+  // without a rule under it, matching how the stock sections end.
   for (u32 r = 0; r < kOptionRowCount; ++r) {
     const int32_t y = kRowY0 + kRowYStep * static_cast<int32_t>(r);
     WriteTextRecord(base, at, kRowSidBase + kRowSidStride * r, kRowXLabel, y);
@@ -1323,6 +1365,8 @@ void EnsureOptionRows(u8* base, int lang_idx) {
                        value_base_x + static_cast<int32_t>(v) * kBarColumnStride, y);
       at += kTextRecordBytes;
     }
+    WriteSeparatorRecord(base, at, src_list, y - kRowYStep + sep_dy);
+    at += kSepRecordBytes;
   }
 
   // The stock bar record sits at exactly kInsertOffset, and it is the *last*
