@@ -30,6 +30,13 @@ namespace eternalsonata {
 // loaded), so a saved config or CLI/env override still takes precedence.
 void ApplySettingDefaults();
 
+// How many entries of the ascending {"720p", "1080p", "1440p", "4K"} preset
+// list fit on the user's actual display (always >= 1). Both this file's
+// Resolution row and the native Options screen's Resolution row
+// (eternalsonata_options.cpp) use this so a resolution wider than the
+// display never shows up as selectable in either place.
+int AllowedResolutionCount();
+
 // Enumerates GPU plugins and (if built with Vulkan) Vulkan physical devices
 // once, caching the results for CreateSettingsDialog. Both enumerations load
 // GPU plugin DLLs / query the driver, so this is meant to run once at

@@ -275,13 +275,25 @@ constexpr const char* kResolutionIds[3] = {"720p", "1080p", "1440p"};
 constexpr int32_t kWideBarWidth = 900;         // fits "30 FPS"/"60 FPS"-length text
 constexpr int32_t kResolutionBarWidth = 750;   // fits "1080p"/"1440p", narrower than kWideBarWidth
 
-constexpr OptionRow kOptionRows[] = {
-    {&kLabelResolution, kResolutionValues, 3, &ResolutionGetIndex, &ResolutionSetIndex,
-     kResolutionBarWidth},
+// Matches the ImGui overlay's Resolution row (settings.cpp): don't offer a
+// preset wider than the user's actual display. Not constexpr since it
+// queries the display, so kOptionRows below can't be constexpr either -- its
+// value_count is fixed once at static-init time, same as the overlay's
+// per-frame computation would settle on for a display that doesn't change
+// resolution mid-session.
+u8 ResolutionRowValueCount() {
+  return static_cast<u8>(
+      std::min<int>(static_cast<int>(std::size(kResolutionValues)),
+                    eternalsonata::AllowedResolutionCount()));
+}
+
+const OptionRow kOptionRows[] = {
+    {&kLabelResolution, kResolutionValues, ResolutionRowValueCount(), &ResolutionGetIndex,
+     &ResolutionSetIndex, kResolutionBarWidth},
     {&kLabelFrameRate, kFrameRateValues, 2, &FrameRateGetIndex, &FrameRateSetIndex,
      kWideBarWidth},
 };
-constexpr u32 kOptionRowCount = static_cast<u32>(std::size(kOptionRows));
+const u32 kOptionRowCount = static_cast<u32>(std::size(kOptionRows));
 
 // per-row bar registry id, all "unset" until the Options screen resolves them
 u32 g_bar_id[kOptionRowCount] = {0xFFFFFFFFu, 0xFFFFFFFFu};

@@ -26,6 +26,10 @@
 #include <rex/ui/vulkan/provider.h>
 #endif
 
+#if REX_PLATFORM_WIN32
+#include <windows.h>
+#endif
+
 // In-game frame-rate cap (see DrawFrameRateRow). The value is the target fps
 // the host limiter in eternalsonata_framerate.cpp holds the guest to, and which it
 // declares to the sim via byte_82465F90.
@@ -232,6 +236,40 @@ int ResolutionScaleFor(const std::string& resolution) {
   if (resolution == "4K")
     return 4;
   return 1;  // 720p, and fallback for anything unrecognized.
+}
+
+// Vertical pixel count of each named resolution preset.
+int ResolutionHeightFor(const char* option) {
+  std::string opt = option;
+  if (opt == "1080p")
+    return 1080;
+  if (opt == "1440p")
+    return 1440;
+  if (opt == "4K")
+    return 2160;
+  return 720;  // 720p
+}
+
+// Height in pixels of the display the window is (or would be) shown on.
+// Falls back to 4K (no filtering) if it can't be determined.
+//
+// Can't use SDL here even though the engine is SDL-backed: rex::runtime
+// ships as rexruntimerd.dll with SDL3-static as an *interface* link
+// dependency, so the DLL and this exe each get their own statically-linked
+// copy of SDL3 with independent subsystem state. The DLL's copy is the one
+// that calls SDL_Init/creates the window; SDL_GetPrimaryDisplay() called
+// from this exe's copy sees no video subsystem and always fails. Win32
+// APIs are process-global rather than per-module, so they aren't affected
+// by that split. When porting to Linux, this needs a query routed through
+// the engine (e.g. a rex::ui::Window accessor) rather than a direct
+// platform or SDL call from here.
+int DesktopDisplayHeight() {
+#if REX_PLATFORM_WIN32
+  int height = GetSystemMetrics(SM_CYSCREEN);
+  if (height > 0)
+    return height;
+#endif
+  return 2160;
 }
 
 // Remembered from CreateSettingsDialog so settings changed outside the overlay
@@ -513,11 +551,17 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     const auto* entry = rex::cvar::GetFlagInfo("resolution");
     if (!entry)
       return;
-    static constexpr std::array<const char*, 4> kOptions = {"720p", "1080p", "1440p", "4K"};
+    static constexpr std::array<const char*, 4> kAllOptions = {"720p", "1080p", "1440p", "4K"};
+
+    // Only offer presets that fit on the user's actual display -- no point
+    // letting someone pick 4K on a 1080p monitor.
+    int count = std::clamp(AllowedResolutionCount(), 1, static_cast<int>(kAllOptions.size()));
+    std::vector<const char*> options(kAllOptions.begin(), kAllOptions.begin() + count);
+
     std::string current = entry->getter();
     int cur_idx = 0;
-    for (int i = 0; i < static_cast<int>(kOptions.size()); ++i) {
-      if (current == kOptions[i]) {
+    for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+      if (current == options[i]) {
         cur_idx = i;
         break;
       }
@@ -530,11 +574,11 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     int sel = cur_idx;
     // Discrete slider, matching DrawFrameRateRow: snaps between presets
     // rather than allowing arbitrary drag positions.
-    if (ImGui::SliderInt("##v", &sel, 0, static_cast<int>(kOptions.size()) - 1, kOptions[sel],
+    if (ImGui::SliderInt("##v", &sel, 0, static_cast<int>(options.size()) - 1, options[sel],
                          ImGuiSliderFlags_NoInput)) {
-      rex::cvar::SetFlagByName("resolution", kOptions[sel], /*persist=*/true);
+      rex::cvar::SetFlagByName("resolution", options[sel], /*persist=*/true);
       rex::cvar::SetFlagByName("resolution_scale",
-                               std::to_string(ResolutionScaleFor(kOptions[sel])),
+                               std::to_string(ResolutionScaleFor(options[sel])),
                                /*persist=*/true);
       SaveBasic();
     }
@@ -904,6 +948,23 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
 }  // namespace
 
+// Ordered ascending; both this overlay's Resolution row and the native
+// Options screen's Resolution row (eternalsonata_options.cpp) treat this as
+// the definitive list, each truncating to however many entries it itself
+// offers (the native menu tops out at 1440p, no 4K row).
+constexpr std::array<const char*, 4> kResolutionPresetsAscending = {"720p", "1080p", "1440p", "4K"};
+
+int AllowedResolutionCount() {
+  int display_height = DesktopDisplayHeight();
+  int count = 0;
+  for (const char* opt : kResolutionPresetsAscending) {
+    if (ResolutionHeightFor(opt) > display_height)
+      break;
+    ++count;
+  }
+  return count > 0 ? count : 1;  // Always leave at least 720p.
+}
+
 void ApplySettingDefaults() {
   for (const auto& d : kGameDefaults) {
     rex::cvar::SetDefaultValue(d.cvar, d.value);
@@ -935,7 +996,12 @@ void SetFrameRateSetting(const char* value) {
   if (!entry || !entry->setter || entry->getter() == value) {
     return;
   }
-  entry->setter(value);
+  // frame_rate is hot-reload, not kRequiresRestart, so this doesn't mark a
+  // pending restart -- but going through SetFlagByName (as SetResolutionSetting
+  // does) rather than entry->setter directly still matters: it's what runs
+  // registered change callbacks and sets persist_to_config, same as every
+  // other settings path in this file (DrawFrameRateRow included).
+  rex::cvar::SetFlagByName("frame_rate", value, /*persist=*/true);
   SaveUserSettings();
 }
 
@@ -955,8 +1021,16 @@ void SetResolutionSetting(const char* value) {
       res_entry->getter() == value) {
     return;
   }
-  res_entry->setter(value);
-  scale_entry->setter(std::to_string(ResolutionScaleFor(value)));
+  // resolution and resolution_scale are both kRequiresRestart -- go through
+  // rex::cvar::SetFlagByName (not entry->setter directly, as the other
+  // Set*Setting helpers in this file do) so the change is recorded by
+  // MarkPendingRestart. That's what makes AnyPendingRestart() /
+  // GetPendingRestartFlags() -- and so the overlay's "restart to apply"
+  // banner -- notice a resolution change made from the native Options row,
+  // not just from this file's own DrawResolutionRow.
+  rex::cvar::SetFlagByName("resolution", value, /*persist=*/true);
+  rex::cvar::SetFlagByName("resolution_scale", std::to_string(ResolutionScaleFor(value)),
+                           /*persist=*/true);
   SaveUserSettings();
 }
 
