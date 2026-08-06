@@ -14,10 +14,10 @@
 //     known field area stays up instead of "Title Screen".
 // The host-side capture itself comes from the field-area loaders
 // sub_820FAFB0 / sub_820FB420 (the map loaders that receive "cfdata\XXyy.e"
-// filenames; see eternalsonata_hooks.cpp "Field area tracking"). Those
+// filenames; see eternalsonata_presence.cpp "Field area tracking"). Those
 // loaders also fire for speculative gate preloads as the player approaches a
 // transition, so the hook filters on the loaders' r5 flags word and forwards
-// only real transitions -- see eternalsonata_hooks.cpp for details.
+// only real transitions -- see eternalsonata_presence.cpp for details.
 //
 // Ids are normalized (lowercase, ".e" stripped) and translated through the
 // static table generated from the cfdata BTX files. Event/scene ids ("e%04d")
@@ -65,20 +65,20 @@ class RoomPresence {
   void Tick();
 
   // Called from the guest-thread field-loader hook (sub_820FAFB0, see
-  // eternalsonata_hooks.cpp) with the area id ("ktm01.e"-style filename, or
+  // eternalsonata_presence.cpp) with the area id ("ktm01.e"-style filename, or
   // empty) each time the game loads a field area. Records it for the next
   // Tick(). Thread-safe: the hook runs on a guest thread while Tick may run
   // on another.
   void NotifyAreaLoad(const char* area_id);
 
   // Called from the guest-thread map-dispatcher hook (sub_820FD998 with a null
-  // name, see eternalsonata_hooks.cpp) when the game tears the field map down.
+  // name, see eternalsonata_presence.cpp) when the game tears the field map down.
   // Clears the "a field is loaded" flag that NotifyAreaLoad sets, so the state
   // row can leave "Exploring..." when the player returns to a menu screen.
   void NotifyFieldTeardown();
 
   // Called from the guest-thread battle-entry hook (sub_820FDB80, see
-  // eternalsonata_hooks.cpp), whose last act is an unconditional request for
+  // eternalsonata_presence.cpp), whose last act is an unconditional request for
   // scene mode 4. Marks the battle immediately; Tick() ends it again when the
   // applied scene mode reaches 4, which is the end-of-battle edge.
   void NotifyBattleStart();

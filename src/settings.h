@@ -41,7 +41,7 @@ void InitSettingsCaches();
 // the overlay writes, using the path captured by CreateSettingsDialog. Exists
 // so settings changed outside the overlay - notably the native Resolution and
 // Frame Rate rows added to the game's own Options screen in
-// eternalsonata_hooks.cpp - survive a restart. No-op if CreateSettingsDialog
+// eternalsonata_options.cpp - survive a restart. No-op if CreateSettingsDialog
 // has not run yet.
 void SaveUserSettings();
 
@@ -56,7 +56,7 @@ void BindSettingsTargets(rex::ui::Window* window,
 // Applies the frame-rate cap end to end: updates the frame_rate cvar
 // ("30"/"60"/"unlocked") and persists. Used by the native Frame Rate row in
 // the game's Options screen; the value itself is applied by the host limiter
-// in eternalsonata_hooks.cpp, which reads the cvar directly.
+// in eternalsonata_framerate.cpp, which reads the cvar directly.
 void SetFrameRateSetting(const char* value);
 
 // Applies the adaptive-frame-rate toggle end to end: updates the

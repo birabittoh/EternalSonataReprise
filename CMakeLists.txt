@@ -80,6 +80,9 @@ add_custom_command(
 set(ETERNALSONATA_SOURCES
     src/main.cpp
     src/eternalsonata_hooks.cpp
+    src/eternalsonata_framerate.cpp
+    src/eternalsonata_options.cpp
+    src/eternalsonata_presence.cpp
     src/room_presence.cpp
     src/settings.cpp
     ${ETERNALSONATA_AREA_NAMES_HEADER}
