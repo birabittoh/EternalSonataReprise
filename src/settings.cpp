@@ -27,7 +27,7 @@
 #endif
 
 // In-game frame-rate cap (see DrawFrameRateRow). The value is the target fps
-// the host limiter in eternalsonata_hooks.cpp holds the guest to, and which it
+// the host limiter in eternalsonata_framerate.cpp holds the guest to, and which it
 // declares to the sim via byte_82465F90.
 //
 // 60 is the highest rate this engine can express, and there is no preset above
@@ -46,7 +46,7 @@
 // 75/100/150 fail the third, 180 fails the second, 300 fails the first. A 150
 // preset was tried and removed for exactly this reason. Players who want to get
 // through content faster hold the fast-forward key instead (see TurboHeld in
-// eternalsonata_hooks.cpp).
+// eternalsonata_framerate.cpp).
 //
 // "unlocked" disables the limiter and runs fast in proportion — a frame-clocked
 // engine has no speed-correct uncapped mode.
@@ -78,7 +78,7 @@ REXCVAR_DEFINE_BOOL(adaptive_framerate, true, "Eternal Sonata",
 // Per-second frame pacing summary, off by default. Answers, in one line: what
 // rate are we declaring to the sim, how many presents/sec are we actually
 // getting, how long does a frame's work really take, and what is the adaptive
-// ladder doing about it. See the present hook in eternalsonata_hooks.cpp.
+// ladder doing about it. See the present hook in eternalsonata_framerate.cpp.
 REXCVAR_DEFINE_BOOL(frame_debug, false, "Eternal Sonata",
                     "Log a per-second frame pacing summary (declared rate, achieved presents/sec, "
                     "frame work time, adaptive ladder state)");
@@ -88,7 +88,7 @@ REXCVAR_DEFINE_BOOL(frame_debug, false, "Eternal Sonata",
 // and intersects it against the previous snapshots of the *other* value, which
 // narrows down where a row's value (and the highlight bar that follows it)
 // actually lives. Costs a full memory diff per press, so it is off by default.
-// See the "Value-highlight hunt" section in eternalsonata_hooks.cpp.
+// See the "Value-highlight hunt" section in eternalsonata_options.cpp.
 REXCVAR_DEFINE_BOOL(menu_scan, false, "Eternal Sonata",
                     "Debug: diff guest memory across Subtitles row toggles to locate menu "
                     "value state (logs candidates)");
@@ -630,7 +630,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   }
 
   // Controls the frame rate the game runs at. The hooks in
-  // eternalsonata_hooks.cpp read the frame_rate cvar, declare that rate to the
+  // eternalsonata_framerate.cpp read the frame_rate cvar, declare that rate to the
   // sim (byte_82465F90) and hold the present thread to it with a host limiter.
   // Applied at runtime, no restart needed.
   void DrawFrameRateRow() {
