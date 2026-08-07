@@ -26,10 +26,6 @@
 #include <rex/ui/vulkan/provider.h>
 #endif
 
-#if REX_PLATFORM_WIN32
-#include <windows.h>
-#endif
-
 // In-game frame-rate cap (see DrawFrameRateRow). The value is the target fps
 // the host limiter in eternalsonata_framerate.cpp holds the guest to, and which it
 // declares to the sim via byte_82465F90.
@@ -250,33 +246,33 @@ int ResolutionHeightFor(const char* option) {
   return 720;  // 720p
 }
 
+// Remembered from CreateSettingsDialog so settings changed outside the overlay
+// - e.g. the native Fullscreen row in the game's own Options screen - can be
+// persisted to the same file the overlay writes. See SaveUserSettings. Also
+// used by DesktopDisplayHeight below, since it's the only handle to the
+// engine's Window this file has outside the settings dialog itself.
+std::filesystem::path g_user_settings_path;
+rex::ui::Window* g_window = nullptr;
+
 // Height in pixels of the display the window is (or would be) shown on.
 // Falls back to 4K (no filtering) if it can't be determined.
 //
-// Can't use SDL here even though the engine is SDL-backed: rex::runtime
-// ships as rexruntimerd.dll with SDL3-static as an *interface* link
-// dependency, so the DLL and this exe each get their own statically-linked
-// copy of SDL3 with independent subsystem state. The DLL's copy is the one
-// that calls SDL_Init/creates the window; SDL_GetPrimaryDisplay() called
-// from this exe's copy sees no video subsystem and always fails. Win32
-// APIs are process-global rather than per-module, so they aren't affected
-// by that split. When porting to Linux, this needs a query routed through
-// the engine (e.g. a rex::ui::Window accessor) rather than a direct
-// platform or SDL call from here.
+// Routed through rex::ui::Window::GetDesktopDisplayHeight() (backed by
+// SDL_GetDisplayForWindow/SDL_GetDesktopDisplayMode) rather than a direct
+// platform or SDL call from here: rex::runtime ships as rexruntimerd.dll
+// with SDL3-static as an *interface* link dependency, so the DLL and this
+// exe each get their own statically-linked copy of SDL3 with independent
+// subsystem state. The DLL's copy is the one that calls SDL_Init/creates
+// the window, so a direct SDL_GetPrimaryDisplay() call made from this exe's
+// own copy would see no video subsystem and always fail; going through the
+// Window object's virtual method instead runs inside the DLL, against the
+// copy of SDL that actually owns the window. That also makes this
+// cross-platform for free (Windows/X11/Wayland) instead of the previous
+// GetSystemMetrics(SM_CYSCREEN), which only ever worked on Windows.
 int DesktopDisplayHeight() {
-#if REX_PLATFORM_WIN32
-  int height = GetSystemMetrics(SM_CYSCREEN);
-  if (height > 0)
-    return height;
-#endif
-  return 2160;
+  uint32_t height = g_window ? g_window->GetDesktopDisplayHeight() : 0;
+  return height > 0 ? static_cast<int>(height) : 2160;
 }
-
-// Remembered from CreateSettingsDialog so settings changed outside the overlay
-// - e.g. the native Fullscreen row in the game's own Options screen - can be
-// persisted to the same file the overlay writes. See SaveUserSettings.
-std::filesystem::path g_user_settings_path;
-rex::ui::Window* g_window = nullptr;
 
 std::vector<std::string> BasicCvarNames() {
   return std::vector<std::string>(kBasicCvarNames.begin(), kBasicCvarNames.end());
