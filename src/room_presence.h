@@ -88,6 +88,14 @@ class RoomPresence {
   // a battle whose end Tick() somehow missed.
   void NotifyBattleEnd();
 
+  // Thread-safe: battle_active_ is only ever set from guest threads under
+  // area_mutex_; this just takes the same lock to read it. Mods have no way
+  // to derive battle state from guest memory on their own (see
+  // room_presence.cpp for why the scene-mode register can't tell them apart),
+  // so this is exported (see EternalSonataIsBattleActive in room_presence.cpp)
+  // for them to query directly instead of re-deriving it.
+  bool IsBattleActive();
+
  private:
   rex::system::KernelState* kernel_state_ = nullptr;
 

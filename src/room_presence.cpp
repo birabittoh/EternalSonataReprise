@@ -274,9 +274,24 @@ void RoomPresence::NotifyFieldTeardown() {
   field_active_ = false;
 }
 
+bool RoomPresence::IsBattleActive() {
+  std::lock_guard<std::mutex> lock(area_mutex_);
+  return battle_active_;
+}
+
 RoomPresence& GetRoomPresence() {
   static RoomPresence instance;
   return instance;
 }
 
 }  // namespace eternalsonata
+
+// Exported so mod DLLs (loaded into this same process) can query battle
+// state via GetProcAddress(GetModuleHandle(nullptr), ...) instead of
+// guessing at guest memory. See room_presence.h -- battle state is not
+// reliably derivable from guest memory alone (the scene-mode register only
+// exposes the *end* of a battle, not the whole span), which is exactly the
+// mistake the party_overlay mod made before this was added.
+extern "C" __declspec(dllexport) bool EternalSonataIsBattleActive() {
+  return eternalsonata::GetRoomPresence().IsBattleActive();
+}
