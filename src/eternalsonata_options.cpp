@@ -685,7 +685,17 @@ namespace {
 // so scanning them would only produce duplicate hits.
 constexpr struct {
   u32 lo, hi;
-} kScanRanges[] = {{0x82000000u, 0xA0000000u}, {0xE0000000u, 0xFB000000u}};
+} kScanRanges[] = {
+    // TEMP (player-position hunt, see chat): narrowed from
+    // {0x82000000, 0xA0000000}/{0xE0000000, 0xFB000000} to the small
+    // known-globals cluster (party level 0x8243F3EC, scene mode 0x824C74C4,
+    // area caches 0x8244Bxxx, console state 0x8244Cxxx/Dxxx, ConsoleSetting
+    // 0x82565xxx) so a real area transition -- which touches nearly all of
+    // the full range's 330 MiB -- doesn't blow the candidate set up to
+    // millions of entries again. Revert to the wide range once this hunt is
+    // done; it's still needed for other menu-scan uses.
+    {0x8243F000u, 0x82566000u},
+};
 constexpr u32 kScanPage = 0x1000u;
 
 struct ScanCandidate {

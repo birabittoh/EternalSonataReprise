@@ -3,6 +3,9 @@
 
 #include "settings.h"
 
+#include "debug_area_overlay.h"
+#include "field_player_model_override.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -93,6 +96,22 @@ REXCVAR_DEFINE_BOOL(menu_scan, false, "Eternal Sonata",
                     "Debug: diff guest memory across Subtitles row toggles to locate menu "
                     "value state (logs candidates)");
 
+REXCVAR_DEFINE_BOOL(debug_show_all_maps, false, "Eternal Sonata",
+                    "Debug: show all areas in debug overlay, including unnamed event/menu areas");
+
+// Which model the overworld leader wears. "party" tracks the active party's
+// first member (the game itself always spawns Allegretto regardless of party
+// order); a character name pins that character; "default" leaves the game's
+// own choice alone. Read by the spawn hook in field_player_model_override.cpp.
+//
+// The tokens double as the debug overlay's combo values, so the two stay in
+// step -- see FieldPlayerModelOverride::SelectionNames().
+REXCVAR_DEFINE_STRING(field_leader_model, "default", "Eternal Sonata",
+                      "Model used by the overworld leader: default (the game's own), party (the "
+                      "active party's first member), or a specific character")
+    .allowed({"default", "party", "allegretto", "polka", "beat", "frederic", "viola", "salsa",
+              "jazz", "falsetto", "claves", "march"});
+
 namespace eternalsonata {
 
 namespace {
@@ -139,14 +158,16 @@ constexpr std::array kGameDefaults = {
 };
 
 // cvars persisted to the friendly settings.toml by the Basic section.
-// gpu_backend/vulkan_device get custom rows (dynamic dropdowns) rather than
-// the generic DrawCvarWidget path, but are still listed here so the generic
-// Reset-All / restart-tracking loops cover them; GetFlagInfo/ResetToDefault
-// etc. no-op harmlessly for "vulkan_device" on a build without Vulkan.
-constexpr std::array<const char*, 11> kBasicCvarNames = {
+// vulkan_device gets a custom row (a dynamic dropdown) rather than the generic
+// DrawCvarWidget path, but is still listed here so the generic Reset-All /
+// restart-tracking loops cover it; GetFlagInfo/ResetToDefault etc. no-op
+// harmlessly for it on a build without Vulkan. gpu_backend no longer has a row
+// at all (it is set from the config file or the Advanced section), but stays
+// listed so an existing saved value survives a Reset-All round trip.
+constexpr std::array<const char*, 12> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
-    "audio_mute", "audio_volume", "adaptive_framerate"};
+    "audio_mute", "audio_volume", "adaptive_framerate", "field_leader_model"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -206,7 +227,15 @@ constexpr std::array kFrameRateOptions = {
 
 // cvars rendered generically in the collapsed Advanced section, persisted to
 // the app's normal cvar config (eternalsonata.toml).
-constexpr std::array<const char*, 10> kAdvancedCvarNames = {
+//
+// Deliberately absent: gpu_allow_invalid_fetch_constants, d3d12_readback_resolve
+// and no_edram_wrap_claim. Those are not preferences, they are the workarounds
+// this game needs to render correctly (no_edram_wrap_claim in particular is the
+// fix for the black cross-fades and the black half of the save screenshot -- see
+// kGameDefaults). They keep their defaults from kGameDefaults and can still be
+// set from eternalsonata.toml for debugging; they just are not offered as
+// something to switch off by hand.
+constexpr std::array<const char*, 7> kAdvancedCvarNames = {
     "shader_dump_enabled",
     "texture_dump_enabled",
     "texture_dump_format",
@@ -214,9 +243,6 @@ constexpr std::array<const char*, 10> kAdvancedCvarNames = {
     "mnk_capture_mouse",
     "mnk_mode",
     "swap_post_effect",
-    "gpu_allow_invalid_fetch_constants",
-    "d3d12_readback_resolve",
-    "no_edram_wrap_claim",
 };
 
 // resolution_scale value that renders at "100%" (native) for a given display
@@ -336,8 +362,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     DrawAudioMuteRow();
     DrawAudioVolumeRow();
     DrawLanguageRow();
+    DrawFieldLeaderModelRow();
     DrawInputBackendRow();
-    DrawGpuBackendRow();
 #if REX_HAS_VULKAN
     if (rex::cvar::GetFlagByName("gpu_backend") == "vulkan") {
       DrawVulkanDeviceRow();
@@ -365,6 +391,16 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       rex::cvar::ResetToDefault("gpu_plugin");
       SaveBasic();
       SaveAdvanced();
+    }
+    ImGui::SameLine();
+    // Debug tool: force-loads a field area out of turn. See
+    // debug_area_overlay.h / force_load_area.h for the safety caveats.
+    if (ImGui::Button(debug_area_overlay_ ? "Close Debug" : "Debug...")) {
+      if (debug_area_overlay_) {
+        debug_area_overlay_.reset();
+      } else {
+        debug_area_overlay_ = eternalsonata::CreateDebugAreaOverlay(imgui_drawer());
+      }
     }
     ImGui::SameLine();
     // Opens the SDK's own full cvar browser (the same one bind_settings/F4
@@ -669,6 +705,37 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
+  // Which character model the overworld leader wears. The game always spawns
+  // Allegretto there regardless of party order; the spawn hook in
+  // field_player_model_override.cpp substitutes a different cached model
+  // handle. Selection is owned by FieldPlayerModelOverride (which mirrors the
+  // field_leader_model cvar into an atomic for the guest thread), so this row
+  // goes through it rather than touching the cvar directly.
+  void DrawFieldLeaderModelRow() {
+    int selection = eternalsonata::FieldPlayerModelOverride::Selection();
+
+    ImGui::TextUnformatted("Field Leader Model");
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Which character is shown walking around the overworld.\n\n"
+          "\"Follow active party\" uses whoever is first in the party, which you reorder "
+          "from the status screen.\n\n"
+          "The model can only be swapped while the field is paused, so a change takes "
+          "effect the next time you close a menu or move between areas -- not instantly. "
+          "Characters whose model has not been loaded yet fall back to the default.");
+    }
+    ImGui::SameLine(180.0f);
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::PushID("field_leader_model");
+    if (ImGui::Combo("##v", &selection,
+                     eternalsonata::FieldPlayerModelOverride::SelectionNames(),
+                     eternalsonata::FieldPlayerModelOverride::kSelectionCount)) {
+      // SetSelection persists via SaveUserSettings itself.
+      eternalsonata::FieldPlayerModelOverride::SetSelection(selection);
+    }
+    ImGui::PopID();
+  }
+
   // Controls the frame rate the game runs at. The hooks in
   // eternalsonata_framerate.cpp read the frame_rate cvar, declare that rate to the
   // sim (byte_82465F90) and hold the present thread to it with a host limiter.
@@ -741,64 +808,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PushID("input_backend");
     if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
       SaveBasic();
-    }
-    ImGui::PopID();
-  }
-
-  // Backend support is a property of the *selected GPU plugin*, not a fixed
-  // set every plugin shares -- gpu_backend's own `.allowed(...)` list
-  // includes "any" and every backend rex_gpu_create could theoretically
-  // accept, regardless of what the active plugin actually implements. This
-  // queries rex::system::QuerySupportedBackends(gpu_plugin) instead, caching
-  // per plugin name since it loads/unloads the plugin DLL to ask; the row
-  // only renders when that plugin actually offers more than one backend --
-  // with zero or one, there's no meaningful choice to present.
-  void DrawGpuBackendRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("gpu_backend");
-    const auto* plugin_entry = rex::cvar::GetFlagInfo("gpu_plugin");
-    if (!entry || !plugin_entry)
-      return;
-
-    std::string plugin_name = plugin_entry->getter();
-    if (plugin_name != gpu_backend_query_plugin_) {
-      gpu_backend_query_plugin_ = plugin_name;
-      gpu_backend_names_ = rex::system::QuerySupportedBackends(plugin_name);
-    }
-    if (gpu_backend_names_.size() < 2)
-      return;
-
-    auto label_for = [](const std::string& id) -> std::string {
-      if (id == "d3d12")
-        return "D3D12";
-      if (id == "vulkan")
-        return "Vulkan";
-      return id;
-    };
-
-    std::string current = entry->getter();
-    int cur_idx = 0;
-    for (int i = 0; i < static_cast<int>(gpu_backend_names_.size()); ++i) {
-      if (current == gpu_backend_names_[i]) {
-        cur_idx = i;
-        break;
-      }
-    }
-
-    ImGui::TextUnformatted("GPU Backend");
-    ImGui::SameLine(180.0f);
-    ImGui::SetNextItemWidth(160.0f);
-    ImGui::PushID("gpu_backend");
-    if (ImGui::BeginCombo("##v", label_for(gpu_backend_names_[cur_idx]).c_str())) {
-      for (int i = 0; i < static_cast<int>(gpu_backend_names_.size()); ++i) {
-        bool selected = (i == cur_idx);
-        if (ImGui::Selectable(label_for(gpu_backend_names_[i]).c_str(), selected)) {
-          rex::cvar::SetFlagByName("gpu_backend", gpu_backend_names_[i], /*persist=*/true);
-          SaveBasic();
-        }
-        if (selected)
-          ImGui::SetItemDefaultFocus();
-      }
-      ImGui::EndCombo();
     }
     ImGui::PopID();
   }
@@ -930,13 +939,12 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   std::filesystem::path user_settings_path_;
   std::filesystem::path app_config_path_;
   std::vector<std::string> gpu_plugin_names_;
-  std::string gpu_backend_query_plugin_;  // Cache key for gpu_backend_names_.
-  std::vector<std::string> gpu_backend_names_;
 #if REX_HAS_VULKAN
   std::vector<rex::ui::vulkan::DeviceInfo> vulkan_devices_;
 #endif
   rex::input::InputSystem* input_system_;
   std::unique_ptr<rex::ui::SettingsDialog> dev_settings_overlay_;
+  std::unique_ptr<rex::ui::ImGuiDialog> debug_area_overlay_;
 
   rex::system::AutoUpdater auto_updater_;
   bool update_check_requested_ = false;

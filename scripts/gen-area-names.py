@@ -2,10 +2,9 @@
 """Generate src/area_names.generated.h from docs/cfdata_names.txt.
 
 Embeds the id -> display-name table (the map-info BTX string 0 of each
-area's cfdata file) so the runtime
-Discord presence can translate the game's current-area id (byte_8244B500)
-into a human-readable name. Only ids carrying a real banner are listed;
-event/support files (eXXXX, *60, zzz02, ...) are skipped.
+area's cfdata file). Includes all areas from the source file, with empty
+names for event/support files (eXXXX, *60, zzz02, ...) that don't have
+display names.
 
 Emitted header is a gitignored build artifact; the .txt is the source of
 truth (regenerate with scripts/cfdata_names.py).
@@ -31,8 +30,8 @@ def main():
             if "\t" not in line:
                 continue
             aid, name = line.split("\t", 1)
-            if name:
-                entries.append((aid, name))
+            # Include all entries, even those with empty names (event/unnamed areas)
+            entries.append((aid, name))
     entries.sort()
 
     lines = [
@@ -45,9 +44,8 @@ def main():
         "namespace eternalsonata {",
         "",
         '// Maps a cfdata area id (e.g. "tnk01") to its display name (the map-info',
-        "// BTX string 0 of the area's cfdata file).",
-        "// Only ids carrying a real banner are listed; event/support files (eXXXX,",
-        "// *60, zzz02, ...) have no entry.",
+        "// BTX string 0 of the area's cfdata file). Event/support files (eXXXX,",
+        "// *60, zzz02, ...) are included with empty string names.",
         "inline const std::unordered_map<std::string, const char*>& AreaNameTable() {",
         "  static const std::unordered_map<std::string, const char*> table = {",
     ]

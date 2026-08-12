@@ -22,7 +22,9 @@
 #include <rex/ui/window.h>
 #include <rex/version.h>
 
+#include "field_player_model_override.h"
 #include "fonts.generated.h"
+#include "force_load_area.h"
 #include "icon.generated.h"
 #include "room_presence.h"
 #include "settings.h"
@@ -147,6 +149,14 @@ class EternalsonataApp : public rex::ReXApp {
     // translated through the cfdata name table). See src/room_presence.h/.cpp.
     auto* ks = rex::system::kernel_state();
     eternalsonata::GetRoomPresence().Bind(ks, runtime());
+
+    // Debug tool: force-loads a field area via the F4 settings overlay's
+    // "Force Load Area..." button. See force_load_area.h.
+    eternalsonata::GetForceLoadArea().Bind(runtime());
+
+    // Debug tool: per-frame override of the field leader's model handle,
+    // driven by the same overlay's "Field leader model" combo.
+    eternalsonata::FieldPlayerModelOverride::Bind(runtime());
   }
 
   void OnShutdown() override {

@@ -84,6 +84,10 @@ set(ETERNALSONATA_SOURCES
     src/eternalsonata_options.cpp
     src/eternalsonata_presence.cpp
     src/room_presence.cpp
+    src/guest_main_thread.cpp
+    src/force_load_area.cpp
+    src/field_player_model_override.cpp
+    src/debug_area_overlay.cpp
     src/settings.cpp
     ${ETERNALSONATA_AREA_NAMES_HEADER}
     ${GENERATED_SOURCES}

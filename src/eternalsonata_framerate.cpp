@@ -14,6 +14,7 @@
 #include <rex/cvar.h>
 
 #include "eternalsonata_hooks_internal.h"
+#include "guest_main_thread.h"
 
 // frame_rate cvar: "30" / "60" / "unlocked". Defined (and persisted) in
 // settings.cpp; declared here so the frame-driver hook can read it cheaply.
@@ -607,6 +608,9 @@ REX_HOOK_RAW(sub_8210AAD8) {
     g_applied_fps = fps;
   }
   __imp__sub_8210AAD8(ctx, base);
+  // Debug tools queue guest calls that are only safe on this thread; see
+  // guest_main_thread.h for why the mod-registry tick will not do.
+  eternalsonata::DrainGuestMainThread();
   // These live in eternalsonata_options.cpp (the value-highlight memory
   // differ), polled here so the F9-F12 hotkeys work from anywhere.
   eternalsonata_hooks::ScanPollKeys(base);
