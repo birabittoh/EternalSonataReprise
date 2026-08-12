@@ -5,7 +5,6 @@
 #include <string>
 
 #include <rex/discord_rpc.h>
-#include <rex/logging.h>
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/mod_registry.h>
@@ -153,11 +152,13 @@ void RoomPresence::Tick() {
   // friends). If neither is set the game is mid-transition, so keep showing
   // the last known field area rather than falling back to "Title Screen".
   std::string area_id;
+  std::string menu_id_debug;
   if (field_active) {
     std::lock_guard<std::mutex> lock(area_mutex_);
     area_id = field_area_id_;
   } else {
     std::string menu_id = ReadGuestCString(memory, kAreaIdGuestAddress, kAreaIdMaxLength);
+    menu_id_debug = menu_id;
     if (!menu_id.empty()) {
       area_id = std::move(menu_id);
     } else {
