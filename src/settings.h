@@ -83,6 +83,14 @@ const char* UserLanguageCode(int index);
 int UserLanguageIndex();
 void SetUserLanguageSetting(int index);
 
+// The user_language entry the process *started* with, latched once (at
+// InitSettingsCaches time) and stable for the rest of the run. This is the
+// language every label we draw into the game's own screens has to use: changing
+// user_language only takes effect on the next launch, so following the live
+// cvar would leave our labels speaking a language the rest of the screen does
+// not. Same index space as UserLanguageIndex.
+int BootUserLanguageIndex();
+
 // Applies a named resolution end to end: updates the resolution cvar and the
 // paired resolution_scale cvar (see ResolutionScaleFor), and persists. `value`
 // is one of "720p"/"1080p"/"1440p"/"4K". Used by the native Resolution row in

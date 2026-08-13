@@ -981,6 +981,9 @@ void ApplySettingDefaults() {
 }
 
 void InitSettingsCaches() {
+  // Latch the boot language before anything can change it (see
+  // BootUserLanguageIndex).
+  BootUserLanguageIndex();
   g_gpu_plugin_names_cache = rex::system::EnumerateGpuPlugins();
 #if REX_HAS_VULKAN
   g_vulkan_devices_cache = rex::ui::vulkan::EnumerateDevices();
@@ -1037,6 +1040,18 @@ int UserLanguageIndex() {
     }
   }
   return 0;
+}
+
+int BootUserLanguageIndex() {
+  // Captured on the first call and never again. user_language is
+  // kRequiresRestart: the guest reads its language once at boot, so everything
+  // already on screen - and every label we draw next to it - has to keep
+  // speaking the language the process started in, not the one the player has
+  // queued up for the next launch. InitSettingsCaches calls this at startup so
+  // the latch happens before the overlay (or the native Text row) can move the
+  // cvar; the lazy form here is only a safety net for callers that run earlier.
+  static const int boot = UserLanguageIndex();
+  return boot;
 }
 
 void SetUserLanguageSetting(int index) {

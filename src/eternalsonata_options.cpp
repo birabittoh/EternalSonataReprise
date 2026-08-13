@@ -18,6 +18,7 @@
 #include <rex/cvar.h>
 
 #include "eternalsonata_hooks_internal.h"
+#include "field_player_model_override.h"
 #include "settings.h"
 
 // Cvars read by the row getters below. Defined (and persisted) in settings.cpp.
@@ -291,16 +292,23 @@ struct PageLayout {
   int32_t stock_item_y0;  // first stock item, used to identify the group
   int32_t stock_item_yn;  // last stock item; our rows follow it at 50px pitch
   int32_t first_row_y;    // record y of our first row
+  // Cue id played when one of our rows changes value. The stock handlers
+  // disagree - sub_82201620 plays 5 on page 1, sub_82202CB0 plays 4 on page 2 -
+  // but our rows are the same kind of row on both pages, so they deliberately
+  // play page 1's cue everywhere. Page 2's own cue belongs to its button
+  // remapping, which is a different interaction. Kept per page so a row can go
+  // back to matching its screen if that ever reads better.
+  u32 change_sfx;
 };
 
 constexpr PageLayout kPages[kPageCount] = {
     // Page 1: rows appended below Voce (record y 285, 335).
     {kOptionsListByLang, kOptionsListBytes, kInsertOffset, kIconRecordBytes, 2,
-     2, 430, 480, 385},
+     2, 430, 480, 385, 5},
     // Page 2: rows appended below the three button rows (record y 25/75/125,
     // selectable items at 165/215/265).
     {kButtonsListByLang, kButtonsListBytes, kButtonsInsertOffset, 0, 1, 3, 165,
-     265, 175},
+     265, 175, 5},
 };
 
 u32 PageMaxRows(int page) {
@@ -371,6 +379,14 @@ constexpr LocalizedLabel kLabelFrameRate = {
 // budget.
 constexpr LocalizedLabel kLabelText = {
     {"Text", "Text", "Texte", "Texto", "Testo"}};
+// Which model walks the overworld: the game's own (always Allegretto) or
+// whoever leads the active party. Same budget note as kLabelText - the English
+// form is the longest of the five and is right at the edge of the label
+// column, so if it ever visibly touches the value column this is the label to
+// shorten first.
+constexpr LocalizedLabel kLabelOverworldModel = {
+    {"Overworld Model", "Weltmodell", "Mod\xE8le monde", "Modelo mapa",
+     "Modello mappa"}};
 
 // The Text row is the one row whose highlight does not land on its value on
 // its own. Two corrections, both settled by eye (see OptionRow::bar_nudge_x):
@@ -493,6 +509,17 @@ int ResolutionGetIndex();
 void ResolutionSetIndex(u8* base, int idx);
 int TextGetIndex();
 void TextSetIndex(u8* base, int idx);
+int OverworldModelGetIndex();
+void OverworldModelSetIndex(u8* base, int idx);
+
+// The Overworld Model row is the two-value face of the overlay's 12-value
+// Field Leader Model combo: "Default" is the game's own model, "Leader" is the
+// active party's first member. The overlay's remaining ten values pin one
+// specific character, which this row has no way to express - so it reports any
+// of them as "Leader" (an override *is* in force) rather than as "Default",
+// and only collapses the pin to follow-party if the player actually moves the
+// row.
+constexpr const char* kOverworldModelValues[2] = {"Default", "Leader"};
 
 // Matches the ImGui overlay's Resolution row (settings.cpp): don't offer a
 // preset wider than the user's actual display. Resolved once, when the
@@ -534,7 +561,7 @@ std::vector<OptionRow>& Rows() {
     // while the guest thread is walking the registry safe: appends only ever
     // touch the tail, and references the guest side already holds stay valid.
     initial.reserve(kMaxOptionRows * kPageCount);
-    initial.resize(3);
+    initial.resize(4);
 
     // Page 2, the graphics page, in the order they are drawn.
     MakeLiteralRow(initial[0], kLabelResolution, kResolutionIds,
@@ -560,6 +587,11 @@ std::vector<OptionRow>& Rows() {
     initial[2].get_index = &TextGetIndex;
     initial[2].set_index = &TextSetIndex;
     initial[2].page = kPageOptions;
+    MakeLiteralRow(initial[3], kLabelOverworldModel, kOverworldModelValues,
+                   static_cast<int>(std::size(kOverworldModelValues)));
+    initial[3].get_index = &OverworldModelGetIndex;
+    initial[3].set_index = &OverworldModelSetIndex;
+    initial[3].page = kPageOptions;
     return initial;
   }();
   return rows;
@@ -640,6 +672,26 @@ REX_IMPORT(__imp__sub_82178A88, g_set_object_pos, void(u32, u32, u32, u32, u32, 
 // sub_821F6580(root, id) -> object. The id->object resolver sub_82200FE8 itself
 // uses on these same ids.
 REX_IMPORT(__imp__sub_821F6580, g_resolve_object, u32(u32, u32));
+
+// sub_821425D8(sound_mgr, cue_id, 0, 0) - the menu SFX trigger. Both Options
+// handlers use it for every noise the screen makes: cue 3 on cancel, 4 and 5 on
+// a value change (page 2 and page 1 respectively), 7 on a page turn. The
+// manager is the global at dword_8243D89C, read live rather than cached
+// because it is only populated once the audio system is up.
+REX_IMPORT(__imp__sub_821425D8, g_play_menu_sfx, u32(u32, u32, u32, u32));
+constexpr u32 kSoundManager = 0x8243D89Cu;
+
+// Plays a menu cue, if the sound manager exists yet. A native row changing its
+// value has to do this itself: the stock rows are driven by sub_82201620 /
+// sub_82202CB0, which play the cue on their own, but our rows are handled
+// entirely in the cursor hook below and so never reach that code.
+void PlayMenuSfx(u8* base, u32 cue) {
+  const u32 mgr = REX_LOAD_U32(kSoundManager);
+  if (mgr < 0x82000000u || mgr >= 0xFB000000u) {
+    return;
+  }
+  g_play_menu_sfx(mgr, cue, 0, 0);
+}
 
 // Record space vs runtime space. A display-list record's x/y and the
 // coordinates the game passes to sub_82178A88 / sub_82179F78 are two different
@@ -855,6 +907,21 @@ void TextSetIndex(u8* base, int idx) {
               eternalsonata::UserLanguageCode(idx));
 }
 
+int OverworldModelGetIndex() {
+  return eternalsonata::FieldPlayerModelOverride::Selection() ==
+                 eternalsonata::FieldPlayerModelOverride::kSelectionDefault
+             ? 0
+             : 1;
+}
+
+void OverworldModelSetIndex(u8* base, int idx) {
+  // SetSelection persists on its own, the same way the overlay's row does.
+  eternalsonata::FieldPlayerModelOverride::SetSelection(
+      idx == 0 ? eternalsonata::FieldPlayerModelOverride::kSelectionDefault
+               : eternalsonata::FieldPlayerModelOverride::kSelectionFollowParty);
+  REXLOG_INFO("[options] field_leader_model -> {}", kOverworldModelValues[idx]);
+}
+
 void WriteGuestString(u8* base, u32 at, const char* s) {
   for (u32 i = 0;; ++i) {
     REX_STORE_U8(at + i, static_cast<u8>(s[i]));
@@ -1043,15 +1110,27 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
       static_cast<int32_t>(REX_LOAD_U32(tpl_list + kSepRecordOffset + 0x04)) +
       static_cast<int32_t>(REX_LOAD_U32(tpl_list + kSepRecordOffset + 0x0C));
 
-  // Labels are rewritten every entry (not just on first allocation) so a
-  // language change while playing takes effect the next time Options opens,
-  // matching the game's own text - and matching how the values below are
-  // already rebuilt every entry to stay in step with their cvars.
+  // Labels are rewritten every entry (not just on first allocation) rather
+  // than only on first allocation, so a row registered late still gets its
+  // string - and matching how the values below are already rebuilt every entry
+  // to stay in step with their cvars.
+  //
+  // The language they are written in is the one the *process started with*
+  // (BootUserLanguageIndex), not whatever user_language holds right now.
+  // user_language requires a restart to apply: the guest read its own language
+  // once at boot and every stock string on this screen is still in it, so
+  // following the live cvar would translate our labels a whole restart before
+  // the rest of the screen follows - most visibly on the Text row itself,
+  // where changing the value would rewrite the labels around it on the next
+  // entry while nothing else on screen moved.
+  const int label_lang =
+      std::clamp(eternalsonata::BootUserLanguageIndex(), 0, kLanguageCount - 1);
   for (const u32 r : st.rows) {
     // Slot 0 is the fallback for any language a row did not translate, so a
     // mod that registers a single label still renders everywhere.
-    const std::string& l = all[r].label[lang_idx].empty() ? all[r].label[0]
-                                                          : all[r].label[lang_idx];
+    const std::string& l = all[r].label[label_lang].empty()
+                               ? all[r].label[0]
+                               : all[r].label[label_lang];
     WriteGuestString(base, g_label_addr[r], l.c_str());
   }
 
@@ -1764,6 +1843,7 @@ REX_HOOK_RAW(sub_821F62B8) {
     if (next != cur) {
       def.set_index(base, next);
       MoveOptionBar(base, page, opt_row, next, /*move=*/true);
+      PlayMenuSfx(base, pl.change_sfx);
     }
     return;
   }
