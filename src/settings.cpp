@@ -257,6 +257,39 @@ constexpr std::array<const char*, 7> kAdvancedCvarNames = {
     "swap_post_effect",
 };
 
+// True once `name`'s cvar has actually been changed at runtime this session
+// and needs a relaunch to take effect. GetPendingRestartFlags() only tracks
+// cvars changed at runtime (settings UI, console, mods), not values applied
+// while loading a config file at boot, so a saved preference that merely
+// differs from the SDK's factory default doesn't trip it on a fresh launch.
+// See SetFlagByNameImpl's mark_restart parameter in the SDK's cvar.cpp.
+bool CvarPendingRestart(const char* name) {
+  auto pending = rex::cvar::GetPendingRestartFlags();
+  return std::find(pending.begin(), pending.end(), name) != pending.end();
+}
+
+// True if any cvar this settings UI owns still needs a restart. Filtered to
+// the rows we actually draw rather than "any pending flag at all" so a
+// developer poking an unrelated cvar from the console doesn't put the game's
+// own menus into a restart-pending state.
+bool AnyKnownPendingRestart() {
+  auto pending = rex::cvar::GetPendingRestartFlags();
+  auto is_tracked = [&pending](const char* name) {
+    return std::find(pending.begin(), pending.end(), name) != pending.end();
+  };
+  for (const char* name : kBasicCvarNames) {
+    if (is_tracked(name))
+      return true;
+  }
+  for (const char* name : kAdvancedCvarNames) {
+    if (is_tracked(name))
+      return true;
+  }
+  // Not in either list above since it gets a custom row (dynamic dropdown),
+  // not the generic DrawCvarWidget path.
+  return is_tracked("gpu_plugin");
+}
+
 // resolution_scale value that renders at "100%" (native) for a given display
 // resolution. The SDK's resolution_scale is an integer EDRAM/draw
 // supersampling factor (range 1-8), not a fractional multiplier, so this
@@ -437,31 +470,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   }
 
  private:
-  // GetPendingRestartFlags() only tracks cvars that were actually changed at
-  // runtime (settings UI, console, mods) this session -- values applied
-  // while loading a config file at boot don't count, so a saved preference
-  // that simply differs from the SDK's factory default (e.g. Resolution set
-  // to 1080p) doesn't trip this on a fresh launch. See SetFlagByNameImpl's
-  // mark_restart parameter in the SDK's cvar.cpp.
-  bool AnyPendingRestart() {
-    auto pending = rex::cvar::GetPendingRestartFlags();
-    auto is_tracked = [&pending](const char* name) {
-      return std::find(pending.begin(), pending.end(), name) != pending.end();
-    };
-    for (const char* name : kBasicCvarNames) {
-      if (is_tracked(name))
-        return true;
-    }
-    for (const char* name : kAdvancedCvarNames) {
-      if (is_tracked(name))
-        return true;
-    }
-    // Not in either list above since it gets a custom row (dynamic
-    // dropdown), not the generic DrawCvarWidget path.
-    if (is_tracked("gpu_plugin"))
-      return true;
-    return false;
-  }
+  // Same state the game's own Options screen reads through
+  // AnyCvarPendingRestart (see settings.h), so the banner here and the
+  // "(Restart)" markers there can never disagree.
+  bool AnyPendingRestart() { return AnyKnownPendingRestart(); }
 
   void SaveBasic() { rex::cvar::SaveConfigSubset(user_settings_path_, BasicCvarNames()); }
   void SaveAdvanced() { rex::cvar::SaveConfig(app_config_path_); }
@@ -970,6 +982,31 @@ void BindSettingsTargets(rex::ui::Window* window,
                          std::filesystem::path user_settings_path) {
   g_window = window;
   g_user_settings_path = std::move(user_settings_path);
+}
+
+bool IsCvarPendingRestart(const char* name) {
+  return name && CvarPendingRestart(name);
+}
+
+bool AnyCvarPendingRestart() { return AnyKnownPendingRestart(); }
+
+bool RestartNow() {
+  if (!g_window) {
+    return false;
+  }
+  if (!rex::platform::process::Relaunch()) {
+    return false;
+  }
+  // RequestClose ends up in WindowSDL::RequestCloseImpl, which destroys the
+  // window directly rather than going through SDL's event queue, so it has to
+  // run on the thread that owns the window. The F4 overlay's "Restart Now"
+  // button is already on that thread; the game's own Options screen is not (it
+  // runs on the guest CPU thread), and calling straight through from there
+  // leaves the old process alive, contending with the relaunched one for the
+  // GPU and audio devices. Marshalling covers both callers.
+  rex::ui::Window* window = g_window;
+  window->app_context().CallInUIThread([window] { window->RequestClose(); });
+  return true;
 }
 
 void SaveUserSettings() {

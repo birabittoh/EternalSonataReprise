@@ -15,4 +15,11 @@ namespace eternalsonata_hooks {
 void ScanPollKeys(u8* base);
 void ScanTick(u8* base);
 
+// Also defined in eternalsonata_options.cpp, and called from the same present
+// hook for the same reason: it has to keep running after the Options screen is
+// gone, which is precisely when the menu's own per-frame hooks stop firing.
+// Handles the relaunch owed to a restart-scoped setting changed from the
+// main-menu Options screen.
+void OptionsTick();
+
 }  // namespace eternalsonata_hooks

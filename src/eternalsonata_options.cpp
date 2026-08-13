@@ -1,6 +1,7 @@
 #include "generated/eternalsonata_init.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -323,9 +324,14 @@ constexpr int kModDefaultPage = kPageButtons;
 // they can never collide with a genuine lookup. Row r's label is
 // kRowSidBase + kRowSidStride*r; its value i is one past that, +i.
 constexpr u32 kRowSidBase = 900u;
-constexpr u32 kRowSidStride = 10u;
-static_assert(kMaxRowValues < kRowSidStride,
-              "a row's values must fit inside one synthetic-id stride");
+constexpr u32 kRowSidStride = 12u;
+// The last id of a row's stride is its "(Restart)" marker (see
+// kLabelRestartMarker), so a stride has to hold the label, every value, and
+// that one extra string.
+constexpr u32 kRowSidMarker = kRowSidStride - 1u;
+static_assert(kMaxRowValues + 2 <= kRowSidStride,
+              "a row's label, values and restart marker must fit inside one "
+              "synthetic-id stride");
 
 // Row labels are authored text (there is no stock BTX analogue for
 // "Resolution"/"Frame Rate"/"Fullscreen"), so unlike the boolean values above
@@ -386,6 +392,20 @@ constexpr LocalizedLabel kLabelText = {
 constexpr LocalizedLabel kLabelOverworldModel = {
     {"Overworld Model", "Weltmodell", "Mod\xE8le monde", "Modelo mapa",
      "Modello mappa"}};
+
+// Drawn to the right of a row whose setting only takes effect on the next
+// launch and has actually been changed this session - the same state the F4
+// overlay's "Some changes require a restart to take effect." banner reads (see
+// settings.h's IsCvarPendingRestart). This screen has no free area for a banner
+// of its own, and a player who never opens the overlay would otherwise have no
+// way to learn that the value they just picked has not taken hold yet.
+//
+// Kept to about seven characters in every language on purpose: the marker is
+// squeezed into whatever is left between the end of the row's label and the
+// value column, and a longer word simply would not fit on the shorter rows
+// (see MarkerRecordX, which drops the marker rather than overlapping a value).
+constexpr LocalizedLabel kLabelRestartMarker = {
+    {"(restart)", "(neustart)", "(red\xE9m.)", "(reinic.)", "(riavvia)"}};
 
 // The Text row is the one row whose highlight does not land on its value on
 // its own. Two corrections, both settled by eye (see OptionRow::bar_nudge_x):
@@ -450,7 +470,22 @@ struct OptionRow {
   // two pages. The built-in rows pick their page explicitly; a mod row
   // defaults to kModDefaultPage.
   int page = kPageOptions;
+  // The cvar this row writes, when that cvar only takes effect on the next
+  // launch (rex::cvar::Lifecycle::kRequiresRestart). Non-null means the row
+  // draws the restart marker once the cvar has actually been changed this
+  // session. Null - the common case, and every row whose value applies live -
+  // means the row never marks itself.
+  const char* restart_cvar = nullptr;
 };
+
+// Whether `row`'s setting is waiting on a relaunch right now. Asked at every
+// screen build, so the marker appears the next time the player opens Options
+// after changing the value: the display list is only walked on entry (see the
+// sub_821F2F38 hook), so nothing on it can appear while the screen is up.
+bool RowPendingRestart(const OptionRow& row) {
+  return row.restart_cvar != nullptr &&
+         eternalsonata::IsCvarPendingRestart(row.restart_cvar);
+}
 
 // The registry proper. Rows are appended in registration order and drawn top
 // to bottom in that order. Never shrinks: a row index handed out by
@@ -555,6 +590,10 @@ std::vector<OptionRow>& Rows() {
     initial[0].get_index = &ResolutionGetIndex;
     initial[0].set_index = &ResolutionSetIndex;
     initial[0].page = kPageButtons;
+    // resolution (and the resolution_scale it moves with) is kRequiresRestart;
+    // tracking the one the row is named after is enough, since SetResolutionSetting
+    // always writes both together.
+    initial[0].restart_cvar = "resolution";
     // Labels come from settings.cpp's preset list, so the row and the overlay's
     // slider offer the same states in the same order.
     std::vector<const char*> fps_values;
@@ -579,6 +618,10 @@ std::vector<OptionRow>& Rows() {
     initial[2].get_index = &TextGetIndex;
     initial[2].set_index = &TextSetIndex;
     initial[2].page = kPageOptions;
+    // The guest reads its language once at boot, so user_language is
+    // kRequiresRestart (see SetUserLanguageSetting) - and this is the row where
+    // the marker matters most, since nothing else on screen changes when it moves.
+    initial[2].restart_cvar = "user_language";
     MakeLiteralRow(initial[3], kLabelOverworldModel, kOverworldModelValues,
                    static_cast<int>(std::size(kOverworldModelValues)));
     initial[3].get_index = &OverworldModelGetIndex;
@@ -596,6 +639,10 @@ std::vector<u32> g_label_addr;  // per-row label string
 std::vector<std::vector<u32>> g_value_addr;  // per-row literal value strings
 u32 g_strings_rows = 0;  // rows the two arrays above have been filled for
 u32 g_bar_vec = 0;  // shared guest scratch for the {x, y, z} move argument
+// The restart marker, shared by every row: only one language is on screen at a
+// time, so one allocation serves all of them (the BTX hook hands the same
+// pointer back for any row's marker id).
+u32 g_marker_addr = 0;
 
 // Everything that is per-page. The two pages are independent screens with
 // independent object arrays, so nothing here can be shared between them.
@@ -634,6 +681,44 @@ int ActivePage(u8* base) {
       return -1;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Restart on leaving the main-menu Options screen
+// ---------------------------------------------------------------------------
+//
+// A restart-scoped setting (Resolution, Text) only reaches the game on the next
+// launch. Rather than leave the player to find the F4 overlay's "Restart Now"
+// button, relaunch on our own once they are done with the screen - but only
+// when Options was opened from the main menu. From the pause menu a relaunch
+// would silently throw away whatever run is in progress, with no save prompt
+// and no way for this screen to warn first; the main-menu instance has nothing
+// to lose. (Rows here apply as they are moved - there is no accept button - so
+// "done with the screen" is leaving it.)
+//
+// Which entry point is in use cannot be read back from dword_8243F358 the way
+// the stock code does it, because the sub_82200FE8 hook below deliberately
+// rewrites the main menu's context to non-zero to unlock page 2. So the hook
+// latches the *original* argument here instead.
+bool g_options_from_main_menu = false;
+
+// When the Options screen was last known to be up, stamped by the menu's own
+// per-frame cursor hook. "The player left" is then simply "that stamp stopped
+// advancing", which is deliberately not the same question as "the menu state
+// byte is no longer an Options state":
+//
+//   * the state byte passes through non-Options states (6 in particular) in the
+//     middle of a perfectly ordinary LB/RB page turn, so reading it alone calls
+//     a page turn an exit;
+//   * and the hooks that observe the byte only run while a menu with a cursor
+//     is up. An earlier version counted frames inside the cursor hook and so
+//     stopped counting the moment Options closed - the relaunch then landed on
+//     whatever screen the player opened next (observed: the Load Game menu),
+//     which is exactly the wrong moment.
+//
+// The timeout is therefore checked from the present hook (OptionsTick below),
+// which runs every frame no matter what is on screen.
+std::chrono::steady_clock::time_point g_options_last_seen{};
+constexpr auto kOptionsGoneDelay = std::chrono::milliseconds(400);
 
 constexpr u8 kSubtitleRowIndex = 0;  // Sottotitoli, the reference two-option row
 
@@ -738,18 +823,54 @@ constexpr int32_t kValueBtxWidthPx = 2 * kValueCharPx;
 
 bool IsNarrowGlyph(char c) {
   return c == ' ' || c == 'i' || c == 'l' || c == 'j' || c == 'I' ||
-         c == '.' || c == ',' || c == ':' || c == ';' || c == '!' || c == '\'';
+         c == '.' || c == ',' || c == ':' || c == ';' || c == '!' ||
+         c == '\'' || c == '(' || c == ')';
+}
+
+int32_t TextWidth(const std::string& text) {
+  int32_t w = 0;
+  for (const char c : text) {
+    w += IsNarrowGlyph(c) ? kValueNarrowCharPx : kValueCharPx;
+  }
+  return w;
 }
 
 int32_t ValueWidth(const OptionValue& value) {
   if (value.literal.empty()) {
     return kValueBtxWidthPx;
   }
-  int32_t w = 0;
-  for (const char c : value.literal) {
-    w += IsNarrowGlyph(c) ? kValueNarrowCharPx : kValueCharPx;
+  return TextWidth(value.literal);
+}
+
+// Gap the restart marker keeps from the label on its left and the value column
+// on its right. Same order as kValueGapMin, which serves the same purpose
+// between two values, and deliberately small: the marker has only the slack
+// between a label and the value column to live in, and on the longest row
+// ("Risoluzione" + "Riavvia" in Italian) that slack is about 150px for a 130px
+// word. Anything larger silently costs the marker its place.
+constexpr int32_t kMarkerGapPx = 12;
+
+// Record x for a row's restart marker, or -1 if the row has no room for it at
+// all. Right-aligned against the value column so it reads as belonging to the
+// label rather than to the values, but pushed right off the end of the label
+// when the two would otherwise collide - on a long label the marker ends up
+// sitting between them with the gap split unevenly, which is much better than
+// not being drawn.
+//
+// A row is only given up on when the marker cannot fit between the two even
+// touching both gaps, which no shipped row does; the widths here are the same
+// coarse estimate the value columns use (see kValueCharPx), so the margins are
+// what keeps an estimate that is a few percent off from putting text on text.
+int32_t MarkerRecordX(int page, const std::string& label,
+                      const std::string& marker) {
+  const int32_t width = TextWidth(marker);
+  const int32_t label_end = kRowXLabel + TextWidth(label);
+  const int32_t right = g_page[page].value_base_x - kMarkerGapPx - width;
+  const int32_t left = label_end + kMarkerGapPx;
+  if (left + width > g_page[page].value_base_x) {
+    return -1;
   }
-  return w;
+  return std::max(left, right);
 }
 
 // Even column stride, capped so a many-valued row still ends inside the row
@@ -1027,7 +1148,11 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
 
   u32 bytes = pl.list_bytes + static_cast<u32>(sizeof(u32));
   for (const u32 r : st.rows) {
-    bytes += kTextRecordBytes +
+    // Two text records per row before its values: the label, and the restart
+    // marker. The marker is only emitted while the row is actually pending, but
+    // it is always budgeted for, so the buffer does not have to be resized the
+    // first time a player changes a restart-scoped setting.
+    bytes += 2 * kTextRecordBytes +
              static_cast<u32>(all[r].values.size()) * kTextRecordBytes +
              kSepRecordBytes + kBarRecordBytes;
   }
@@ -1096,13 +1221,27 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   // entry while nothing else on screen moved.
   const int label_lang =
       std::clamp(eternalsonata::BootUserLanguageIndex(), 0, kLanguageCount - 1);
-  for (const u32 r : st.rows) {
+  auto row_label = [&](u32 r) -> const std::string& {
     // Slot 0 is the fallback for any language a row did not translate, so a
     // mod that registers a single label still renders everywhere.
-    const std::string& l = all[r].label[label_lang].empty()
-                               ? all[r].label[0]
-                               : all[r].label[label_lang];
-    WriteGuestString(base, g_label_addr[r], l.c_str());
+    return all[r].label[label_lang].empty() ? all[r].label[0]
+                                            : all[r].label[label_lang];
+  };
+  for (const u32 r : st.rows) {
+    WriteGuestString(base, g_label_addr[r], row_label(r).c_str());
+  }
+
+  // The restart marker follows the same language as the labels for the same
+  // reason: it sits next to them, and user_language only reaches the rest of
+  // the screen on the next launch.
+  const std::string marker = kLabelRestartMarker.text[label_lang]
+                                 ? kLabelRestartMarker.text[label_lang]
+                                 : kLabelRestartMarker.text[0];
+  if (!g_marker_addr) {
+    g_marker_addr = mem->SystemHeapAlloc(64, 0x20);
+  }
+  if (g_marker_addr) {
+    WriteGuestString(base, g_marker_addr, marker.c_str());
   }
 
   // Insert, do not append. Records past the last row set drawing state, so a
@@ -1125,6 +1264,16 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     const int32_t y = RowRecordY(page, i);
     WriteTextRecord(base, at, sid, kRowXLabel, y);
     at += kTextRecordBytes;
+    if (g_marker_addr && RowPendingRestart(row)) {
+      const int32_t mx = MarkerRecordX(page, row_label(st.rows[i]), marker);
+      if (mx >= 0) {
+        WriteTextRecord(base, at, sid + kRowSidMarker, mx, y);
+        at += kTextRecordBytes;
+      } else {
+        REXLOG_WARN("[options] row {}: no room for the restart marker next to '{}'",
+                    st.rows[i], row_label(st.rows[i]));
+      }
+    }
     for (u32 v = 0; v < row.values.size(); ++v) {
       WriteTextRecord(base, at, sid + 1 + v,
                       st.value_base_x + ValueColumnOffset(page, row.values, v),
@@ -1178,6 +1327,13 @@ REX_HOOK_RAW(sub_8223B780) {
       if (sub == 0) {
         if (row < g_label_addr.size() && g_label_addr[row]) {
           ctx.r3.u32 = g_label_addr[row];
+          return;
+        }
+      } else if (sub == kRowSidMarker) {
+        // One shared string for every row's marker; only rows that are actually
+        // pending emit a record pointing at it (see EnsurePageRows).
+        if (g_marker_addr) {
+          ctx.r3.u32 = g_marker_addr;
           return;
         }
       } else if (sub - 1 < def.values.size()) {
@@ -1439,6 +1595,25 @@ void ScanOnRowInput(u8* base, bool left) {
 
 namespace eternalsonata_hooks {
 
+// Runs every frame from the present hook. Fires at most once per visit to the
+// Options screen: the latch is cleared whether or not anything turned out to be
+// pending, so no later trip through the menus can relaunch out of nowhere.
+void OptionsTick() {
+  if (!g_options_from_main_menu ||
+      std::chrono::steady_clock::now() - g_options_last_seen <
+          kOptionsGoneDelay) {
+    return;
+  }
+  g_options_from_main_menu = false;
+  if (!eternalsonata::AnyCvarPendingRestart()) {
+    return;
+  }
+  if (eternalsonata::RestartNow()) {
+    REXLOG_INFO("[options] main-menu Options left with a restart-scoped change; "
+                "relaunching");
+  }
+}
+
 void ScanTick(u8* base) {
   if (g_scan_pending && --g_scan_pending == 0) {
     if (g_scan_pending_a) {
@@ -1619,6 +1794,7 @@ REX_HOOK_RAW(sub_821F62B8) {
   if (page < 0) {
     return;
   }
+  g_options_last_seen = std::chrono::steady_clock::now();
   PageState& st = g_page[page];
   if (!st.list) {
     return;
@@ -2001,6 +2177,12 @@ constexpr u32 kOptionsFirstBuildFlag = 0x824409D6u;
 REX_EXTERN(__imp__sub_82200FE8);
 
 REX_HOOK_RAW(sub_82200FE8) {
+  // Latched from the *original* argument, before the rewrite below hides it:
+  // this is the only remaining signal for which entry point opened the screen,
+  // and MaybeRestartAfterOptions depends on it.
+  g_options_from_main_menu = ctx.r3.u32 == 0;
+  g_options_last_seen = std::chrono::steady_clock::now();
+
   if (kUnlockMainMenuOptionsPage2 && ctx.r3.u32 == 0) {
     // Stock one-frame delay on the first main-menu open, reproduced exactly.
     if (REX_LOAD_U8(kOptionsFirstBuildFlag) == 0) {
