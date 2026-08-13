@@ -30,7 +30,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_OPTIONS_ABI_VERSION 2u
+#define ETERNALSONATA_OPTIONS_ABI_VERSION 3u
 
 // Options is two pages, paged between with LB/RB. Page 1 is the Options screen
 // proper: the game's own Subtitles and Voice rows plus this project's Text
@@ -76,8 +76,11 @@ typedef void (*EternalSonataOptionSetFn)(int index, void* user);
 //
 // `label` is used for every language. Call EternalSonataSetOptionRowLabel for
 // each language you actually translate; untranslated languages keep `label`.
-// Values are not localised (FPS figures, resolution names and the like are
-// conventionally left untranslated), matching how the built-in rows behave.
+// The same goes for values: the strings given here are used in every language
+// until EternalSonataSetOptionValue translates one. The built-in rows leave
+// theirs untranslated, since FPS figures and resolution names conventionally
+// are - but a row whose values are words should not be showing them in English
+// on an Italian menu.
 //
 // Keep values short. They are drawn side by side on one line, sharing about
 // 630px. Columns are spaced evenly when that fits (200px each for two or three
@@ -108,6 +111,27 @@ typedef int (*EternalSonataRegisterOptionRowFn)(const char* label,
 // every Options entry, so a change takes effect the next time it opens.
 typedef int (*EternalSonataSetOptionRowLabelFn)(int row, int language,
                                                 const char* label);
+
+// Sets one value of one row for one language: its text, its highlight bar
+// width, or both. Returns false for an unknown row or value index, an
+// out-of-range language, or a negative width.
+//
+// `text` may be null to change only the width - two languages can spell a value
+// the same and still need different bars. A language left unset falls back to
+// the string the row was registered with, exactly as labels do.
+//
+// `bar_width` is in thousandths of the game's own highlight bar, and applies
+// while this value is the selected one, so a row's bar resizes as the player
+// moves through its values. 0 (the default) means "work it out": the row gets
+// one width covering its longest value, which is 150 thousandths per character
+// with a floor of 450. Reach for an explicit width when that estimate reads
+// wrong - it assumes a fixed-width font, and the game's is not.
+//
+// Safe to call after registration and after the screen has been built: values
+// are rewritten on every Options entry, so a change shows up the next time it
+// opens. Added in ABI version 3 - null-check the symbol.
+typedef int (*EternalSonataSetOptionValueFn)(int row, int value, int language,
+                                             const char* text, int bar_width);
 
 // Moves `row` to another page (ETERNALSONATA_PAGE_*). Returns false for an
 // unknown row, an unknown page, or a destination page that is already full.

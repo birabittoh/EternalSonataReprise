@@ -167,6 +167,7 @@ constexpr u32 kSepYOffset = 0x08u;  // y within the record
 constexpr u32 kBarRecordOffset = 0x6B8u;  // {2101,2100,1} + bar + {2}
 constexpr u32 kBarRecordBytes = 0x2Cu;
 constexpr int32_t kBarShrinkFixup = 7;    // see below
+constexpr u32 kBarBlockXOffset = 0x14u;   // the bar record's x within the block
 constexpr u32 kBarBlockYOffset = 0x18u;   // the bar record's y within the block
 // +0x10 / +0x14 of a type-100-family record are a size scale in thousandths
 // (the stock records carry 1000, and the two at list offset 0x580 carry 949).
@@ -204,6 +205,12 @@ constexpr u32 kBarBlockHOffset = 0x20u;
 // would predict, so the sprite is a little taller than the row pitch. Applied
 // to every y value so they stay in step.
 constexpr int32_t kBarHeight = 800;
+
+// Where the thousandths a bar record carries end up on the object itself: its
+// x scale. Read back live (a 450-thousandths record showed 0.45 here) while
+// chasing why our bars spawned off-position. Writing it is what lets a bar
+// change width as the selection moves - see MoveOptionBar.
+constexpr u32 kBarObjScaleXOffset = 0x4Cu;
 
 // There is NO horizontal twin of kBarShrinkFixup, and that is a measured
 // result rather than an oversight. The obvious model - sprite anchored at its
@@ -427,17 +434,44 @@ constexpr LocalizedLabel kLabelRestartMarker = {
 constexpr int32_t kTextBarNudge = 10;
 constexpr int32_t kTextBarNudgeStep = -3;
 
-// One entry per value a row can hold. `literal` non-empty means we author that
-// exact text ourselves (used where there is no stock analogue, e.g. "60
-// FPS"); an empty literal means reuse the stock BTX string `btx_id`
-// (localised for free) - that is how the boolean rows would get "Si"/"NO".
-// Values here (FPS figures, resolution names) are conventionally left
-// untranslated even in localised menus, so unlike labels they need no
-// per-language table.
+// One entry per value a row can hold.
+//
+// `literal` is per language, exactly like a row's label: slot 0 is the fallback
+// every empty slot falls back to, so a value registered once still renders in
+// every language. Most values are the same everywhere (FPS figures, resolution
+// names and the like are conventionally left untranslated), which is why one
+// string is enough for the built-in rows - but a row whose values are words
+// ("On"/"Off") has no business showing them in English on an Italian menu.
+//
+// A slot left empty in *every* language means reuse the stock BTX string
+// `btx_id` instead, which is localised for free - that is how a boolean row
+// would get the game's own "Si"/"NO".
+//
+// `bar_width` overrides how wide the highlight bar is while this value is
+// selected, in thousandths of the stock bar, per language: a word that is short
+// in one language and long in another needs a different bar in each. 0 means
+// "work it out", which is what every value that has not asked for anything
+// specific uses - see BarWidthFor.
 struct OptionValue {
-  std::string literal;
+  std::string literal[kLanguageCount];
+  int32_t bar_width[kLanguageCount] = {};
   u32 btx_id = 0;
 };
+
+// The language everything we draw onto these screens is written in: the one the
+// process *started* in, not whatever user_language holds now. See the label
+// comment in EnsurePageRows - the guest read its own language once at boot and
+// every stock string on screen is still in it.
+int DrawLanguage() {
+  return std::clamp(eternalsonata::BootUserLanguageIndex(), 0,
+                    kLanguageCount - 1);
+}
+
+// A value's text in the language being drawn, falling back to slot 0. Empty
+// means the value has no text of its own and rides `btx_id` instead.
+const std::string& ValueText(const OptionValue& value, int lang) {
+  return value.literal[lang].empty() ? value.literal[0] : value.literal[lang];
+}
 
 struct OptionRow {
   // Per-language label. Slot 0 (English) is the fallback: any slot left empty
@@ -447,10 +481,6 @@ struct OptionRow {
   std::vector<OptionValue> values;
   std::function<int()> get_index;                    // active value, 0-based
   std::function<void(u8*, int)> set_index;           // apply a newly selected value
-  // Highlight bar width, thousandths of the stock bar. Wider literal values
-  // (e.g. "1080p") need a wider bar than the stock "Si"/"NO" width to actually
-  // cover the text. Derived from the longest value, see BarWidthForValues.
-  int32_t bar_width = 0;
   // Horizontal correction for the highlight bar, in runtime pixels: the bar
   // for value i is nudged by bar_nudge_x + i * bar_nudge_step_x. Both are zero
   // for every row whose bar already lines up.
@@ -506,13 +536,75 @@ u32 RowCount() { return static_cast<u32>(Rows().size()); }
 constexpr int32_t kBarWidthPerChar = 150;
 constexpr int32_t kBarWidthMin = 450;
 
-int32_t BarWidthForValues(const std::vector<OptionValue>& values) {
+// The same estimate applied to one string rather than to a whole row's worth.
+int32_t BarWidthForText(const char* text) {
+  return std::max(kBarWidthMin,
+                  static_cast<int32_t>(std::strlen(text)) * kBarWidthPerChar);
+}
+
+int32_t BarWidthForValues(const std::vector<OptionValue>& values, int lang) {
   size_t longest = 0;
   for (const OptionValue& v : values) {
-    longest = std::max(longest, v.literal.size());
+    longest = std::max(longest, ValueText(v, lang).size());
   }
   return std::max(kBarWidthMin,
                   static_cast<int32_t>(longest) * kBarWidthPerChar);
+}
+
+// How wide the bar is while value `index` of `row` is selected, in thousandths
+// of the stock bar.
+//
+// A value may state its own width per language (see OptionValue::bar_width),
+// which is the only way to be right about a row whose values are words: the bar
+// has to cover "Disattivato" in one language and "On" in another, and one width
+// per row cannot do both. A value that states nothing falls back to slot 0's
+// override, and failing that to the row-wide width - the longest value the row
+// can show - which is what every built-in row uses and what this always did.
+int32_t BarWidthFor(const OptionRow& row, int index, int lang) {
+  if (index >= 0 && index < static_cast<int>(row.values.size())) {
+    const OptionValue& value = row.values[index];
+    if (value.bar_width[lang]) {
+      return value.bar_width[lang];
+    }
+    if (value.bar_width[0]) {
+      return value.bar_width[0];
+    }
+  }
+  return BarWidthForValues(row.values, lang);
+}
+
+// Whether every value of `row` wants the same bar, which decides how the row's
+// highlight is built at all.
+//
+// A bar's width is fixed when the object is created: the display-list
+// interpreter converts the record's thousandths and passes them to the object's
+// constructor (sub_821EF0E8), and nothing reads them again - writing the scale
+// back onto the live object was tried and does nothing. So a row whose values
+// disagree about width cannot have one bar that resizes; it gets one bar per
+// value instead, pre-sized, with all but the selected one parked off-screen.
+//
+// A row where they agree - every built-in one, and any mod row that does not
+// ask for per-value widths - keeps a single bar that slides between values, so
+// the animation the game's own rows have is only given up where it cannot be
+// had.
+bool RowHasUniformBars(const OptionRow& row, int lang) {
+  if (row.values.size() < 2) {
+    return true;
+  }
+  const int32_t first = BarWidthFor(row, 0, lang);
+  for (int i = 1; i < static_cast<int>(row.values.size()); ++i) {
+    if (BarWidthFor(row, i, lang) != first) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// How many bar objects `row` needs: one to slide, or one per value to swap
+// between.
+u32 BarsForRow(const OptionRow& row, int lang) {
+  return RowHasUniformBars(row, lang) ? 1u
+                                      : static_cast<u32>(row.values.size());
 }
 
 // Same presets, in the same order, as the overlay's Resolution row
@@ -551,6 +643,19 @@ int ResolutionRowValueCount() {
                        eternalsonata::AllowedResolutionCount());
 }
 
+// Narrows one value's bar to fit that value alone, instead of the row-wide
+// width its longest sibling asks for. Only worth doing where the gap between
+// the two is wide enough to see: "4K" next to "1080p", "30 FPS" next to
+// "Unlocked". Every other value keeps the row width, which reads correctly.
+void FitBarToValue(OptionRow& row, const char* text) {
+  for (OptionValue& value : row.values) {
+    if (value.literal[0] == text) {
+      value.bar_width[0] = BarWidthForText(text);
+      return;
+    }
+  }
+}
+
 // Fills `row` in from a label table and a list of literal values, the shape
 // both built-in rows have. Mod rows go through the same path in
 // RegisterOptionRow below, which is the point of the refactor: there is one
@@ -562,9 +667,10 @@ void MakeLiteralRow(OptionRow& row, const LocalizedLabel& label,
   }
   row.values.clear();
   for (int i = 0; i < value_count; ++i) {
-    row.values.push_back(OptionValue{values[i], 0});
+    OptionValue value;
+    value.literal[0] = values[i];
+    row.values.push_back(std::move(value));
   }
-  row.bar_width = BarWidthForValues(row.values);
 }
 
 // Built-in rows are registered lazily rather than in a static initialiser:
@@ -594,6 +700,9 @@ std::vector<OptionRow>& Rows() {
     // tracking the one the row is named after is enough, since SetResolutionSetting
     // always writes both together.
     initial[0].restart_cvar = "resolution";
+    // Two characters against the five of "1080p"/"1440p": the row width leaves
+    // it swimming in bar.
+    FitBarToValue(initial[0], "4K");
     // Labels come from settings.cpp's preset list, so the row and the overlay's
     // slider offer the same states in the same order.
     std::vector<const char*> fps_values;
@@ -605,14 +714,18 @@ std::vector<OptionRow>& Rows() {
     initial[1].get_index = &FrameRateGetIndex;
     initial[1].set_index = &FrameRateSetIndex;
     initial[1].page = kPageButtons;
+    // Six characters against the eight of "Adaptive"/"Unlocked", which is what
+    // the row width is sized for.
+    FitBarToValue(initial[1], "30 FPS");
+    FitBarToValue(initial[1], "60 FPS");
 
     // Page 1, the game page, below the stock Subtitles and Voice rows.
     MakeLiteralRow(initial[2], kLabelText, nullptr, 0);
     for (int i = 0; i < eternalsonata::UserLanguageCount(); ++i) {
-      initial[2].values.push_back(
-          OptionValue{eternalsonata::UserLanguageCode(i), 0});
+      OptionValue value;
+      value.literal[0] = eternalsonata::UserLanguageCode(i);
+      initial[2].values.push_back(std::move(value));
     }
-    initial[2].bar_width = BarWidthForValues(initial[2].values);
     initial[2].bar_nudge_x = kTextBarNudge;
     initial[2].bar_nudge_step_x = kTextBarNudgeStep;
     initial[2].get_index = &TextGetIndex;
@@ -651,9 +764,11 @@ struct PageState {
   u32 list_bytes = 0;   // bytes it was allocated for; it is grown, never shrunk
   u32 built_rows = 0;   // rows on this page the current buffer was built for
   bool failed = false;
-  // Registry ids of our highlight bars, one per row *on this page*, in page
-  // order; 0xFFFFFFFF until the first frame after the screen is built.
-  std::vector<u32> bar_id;
+  // Registry ids of our highlight bars, per row *on this page* in page order:
+  // one id for a row that slides a single bar, one per value for a row that
+  // swaps between pre-sized ones (see BarsForRow). 0xFFFFFFFF until the first
+  // frame after the screen is built.
+  std::vector<std::vector<u32>> bar_id;
   bool bars_resolved = false;
   // How many objects the screen's id array held the instant the display list
   // had finished being walked, or 0 if that could not be read. Our bars are the
@@ -881,10 +996,11 @@ int32_t TextWidth(const std::string& text) {
 }
 
 int32_t ValueWidth(const OptionValue& value) {
-  if (value.literal.empty()) {
+  const std::string& text = ValueText(value, DrawLanguage());
+  if (text.empty()) {
     return kValueBtxWidthPx;
   }
-  return TextWidth(value.literal);
+  return TextWidth(text);
 }
 
 // Gap the restart marker keeps from the label on its left and the value column
@@ -970,28 +1086,30 @@ int32_t ValueColumnOffset(int page, const std::vector<OptionValue>& values,
 // value) and on every change. `move` picks the mechanism: the animated slide
 // the row handler uses on a value change, or the instant set the screen init
 // uses when the page opens.
-void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
-  PageState& st = g_page[page];
-  if (row >= st.bar_id.size() || st.bar_id[row] == 0xFFFFFFFFu || !g_bar_vec) {
+// Runtime x of `row`'s bar when value `index` is selected. The one authority:
+// the bar records are authored from it (in the same space, see WriteBarRecord)
+// and every placement below goes through it, so a bar can never disagree with
+// the value it highlights.
+int32_t BarX(int page, const OptionRow& row, int index) {
+  return g_page[page].value_base_x + kRecordToRuntimeX +
+         ValueColumnOffset(page, row.values, static_cast<u32>(index)) +
+         row.bar_nudge_x + index * row.bar_nudge_step_x;
+}
+
+int32_t BarY(int page, u32 row) {
+  return RowRecordY(page, row) + kRecordToRuntimeY + kBarShrinkFixup;
+}
+
+// Where a bar goes when it is not the selected one. Far off the left of a
+// 1280-wide screen, on the row's own y so nothing about it changes but its
+// visibility - a row with per-value bars has all but one parked here.
+constexpr int32_t kBarParkedX = -4000;
+
+// Moves one bar object, instantly or with the game's slide.
+void PlaceBar(u8* base, u32 bar_id, int32_t x, int32_t y, bool move) {
+  if (bar_id == 0xFFFFFFFFu || !g_bar_vec) {
     return;
   }
-  const OptionRow& def = Rows()[st.rows[row]];
-  const int32_t x =
-      st.value_base_x + kRecordToRuntimeX +
-      ValueColumnOffset(page, def.values, static_cast<u32>(value_index)) +
-      def.bar_nudge_x + value_index * def.bar_nudge_step_x;
-  // One y for both mechanisms. An earlier version biased the *instant*
-  // placement by 740px, on the strength of sub_82200FE8 placing page 1's stock
-  // bars at 895/945 where its handler animates them to 155/205. That bias is
-  // wrong here: it put the Text row's bar off the bottom of the screen, where
-  // it stayed until the first value change slid it up into the right place.
-  // The two spaces sub_82200FE8 appears to use are a property of when it runs
-  // relative to the screen's own setup, not of sub_82178A88 - and our
-  // placement runs from the per-frame cursor hook, well after all of that.
-  // Page 2's rows have always been placed unbiased, and land correctly.
-  const int32_t y =
-      RowRecordY(page, row) + kRecordToRuntimeY + kBarShrinkFixup;
-
   const auto put = [&](u32 off, float v) {
     u32 bits;
     std::memcpy(&bits, &v, sizeof(bits));
@@ -1000,12 +1118,46 @@ void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
   put(0, static_cast<float>(x));
   put(4, static_cast<float>(y));
   put(8, 0.0f);
-
   if (move) {
     g_move_object(0.0, kBarMoveSpeed, kBarMoveSpeed, kBarMoveSpeed, kTextRegistry,
-                  st.bar_id[row], g_bar_vec, 0, 0, 0, 0, kBarMoveMode);
+                  bar_id, g_bar_vec, 0, 0, 0, 0, kBarMoveMode);
   } else {
-    g_set_object_pos(kTextRegistry, st.bar_id[row], g_bar_vec, 0, 0, 0xFFFFFFFFu);
+    g_set_object_pos(kTextRegistry, bar_id, g_bar_vec, 0, 0, 0xFFFFFFFFu);
+  }
+}
+
+void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
+  PageState& st = g_page[page];
+  if (row >= st.bar_id.size() || st.bar_id[row].empty() || !g_bar_vec) {
+    return;
+  }
+  const OptionRow& def = Rows()[st.rows[row]];
+  // One y for both mechanisms. An earlier version biased the *instant*
+  // placement by 740px, on the strength of sub_82200FE8 placing page 1's stock
+  // bars at 895/945 where its handler animates them to 155/205. That bias is
+  // wrong here: it put the Text row's bar off the bottom of the screen, where
+  // it stayed until the first value change slid it up into the right place.
+  // The two spaces sub_82200FE8 appears to use are a property of when it runs
+  // relative to the screen's own setup, not of sub_82178A88 - and our
+  // placement runs from the per-frame menu update, well after all of that.
+  // Page 2's rows have always been placed unbiased, and land correctly.
+  const int32_t y = BarY(page, row);
+
+  // One bar, sliding between values: the row's values all want the same width.
+  if (st.bar_id[row].size() == 1) {
+    PlaceBar(base, st.bar_id[row][0], BarX(page, def, value_index), y, move);
+    return;
+  }
+
+  // One bar per value, each already the right width. Only the selected one is
+  // on the row; the rest are parked off-screen. The swap is instant even when
+  // asked to slide - the incoming bar is a different object from the outgoing
+  // one, so there is nothing to slide *from*.
+  for (u32 v = 0; v < st.bar_id[row].size(); ++v) {
+    const bool selected = v == static_cast<u32>(value_index);
+    PlaceBar(base, st.bar_id[row][v],
+             selected ? BarX(page, def, static_cast<int>(v)) : kBarParkedX, y,
+             /*move=*/false);
   }
 }
 
@@ -1084,9 +1236,17 @@ void WriteTextRecord(u8* base, u32 at, u32 id, int32_t x, int32_t y) {
 // Clone the stock Subtitles bar record verbatim and move it to our row's y.
 // Cloning rather than hand-writing keeps every field we have not identified
 // (notably the width at +0xC) at whatever the game already uses.
-void WriteBarRecord(u8* base, u32 at, u32 src_list, int32_t y, int32_t width) {
+void WriteBarRecord(u8* base, u32 at, u32 src_list, int32_t x, int32_t y,
+                    int32_t width) {
   std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + kBarRecordOffset),
               kBarRecordBytes);
+  // The x the stock record carries is the value column of value 0 (490 in the
+  // Italian list, the same number the Sottotitoli value text record holds), so
+  // it answers the same question ValueColumnOffset does. Writing the row's
+  // *current* value into it - in the runtime space the placement call uses, see
+  // the caller - is what gets the bar created where it belongs instead of on
+  // value 0, so no frame ever shows it anywhere else.
+  REX_STORE_U32(at + kBarBlockXOffset, static_cast<u32>(x));
   REX_STORE_U32(at + kBarBlockYOffset, static_cast<u32>(y));
   REX_STORE_U32(at + kBarBlockWOffset, static_cast<u32>(width));
   REX_STORE_U32(at + kBarBlockHOffset, static_cast<u32>(kBarHeight));
@@ -1138,7 +1298,15 @@ bool EnsureRowStrings(u8* base, Mem* mem) {
     g_value_addr[r].assign(rows[r].values.size(), 0);
     for (u32 v = 0; v < rows[r].values.size(); ++v) {
       const OptionValue& val = rows[r].values[v];
-      if (val.literal.empty()) {
+      // Allocated for a value that has text in *any* language: which of them is
+      // drawn is decided per build (see EnsurePageRows), and a mod may translate
+      // a value after the buffer already exists. A value with no text at all
+      // rides a stock BTX string instead and needs nothing here.
+      bool has_text = false;
+      for (int l = 0; l < kLanguageCount && !has_text; ++l) {
+        has_text = !val.literal[l].empty();
+      }
+      if (!has_text) {
         continue;
       }
       g_value_addr[r][v] = mem->SystemHeapAlloc(64, 0x20);
@@ -1146,7 +1314,6 @@ bool EnsureRowStrings(u8* base, Mem* mem) {
         REXLOG_WARN("[options] native rows: guest allocation failed");
         return false;
       }
-      WriteGuestString(base, g_value_addr[r][v], val.literal.c_str());
     }
   }
   g_strings_rows = row_count;
@@ -1199,7 +1366,7 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     // first time a player changes a restart-scoped setting.
     bytes += 2 * kTextRecordBytes +
              static_cast<u32>(all[r].values.size()) * kTextRecordBytes +
-             kSepRecordBytes + kBarRecordBytes;
+             kSepRecordBytes + BarsForRow(all[r], DrawLanguage()) * kBarRecordBytes;
   }
 
   // Allocate on the first build, and again if a late registration made the
@@ -1213,10 +1380,15 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     }
     st.list_bytes = bytes;
   }
-  if (row_count != st.built_rows) {
-    st.bar_id.assign(row_count, 0xFFFFFFFFu);
-    st.built_rows = row_count;
+  // Re-sized every build rather than only when the row count changes: how many
+  // bars a row needs depends on its values, and a mod may have given one its own
+  // width since the last time this page was built.
+  st.bar_id.assign(row_count, {});
+  for (u32 i = 0; i < row_count; ++i) {
+    st.bar_id[i].assign(BarsForRow(all[st.rows[i]], DrawLanguage()),
+                        0xFFFFFFFFu);
   }
+  st.built_rows = row_count;
   st.bars_resolved = false;
   if (!g_bar_vec) {
     g_bar_vec = mem->SystemHeapAlloc(16, 0x20);
@@ -1264,8 +1436,7 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   // the rest of the screen follows - most visibly on the Text row itself,
   // where changing the value would rewrite the labels around it on the next
   // entry while nothing else on screen moved.
-  const int label_lang =
-      std::clamp(eternalsonata::BootUserLanguageIndex(), 0, kLanguageCount - 1);
+  const int label_lang = DrawLanguage();
   auto row_label = [&](u32 r) -> const std::string& {
     // Slot 0 is the fallback for any language a row did not translate, so a
     // mod that registers a single label still renders everywhere.
@@ -1274,6 +1445,14 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   };
   for (const u32 r : st.rows) {
     WriteGuestString(base, g_label_addr[r], row_label(r).c_str());
+    // Values are per language too, and rewritten here for the same reason: a
+    // mod may translate a value after its guest string was allocated.
+    for (u32 v = 0; v < all[r].values.size() && v < g_value_addr[r].size(); ++v) {
+      if (g_value_addr[r][v]) {
+        WriteGuestString(base, g_value_addr[r][v],
+                         ValueText(all[r].values[v], label_lang).c_str());
+      }
+    }
   }
 
   // The restart marker follows the same language as the labels for the same
@@ -1341,9 +1520,31 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
               pl.bar_skip_bytes);
   at += pl.bar_skip_bytes;
   for (u32 i = 0; i < row_count; ++i) {
-    WriteBarRecord(base, at, tpl_list, RowBarDisplayY(page, i),
-                   all[st.rows[i]].bar_width);
-    at += kBarRecordBytes;
+    const OptionRow& row = all[st.rows[i]];
+    // Exactly the position MoveOptionBar will ask for, so the bar is created
+    // where it is going to stay - and, for a row that needs one bar per value,
+    // each of those is created at its own value, already the right width.
+    //
+    // Note these are the *runtime* coordinates, record + 40/130, even though
+    // this is a record: measured live (see the object dump behind this fix), a
+    // bar record authored at record coordinates produces an object sitting at
+    // those same numbers, while the placement call reads them 40/130 higher. The
+    // two coordinate spaces meet in the object, not in the record - so a bar
+    // written in record space came up 40 to the left and, since screen y runs
+    // opposite to record y, 130 below where it then snapped to.
+    const int value_index =
+        std::clamp(row.get_index(), 0, static_cast<int>(row.values.size()) - 1);
+    const int32_t bar_y = RowBarDisplayY(page, i) + kRecordToRuntimeY;
+    const u32 bars = BarsForRow(row, label_lang);
+    for (u32 b = 0; b < bars; ++b) {
+      // One bar: it sits on the current value and slides from there. One per
+      // value: each sits on its own value, and MoveOptionBar parks all but the
+      // selected one on the first per-frame pass.
+      const int at_value = bars == 1 ? value_index : static_cast<int>(b);
+      WriteBarRecord(base, at, tpl_list, BarX(page, row, at_value), bar_y,
+                     BarWidthFor(row, at_value, label_lang));
+      at += kBarRecordBytes;
+    }
   }
   const u32 rest = pl.insert_offset + pl.bar_skip_bytes;
   std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + rest),
@@ -1353,6 +1554,81 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
 
   REXLOG_INFO("[options] page {}: {} native rows built (list=0x{:08X})", page,
               row_count, list);
+}
+
+// Finds each of our rows' highlight bars among the screen's objects and puts it
+// on the row's current value, from the first per-frame menu update after the
+// screen was built.
+//
+// It cannot run any earlier than that. Doing it straight after the display list
+// was walked - where the screen's own init places the stock bars - was tried and
+// left our bars not drawn at all: the objects exist by then (their ids read back
+// correctly), but positioning one before the screen has finished coming up does
+// not stick. What removes the visible jump instead is authoring each bar record
+// at its row's current value (see EnsurePageRows), so the bar is *created* in
+// the right place and this only ever confirms it.
+void ResolveBars(u8* base, int page) {
+  PageState& st = g_page[page];
+  st.bars_resolved = true;
+  const u32 rows = static_cast<u32>(st.rows.size());
+  const u32 screen = CurrentScreenObject(base);
+  if (!screen) {
+    return;
+  }
+
+  // Bar records are appended after every stock object-creating record *in the
+  // list*, in row order and, within a row, in value order - so our ids are the
+  // last `bars` entries the list itself registered, where `bars` is however many
+  // records EnsurePageRows just wrote. That is st.list_objects, captured the
+  // moment the interpreter returned, not however many entries the array holds by
+  // now.
+  //
+  // The two differ on page 2 in-game: the screen creates one portrait object per
+  // party member after the list is done, so counting the whole array claimed the
+  // last portraits as ours. The visible result was portraits sliding onto our
+  // rows as if they were highlight bars, while the party rows kept a bar where
+  // their portrait belonged - and none of it showed on the main menu, where there
+  // is no party and so no portraits.
+  //
+  // Page 2's screen holds far more objects than page 1's (its handler indexes
+  // elements 78/83/88 for the row labels alone), so the buffer is sized for the
+  // bigger of the two.
+  u32 ids[192];
+  const u32 n = ScreenObjectIds(base, screen, ids, std::size(ids));
+  // Fall back to the whole array only if the capture failed outright: a
+  // wrong-but-plausible answer beats leaving the bars unplaced.
+  const u32 owned = (st.list_objects && st.list_objects <= n) ? st.list_objects : n;
+  u32 bars = 0;
+  for (const std::vector<u32>& row_bars : st.bar_id) {
+    bars += static_cast<u32>(row_bars.size());
+  }
+  if (owned >= bars) {
+    u32 next = owned - bars;
+    for (u32 r = 0; r < rows && r < st.bar_id.size(); ++r) {
+      for (u32& id : st.bar_id[r]) {
+        id = ids[next++];
+      }
+    }
+  }
+
+  std::string ids_text;
+  for (const std::vector<u32>& row_bars : st.bar_id) {
+    for (const u32 id : row_bars) {
+      char buf[16];
+      std::snprintf(buf, sizeof(buf), "%x ", id);
+      ids_text += buf;
+    }
+    ids_text += "| ";
+  }
+  REXLOG_INFO("[options] page {}: {} objects ({} from the list), {} bars: {}",
+              page, n, st.list_objects, bars, ids_text);
+
+  // Placed the way the screen init places the stock ones: instantly. No settling
+  // delay - sub_82178A88 is not an animation.
+  const std::vector<OptionRow>& all = Rows();
+  for (u32 r = 0; r < rows; ++r) {
+    MoveOptionBar(base, page, r, all[st.rows[r]].get_index(), /*move=*/false);
+  }
 }
 
 }  // namespace
@@ -1384,7 +1660,7 @@ REX_HOOK_RAW(sub_8223B780) {
       } else if (sub - 1 < def.values.size()) {
         const u32 v = sub - 1;
         const OptionValue& val = def.values[v];
-        if (!val.literal.empty()) {
+        if (!ValueText(val, DrawLanguage()).empty()) {
           if (row < g_value_addr.size() && v < g_value_addr[row].size() &&
               g_value_addr[row][v]) {
             ctx.r3.u32 = g_value_addr[row][v];
@@ -1771,9 +2047,10 @@ void DumpHighlightBars(u8* base, int page) {
   // other than the 50px row pitch is the one the height scale is disturbing.
   const u32 stock_id = REX_LOAD_U32(screen + 120);
   for (int which = 0; which < 2; ++which) {
-    const u32 id = which ? (g_page[page].bar_id.empty() ? 0xFFFFFFFFu
-                                                        : g_page[page].bar_id[0])
-                         : stock_id;
+    const bool have_ours =
+        !g_page[page].bar_id.empty() && !g_page[page].bar_id[0].empty();
+    const u32 id =
+        which ? (have_ours ? g_page[page].bar_id[0][0] : 0xFFFFFFFFu) : stock_id;
     if (id == 0xFFFFFFFFu) {
       continue;
     }
@@ -1855,50 +2132,12 @@ REX_HOOK_RAW(sub_821F62B8) {
   const std::vector<OptionRow>& all = Rows();
   const u32 rows = static_cast<u32>(st.rows.size());
 
+  // Normally already done at build time (see the sub_821F2F38 hook), which is
+  // what keeps the bars from being seen anywhere but on their row's value. This
+  // is the fallback for a screen that somehow reached its first frame without
+  // the list having been walked through our hook.
   if (!st.bars_resolved) {
-    st.bars_resolved = true;
-    // Bar records are appended in row order after every stock object-creating
-    // record *in the list*, so our ids are the last `rows` entries the list
-    // itself registered - which is st.list_objects, captured the moment the
-    // interpreter returned, not however many entries the array holds now.
-    //
-    // The two differ on page 2 in-game: the screen creates one portrait object
-    // per party member after the list is done, so counting here claimed the
-    // last portraits as ours. The visible result was portraits sliding onto our
-    // rows as if they were highlight bars, while the party rows kept a bar where
-    // their portrait belonged (and none of it showed on the main menu, where
-    // there is no party and so no portraits).
-    const u32 screen = CurrentScreenObject(base);
-    if (screen) {
-      // Page 2's screen holds far more objects than page 1's (its handler
-      // indexes elements 78/83/88 for the row labels alone), so this has to be
-      // sized for the bigger of the two, not for the Options screen.
-      u32 ids[192];
-      const u32 n = ScreenObjectIds(base, screen, ids, std::size(ids));
-      // Fall back to the whole array only if the capture failed outright; a
-      // wrong-but-plausible answer is better than leaving the bars unplaced.
-      const u32 owned = (st.list_objects && st.list_objects <= n)
-                            ? st.list_objects
-                            : n;
-      if (owned >= rows && rows <= st.bar_id.size()) {
-        for (u32 r = 0; r < rows; ++r) {
-          st.bar_id[r] = ids[owned - rows + r];
-        }
-      }
-      std::string ids_text;
-      for (const u32 id : st.bar_id) {
-        char buf[16];
-        std::snprintf(buf, sizeof(buf), "%x ", id);
-        ids_text += buf;
-      }
-      REXLOG_INFO("[options] page {}: {} objects ({} from the list), bar ids: {}",
-                  page, n, st.list_objects, ids_text);
-    }
-    // Place every bar the way the screen init places the stock ones:
-    // instantly. No settling delay - sub_82178A88 is not an animation.
-    for (u32 r = 0; r < rows; ++r) {
-      MoveOptionBar(base, page, r, all[st.rows[r]].get_index(), /*move=*/false);
-    }
+    ResolveBars(base, page);
     if (REXCVAR_GET(menu_scan)) {
       DumpHighlightBars(base, page);
     }
@@ -2113,9 +2352,12 @@ extern "C" __declspec(dllexport) int EternalSonataRegisterOptionRow(
   row.label[0] = label;
   row.values.reserve(static_cast<size_t>(value_count));
   for (int i = 0; i < value_count; ++i) {
-    row.values.push_back(OptionValue{values[i], 0});
+    // Same fallback rule as the label: slot 0 stands in for every language the
+    // mod does not translate with EternalSonataSetOptionValue.
+    OptionValue value;
+    value.literal[0] = values[i];
+    row.values.push_back(std::move(value));
   }
-  row.bar_width = BarWidthForValues(row.values);
   row.page = kModDefaultPage;
   row.get_index = [get, user] { return get(user); };
   row.set_index = [set, user](u8*, int idx) { set(idx, user); };
@@ -2137,6 +2379,31 @@ extern "C" __declspec(dllexport) int EternalSonataSetOptionRowLabel(
     return 0;
   }
   rows[static_cast<size_t>(row)].label[language] = label;
+  return 1;
+}
+
+extern "C" __declspec(dllexport) int EternalSonataSetOptionValue(
+    int row, int value, int language, const char* text, int bar_width) {
+  if (language < 0 || language >= kLanguageCount || bar_width < 0) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(g_registry_mutex);
+  std::vector<OptionRow>& rows = Rows();
+  if (row < 0 || static_cast<size_t>(row) >= rows.size()) {
+    return 0;
+  }
+  OptionRow& def = rows[static_cast<size_t>(row)];
+  if (value < 0 || static_cast<size_t>(value) >= def.values.size()) {
+    return 0;
+  }
+  OptionValue& val = def.values[static_cast<size_t>(value)];
+  // A null `text` means "leave the wording alone, I am only setting the width",
+  // which is the whole point of the two being one call: a value that reads the
+  // same in two languages can still need two different bars.
+  if (text) {
+    val.literal[language] = text;
+  }
+  val.bar_width[language] = bar_width;
   return 1;
 }
 
