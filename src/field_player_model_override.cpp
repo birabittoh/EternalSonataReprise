@@ -79,8 +79,8 @@ constexpr const char* kSelectionTokens[] = {
 };
 
 constexpr const char* kSelectionNames[] = {
-    "Default", "Follow active party", "Allegretto", "Polka",    "Beat",   "Frederic",
-    "Viola",   "Salsa",               "Jazz",       "Falsetto", "Claves", "March",
+    "Default", "Party Leader", "Allegretto", "Polka",    "Beat",   "Frederic",
+    "Viola",   "Salsa",        "Jazz",       "Falsetto", "Claves", "March",
 };
 static_assert(sizeof(kSelectionNames) / sizeof(kSelectionNames[0]) ==
                   eternalsonata::FieldPlayerModelOverride::kSelectionCount,
