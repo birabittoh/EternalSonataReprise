@@ -655,6 +655,15 @@ struct PageState {
   // order; 0xFFFFFFFF until the first frame after the screen is built.
   std::vector<u32> bar_id;
   bool bars_resolved = false;
+  // How many objects the screen's id array held the instant the display list
+  // had finished being walked, or 0 if that could not be read. Our bars are the
+  // last `rows` of *those* - not of however many the array holds later, because
+  // the page-2 screen keeps creating objects after the list is done (the party
+  // members' portraits, one per party member). Reading the count later put the
+  // portraits inside the range we claimed, which is how a party icon ended up
+  // being slid around as if it were a highlight bar while the real bar sat on
+  // the portrait's row.
+  u32 list_objects = 0;
   // The language's value column, read out of the display list at build time
   // (it shifts per language) and reused when placing bars.
   int32_t value_base_x = 0;
@@ -665,6 +674,42 @@ struct PageState {
   std::vector<u32> rows;
 };
 PageState g_page[kPageCount];
+
+// The UI root, and the slot table it keeps one screen object per menu depth in
+// (sub_821F2F38 allocates the 1744-byte screen object into 4 * (depth + 709)).
+constexpr u32 kUiRoot = 0x824400E4u;
+constexpr u32 kScreenSlotBase = 709u;
+
+inline bool GuestPtr(u32 v) { return v >= 0x82000000u && v < 0xFB000000u; }
+
+// The screen object currently on top, or 0 if the root is not up yet.
+u32 CurrentScreenObject(u8* base) {
+  const u32 root = REX_LOAD_U32(kUiRoot);
+  if (!GuestPtr(root)) {
+    return 0;
+  }
+  const u32 depth = REX_LOAD_U8(root + 2833);
+  const u32 screen = REX_LOAD_U32(root + 4 * (depth + kScreenSlotBase));
+  return GuestPtr(screen) ? screen : 0;
+}
+
+// Objects registered on `screen`, read out of the id array at +0x4C (terminated
+// by 0xFFFFFFFF). `max` bounds the walk: page 2's screen holds far more objects
+// than page 1's - its handler indexes elements 78/83/88 for the row labels
+// alone - so nothing here may assume the Options screen's size.
+u32 ScreenObjectIds(u8* base, u32 screen, u32* ids, u32 max) {
+  u32 n = 0;
+  for (; n < max; ++n) {
+    const u32 id = REX_LOAD_U32(screen + 0x4C + 4 * n);
+    if (id == 0xFFFFFFFFu) {
+      break;
+    }
+    if (ids) {
+      ids[n] = id;
+    }
+  }
+  return n;
+}
 
 // Which Options page is on screen right now, or -1 for anything else. Read
 // from the menu state machine's own state byte every frame rather than latched
@@ -1383,13 +1428,24 @@ REX_HOOK_RAW(sub_821F2F38) {
   // state byte instead.
   int page = 0;
   int lang_idx = 0;
-  if (ClassifyList(ctx.r4.u32, &page, &lang_idx)) {
+  const bool ours = ClassifyList(ctx.r4.u32, &page, &lang_idx);
+  if (ours) {
     EnsurePageRows(base, page, lang_idx);
     if (g_page[page].list) {
       ctx.r4.u32 = g_page[page].list;
     }
   }
   __imp__sub_821F2F38(ctx, base);
+  if (!ours) {
+    return;
+  }
+  // Everything the list creates is registered by the time it returns, and our
+  // bar records are the last of those - so this count, taken here and nowhere
+  // later, is the boundary between the objects we own and the ones the screen's
+  // own handler goes on to create afterwards (see PageState::list_objects).
+  const u32 screen = CurrentScreenObject(base);
+  g_page[page].list_objects =
+      screen ? ScreenObjectIds(base, screen, nullptr, 256) : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1678,11 +1734,7 @@ void ScanPollKeys(u8* base) {
 // as. Runs once per Options entry, gated behind menu_scan.
 namespace {
 
-constexpr u32 kUiRoot = 0x824400E4u;
-constexpr u32 kScreenSlotBase = 709u;
 constexpr u32 kBarOffsets[] = {84, 88, 92, 120};
-
-inline bool GuestPtr(u32 v) { return v >= 0x82000000u && v < 0xFB000000u; }
 
 void DumpHighlightBars(u8* base, int page) {
   const u32 root = REX_LOAD_U32(kUiRoot);
@@ -1806,39 +1858,41 @@ REX_HOOK_RAW(sub_821F62B8) {
   if (!st.bars_resolved) {
     st.bars_resolved = true;
     // Bar records are appended in row order after every stock object-creating
-    // record, so our ids are always the last `rows` entries of the id array at
-    // screen+0x4C, in row order.
-    const u32 root = REX_LOAD_U32(kUiRoot);
-    if (root >= 0x82000000u && root < 0xFB000000u) {
-      const u32 depth = REX_LOAD_U8(root + 2833);
-      const u32 screen = REX_LOAD_U32(root + 4 * (depth + kScreenSlotBase));
-      if (screen >= 0x82000000u && screen < 0xFB000000u) {
-        // Page 2's screen holds far more objects than page 1's (its handler
-        // indexes elements 78/83/88 for the row labels alone), so this has to
-        // be sized for the bigger of the two, not for the Options screen.
-        u32 ids[192];
-        u32 n = 0;
-        for (; n < std::size(ids); ++n) {
-          const u32 id = REX_LOAD_U32(screen + 0x4C + 4 * n);
-          if (id == 0xFFFFFFFFu) {
-            break;
-          }
-          ids[n] = id;
+    // record *in the list*, so our ids are the last `rows` entries the list
+    // itself registered - which is st.list_objects, captured the moment the
+    // interpreter returned, not however many entries the array holds now.
+    //
+    // The two differ on page 2 in-game: the screen creates one portrait object
+    // per party member after the list is done, so counting here claimed the
+    // last portraits as ours. The visible result was portraits sliding onto our
+    // rows as if they were highlight bars, while the party rows kept a bar where
+    // their portrait belonged (and none of it showed on the main menu, where
+    // there is no party and so no portraits).
+    const u32 screen = CurrentScreenObject(base);
+    if (screen) {
+      // Page 2's screen holds far more objects than page 1's (its handler
+      // indexes elements 78/83/88 for the row labels alone), so this has to be
+      // sized for the bigger of the two, not for the Options screen.
+      u32 ids[192];
+      const u32 n = ScreenObjectIds(base, screen, ids, std::size(ids));
+      // Fall back to the whole array only if the capture failed outright; a
+      // wrong-but-plausible answer is better than leaving the bars unplaced.
+      const u32 owned = (st.list_objects && st.list_objects <= n)
+                            ? st.list_objects
+                            : n;
+      if (owned >= rows && rows <= st.bar_id.size()) {
+        for (u32 r = 0; r < rows; ++r) {
+          st.bar_id[r] = ids[owned - rows + r];
         }
-        if (n >= rows && rows <= st.bar_id.size()) {
-          for (u32 r = 0; r < rows; ++r) {
-            st.bar_id[r] = ids[n - rows + r];
-          }
-        }
-        std::string ids_text;
-        for (const u32 id : st.bar_id) {
-          char buf[16];
-          std::snprintf(buf, sizeof(buf), "%x ", id);
-          ids_text += buf;
-        }
-        REXLOG_INFO("[options] page {}: {} objects, bar ids: {}", page, n,
-                    ids_text);
       }
+      std::string ids_text;
+      for (const u32 id : st.bar_id) {
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "%x ", id);
+        ids_text += buf;
+      }
+      REXLOG_INFO("[options] page {}: {} objects ({} from the list), bar ids: {}",
+                  page, n, st.list_objects, ids_text);
     }
     // Place every bar the way the screen init places the stock ones:
     // instantly. No settling delay - sub_82178A88 is not an animation.
