@@ -155,7 +155,7 @@ class EternalsonataApp : public rex::ReXApp {
     eternalsonata::GetForceLoadArea().Bind(runtime());
 
     // Debug tool: per-frame override of the field leader's model handle,
-    // driven by the same overlay's "Field leader model" combo.
+    // driven by the same overlay's "Overworld Model" combo.
     eternalsonata::FieldPlayerModelOverride::Bind(runtime());
   }
 

@@ -27,7 +27,7 @@ class FieldPlayerModelOverride {
   // since the whole feature is the spawn hook. Call from OnPostSetup.
   static void Bind(rex::Runtime* runtime);
 
-  // Selection, as indexed by the settings overlay's Field Leader Model combo:
+  // Selection, as indexed by the settings overlay's Overworld Model combo:
   //   0      -- default, use the game's own model (Allegretto)
   //   1      -- follow the active party's first member
   //   2..11  -- force character 1..10

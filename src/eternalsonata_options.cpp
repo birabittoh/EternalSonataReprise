@@ -499,7 +499,7 @@ int OverworldModelGetIndex();
 void OverworldModelSetIndex(u8* base, int idx);
 
 // The Overworld Model row is the two-value face of the overlay's 12-value
-// Field Leader Model combo: "Default" is the game's own model, "Leader" is the
+// Overworld Model combo: "Default" is the game's own model, "Leader" is the
 // active party's first member. The overlay's remaining ten values pin one
 // specific character, which this row has no way to express - so it reports any
 // of them as "Leader" (an override *is* in force) rather than as "Default",

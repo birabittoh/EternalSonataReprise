@@ -725,14 +725,14 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   void DrawFieldLeaderModelRow() {
     int selection = eternalsonata::FieldPlayerModelOverride::Selection();
 
-    ImGui::TextUnformatted("Field Leader Model");
+    ImGui::TextUnformatted("Overworld Model");
     if (ImGui::IsItemHovered()) {
       ImGui::SetTooltip(
           "Which character is shown walking around the overworld.\n\n"
-          "\"Follow active party\" uses whoever is first in the party, which you reorder "
+          "\"Party Leader\" uses whoever is first in the party, which you reorder "
           "from the status screen.\n\n"
           "The model can only be swapped while the field is paused, so a change takes "
-          "effect the next time you close a menu or move between areas -- not instantly. "
+          "effect the next time you close a menu or move between areas. "
           "Characters whose model has not been loaded yet fall back to the default.");
     }
     ImGui::SameLine(180.0f);
