@@ -76,3 +76,7 @@ __pycache__/
 
 # Mods
 /mods/
+
+# DLC content packages (STFS containers dropped in by the user; see
+# src/dlc_auto_install.cpp)
+/dlc/

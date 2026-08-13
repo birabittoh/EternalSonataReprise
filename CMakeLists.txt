@@ -88,6 +88,7 @@ set(ETERNALSONATA_SOURCES
     src/force_load_area.cpp
     src/field_player_model_override.cpp
     src/debug_area_overlay.cpp
+    src/dlc_auto_install.cpp
     src/settings.cpp
     ${ETERNALSONATA_AREA_NAMES_HEADER}
     ${GENERATED_SOURCES}
