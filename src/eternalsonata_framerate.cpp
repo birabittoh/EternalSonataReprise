@@ -16,11 +16,11 @@
 #include "eternalsonata_hooks_internal.h"
 #include "guest_main_thread.h"
 
-// frame_rate cvar: "30" / "60" / "unlocked". Defined (and persisted) in
-// settings.cpp; declared here so the frame-driver hook can read it cheaply.
+// frame_rate cvar: "30" / "60" / "adaptive" / "unlocked". Defined (and
+// persisted) in settings.cpp; declared here so the frame-driver hook can read it
+// cheaply.
 REXCVAR_DECLARE(std::string, frame_rate);
 REXCVAR_DECLARE(bool, frame_debug);
-REXCVAR_DECLARE(bool, adaptive_framerate);
 
 // ---------------------------------------------------------------------------
 // Frame-rate cap
@@ -90,7 +90,9 @@ u8 g_guest_rate = 30;
 // was the option's name.
 u8 RequestedFrameRate(u8 stock) {
   const std::string& mode = REXCVAR_GET(frame_rate);
-  if (mode == "60")
+  // "adaptive" targets 60 like "60" does; the two differ only in whether the
+  // ladder below may step the declared rate down (see AdaptiveFrameRate).
+  if (mode == "60" || mode == "adaptive")
     return 60;
   if (mode == "unlocked" || mode == "0")
     return 0;
@@ -252,7 +254,9 @@ constexpr std::chrono::microseconds PeriodFor(u8 fps) {
 // state (built for the gameplay rate) alone rather than dragging those
 // screens down to whatever rung gameplay perf last settled on.
 u8 AdaptiveFrameRate(u8 requested, u8 stock, bool measure) {
-  if (!REXCVAR_GET(adaptive_framerate)) {
+  // The ladder belongs to the "adaptive" setting alone. "60" is the same target
+  // pinned, and "30"/"unlocked" have nothing to step down to.
+  if (REXCVAR_GET(frame_rate) != "adaptive") {
     g_ladder_target = 0;  // Rebuild from the top if it is switched back on.
     return requested;
   }

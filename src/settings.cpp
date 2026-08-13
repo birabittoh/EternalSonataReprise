@@ -54,29 +54,29 @@
 // "unlocked" disables the limiter and runs fast in proportion — a frame-clocked
 // engine has no speed-correct uncapped mode.
 //
-// 60 frame-skips adaptively (see AdaptiveFrameRate): if the host can't sustain
-// it, the declared rate drops through 30 and 20 — both divisors of 60, so both
+// "adaptive" frame-skips (see AdaptiveFrameRate): it targets 60, and if the
+// host can't sustain it the declared rate drops to 30 — a divisor of 60, so
 // on-grid — and the game skips frames at correct speed rather than running the
 // sim in slow motion, then climbs back once there is headroom. The rungs are
 // fixed rather than derived from the player's refresh rate on purpose: the
 // authored cadence is a property of the content, so the game should behave the
 // same on every monitor.
 //
+// "60" is the same target pinned: it never steps down, so a host that can't
+// keep up runs the sim in slow motion instead. Worth keeping as its own value
+// because a false step-down is more visible than mild slow motion. This was a
+// separate adaptive_framerate bool until the two menus folded it in here: as a
+// pair the two cvars only ever had these four states, and one ordered list is
+// what both the overlay slider and the native Options row can draw. A config
+// written before that carries frame_rate = 60 and reads back as pinned 60.
+//
 // Declared here (global scope) so the hooks can read it via
 // REXCVAR_DECLARE/REXCVAR_GET.
 REXCVAR_DEFINE_STRING(frame_rate, "30", "Eternal Sonata",
                       "In-game scene/sim advance rate: 30 (as the game asks - 30 for gameplay, 60 "
-                      "on the title and the save menu), 60, or unlocked. 60 automatically skips "
-                      "frames if the PC can't sustain it, to avoid slow motion.")
-    .allowed({"stock", "30", "60", "unlocked"});
-
-// Escape hatch for the adaptive ladder. With this false, the selected rate is
-// pinned and never steps down — the pre-adaptive behaviour, where a host that
-// can't keep up runs the sim in slow motion rather than skipping frames. Worth
-// having because a false step-down is far more visible than mild slow motion.
-REXCVAR_DEFINE_BOOL(adaptive_framerate, true, "Eternal Sonata",
-                    "Let the 60 frame rate setting drop to a lower rate when the PC can't "
-                    "keep up, instead of running in slow motion");
+                      "on the title and the save menu), 60, adaptive, or unlocked. adaptive is 60 "
+                      "with frame skipping if the PC can't sustain it, to avoid slow motion.")
+    .allowed({"stock", "30", "60", "adaptive", "unlocked"});
 
 // Per-second frame pacing summary, off by default. Answers, in one line: what
 // rate are we declaring to the sim, how many presents/sec are we actually
@@ -164,10 +164,10 @@ constexpr std::array kGameDefaults = {
 // harmlessly for it on a build without Vulkan. gpu_backend no longer has a row
 // at all (it is set from the config file or the Advanced section), but stays
 // listed so an existing saved value survives a Reset-All round trip.
-constexpr std::array<const char*, 12> kBasicCvarNames = {
+constexpr std::array<const char*, 11> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
-    "audio_mute", "audio_volume", "adaptive_framerate", "field_leader_model"};
+    "audio_mute", "audio_volume", "field_leader_model"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -221,12 +221,19 @@ struct FrameRateOption {
   const char* label;
 };
 
+// The authority for both menus: the overlay's Frame Rate slider and the native
+// Options screen's Frame Rate row (eternalsonata_options.cpp) draw this same
+// list through FrameRateOptionLabel, so the two cannot drift.
+//
+// Ordered by how far each state lets the rate climb: 30, 60 pinned, 60 with the
+// ladder, then uncapped, which also keeps the two 60-based states adjacent.
 constexpr std::array kFrameRateOptions = {
     // "30" follows the game's own requests rather than pinning every screen to
     // 30: the title and the save menu ask for 60, and their logic is written for
     // it. The host limiter paces whatever is asked for, so speed stays correct.
     FrameRateOption{"30", "30 FPS"},
     FrameRateOption{"60", "60 FPS"},
+    FrameRateOption{"adaptive", "Adaptive"},
     FrameRateOption{"unlocked", "Unlocked"},
 };
 
@@ -363,7 +370,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     DrawResolutionRow();
     DrawRenderScaleRow();
     DrawFrameRateRow();
-    DrawAdaptiveFrameRateRow();
     DrawAudioMuteRow();
     DrawAudioVolumeRow();
     DrawLanguageRow();
@@ -746,21 +752,16 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // sim (byte_82465F90) and hold the present thread to it with a host limiter.
   // Applied at runtime, no restart needed.
   void DrawFrameRateRow() {
-    std::string current = rex::cvar::GetFlagByName("frame_rate");
-    int cur_idx = 0;
-    for (int i = 0; i < static_cast<int>(kFrameRateOptions.size()); ++i) {
-      if (current == kFrameRateOptions[i].id) {
-        cur_idx = i;
-        break;
-      }
-    }
+    const int cur_idx = FrameRateOptionIndex();
 
     ImGui::TextUnformatted("Frame Rate");
     if (ImGui::IsItemHovered()) {
       ImGui::SetTooltip(
           "How often the in-game scene and simulation advance. The original "
           "game is capped at 30 FPS; Unlocked runs as fast as the CPU and GPU "
-          "allow.");
+          "allow. Adaptive targets 60 but drops to 30 and then 20 rather than "
+          "running the game in slow motion, returning to 60 once there is "
+          "headroom again.");
     }
     ImGui::SameLine(180.0f);
     // Match the combo boxes in this menu (Language, Input Backend, ...).
@@ -773,33 +774,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
                          static_cast<int>(kFrameRateOptions.size()) - 1,
                          kFrameRateOptions[sel].label,
                          ImGuiSliderFlags_NoInput)) {
-      rex::cvar::SetFlagByName("frame_rate", kFrameRateOptions[sel].id,
-                               /*persist=*/true);
-      SaveBasic();
-    }
-    ImGui::PopID();
-  }
-
-  // Companion to the Frame Rate row above, and only meaningful next to it: it
-  // governs what happens when the selected rate can't be sustained. Hidden
-  // for "30" and "Unlocked", which have nothing to step down to
-  void DrawAdaptiveFrameRateRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("adaptive_framerate");
-    if (!entry)
-      return;
-    if (rex::cvar::GetFlagByName("frame_rate") != "60")
-      return;
-
-    ImGui::TextUnformatted("Adaptive Frame Rate");
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip(
-          "If the PC can't hold 60 FPS, drop to 30 and then 20 rather than running "
-          "the game in slow motion. Returns to 60 once there is headroom again.");
-    }
-    ImGui::SameLine(180.0f);
-    ImGui::PushID("adaptive_framerate");
-    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
-      SaveBasic();
+      // Sets both cvars, and persists them itself - hence no SaveBasic here.
+      SetFrameRateOption(sel);
     }
     ImGui::PopID();
   }
@@ -958,9 +934,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 }  // namespace
 
 // Ordered ascending; both this overlay's Resolution row and the native
-// Options screen's Resolution row (eternalsonata_options.cpp) treat this as
-// the definitive list, each truncating to however many entries it itself
-// offers (the native menu tops out at 1440p, no 4K row).
+// Options screen's Resolution row (eternalsonata_options.cpp) offer the same
+// four presets, each truncated to what the display can actually show by
+// AllowedResolutionCount.
 constexpr std::array<const char*, 4> kResolutionPresetsAscending = {"720p", "1080p", "1440p", "4K"};
 
 int AllowedResolutionCount() {
@@ -1017,6 +993,36 @@ void SetFrameRateSetting(const char* value) {
   SaveUserSettings();
 }
 
+int FrameRateOptionCount() {
+  return static_cast<int>(kFrameRateOptions.size());
+}
+
+const char* FrameRateOptionLabel(int index) {
+  if (index < 0 || index >= static_cast<int>(kFrameRateOptions.size())) {
+    return nullptr;
+  }
+  return kFrameRateOptions[index].label;
+}
+
+int FrameRateOptionIndex() {
+  const std::string cur = rex::cvar::GetFlagByName("frame_rate");
+  for (int i = 0; i < static_cast<int>(kFrameRateOptions.size()); ++i) {
+    if (cur == kFrameRateOptions[i].id) {
+      return i;
+    }
+  }
+  // Anything unrecognised - notably "stock", the old name for "30" - reads as
+  // the first entry, which is what the hooks themselves fall back to.
+  return 0;
+}
+
+void SetFrameRateOption(int index) {
+  if (index < 0 || index >= static_cast<int>(kFrameRateOptions.size())) {
+    return;
+  }
+  SetFrameRateSetting(kFrameRateOptions[index].id);
+}
+
 int UserLanguageCount() {
   return static_cast<int>(kLanguageOptions.size());
 }
@@ -1066,15 +1072,6 @@ void SetUserLanguageSetting(int index) {
   // banner notices a change made from the native Options row too.
   rex::cvar::SetFlagByName("user_language", kLanguageOptions[index].id,
                            /*persist=*/true);
-  SaveUserSettings();
-}
-
-void SetAdaptiveFramerateSetting(bool enabled) {
-  auto* entry = rex::cvar::GetFlagInfo("adaptive_framerate");
-  if (!entry || !entry->setter || (entry->getter() == "true") == enabled) {
-    return;
-  }
-  entry->setter(enabled ? "true" : "false");
   SaveUserSettings();
 }
 

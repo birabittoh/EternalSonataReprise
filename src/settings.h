@@ -61,15 +61,20 @@ void BindSettingsTargets(rex::ui::Window* window,
                          std::filesystem::path user_settings_path);
 
 // Applies the frame-rate cap end to end: updates the frame_rate cvar
-// ("30"/"60"/"unlocked") and persists. Used by the native Frame Rate row in
-// the game's Options screen; the value itself is applied by the host limiter
-// in eternalsonata_framerate.cpp, which reads the cvar directly.
+// ("30"/"60"/"adaptive"/"unlocked") and persists. The value itself is applied
+// by the host limiter in eternalsonata_framerate.cpp, which reads the cvar
+// directly. Prefer SetFrameRateOption below for anything menu-shaped.
 void SetFrameRateSetting(const char* value);
 
-// Applies the adaptive-frame-rate toggle end to end: updates the
-// adaptive_framerate cvar and persists. Used by the native Adaptive Frame
-// Rate row in the game's Options screen.
-void SetAdaptiveFramerateSetting(bool enabled);
+// The Frame Rate presets as an ordered list. Both the overlay's Frame Rate
+// slider and the native Options screen's Frame Rate row draw this same list so
+// they cannot drift. FrameRateOptionLabel is the text shown ("30 FPS",
+// "Adaptive", ...), FrameRateOptionIndex the entry the cvar currently holds,
+// and SetFrameRateOption writes and persists it.
+int FrameRateOptionCount();
+const char* FrameRateOptionLabel(int index);
+int FrameRateOptionIndex();
+void SetFrameRateOption(int index);
 
 // The user_language cvar as an ordered list, for the native Text row in the
 // game's Options screen. Index 0..UserLanguageCount()-1; UserLanguageCode

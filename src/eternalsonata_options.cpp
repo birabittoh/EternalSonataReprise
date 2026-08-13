@@ -21,9 +21,8 @@
 #include "field_player_model_override.h"
 #include "settings.h"
 
-// Cvars read by the row getters below. Defined (and persisted) in settings.cpp.
-REXCVAR_DECLARE(std::string, frame_rate);
-REXCVAR_DECLARE(bool, adaptive_framerate);
+// Cvars read below. Defined (and persisted) in settings.cpp. The rows' own
+// values go through the settings.cpp accessors rather than the cvars directly.
 REXCVAR_DECLARE(bool, menu_scan);
 
 // ---------------------------------------------------------------------------
@@ -481,28 +480,15 @@ int32_t BarWidthForValues(const std::vector<OptionValue>& values) {
                   static_cast<int32_t>(longest) * kBarWidthPerChar);
 }
 
-constexpr const char* kResolutionIds[3] = {"720p", "1080p", "1440p"};
+// Same presets, in the same order, as the overlay's Resolution row
+// (kResolutionPresetsAscending in settings.cpp); how many of them are actually
+// offered is decided per display by ResolutionRowValueCount below.
+constexpr const char* kResolutionIds[4] = {"720p", "1080p", "1440p", "4K"};
 
-// The Frame Rate row covers two cvars, not one. frame_rate picks the rate and
-// adaptive_framerate decides what happens when the PC cannot sustain it, but
-// the second is only meaningful at 60 - at 30 and unlocked there is nothing to
-// step down to - so as a pair they have exactly four states worth offering.
-// Folding them into one row is what makes that legible: "Adaptive" is 60 with
-// the ladder on, "60 FPS" is 60 pinned.
-//
-// Keep the three arrays index-aligned. The getter maps the cvar pair back to
-// an index through the *Rate/*Adaptive arrays, and the row draws *Values.
-// Ordered by how far each state lets the rate climb: 30, 60 pinned, 60 with
-// the ladder, then uncapped. That also keeps the two 60-based states adjacent,
-// which is what they are - the same rate, differing only in what happens when
-// the PC cannot hold it.
-constexpr const char* kFrameRateIds[4] = {"30", "60", "60", "unlocked"};
-constexpr bool kFrameRateAdaptive[4] = {false, false, true, false};
-constexpr const char* kFrameRateValues[4] = {"30 FPS", "60 FPS", "Adaptive",
-                                             "Unlocked"};
-static_assert(std::size(kFrameRateIds) == std::size(kFrameRateValues));
-static_assert(std::size(kFrameRateIds) == std::size(kFrameRateAdaptive));
-
+// The Frame Rate row draws settings.cpp's own preset list (see
+// FrameRateOptionLabel) rather than a copy of it, so this row and the overlay's
+// slider are the same four states by construction: 30, 60 pinned, 60 with the
+// adaptive ladder, and uncapped.
 int FrameRateGetIndex();
 void FrameRateSetIndex(u8* base, int idx);
 int ResolutionGetIndex();
@@ -569,8 +555,14 @@ std::vector<OptionRow>& Rows() {
     initial[0].get_index = &ResolutionGetIndex;
     initial[0].set_index = &ResolutionSetIndex;
     initial[0].page = kPageButtons;
-    MakeLiteralRow(initial[1], kLabelFrameRate, kFrameRateValues,
-                   static_cast<int>(std::size(kFrameRateValues)));
+    // Labels come from settings.cpp's preset list, so the row and the overlay's
+    // slider offer the same states in the same order.
+    std::vector<const char*> fps_values;
+    for (int i = 0; i < eternalsonata::FrameRateOptionCount(); ++i) {
+      fps_values.push_back(eternalsonata::FrameRateOptionLabel(i));
+    }
+    MakeLiteralRow(initial[1], kLabelFrameRate, fps_values.data(),
+                   static_cast<int>(fps_values.size()));
     initial[1].get_index = &FrameRateGetIndex;
     initial[1].set_index = &FrameRateSetIndex;
     initial[1].page = kPageButtons;
@@ -851,33 +843,12 @@ void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
   }
 }
 
-int FrameRateGetIndex() {
-  const std::string cur = REXCVAR_GET(frame_rate);
-  const bool adaptive = REXCVAR_GET(adaptive_framerate);
-  for (int i = 0; i < static_cast<int>(std::size(kFrameRateIds)); ++i) {
-    if (cur == kFrameRateIds[i] && adaptive == kFrameRateAdaptive[i]) {
-      return i;
-    }
-  }
-  // The rate matched no pair - "stock", or a rate whose adaptive flag is set
-  // where it means nothing. Fall back on the rate alone rather than reporting
-  // the first row: the flag is the part that does not matter here.
-  for (int i = 0; i < static_cast<int>(std::size(kFrameRateIds)); ++i) {
-    if (cur == kFrameRateIds[i]) {
-      return i;
-    }
-  }
-  return 0;
-}
+int FrameRateGetIndex() { return eternalsonata::FrameRateOptionIndex(); }
 
 void FrameRateSetIndex(u8* base, int idx) {
-  // Both cvars, every time. Picking a pinned rate has to clear the ladder or
-  // the row would not round-trip: adaptive_framerate defaults to true, so
-  // "60 FPS" would read back as "Adaptive" on the next entry.
-  eternalsonata::SetFrameRateSetting(kFrameRateIds[idx]);
-  eternalsonata::SetAdaptiveFramerateSetting(kFrameRateAdaptive[idx]);
-  REXLOG_INFO("[options] frame_rate -> {} (adaptive {})", kFrameRateIds[idx],
-              kFrameRateAdaptive[idx]);
+  eternalsonata::SetFrameRateOption(idx);
+  REXLOG_INFO("[options] frame_rate -> {}",
+              eternalsonata::FrameRateOptionLabel(idx));
 }
 
 int ResolutionGetIndex() {
