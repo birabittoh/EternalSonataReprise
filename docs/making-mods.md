@@ -469,6 +469,99 @@ missing-entry-point failure). Rebuild every mod (`make_mods.py`, or the direct
 "Both builds, one DLL" below) any time you update the SDK, whether or not
 you're using anything new it added.
 
+## Adding rows to the game's native Options screen
+
+A mod can add its own rows to the in-game Options screen -- the real one, drawn
+by the game's own text renderer and navigated with the game's own cursor, not
+an ImGui overlay. There is only one Options screen; a row added this way shows
+up both from the main menu and from the in-game status screen.
+
+Options is two pages, paged with LB/RB. Page 1 (`ETERNALSONATA_PAGE_GAME`) is
+the Options screen proper, where the game's own Subtitles and Voice rows live
+alongside this project's Text row; page 2 (`ETERNALSONATA_PAGE_GRAPHICS`) is the
+button-configuration screen, which the project uses for graphics settings --
+Resolution and Frame Rate.
+
+**A mod row lands on page 2 by default.** Page 1 is reserved for the game's own
+settings and is expected to fill up with them.
+`EternalSonataSetOptionRowPage(row, ETERNALSONATA_PAGE_GAME)` moves a row over
+if you have a reason to.
+
+The entry points are exported from the host executable, not from the SDK, so
+you resolve them at runtime rather than linking against anything. Copy
+`src/eternalsonata_options_api.h` from this repo into your mod for the
+signatures and the full contract, then:
+
+```cpp
+#include "eternalsonata_options_api.h"
+
+static const char* kValues[] = {"Off", "On"};
+static int  MyGet(void* user)            { return g_my_setting ? 1 : 0; }
+static void MySet(int index, void* user) { g_my_setting = (index == 1); }
+
+void MyMod::OnModuleLaunched() {
+  auto reg = reinterpret_cast<EternalSonataRegisterOptionRowFn>(
+      GetProcAddress(GetModuleHandle(nullptr), "EternalSonataRegisterOptionRow"));
+  if (!reg) {
+    return;  // older host build -- degrade gracefully, don't fail to load
+  }
+  int row = reg("My Setting", kValues, 2, &MyGet, &MySet, nullptr);
+
+  auto set_label = reinterpret_cast<EternalSonataSetOptionRowLabelFn>(
+      GetProcAddress(GetModuleHandle(nullptr), "EternalSonataSetOptionRowLabel"));
+  if (set_label && row >= 0) {
+    set_label(row, ETERNALSONATA_LANG_IT, "Mia impostazione");
+  }
+
+  // Optional: put the row on the game page instead of the graphics one.
+  auto set_page = reinterpret_cast<EternalSonataSetOptionRowPageFn>(
+      GetProcAddress(GetModuleHandle(nullptr), "EternalSonataSetOptionRowPage"));
+  if (set_page && row >= 0) {
+    set_page(row, ETERNALSONATA_PAGE_GAME);
+  }
+}
+```
+
+Things worth knowing before you use it:
+
+- **Always null-check the `GetProcAddress` result.** A mod built against a
+  newer host has to keep loading on an older one. Call
+  `EternalSonataOptionsAbiVersion()` if you need to branch on host capability.
+- **Register from `OnModuleLaunched()`.** Rows registered later still appear,
+  but only the next time the screen is built -- not on a screen already open.
+- **Room is finite, and it is per page: 8 rows on page 1, 7 on page 2.** That
+  is the game's limit, not an arbitrary one: a selectable group's item array is
+  pre-allocated with 10 slots, of which page 1's stock Subtitles and Voice rows
+  take 2 and page 2's three button rows take 3. Registration past that is
+  refused and logged rather than corrupting the menu. The project's own rows
+  take two of page 2's seven (Resolution, Frame Rate) and one of page 1's eight
+  (Text).
+- **Values are drawn side by side on one line, so keep them short.** They share
+  the width between the row's value column and the end of the row rule, about
+  630px. Columns are evenly spaced when that fits -- 200px each for two or
+  three values, ~157px for four, ~126px for five -- and fall back to
+  content-aware placement when the longest value would not fit an even column,
+  giving each value the room it needs and sharing the remainder as equal gaps.
+  Either way the budget is finite: a row with many values needs abbreviated
+  ones, which is why the built-in Text row draws "EN"/"DE"/"FR"/"ES"/"IT"
+  rather than language names. Labels have their own budget of about 13
+  characters before they reach the value column.
+- **Text is single-byte CP1252/Latin-1, not UTF-8.** The game's font draws one
+  glyph per byte, so `"é"` written as UTF-8 renders as two garbled glyphs.
+  Write `"\xE9"`.
+- **Labels are localisable, values are not.** One label covers every language;
+  `EternalSonataSetOptionRowLabel` overrides individual ones. Values (FPS
+  figures, resolution names) are conventionally left untranslated, which is how
+  the built-in rows behave too.
+- **`get` is polled, `set` runs on the guest menu thread.** Neither may block,
+  and `set` must not re-enter this API.
+
+The built-in Resolution and Frame Rate rows go through this exact registration
+path -- there is no privileged internal route -- so anything that works for
+them works for a mod row. See `src/eternalsonata_options.cpp` for the
+underlying display-list and selection work, and `docs/debug-hooks.md` §14 for
+the reverse engineering it rests on.
+
 ## Patching static game text/data
 
 Item/enemy names, descriptions, and similar flavor text aren't loaded from
