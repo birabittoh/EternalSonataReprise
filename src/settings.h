@@ -60,6 +60,22 @@ void SaveUserSettings();
 void BindSettingsTargets(rex::ui::Window* window,
                          std::filesystem::path user_settings_path);
 
+// Whether a cvar changed this session still needs a relaunch to take effect,
+// the same state the F4 overlay's "Some changes require a restart to take
+// effect." banner reads. IsCvarPendingRestart asks about one cvar (used by the
+// native Options rows to mark themselves), AnyCvarPendingRestart about every
+// cvar this settings UI owns. Only cvars actually changed at runtime count: a
+// saved preference loaded at boot is not pending anything.
+bool IsCvarPendingRestart(const char* name);
+bool AnyCvarPendingRestart();
+
+// Relaunches the game and closes this instance, so the next launch picks up the
+// restart-scoped cvars changed this session. Safe to call from the guest CPU
+// thread (the window close is marshalled onto the UI thread). Returns false, and
+// does nothing, if the relaunch could not be started or BindSettingsTargets has
+// not run yet.
+bool RestartNow();
+
 // Applies the frame-rate cap end to end: updates the frame_rate cvar
 // ("30"/"60"/"adaptive"/"unlocked") and persists. The value itself is applied
 // by the host limiter in eternalsonata_framerate.cpp, which reads the cvar
