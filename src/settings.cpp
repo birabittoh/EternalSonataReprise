@@ -128,8 +128,14 @@ constexpr std::array kGameDefaults = {
     DefaultValue{"gpu_plugin", "xenos"},
     DefaultValue{"game_data_root", "assets"},
     DefaultValue{"gpu_allow_invalid_fetch_constants", "true"},
-    DefaultValue{"d3d12_readback_memexport", "true"},
-    DefaultValue{"d3d12_readback_resolve", "true"},
+    // "fast" always copies the resolve readback to CPU memory every submission
+    // (reading a one-frame-delayed buffer to avoid a GPU stall); "some" skips
+    // that copy whenever the delayed buffer is still valid and only copies on
+    // a cache miss, so it is the lighter of the two. The legacy per-backend
+    // d3d12_readback_resolve/vulkan_readback_resolve bools are aliases this
+    // shared cvar overrides whenever it has a non-default value, so setting
+    // this is enough; they are not set here.
+    DefaultValue{"readback_resolve", "some"},
     DefaultValue{"clear_memory_page_state", "true"},
     // The game binds an 8-tile-wide render target at EDRAM tile 1720 whose draws
     // give no usable height estimate, so it claims all 2048 tiles and takes
@@ -240,14 +246,19 @@ constexpr std::array kFrameRateOptions = {
 // cvars rendered generically in the collapsed Advanced section, persisted to
 // the app's normal cvar config (eternalsonata.toml).
 //
-// Deliberately absent: gpu_allow_invalid_fetch_constants, d3d12_readback_resolve
-// and no_edram_wrap_claim. Those are not preferences, they are the workarounds
-// this game needs to render correctly (no_edram_wrap_claim in particular is the
-// fix for the black cross-fades and the black half of the save screenshot -- see
-// kGameDefaults). They keep their defaults from kGameDefaults and can still be
-// set from eternalsonata.toml for debugging; they just are not offered as
+// Deliberately absent: gpu_allow_invalid_fetch_constants and no_edram_wrap_claim.
+// Those are not preferences, they are the workarounds this game needs to
+// render correctly (no_edram_wrap_claim in particular is the fix for the
+// black cross-fades and the black half of the save screenshot; see
+// kGameDefaults). They keep their defaults from kGameDefaults and can still
+// be set from eternalsonata.toml for debugging; they just are not offered as
 // something to switch off by hand.
-constexpr std::array<const char*, 7> kAdvancedCvarNames = {
+//
+// readback_resolve declares .allowed({"none", "fast", "some", "full"}) in the
+// SDK, so DrawCvarWidget already renders it as a combo; it's listed last so
+// it lands directly above the custom gpu_plugin row (see DrawGpuPluginRow,
+// called right after this list's loop in OnDraw).
+constexpr std::array<const char*, 8> kAdvancedCvarNames = {
     "shader_dump_enabled",
     "texture_dump_enabled",
     "texture_dump_format",
@@ -255,6 +266,7 @@ constexpr std::array<const char*, 7> kAdvancedCvarNames = {
     "mnk_capture_mouse",
     "mnk_mode",
     "swap_post_effect",
+    "readback_resolve",
 };
 
 // True once `name`'s cvar has actually been changed at runtime this session
