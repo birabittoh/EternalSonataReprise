@@ -71,6 +71,18 @@ void SetFrameRateSetting(const char* value);
 // Rate row in the game's Options screen.
 void SetAdaptiveFramerateSetting(bool enabled);
 
+// The user_language cvar as an ordered list, for the native Text row in the
+// game's Options screen. Index 0..UserLanguageCount()-1; UserLanguageCode
+// returns the two-letter form the row draws ("EN", "DE", ...), and
+// UserLanguageIndex the entry the cvar currently holds (0 if unrecognised).
+// SetUserLanguageSetting writes and persists it; the guest only reads its
+// language at boot, so the change needs a restart to show, and it is recorded
+// as a pending restart accordingly.
+int UserLanguageCount();
+const char* UserLanguageCode(int index);
+int UserLanguageIndex();
+void SetUserLanguageSetting(int index);
+
 // Applies a named resolution end to end: updates the resolution cvar and the
 // paired resolution_scale cvar (see ResolutionScaleFor), and persists. `value`
 // is one of "720p"/"1080p"/"1440p"/"4K". Used by the native Resolution row in

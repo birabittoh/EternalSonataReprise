@@ -200,15 +200,20 @@ int VolumePercentFromAmplitude(double amplitude) {
 struct LanguageOption {
   const char* id;  // stringified XLanguage value, as stored by the cvar
   const char* label;
+  // Two-letter form for the native Options screen's Text row. That row draws
+  // its values side by side in one line, so full names do not fit: five
+  // columns have to share the width between the value column and the row
+  // rule, which is about 126px each against roughly 25px per character.
+  const char* code;
 };
 
 // XLanguage IDs per the Xbox 360 kernel's user_language cvar
 constexpr std::array kLanguageOptions = {
-    LanguageOption{"1", "English"},
-    LanguageOption{"3", "German"},
-    LanguageOption{"4", "French"},
-    LanguageOption{"5", "Spanish"},
-    LanguageOption{"6", "Italian"},
+    LanguageOption{"1", "English", "EN"},
+    LanguageOption{"3", "German", "DE"},
+    LanguageOption{"4", "French", "FR"},
+    LanguageOption{"5", "Spanish", "ES"},
+    LanguageOption{"6", "Italian", "IT"},
 };
 
 struct FrameRateOption {
@@ -1006,6 +1011,46 @@ void SetFrameRateSetting(const char* value) {
   // registered change callbacks and sets persist_to_config, same as every
   // other settings path in this file (DrawFrameRateRow included).
   rex::cvar::SetFlagByName("frame_rate", value, /*persist=*/true);
+  SaveUserSettings();
+}
+
+int UserLanguageCount() {
+  return static_cast<int>(kLanguageOptions.size());
+}
+
+const char* UserLanguageCode(int index) {
+  if (index < 0 || index >= static_cast<int>(kLanguageOptions.size())) {
+    return nullptr;
+  }
+  return kLanguageOptions[index].code;
+}
+
+int UserLanguageIndex() {
+  const auto* entry = rex::cvar::GetFlagInfo("user_language");
+  if (!entry) {
+    return 0;
+  }
+  const std::string current = entry->getter();
+  for (int i = 0; i < static_cast<int>(kLanguageOptions.size()); ++i) {
+    if (current == kLanguageOptions[i].id) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+void SetUserLanguageSetting(int index) {
+  if (index < 0 || index >= static_cast<int>(kLanguageOptions.size())) {
+    return;
+  }
+  // user_language is kRequiresRestart: the guest reads its language once at
+  // boot (it ends up in dword_8243D370, which is what picks the display list
+  // for every screen), so nothing on screen changes until the game is
+  // restarted. Going through SetFlagByName rather than entry->setter is what
+  // records that with MarkPendingRestart, so the overlay's "restart to apply"
+  // banner notices a change made from the native Options row too.
+  rex::cvar::SetFlagByName("user_language", kLanguageOptions[index].id,
+                           /*persist=*/true);
   SaveUserSettings();
 }
 
