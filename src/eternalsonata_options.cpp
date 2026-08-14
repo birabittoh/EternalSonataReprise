@@ -1161,6 +1161,27 @@ void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
   }
 }
 
+// Parks every one of `page`'s bars off-screen instantly. Called the moment
+// the cursor hook notices the page is no longer active: without this, a bar
+// stays wherever the last per-frame update left it while the screen's own
+// close animation scrolls the background away underneath it, so it hangs in
+// place and only vanishes once the game destroys the screen's objects - well
+// after the background has already scrolled past. Page 1's bars don't show
+// this because kStateOptionRows/kStateOptionSlider stay active for the whole
+// close animation, so MoveOptionBar keeps tracking them until the screen is
+// actually gone; page 2's kStateButtons drops out before the scroll finishes.
+void HideAllPageBars(u8* base, int page) {
+  PageState& st = g_page[page];
+  if (!g_bar_vec) {
+    return;
+  }
+  for (const auto& ids : st.bar_id) {
+    for (u32 id : ids) {
+      PlaceBar(base, id, kBarParkedX, 0, /*move=*/false);
+    }
+  }
+}
+
 int FrameRateGetIndex() { return eternalsonata::FrameRateOptionIndex(); }
 
 void FrameRateSetIndex(u8* base, int idx) {
@@ -2120,9 +2141,15 @@ REX_HOOK_RAW(sub_821F62B8) {
   __imp__sub_821F62B8(ctx, base);
 
   const int page = ActivePage(base);
+  static int s_last_active_page = -1;
   if (page < 0) {
+    if (s_last_active_page >= 0) {
+      HideAllPageBars(base, s_last_active_page);
+      s_last_active_page = -1;
+    }
     return;
   }
+  s_last_active_page = page;
   g_options_last_seen = std::chrono::steady_clock::now();
   PageState& st = g_page[page];
   if (!st.list) {
