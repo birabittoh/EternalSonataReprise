@@ -7,6 +7,7 @@
 #include <rex/discord_rpc.h>
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
+#include <rex/system/mod_plugin.h>
 #include <rex/system/mod_registry.h>
 #include <rex/system/xmemory.h>
 
@@ -293,6 +294,6 @@ RoomPresence& GetRoomPresence() {
 // reliably derivable from guest memory alone (the scene-mode register only
 // exposes the *end* of a battle, not the whole span), which is exactly the
 // mistake the party_overlay mod made before this was added.
-extern "C" __declspec(dllexport) bool EternalSonataIsBattleActive() {
+extern "C" REX_MOD_PLUGIN_EXPORT bool EternalSonataIsBattleActive() {
   return eternalsonata::GetRoomPresence().IsBattleActive();
 }
