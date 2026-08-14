@@ -92,9 +92,9 @@ constexpr u32 kButtonsListByLang[5] = {
 };
 constexpr u32 kButtonsListBytes = 0x460u;
 
-// Splice point: just past the whole Sottotitoli row group - its label
+// Splice point: just past the whole Subtitles row group - its label
 // (0x8205EF64), the "Si" and "NO" value records, and the type-600 underline -
-// i.e. guest 0x8205EFEC. Sottotitoli is the closest analogue to what we are
+// i.e. guest 0x8205EFEC. Subtitles is the closest analogue to what we are
 // adding (a boolean row), so inserting here puts our records in exactly the
 // drawing state the real rows are in. Appending at the end of the list instead
 // made the label render offset from its own cursor position.
@@ -126,7 +126,7 @@ constexpr u32 kIconRecord = 100u;
 constexpr u32 kIconRecordBytes = 0x1Cu;
 
 // Type 600 is the grey rule between rows: {600, x, y, width}, 0x10 bytes,
-// emitted last in a row's group. The stock Sottotitoli one at 0x75C is
+// emitted last in a row's group. The stock Subtitles one at 0x75C is
 // {600, 120, 328, 950} against a row whose text sits at y=285 - so a rule is
 // drawn 43px below its own row's text and spans the full menu width, whatever
 // that row's label and values are.
@@ -244,12 +244,12 @@ constexpr u32 kListTerminator = 0x0000FFFFu;
 constexpr int32_t kRowYStep = 50;
 constexpr int32_t kRowXLabel = 120;   // same in every language (verified: label x doesn't shift)
 // The value column's *base* x is per-language (Italian/French 490, English
-// 440, ... - confirmed 2026-08-06 by diffing the stock Sottotitoli record
+// 440, ... - confirmed 2026-08-06 by diffing the stock Subtitles record
 // across languages), so it is read at runtime from that very record rather
 // than hardcoded; hardcoding it (as this constant briefly was) is what put
 // every non-Italian/French row's values visibly right of the real column.
 // The 200px stride between columns does not shift, only the base does.
-constexpr u32 kSottotitoliValue1Offset = 0x70Cu;  // "Si" text record, right after Sottotitoli's label
+constexpr u32 kSubtitlesValue1Offset = 0x70Cu;  // "Yes" text record, right after Subtitles' label
 // A row's synthetic BTX ids are laid out label-then-values inside one stride
 // of kRowSidStride, so the stride is what caps values per row.
 constexpr u32 kMaxRowValues = ETERNALSONATA_MAX_ROW_VALUES;
@@ -880,7 +880,7 @@ bool g_options_from_main_menu = false;
 std::chrono::steady_clock::time_point g_options_last_seen{};
 constexpr auto kOptionsGoneDelay = std::chrono::milliseconds(400);
 
-constexpr u8 kSubtitleRowIndex = 0;  // Sottotitoli, the reference two-option row
+constexpr u8 kSubtitleRowIndex = 0;  // Subtitles, the reference two-option row
 
 // Pad state. sub_821281B8 polls an array of 4 pad objects at 0x824BB418,
 // stride 464; sub_82128310 fills each one: +424 = buttons held this frame,
@@ -1241,7 +1241,7 @@ void WriteBarRecord(u8* base, u32 at, u32 src_list, int32_t x, int32_t y,
   std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + kBarRecordOffset),
               kBarRecordBytes);
   // The x the stock record carries is the value column of value 0 (490 in the
-  // Italian list, the same number the Sottotitoli value text record holds), so
+  // Italian list, the same number the Subtitles value text record holds), so
   // it answers the same question ValueColumnOffset does. Writing the row's
   // *current* value into it - in the runtime space the placement call uses, see
   // the caller - is what gets the bar created where it belongs instead of on
@@ -1401,12 +1401,12 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   const u32 src_list = pl.lists[lang_idx];
   const u32 tpl_list = kOptionsListByLang[lang_idx];
   st.value_base_x =
-      static_cast<int32_t>(REX_LOAD_U32(tpl_list + kSottotitoliValue1Offset + 8));
+      static_cast<int32_t>(REX_LOAD_U32(tpl_list + kSubtitlesValue1Offset + 8));
   // How far below a row's text its separator sits, taken from the stock
-  // Sottotitoli group (text y=285, rule y=328) rather than hardcoded, so it
+  // Subtitles group (text y=285, rule y=328) rather than hardcoded, so it
   // tracks the game if the row metrics differ per language.
   const int32_t stock_row_y =
-      static_cast<int32_t>(REX_LOAD_U32(tpl_list + kSottotitoliValue1Offset + 0x0C));
+      static_cast<int32_t>(REX_LOAD_U32(tpl_list + kSubtitlesValue1Offset + 0x0C));
   const int32_t stock_sep_y =
       static_cast<int32_t>(REX_LOAD_U32(tpl_list + kSepRecordOffset + kSepYOffset));
   const int32_t sep_dy = stock_sep_y - stock_row_y;
@@ -1476,7 +1476,7 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   std::memcpy(REX_RAW_ADDR(list), REX_RAW_ADDR(src_list), pl.insert_offset);
   u32 at = list + pl.insert_offset;
 
-  // Mirror the Sottotitoli row's layout for every row: label at X=120 and
+  // Mirror the Subtitles row's layout for every row: label at X=120 and
   // every value drawn side by side from the language's real value column,
   // 200px apart. Each row also gets the separator that belongs *above* it -
   // drawn where the preceding row's rule would sit, one row pitch up - so the
@@ -1738,8 +1738,8 @@ REX_HOOK_RAW(sub_821F2F38) {
 // watchpoint on the survivor finds the code that reads it.
 //
 // Workflow (keys are polled here because this hook runs every menu frame):
-//   F9  - capture state A   (e.g. Sottotitoli = Si)
-//   F10 - capture state B   (e.g. Sottotitoli = NO)
+//   F9  - capture state A   (e.g. Subtitles = Yes)
+//   F10 - capture state B   (e.g. Subtitles = No)
 //   F11 - report surviving candidates
 //   F12 - reset the hunt
 // Alternate F9/F10 across several toggles; the candidate set collapses fast.
