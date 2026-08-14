@@ -17,6 +17,7 @@
 #endif
 
 #include <rex/cvar.h>
+#include <rex/system/mod_plugin.h>
 
 #include "eternalsonata_hooks_internal.h"
 #include "field_player_model_override.h"
@@ -2339,11 +2340,11 @@ namespace {
 std::mutex g_registry_mutex;
 }  // namespace
 
-extern "C" __declspec(dllexport) uint32_t EternalSonataOptionsAbiVersion(void) {
+extern "C" REX_MOD_PLUGIN_EXPORT uint32_t EternalSonataOptionsAbiVersion(void) {
   return ETERNALSONATA_OPTIONS_ABI_VERSION;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataRegisterOptionRow(
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterOptionRow(
     const char* label, const char* const* values, int value_count,
     EternalSonataOptionGetFn get, EternalSonataOptionSetFn set, void* user) {
   if (!label || !*label || !values || !get || !set) {
@@ -2395,7 +2396,7 @@ extern "C" __declspec(dllexport) int EternalSonataRegisterOptionRow(
   return index;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataSetOptionRowLabel(
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetOptionRowLabel(
     int row, int language, const char* label) {
   if (!label || language < 0 || language >= kLanguageCount) {
     return 0;
@@ -2409,7 +2410,7 @@ extern "C" __declspec(dllexport) int EternalSonataSetOptionRowLabel(
   return 1;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataSetOptionValue(
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetOptionValue(
     int row, int value, int language, const char* text, int bar_width) {
   if (language < 0 || language >= kLanguageCount || bar_width < 0) {
     return 0;
@@ -2434,7 +2435,7 @@ extern "C" __declspec(dllexport) int EternalSonataSetOptionValue(
   return 1;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataSetOptionRowPage(int row,
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetOptionRowPage(int row,
                                                                   int page) {
   if (page < 0 || page >= kPageCount) {
     return 0;

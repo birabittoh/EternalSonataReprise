@@ -444,7 +444,9 @@ void PreciseSleep(std::chrono::steady_clock::duration d) {
 //
 // Deliberately momentary rather than a toggle: a stuck fast-forward in a
 // cutscene is unrecoverable without noticing what happened.
+#ifdef _WIN32
 constexpr int kTurboKey = VK_TAB;
+#endif
 
 bool TurboHeld() {
 #ifdef _WIN32
