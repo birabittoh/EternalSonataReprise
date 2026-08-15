@@ -91,6 +91,7 @@ set(ETERNALSONATA_SOURCES
     src/party_counts.cpp
     src/party_save.cpp
     src/party_bounds.cpp
+    src/party_ui_guard.cpp
     src/guest_main_thread.cpp
     src/force_load_area.cpp
     src/field_player_model_override.cpp
