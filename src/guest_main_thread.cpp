@@ -11,6 +11,11 @@ namespace {
 std::mutex g_mutex;
 std::vector<std::function<void()>> g_pending;
 
+// Set for the duration of a drain, on the draining thread only. Thread-local
+// rather than a plain flag: the question it answers is "is *this* thread the
+// guest main thread", and any number of other threads may ask it concurrently.
+thread_local bool g_draining = false;
+
 }  // namespace
 
 void PostToGuestMainThread(std::function<void()> work) {
@@ -32,9 +37,13 @@ void DrainGuestMainThread() {
   }
   // Run outside the lock: a callback is free to post follow-up work, which
   // then runs on the next frame rather than deadlocking here.
+  g_draining = true;
   for (auto& fn : work) {
     fn();
   }
+  g_draining = false;
 }
+
+bool OnGuestMainThread() { return g_draining; }
 
 }  // namespace eternalsonata

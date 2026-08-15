@@ -562,6 +562,53 @@ them works for a mod row. See `src/eternalsonata_options.cpp` for the
 underlying display-list and selection work, and `docs/debug-hooks.md` §14 for
 the reverse engineering it rests on.
 
+## Reading and changing the party
+
+A mod can ask who is in the party, read and write their stats, add and remove
+members, reorder them and rename them, without knowing a single guest address.
+Copy
+`src/eternalsonata_party_api.h` from this repo into your mod for the
+signatures and the full contract, then resolve the entry points out of the host
+executable exactly as with the Options API:
+
+```cpp
+#include "eternalsonata_party_api.h"
+
+auto add = reinterpret_cast<EternalSonataAddCharacterToPartyFn>(
+    GetProcAddress(GetModuleHandle(nullptr), "EternalSonataAddCharacterToParty"));
+if (add) {
+  add(ETERNALSONATA_CHAR_VIOLA);
+}
+```
+
+Things worth knowing before you use it:
+
+- **Always null-check the `GetProcAddress` result**, and call
+  `EternalSonataPartyAbiVersion()` if you need to branch on host capability. A
+  mod built against a newer host has to keep loading on an older one.
+- **Reads answer immediately; writes are queued.** Anything that has to run
+  guest code (add, remove, reorder, stat writes) is queued onto the guest main
+  thread and returns `ETERNALSONATA_PARTY_QUEUED`, because a guest call from
+  the ImGui draw thread crashes the game. The rejections that can be decided
+  without running guest code -- unknown character, no save loaded, battle in
+  progress, already in the party -- are still returned immediately. Poll
+  `EternalSonataIsCharacterInParty` to see a queued change land.
+- **Party edits are refused during a battle.** The game's own join sequence
+  crashes mid-battle; `EternalSonataIsPartyEditable()` is the flag to gate your
+  UI on, and every mutation checks it anyway.
+- **There are ten character slots and there is no eleventh.** The game's cast is
+  fixed, the per-character tables are exactly ten wide with no room to grow, and
+  the API does not pretend otherwise. `docs/party-system.md` has the details.
+- **Renaming shows up on the menu screens only.** The status, equipment and
+  party screens resolve names through a text lookup the host answers; the battle
+  HUD reads the game's packed name tables directly and still shows the built-in
+  name.
+- **Names are single-byte CP1252/Latin-1, not UTF-8**, like every other string
+  the game's own font draws.
+
+`docs/party-system.md` documents the guest-side structures the API sits on, if
+you need to know what a call actually does.
+
 ## Patching static game text/data
 
 Item/enemy names, descriptions, and similar flavor text aren't loaded from

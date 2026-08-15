@@ -21,6 +21,7 @@
 
 #include "eternalsonata_hooks_internal.h"
 #include "field_player_model_override.h"
+#include "party_system.h"
 #include "settings.h"
 
 // Cvars read below. Defined (and persisted) in settings.cpp. The rows' own
@@ -1657,7 +1658,26 @@ void ResolveBars(u8* base, int page) {
 
 // sub_8223B780(blob, string_id) -> char*: the BTX text lookup. Answer our
 // synthetic ids ourselves and let every real id fall through untouched.
+//
+// This is also where a renamed character gets its new name. Every screen that
+// draws a character name resolves it through here, so party_system.cpp only
+// has to recognise the string the stock lookup returned and hand back its own
+// (see PartyNameOverrideFor). It lives in this hook rather than its own
+// because a guest function can only be hooked once.
 REX_EXTERN(__imp__sub_8223B780);
+
+namespace {
+
+// Runs the stock lookup and applies any character-name override to its result.
+void BtxLookupWithNameOverrides(PPCContext& ctx, u8* base) {
+  __imp__sub_8223B780(ctx, base);
+  const u32 replacement = eternalsonata::PartyNameOverrideFor(ctx.r3.u32);
+  if (replacement) {
+    ctx.r3.u32 = replacement;
+  }
+}
+
+}  // namespace
 
 REX_HOOK_RAW(sub_8223B780) {
   const u32 sid = ctx.r4.u32;
@@ -1701,13 +1721,13 @@ REX_HOOK_RAW(sub_8223B780) {
           // indicating which one is active still needs the game's own
           // highlight mechanism (see docs §14, open work).
           ctx.r4.u32 = val.btx_id;
-          __imp__sub_8223B780(ctx, base);
+          BtxLookupWithNameOverrides(ctx, base);
           return;
         }
       }
     }
   }
-  __imp__sub_8223B780(ctx, base);
+  BtxLookupWithNameOverrides(ctx, base);
 }
 
 // sub_821F2F38(a1, list, ...): the display-list interpreter. Swap the Options
