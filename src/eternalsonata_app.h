@@ -27,6 +27,7 @@
 #include "fonts.generated.h"
 #include "force_load_area.h"
 #include "icon.generated.h"
+#include "party_relocation.h"
 #include "party_system.h"
 #include "room_presence.h"
 #include "settings.h"
@@ -95,6 +96,12 @@ class EternalsonataApp : public rex::ReXApp {
   }
 
   void OnPostSetup() override {
+    // Guest memory for the relocated per-character party arrays. This has to
+    // run before the guest does: the mid-ASM hooks in eternalsonata_config.toml
+    // point every relocated access at this page, so without it the first party
+    // array touch faults. See src/party_relocation.h for the layout.
+    eternalsonata::ReservePartyRelocationMemory(runtime());
+
     // Seed the GPU plugin/Vulkan device lists once here rather than every
     // time the F4 settings overlay is opened (see settings.cpp).
     eternalsonata::InitSettingsCaches();

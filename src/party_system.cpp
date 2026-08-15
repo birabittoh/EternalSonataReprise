@@ -42,6 +42,7 @@
 
 #include "eternalsonata_party_api.h"
 #include "guest_main_thread.h"
+#include "party_relocation.h"
 #include "party_system.h"
 #include "room_presence.h"
 
@@ -73,7 +74,17 @@ constexpr uint32_t kPositionsAddr = 0x8243FC08u;
 //   kBaseStatsAddr  the character's own stats (what a save holds)
 //   kLiveStatsAddr  the same with equipment folded in - what the status and
 //                   equipment screens draw
-constexpr uint32_t kBaseStatsAddr = 0x8243FEE8u;
+//
+// The base stats array no longer lives at 0x8243FEE8. Raising the cast to
+// twelve moved it: the two arrays sat back to back with no padding, so the cold
+// one was relocated to free the space the hot one grows into. The mid-ASM hooks
+// rewrite the *guest code* that references it, which does nothing for the
+// direct guest-memory reads below, so this constant has to follow the array to
+// its new home by hand. See party_relocation.h.
+//
+// kLiveStatsAddr is unchanged: that array is the one that stayed put and grew
+// in place, into the bytes the base array vacated.
+constexpr uint32_t kBaseStatsAddr = kStatsBaseBase;
 constexpr uint32_t kLiveStatsAddr = 0x8243FD08u;
 constexpr uint32_t kStatsStride = 48u;
 
@@ -123,11 +134,28 @@ REX_IMPORT(__imp__sub_821E7898, g_refresh_stats, u32(u32, u32));
 
 constexpr int kCharacterCount = ETERNALSONATA_CHARACTER_COUNT;
 
+// How many characters the retail game itself has, as opposed to how many slots
+// exist now. The two differ since the cast was widened to twelve, and the
+// difference matters wherever this file reads one of the *game's* own ten-entry
+// tables rather than one of the widened ones.
+constexpr int kNativeCharacterCount = ETERNALSONATA_NATIVE_CHARACTER_COUNT;
+static_assert(kCharacterCount >= kNativeCharacterCount,
+              "the cast cannot be smaller than the game's own");
+
 // The cast in character-number order, as the game's own text blocks store it.
 // Note Polka is 2, Beat 3, Frederic 4.
+//
+// The game has no string at all for the two added slots, so they get a
+// placeholder rather than an empty string: every caller of
+// EternalSonataGetCharacterName puts the result straight into a label or a
+// button, and an empty one renders as a blank the user cannot identify or
+// click. A mod that supplies a real name through EternalSonataSetCharacterName
+// overrides it, and ETERNALSONATA_CHAR_FIRST_ADDED is how to tell a placeholder
+// from a name the game actually shipped.
 constexpr const char* kDefaultNames[kCharacterCount + 1] = {
-    "",     "Allegretto", "Polka",  "Beat",   "Frederic", "Viola",
-    "Salsa", "Jazz",      "Falsetto", "Claves", "March"};
+    "",      "Allegretto", "Polka",    "Beat",   "Frederic",    "Viola",
+    "Salsa", "Jazz",       "Falsetto", "Claves", "March",
+    "Character 11", "Character 12"};
 
 // ---------------------------------------------------------------------------
 // Host state
@@ -351,10 +379,15 @@ void DiscoverNameStringsLocked() {
       // Walk the ten names of this block, recording where each one starts and
       // what it says, and refuse anything that does not look like a name so a
       // coincidental match cannot lead the patcher into unrelated bytes.
+      //
+      // Ten, not kCharacterCount: these are the game's own packed name tables
+      // and they hold one string per *retail* character. Demanding twelve here
+      // would reject every real block and silently turn off name discovery for
+      // the ten characters that do have names.
       uint32_t address = page + i;
-      NameString found[kCharacterCount];
+      NameString found[kNativeCharacterCount];
       int count = 0;
-      for (int slot = 1; slot <= kCharacterCount; ++slot) {
+      for (int slot = 1; slot <= kNativeCharacterCount; ++slot) {
         const auto* text = memory->TranslateVirtual<const char*>(address);
         if (!text) {
           break;
@@ -366,7 +399,7 @@ void DiscoverNameStringsLocked() {
         found[count++] = NameString{address, slot, ruby, std::string(text, length)};
         address += static_cast<uint32_t>(length) + 1;
       }
-      if (count != kCharacterCount) {
+      if (count != kNativeCharacterCount) {
         continue;
       }
       for (const NameString& name : found) {

@@ -44,6 +44,11 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
+//
+// Still 1 through the cast going from ten characters to twelve: nothing has
+// shipped against this ABI yet, so the mods in ../EternalSonataReprise-Mods are
+// simply rebuilt against the new constant rather than being asked to cope with
+// two versions of it. Bump this the first time a release goes out.
 #define ETERNALSONATA_PARTY_ABI_VERSION 1u
 
 // The game's cast. Character ids are 1-based and are the game's own numbering,
@@ -59,8 +64,25 @@ enum {
   ETERNALSONATA_CHAR_FALSETTO = 8,
   ETERNALSONATA_CHAR_CLAVES = 9,
   ETERNALSONATA_CHAR_MARCH = 10,
-  ETERNALSONATA_CHARACTER_COUNT = 10
+
+  // The retail game ships ten characters. Ids 11 and 12 are real slots in every
+  // per-character table -- the port widens those tables and teaches the game's
+  // loops and range checks to count that far -- but the game has no content for
+  // them: no name, no portrait, no model, and a copy of character 1's stat
+  // template until something supplies a better one. They exist so a mod can add
+  // a genuinely new party member rather than disguise an existing one, and a
+  // mod that uses them is expected to ship its own assets (an asset mod
+  // overlays the game partition, so mods/<name>/game/btldata/player/pc011.bop
+  // gives character 11 a battle model).
+  ETERNALSONATA_CHAR_FIRST_ADDED = 11,
+
+  ETERNALSONATA_CHARACTER_COUNT = 12
 };
+
+// How many characters the retail game itself has. Anything above this is an
+// added slot: use it to tell "the original cast" from "the widened cast", for
+// instance when walking the game's own ten-entry name tables.
+#define ETERNALSONATA_NATIVE_CHARACTER_COUNT 10
 
 // The party's first three display positions are the ones that walk the field
 // and fight; everything past that is a reserve.

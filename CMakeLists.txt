@@ -86,6 +86,11 @@ set(ETERNALSONATA_SOURCES
     src/room_presence.cpp
     src/party_system.cpp
     src/battle_system.cpp
+    src/party_relocation.cpp
+    src/party_relocation.generated.cpp
+    src/party_counts.cpp
+    src/party_save.cpp
+    src/party_bounds.cpp
     src/guest_main_thread.cpp
     src/force_load_area.cpp
     src/field_player_model_override.cpp

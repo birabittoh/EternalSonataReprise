@@ -22,3 +22,897 @@ memmove  = 0x822CE550
 memset   = 0x822CFB40
 memcpy_s = 0x822D5748
 XMemCpy  = 0x822530B8
+
+# ============================================================================
+# Twelve characters, hand-written half
+#
+# The game ships ten characters and the per-character arrays are exactly ten
+# wide with no padding anywhere. Raising the cast to twelve takes four things,
+# and this file holds all of them:
+#
+#   1. relocate the cold arrays so the hot ones can grow into the space
+#      -> the generated block at the end of this file, src/party_relocation.*
+#   2. teach the loops and range checks to count past ten
+#      -> src/party_counts.cpp, below
+#   3. carry the two new characters through the save
+#      -> src/party_save.cpp, below
+#   4. stop the two id gates rejecting them
+#      -> src/party_bounds.cpp, below
+#
+# The hooks below are hand-written because, unlike the relocation sites, they
+# are not one uniform shape. Each block names the C++ file that implements it;
+# every one of those files carries the same table in its header comment.
+#
+# Three shapes recur. `li rX, 0xA` is a trip count, rewritten after the fact.
+# `cmpwi rX, 0xA` cannot be rewritten, so the hook fires *before* the compare
+# and takes the branch itself via jump_address_on_true for the extended range,
+# leaving the original instruction to handle the first ten. And a few sites have
+# no instruction to hook at all, where the fix is a store the game never makes.
+# ============================================================================
+
+# --- src/party_counts.cpp: the loops that count to ten ----------------------
+
+# `li r10, 0xA` feeding mtctr for sub_821E5A38's ten-byte slotbytes clear.
+[[midasm_hook]]
+address = 0x821E5C10
+name = "PartyCount_Twelve"
+registers = ["r10"]
+after_instruction = true
+
+# The same clear in the sibling reset path sub_821E5D68.
+[[midasm_hook]]
+address = 0x821E5DCC
+name = "PartyCount_Twelve"
+registers = ["r11"]
+after_instruction = true
+
+# sub_821E7138's character init loop, which builds every character's stats from
+# the (relocated) template table.
+[[midasm_hook]]
+address = 0x821E7190
+name = "PartyCount_Twelve"
+registers = ["r21"]
+after_instruction = true
+
+# sub_821E7358's two clear loops, over the pending-award queue's two halves.
+[[midasm_hook]]
+address = 0x821E7628
+name = "PartyCount_Twelve"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821E7648
+name = "PartyCount_Twelve"
+registers = ["r10"]
+after_instruction = true
+
+# Both reset paths clear the position array as ten individual stw's rather than
+# as a loop, so entries 11 and 12 -- which live in the bytes the relocated
+# slotbytes array vacated -- would keep whatever the old slotbytes clear left
+# behind, and read as two extra party members. There is no instruction to
+# rewrite here; the hook stores the two missing zeroes itself.
+#
+# Those two hooks are NOT declared here. Each reset path follows its last
+# position store with a `stb` into the relocated slotbytes array, whose base
+# register has to be shifted by a hook on that same store. One address holds one
+# hook, so the two jobs are merged into
+# PartyCount_ClearPositionTail_ShiftSlotbytes and emitted by
+# scripts/party_relocation_emit.py, in the generated block at the end of this
+# file, at 0x821E5AA0 and 0x821E5DB4.
+
+# `cmpwi rX, 0xA` / `blt` at the top of the two scans over the pending-award
+# queue. Jumping on true re-enters the loop for the two new slots.
+[[midasm_hook]]
+address = 0x821E7690
+name = "PartyCount_QueueScan"
+registers = ["r31"]
+jump_address_on_true = 0x821E767C
+
+[[midasm_hook]]
+address = 0x821E7EB0
+name = "PartyCount_QueueScan"
+registers = ["r30"]
+jump_address_on_true = 0x821E7E9C
+
+# `cmpwi r11, 0xA` / `bgt` rejecting character ids above ten on the award path.
+# A real id range check, distinct from the two in party_bounds.cpp below.
+[[midasm_hook]]
+address = 0x821E76F4
+name = "PartyCount_ExtendedId"
+registers = ["r11"]
+jump_address_on_true = 0x821E76FC
+
+# --- src/party_save.cpp: characters 11 and 12 in the save file --------------
+
+# The save is a list of (ptr, size) blocks, not a fixed struct, and the game
+# already gates a trailing block on its own save version. So the version goes
+# from 2 to 3 and two 96-byte side-car blocks are appended, rather than widening
+# the four 480-byte stat blocks, whose every following offset is a baked
+# immediate. A retail version-2 save still loads; a version-3 save is 192 bytes
+# larger than retail expects and retail cannot read it. That trade is accepted.
+
+# sub_82241190 (write): `li r10, 2`, stored into the save header 28 bytes later.
+[[midasm_hook]]
+address = 0x822414D0
+name = "PartySave_BumpVersion"
+registers = ["r10"]
+after_instruction = true
+
+# sub_82241190 (write): after the last block the writer registers for itself and
+# before it builds sub_8223DF80's arguments. r28 is the block-list descriptor.
+[[midasm_hook]]
+address = 0x82241674
+name = "PartySave_AppendWriteBlocks"
+registers = ["r28"]
+
+# sub_82241190 (write): the `addi r8, r8, 0x5B98` completing the baked total-size
+# constant. The two appended blocks have to be counted in it.
+[[midasm_hook]]
+address = 0x82241698
+name = "PartySave_GrowTotalSize"
+registers = ["r8"]
+after_instruction = true
+
+# sub_822404E8 (load): loc_82240600, the join point right after the loader's own
+# version-2 conditional block. r30 is the descriptor; r29 points at the header
+# pointer whose +0x18 is the version, which the hook checks before appending.
+[[midasm_hook]]
+address = 0x82240600
+name = "PartySave_AppendLoadBlocks"
+registers = ["r30", "r29"]
+
+# --- src/party_bounds.cpp: the two id gates ---------------------------------
+
+# sub_821E7898, the stat recompute every status and equipment screen depends on.
+# Returns immediately unless 1 <= id <= 10; jumping past the compare lands on
+# the body. cr6 is dead across the skip (the next reader is the bne at
+# 0x821E78F4, whose own fcmpu is at 0x821E78F0).
+[[midasm_hook]]
+address = 0x821E78AC
+name = "PartyBounds_ExtendedId"
+registers = ["r11"]
+jump_address_on_true = 0x821E78B4
+
+# sub_821A03D0, the battle-party model loader. Rejects `id - 1 > 9` before it
+# formats "btldata\player\pc%03d.bop", which is what an asset mod supplies
+# pc011.bop and pc012.bop for. cr6 is dead across the skip too: the accept path
+# calls sub_822CC8B0 immediately.
+[[midasm_hook]]
+address = 0x821A0528
+name = "PartyBounds_ExtendedIndex"
+registers = ["r11"]
+jump_address_on_true = 0x821A0530
+
+# >>> generated by scripts/party_relocation_emit.py -- do not edit by hand
+# 121 hooks relocating charwords, slotbytes, stats_base, template so the arrays that stay put can
+# grow from ten to twelve entries. Regenerate, never hand edit.
+# 0 sites whose role the scanner could not settle are deliberately absent; see the script output.
+
+[[midasm_hook]]
+address = 0x820e7920  # addi -> 0x8243fc2f in sub_820E78B8
+name = "PartyReloc_slotbytes_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820e7a68  # addi -> 0x8243fc30 in no function
+name = "PartyReloc_slotbytes_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820e7ac8  # addi -> 0x8243fee8 in no function
+name = "PartyReloc_stats_base_Remap"
+registers = ["r5"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820e7cc4  # addi -> 0x8243fee8 in sub_820E7C90
+name = "PartyReloc_stats_base_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820fdffc  # addi -> 0x8243fc30 in sub_820FDFC0
+name = "PartyReloc_slotbytes_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820fe084  # stb -> 0x8243fc3a in sub_820FDFC0
+name = "PartyReloc_slotbytes_Shift"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820fe088  # stb -> 0x8243fc3a in sub_820FDFC0
+name = "PartyReloc_slotbytes_Unshift"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820fe1a4  # addi -> 0x8243fc30 in sub_820FDFC0
+name = "PartyReloc_slotbytes_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821dd5e8  # stb -> 0x8243fc3a in sub_821DD4D0
+name = "PartyReloc_slotbytes_Shift"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821dd5ec  # stb -> 0x8243fc3a in sub_821DD4D0
+name = "PartyReloc_slotbytes_Unshift"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821dd710  # addi -> 0x8243fc30 in sub_821DD4D0
+name = "PartyReloc_slotbytes_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e5aa0  # stb -> 0x8243fc3a in sub_821E5A38
+name = "PartyCount_ClearPositionTail_ShiftSlotbytes"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e5aa4  # stb -> 0x8243fc3a in sub_821E5A38
+name = "PartyReloc_slotbytes_Unshift"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e5c14  # addi -> 0x8243fc30 in sub_821E5A38
+name = "PartyReloc_slotbytes_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e5d84  # addi -> 0x8243fc30 in sub_821E5D68
+name = "PartyReloc_slotbytes_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e5db4  # stb -> 0x8243fc3a in sub_821E5D68
+name = "PartyCount_ClearPositionTail_ShiftSlotbytes"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e5db8  # stb -> 0x8243fc3a in sub_821E5D68
+name = "PartyReloc_slotbytes_Unshift"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e5fe4  # stb -> 0x8243fc3a in sub_821E5F58
+name = "PartyReloc_slotbytes_Shift"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e5fe8  # stb -> 0x8243fc3a in sub_821E5F58
+name = "PartyReloc_slotbytes_Unshift"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e60c0  # addi -> 0x8243fc30 in sub_821E5F58
+name = "PartyReloc_slotbytes_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7150  # addi -> 0x82016150 in sub_821E7138
+name = "PartyReloc_template_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e715c  # addi -> 0x824400c8 in sub_821E7138
+name = "PartyReloc_charwords_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7194  # addi -> 0x8243fee8 in sub_821E7138
+name = "PartyReloc_stats_base_Remap"
+registers = ["r25"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7394  # addi -> 0x82016150 in sub_821E7358
+name = "PartyReloc_template_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7624  # addi -> 0x824400c8 in sub_821E7358
+name = "PartyReloc_charwords_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7678  # addi -> 0x824400c8 in sub_821E7668
+name = "PartyReloc_charwords_Remap"
+registers = ["r30"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e76b4  # addi -> 0x8243fee8 in sub_821E7668
+name = "PartyReloc_stats_base_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e76e4  # addi -> 0x8243fee8 in sub_821E7668
+name = "PartyReloc_stats_base_Remap"
+registers = ["r28"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7870  # addi -> 0x8243fee8 in sub_821E7668
+name = "PartyReloc_stats_base_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e78dc  # addi -> 0x8243fee8 in sub_821E7898
+name = "PartyReloc_stats_base_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7da8  # addi -> 0x8243fee8 in sub_821E7D88
+name = "PartyReloc_stats_base_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7e98  # addi -> 0x824400c8 in sub_821E7D88
+name = "PartyReloc_charwords_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7f88  # addi -> 0x8243fee8 in sub_821E7F18
+name = "PartyReloc_stats_base_Remap"
+registers = ["r30"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e80f8  # addi -> 0x8243fee8 in sub_821E80E0
+name = "PartyReloc_stats_base_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e8100  # addi -> 0x82016150 in sub_821E80E0
+name = "PartyReloc_template_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e8310  # addi -> 0x8243fee8 in sub_821E8308
+name = "PartyReloc_stats_base_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e83b4  # addi -> 0x8243fee8 in sub_821E8390
+name = "PartyReloc_stats_base_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e8574  # addi -> 0x8243fee8 in sub_821E8458
+name = "PartyReloc_stats_base_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e8a64  # addi -> 0x82016150 in sub_821E8A50
+name = "PartyReloc_template_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e8a7c  # addi -> 0x8243fee8 in sub_821E8A50
+name = "PartyReloc_stats_base_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e8cd8  # addi -> 0x8243fee8 in sub_821E8C78
+name = "PartyReloc_stats_base_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821fac18  # addi -> 0x8243fee8 in sub_821FA908
+name = "PartyReloc_stats_base_Remap"
+registers = ["r22"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821fb3f8  # addi -> 0x8243fee8 in sub_821FAF08
+name = "PartyReloc_stats_base_Remap"
+registers = ["r21"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82209500  # addi -> 0x8243fee8 in sub_82209478
+name = "PartyReloc_stats_base_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222b4a0  # addi -> 0x82016150 in sub_8222B348
+name = "PartyReloc_template_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222b550  # addi -> 0x82016150 in sub_8222B348
+name = "PartyReloc_template_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82231f6c  # addi -> 0x8243fee8 in sub_82231F30
+name = "PartyReloc_stats_base_Remap"
+registers = ["r17"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8223258c  # addi -> 0x8243fef4 in sub_82231F30
+name = "PartyReloc_stats_base_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822333e8  # addi -> 0x82016150 in sub_82232C10
+name = "PartyReloc_template_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82235388  # addi -> 0x8243fee8 in sub_822352F8
+name = "PartyReloc_stats_base_Remap"
+registers = ["r30"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82235430  # addi -> 0x8243fee8 in sub_822352F8
+name = "PartyReloc_stats_base_Remap"
+registers = ["r30"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822354d8  # addi -> 0x8243fee8 in sub_822352F8
+name = "PartyReloc_stats_base_Remap"
+registers = ["r30"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822355a0  # addi -> 0x8243fee8 in sub_822352F8
+name = "PartyReloc_stats_base_Remap"
+registers = ["r30"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8223802c  # addi -> 0x8243fee8 in sub_82237A68
+name = "PartyReloc_stats_base_Remap"
+registers = ["r22"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82238668  # addi -> 0x8243feec in sub_82237A68
+name = "PartyReloc_stats_base_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82238a30  # addi -> 0x8243fee8 in sub_822388D8
+name = "PartyReloc_stats_base_Remap"
+registers = ["r18"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82238c68  # addi -> 0x8243feec in sub_822388D8
+name = "PartyReloc_stats_base_Remap"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82239340  # addi -> 0x8243fee8 in sub_822391F8
+name = "PartyReloc_stats_base_Remap"
+registers = ["r21"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82239acc  # addi -> 0x8243fee8 in sub_822399A8
+name = "PartyReloc_stats_base_Remap"
+registers = ["r23"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82240b58  # addi -> 0x8243fee8 in sub_82240AF8
+name = "PartyReloc_stats_base_Remap"
+registers = ["r3"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822412b0  # addi -> 0x8243fee8 in sub_82241190
+name = "PartyReloc_stats_base_Remap"
+registers = ["r4"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820e7910  # addi -> 0x8243fc30 in sub_820E78B8
+name = "PartyBound_position_Remap"
+registers = ["r5"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820e7988  # addi -> 0x8243fc30 in sub_820E7948
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820e79d0  # addi -> 0x8243fc30 in sub_820E7948
+name = "PartyBound_position_Remap"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x820e7aac  # addi -> 0x8243fc30 in no function
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821dd864  # addi -> 0x8243fc30 in sub_821DD808
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821dd97c  # addi -> 0x8243fc30 in sub_821DD808
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821dd9dc  # addi -> 0x8243fc30 in sub_821DD808
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821dda3c  # addi -> 0x8243fc30 in sub_821DD808
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821dda8c  # addi -> 0x8243fc30 in sub_821DD808
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821ddaf4  # addi -> 0x8243fc30 in sub_821DD808
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821ddb64  # addi -> 0x8243fc30 in sub_821DD808
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821ddbe4  # addi -> 0x8243fc30 in sub_821DD808
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821ddc4c  # addi -> 0x8243fc30 in sub_821DD808
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821ddcc0  # addi -> 0x8243fc30 in sub_821DD808
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e6280  # addi -> 0x8243fc30 in sub_821E6240
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e62d8  # addi -> 0x8243fc30 in sub_821E6240
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e64b4  # addi -> 0x8243fc30 in sub_821E6428
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e6608  # addi -> 0x8243fc30 in sub_821E6580
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7f4c  # addi -> 0x8243fc30 in sub_821E7F18
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821e7fb0  # addi -> 0x8243fc30 in sub_821E7F18
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821f9028  # addi -> 0x8243fc30 in sub_821F8F78
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821f9084  # addi -> 0x8243fc30 in sub_821F8F78
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821f9160  # addi -> 0x8243fc30 in sub_821F9128
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821f9660  # addi -> 0x8243fc30 in sub_821F9600
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821fa8ac  # addi -> 0x8243fc30 in sub_821FA7F8
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821fb76c  # addi -> 0x8243fc30 in sub_821FAF08
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822029e4  # addi -> 0x8243fc30 in sub_822028C8
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822149bc  # addi -> 0x8243fc30 in sub_822148C8
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8221b4ac  # addi -> 0x8243fc30 in sub_8221B460
+name = "PartyBound_position_Remap"
+registers = ["r6"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8221b680  # addi -> 0x8243fc30 in sub_8221B5A0
+name = "PartyBound_position_Remap"
+registers = ["r24"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822224c8  # addi -> 0x8243fc30 in sub_82222438
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82230768  # addi -> 0x8243fc30 in sub_82230658
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822307a8  # addi -> 0x8243fc30 in sub_82230658
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822308e8  # addi -> 0x8243fc30 in sub_82230658
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82230940  # addi -> 0x8243fc30 in sub_82230658
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82236a10  # addi -> 0x8243fc30 in sub_82236810
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82236ffc  # addi -> 0x8243fc30 in sub_82236FA8
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8223710c  # addi -> 0x8243fc30 in sub_82236FA8
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82237154  # addi -> 0x8243fc30 in sub_82236FA8
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8223737c  # addi -> 0x8243fc30 in sub_822372B0
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822373bc  # addi -> 0x8243fc30 in sub_822372B0
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82237550  # addi -> 0x8243fc30 in sub_82237448
+name = "PartyBound_position_Remap"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82237588  # addi -> 0x8243fc30 in sub_82237448
+name = "PartyBound_position_Remap"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82237664  # addi -> 0x8243fc30 in sub_82237448
+name = "PartyBound_position_Remap"
+registers = ["r6"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822378f0  # addi -> 0x8243fc30 in sub_82237880
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822379f0  # addi -> 0x8243fc30 in sub_82237880
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82237b08  # addi -> 0x8243fc30 in sub_82237A68
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82237b38  # addi -> 0x8243fc30 in sub_82237A68
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82238948  # addi -> 0x8243fc30 in sub_822388D8
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82238978  # addi -> 0x8243fc30 in sub_822388D8
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82239268  # addi -> 0x8243fc30 in sub_822391F8
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82239298  # addi -> 0x8243fc30 in sub_822391F8
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82239a18  # addi -> 0x8243fc30 in sub_822399A8
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82239a48  # addi -> 0x8243fc30 in sub_822399A8
+name = "PartyBound_position_Remap"
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8223a93c  # addi -> 0x8243fc30 in sub_8223A838
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8223ab90  # addi -> 0x8243fc30 in sub_8223A838
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8223ad98  # addi -> 0x8243fc30 in sub_8223A838
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8223af74  # addi -> 0x8243fc30 in sub_8223A838
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822413ec  # addi -> 0x8243fc30 in sub_82241190
+name = "PartyBound_position_Remap"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82209540  # addi -> 0x824400c8 in sub_82209478
+name = "PartyRelocEnd_stats_base_Remap"
+registers = ["r8"]
+after_instruction = true
+
+# <<< end generated party relocation hooks
