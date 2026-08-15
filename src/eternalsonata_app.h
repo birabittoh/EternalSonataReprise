@@ -26,6 +26,7 @@
 #include "fonts.generated.h"
 #include "force_load_area.h"
 #include "icon.generated.h"
+#include "party_system.h"
 #include "room_presence.h"
 #include "settings.h"
 
@@ -149,6 +150,10 @@ class EternalsonataApp : public rex::ReXApp {
     // translated through the cfdata name table). See src/room_presence.h/.cpp.
     auto* ks = rex::system::kernel_state();
     eternalsonata::GetRoomPresence().Bind(ks, runtime());
+
+    // Party state for mods: EternalSonataAddCharacterToParty and the rest of
+    // src/eternalsonata_party_api.h answer "unavailable" until this runs.
+    eternalsonata::BindPartySystem(runtime());
 
     // Debug tool: force-loads a field area via the F4 settings overlay's
     // "Force Load Area..." button. See force_load_area.h.

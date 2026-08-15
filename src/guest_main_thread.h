@@ -25,4 +25,11 @@ void PostToGuestMainThread(std::function<void()> work);
 // hook; callbacks may make guest calls.
 void DrainGuestMainThread();
 
+// True while the calling thread is inside DrainGuestMainThread, i.e. while it
+// is safe to make guest calls right here instead of queueing them. Lets an API
+// that is normally called from the ImGui thread (see party_system.cpp) run
+// inline, and return a real result, when it happens to be called from a guest
+// hook instead.
+bool OnGuestMainThread();
+
 }  // namespace eternalsonata
