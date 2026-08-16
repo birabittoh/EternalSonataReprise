@@ -9,9 +9,9 @@ writes party state itself and exposes it to mods through
 in `src/party_system.cpp`. A mod should never need an address from this page;
 it is here so the next person can check the implementation against the binary.
 
-## Ten slots, and only ten
+## Ten retail slots, and two vacant ones
 
-The cast is ten characters, numbered 1..10 in the game's own order:
+The retail cast is ten characters, numbered 1..10 in the game's own order:
 
 | # | Character | # | Character |
 |---|---|---|---|
@@ -21,11 +21,11 @@ The cast is ten characters, numbered 1..10 in the game's own order:
 | 4 | Frederic | 9 | Claves |
 | 5 | Viola | 10 | March |
 
-Every per-character table is keyed by that number. Ten is a hard limit, not a
-convention: the tables are ten entries wide and `sub_821E7898`, which computes
-the stats every screen draws, returns without doing anything for an index
-outside 1..10. There is no eleventh character to be had, and the tables cannot
-simply be widened:
+Every per-character table is keyed by that number, and in the retail image ten
+is a hard limit rather than a convention: the tables are ten entries wide and
+`sub_821E7898`, which computes the stats every screen draws, returns without
+doing anything for an index outside 1..10. The tables cannot simply be widened
+in place:
 
 * Every per-character array is exactly ten entries and butts straight up against
   the next one. The equipment-adjusted stats at `0x8243FD08` are ten 48-byte
@@ -39,10 +39,49 @@ simply be widened:
   `sub_8221B5A0`, which is 28 KB on its own. Relocating the arrays to a wider
   block would mean reworking every one of them.
 
-So a twelve-character party is not reachable by extending the game's tables.
-The bound checks (`sub_821E7898` rejecting anything outside 1..10,
-`sub_821A03D0` rejecting `id - 1 > 9`) are the least of it; the data layout is
-the wall.
+So a twelve-character party is not reachable by extending the game's tables
+where they are. The port gets there anyway, by relocating the two coldest
+arrays into host-owned guest memory so the two hottest can grow into the holes,
+and by rewriting every site that materialises a moved base with a mid-ASM hook.
+That machinery is described in `src/party_relocation.h`, and the loop counts,
+save spans and id gates that come with it in `src/party_counts.cpp`,
+`src/party_save.cpp` and `src/party_bounds.cpp`. The bound checks
+(`sub_821E7898` rejecting anything outside 1..10, `sub_821A03D0` rejecting
+`id - 1 > 9`) were the least of it; the data layout was the wall.
+
+### The two added slots are vacant, not new characters
+
+Characters 11 and 12 are real slots in every widened table, and nothing more.
+The host puts no content in them: no name, no stat template (their template
+entries are left zeroed), and the three id gates above stay shut for them. With
+no mod loaded the game therefore behaves exactly like the retail
+ten-character one.
+
+A mod fills a slot in through `EternalSonataDefineCharacter` (or
+`EternalSonataDefineNextCharacter`, which claims whichever slot is free so two
+such mods can coexist). Defining a slot:
+
+* records the name, published through the same rename path a renamed retail
+  character uses, so every menu screen resolves it;
+* seeds the slot's entry in the relocated stat template table from a retail
+  character's, which is what gives it starting stats and growth curves;
+* opens the id gates for that one slot, by setting its bit in the registry the
+  hooks in `src/party_bounds.cpp` and `src/party_counts.cpp` read.
+
+`src/party_slots.cpp` is the registry, and it is the only place that knows
+which ids are added ones; everything else asks it rather than testing against 11
+and 12. Undefining a slot reverses all three steps and takes the character out
+of the party if it is in one.
+
+The battle model is the one piece a mod is expected to ship itself: an asset mod
+overlays the game partition, so `mods/<name>/game/btldata/player/pc011.bop`
+gives character 11 a model, and `sub_821A03D0` asks for `pc%03d.bop` by
+character id. A definition that has no model yet can point `model_id` at an
+existing character's instead. `../EternalSonataReprise-Mods/src/demo_characters`
+is the worked example.
+
+Definitions are host state, not save state: a mod defines its slots on every
+run.
 
 Note the ordering: Polka is 2, Beat 3, Frederic 4. An earlier revision of the
 overlay had 2/3/4 as Beat/Frederic/Polka because it validated names against max
@@ -222,7 +261,8 @@ scan runs once, and only after some mod has actually renamed somebody.
 
 ## What is deliberately not modelled
 
-* **An eleventh character.** See "Ten slots, and only ten": the tables cannot
-  be widened in place and the API does not pretend otherwise.
+* **Content for the added slots.** The host widens the tables and holds two
+  vacant slots; it does not invent a character to put in one. Names, stats and
+  assets come from a mod, through the definition API above.
 * **Field models.** Who walks the overworld is a separate mechanism entirely;
   see `src/field_player_model_override.h`.

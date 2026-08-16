@@ -656,7 +656,17 @@ def clobbered_between(seg_bytes: dict, start: int, end: int, reg: int) -> bool:
     return False
 
 
-def mark_redundant(sites: list[Site], seg_bytes: dict, window: int = 128) -> int:
+def function_start(site: Site) -> int:
+    """The start address of the function a site lives in, or 0 if unknown."""
+    if not site.func.startswith("sub_"):
+        return 0
+    try:
+        return int(site.func[4:], 16)
+    except ValueError:
+        return 0
+
+
+def mark_redundant(sites: list[Site], seg_bytes: dict, window: int = 0) -> int:
     """Flag sites that merely dereference an address a nearby `addi` site
     already built.
 
@@ -678,22 +688,34 @@ def mark_redundant(sites: list[Site], seg_bytes: dict, window: int = 128) -> int
     *not* resolve to the same address as the addi, so matching on the target
     would miss it entirely.
 
-    The window has to reach past a loop preheader, and sometimes past a whole
-    loop body: in sub_821E7138 the walking template pointer is built 17
-    instructions before its first use, but in sub_821E7668 the charwords base
-    goes into r30 in the prologue and is not indexed until 86 instructions
-    later, on the other side of two loops. Matches are confined to the site's
-    own function, since no register survives a call boundary. There is no clobber check, so every match this produces is worth
-    reading once; the diff against party_sites.reference.json is what makes that
-    tractable.
+    There is no fixed window: the search runs back to the start of the site's
+    own function, which is the only bound that means anything (no register
+    survives a call boundary, and the function check below enforces it). A fixed
+    one was tried at 32 and again at 128 instructions and was wrong both times.
+    The case that broke it in game: sub_822388D8 builds the stats_base base into
+    r18 at 0x82238A30 and derives 0x8243FEEC from it with `addi r11, r18, 4` at
+    0x82238C68, **142 instructions later**. Both were hooked, the delta was
+    applied twice, and the load through the result faulted on 0x93BC04FC -- a
+    relocated address with the delta added a second time. A distance like that
+    is a property of the function, not of the pattern, so no constant is safe.
+
+    Correctness rests on clobbered_between() instead: a match is only accepted
+    if the register still holds what the earlier site put in it. `window` is
+    kept as an optional cap for debugging; 0 means "to the top of the function".
     """
     by_addr = {s.addr: s for s in sites}
     marked = 0
     for s in sites:
+        start = function_start(s)
+        # A site IDA never put in a function has no top to walk back to, so it
+        # keeps the old fixed window rather than no window at all.
+        reach = (s.addr - start) // 4 if start and start < s.addr else 128
+        if window:
+            reach = min(reach, window)
         indexed = s.form == "op31"
         regs = {s.base_reg, s.index_reg} if indexed else {s.base_reg}
-        regs |= copy_aliases(seg_bytes, s.addr - 4 * window, s.addr, s.base_reg)
-        for back in range(1, window + 1):
+        regs |= copy_aliases(seg_bytes, s.addr - 4 * reach, s.addr, s.base_reg)
+        for back in range(1, reach + 1):
             prev = by_addr.get(s.addr - 4 * back)
             if prev is None or prev.form != "addi" or prev.reg not in regs:
                 continue
@@ -702,9 +724,10 @@ def mark_redundant(sites: list[Site], seg_bytes: dict, window: int = 128) -> int
             # between two arrays and that needs a human, not a silent skip.
             if prev.array != s.array:
                 continue
-            # The window is wide enough now to reach out of the function the
-            # site lives in, which would pair a use with a base built in a
-            # different function entirely. A register does not survive that.
+            # The search is bounded by the function anyway, but sites whose
+            # function IDA never defined have no bound, and pairing a use with a
+            # base built in a different function entirely would be wrong: a
+            # register does not survive that.
             if prev.func != s.func:
                 continue
             # For the indexed shape keep the original, stricter test: those two

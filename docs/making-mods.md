@@ -596,9 +596,11 @@ Things worth knowing before you use it:
 - **Party edits are refused during a battle.** The game's own join sequence
   crashes mid-battle; `EternalSonataIsPartyEditable()` is the flag to gate your
   UI on, and every mutation checks it anyway.
-- **There are ten character slots and there is no eleventh.** The game's cast is
-  fixed, the per-character tables are exactly ten wide with no room to grow, and
-  the API does not pretend otherwise. `docs/party-system.md` has the details.
+- **There are ten characters and two vacant slots.** The port widens every
+  per-character table to twelve, but it puts nothing in the two new slots: ids
+  11 and 12 have no name, no stats and no model, and the game's own id gates
+  stay shut for them until a mod defines one. See "Adding a new character"
+  below.
 - **Renaming shows up on the menu screens only.** The status, equipment and
   party screens resolve names through a text lookup the host answers; the battle
   HUD reads the game's packed name tables directly and still shows the built-in
@@ -608,6 +610,51 @@ Things worth knowing before you use it:
 
 `docs/party-system.md` documents the guest-side structures the API sits on, if
 you need to know what a call actually does.
+
+## Adding a new character
+
+Ids above `ETERNALSONATA_NATIVE_CHARACTER_COUNT` are vacant slots. The host owns
+the widened tables behind them and nothing else, so a slot has no content until
+a mod claims it:
+
+```cpp
+EternalSonataCharacterDefinition definition{};
+definition.struct_size = sizeof(definition);
+definition.name = "Cadenza";                             // required
+definition.template_source = ETERNALSONATA_CHAR_JAZZ;    // stats and growth
+definition.model_id = 0;                                 // 0 = pc011.bop etc.
+
+auto define_next = reinterpret_cast<EternalSonataDefineNextCharacterFn>(
+    GetProcAddress(GetModuleHandle(nullptr), "EternalSonataDefineNextCharacter"));
+const int character = define_next ? define_next(&definition) : -1;
+```
+
+Worth knowing:
+
+- **Claim a slot, do not name one.** `EternalSonataDefineNextCharacter` takes
+  whichever slot is free and returns its id, so your mod and another that also
+  adds a character can both load. `EternalSonataDefineCharacter` names a
+  specific one and is for when you have a reason to.
+- **Define on every run.** Definitions are host state and are not written to a
+  save. `OnModuleLaunched` is the natural place; a save does not have to be
+  loaded yet.
+- **The template decides stats and growth.** `template_source` picks which
+  retail character's entry in the game's own per-character template table your
+  character starts from. Optional `stats` (with `apply_stats` set) overrides the
+  numbers once, the first time the character joins a party.
+- **Ship the battle model.** `sub_821A03D0` loads
+  `btldata\player\pc%03d.bop` by character id, so an asset mod supplying
+  `game/btldata/player/pc011.bop` is all character 11 needs. Until you have one,
+  point `model_id` at an existing character so a battle does not ask for a file
+  that is not there.
+- **A vacant slot is inert.** Every mutation refuses it with
+  `ETERNALSONATA_PARTY_ERR_SLOT_VACANT`, `EternalSonataGetCharacterName` answers
+  `""`, and UI that lists the cast should skip anything
+  `EternalSonataIsCharacterDefined` says no to.
+
+`../EternalSonataReprise-Mods/src/demo_characters` is a complete worked example,
+and `docs/party-system.md` explains what a definition actually does to the
+game's tables.
 
 ## Patching static game text/data
 

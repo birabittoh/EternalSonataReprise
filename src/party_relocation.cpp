@@ -84,22 +84,62 @@ bool SeedTemplateTable(rex::memory::Memory* memory) {
 
   std::memcpy(dest, source, kTemplateSeedSize);
 
-  // Characters 11 and 12 start as copies of character 1 with their own id, so
-  // that a cast of twelve is playable before any mod supplies real data. The id
-  // at +0 is a big-endian u16 and is what the entity lookup matches on, so it is
-  // the one field that must not be a copy.
-  for (uint32_t i = kTemplateSeedCount; i < kRelocatedCharacterCount; ++i) {
-    uint8_t* entry = dest + i * kTemplateStride;
-    std::memcpy(entry, source, kTemplateStride);
-    const uint16_t id = static_cast<uint16_t>(i + 1);
-    entry[0] = static_cast<uint8_t>(id >> 8);
-    entry[1] = static_cast<uint8_t>(id & 0xFF);
+  // The added slots' entries stay zeroed. They are vacant: no mod has claimed
+  // them yet, the id gates in party_bounds.cpp are shut for them, and nothing
+  // reads a zeroed entry until a definition fills it in. Seeding a placeholder
+  // here instead would be the host inventing a character, which is exactly what
+  // the slots exist to avoid.
+  std::memset(dest + kTemplateSeedSize, 0,
+              (kRelocatedCharacterCount - kTemplateSeedCount) * kTemplateStride);
+
+  REXLOG_INFO("party relocation: seeded {} template entries at {:#010x} from {:#010x}, "
+              "{} slots left vacant",
+              kTemplateSeedCount, kTemplateBase, kTemplateSource,
+              kRelocatedCharacterCount - kTemplateSeedCount);
+  return true;
+}
+
+namespace {
+
+// Host pointer to added slot `character`'s template entry, or nullptr if the
+// character is not an added slot or the page is not reserved yet.
+uint8_t* AddedTemplateEntry(int character) {
+  if (character <= static_cast<int>(kTemplateSeedCount) ||
+      character > static_cast<int>(kRelocatedCharacterCount)) {
+    return nullptr;
+  }
+  return PartyGuestPointer(kTemplateBase + kTemplateStride * (character - 1));
+}
+
+}  // namespace
+
+bool SeedCharacterTemplate(int character, int source) {
+  if (source < 1 || source > static_cast<int>(kTemplateSeedCount)) {
+    return false;
+  }
+  uint8_t* entry = AddedTemplateEntry(character);
+  const uint8_t* from =
+      PartyGuestPointer(kTemplateSource + kTemplateStride * (source - 1));
+  if (!entry || !from) {
+    REXLOG_ERROR("party slots: no template memory for character {}", character);
+    return false;
   }
 
-  REXLOG_INFO("party relocation: seeded {} template entries at {:#010x} "
-              "({} copied from {:#010x}, {} placeholder)",
-              kRelocatedCharacterCount, kTemplateBase, kTemplateSeedCount,
-              kTemplateSource, kRelocatedCharacterCount - kTemplateSeedCount);
+  std::memcpy(entry, from, kTemplateStride);
+  // The id at +0 is a big-endian u16 and is what the entity lookup matches on,
+  // so it is the one field that must not be a copy.
+  const uint16_t id = static_cast<uint16_t>(character);
+  entry[0] = static_cast<uint8_t>(id >> 8);
+  entry[1] = static_cast<uint8_t>(id & 0xFF);
+  return true;
+}
+
+bool ClearCharacterTemplate(int character) {
+  uint8_t* entry = AddedTemplateEntry(character);
+  if (!entry) {
+    return false;
+  }
+  std::memset(entry, 0, kTemplateStride);
   return true;
 }
 

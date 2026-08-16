@@ -1,7 +1,9 @@
 #include "field_player_model_override.h"
 
+#include "eternalsonata_party_api.h"
 #include "force_load_area.h"
 #include "generated/eternalsonata_init.h"
+#include "party_slots.h"
 
 #include "settings.h"
 
@@ -51,8 +53,18 @@ constexpr const char* kCharacterNames[11] = {
 // positions 1..3, so the party's first member is the character whose entry
 // equals 1.
 constexpr uint32_t kStatusMemberList = 0x8243FC08u;
-constexpr uint32_t kStatusMemberCount = 10u;
+// Twelve, not ten: the port widens this table to hold the two added slots as
+// well (see party_relocation.h). Scanning only ten of it meant an added
+// character leading the party read as "no leader at all", the override left the
+// game's own model alone, and the overworld showed Allegretto - while
+// PartyBounds_FieldModelId had already sent that object's setup down the
+// borrowed character's arm. An Allegretto model wearing another character's rig
+// is what ran on the spot without moving.
+constexpr uint32_t kStatusMemberCount = ETERNALSONATA_CHARACTER_COUNT;
 constexpr uint32_t kPartyLeaderPosition = 1u;
+
+// The retail cast, which is as far as kCharacterSlotAddr goes.
+constexpr int kNativeCharacterCount = ETERNALSONATA_NATIVE_CHARACTER_COUNT;
 
 // Object kind at object+8; sub_820EE7D8 tags exactly kind 1 as "PC", the
 // field-controlled character.
@@ -488,8 +500,21 @@ REX_HOOK_RAW(sub_820EE7D8) {
     // knows the live object is back on the default model.
     if (character == 0) {
       g_applied_character = 0;
-    } else if (character >= 1 && character <= 10) {
-      const u32 handle = REX_LOAD_U32(kCharacterSlotAddr[character - 1]);
+    } else if (character >= 1 && character <= ETERNALSONATA_CHARACTER_COUNT) {
+      // An added character has no cached slot of its own - kCharacterSlotAddr
+      // is the game's own ten-entry table - so it uses the slot of whichever
+      // retail character its definition borrows assets from. This has to agree
+      // with PartyBounds_FieldModelId, which sends the same object's setup down
+      // that same character's arm of sub_821A2B38's jump table: a model from one
+      // character and a rig from another is what made the leader run in place.
+      const int asset = character > kNativeCharacterCount
+                            ? eternalsonata::ModelIdForCharacter(character)
+                            : character;
+      // Out of range means nothing sane to substitute, so the game's own handle
+      // stands. Note this must not return: the real function still has to run.
+      const u32 handle = (asset >= 1 && asset <= kNativeCharacterCount)
+                             ? REX_LOAD_U32(kCharacterSlotAddr[asset - 1])
+                             : 0u;
       // An uncached slot means sub_821A2B38 never resolved that character's
       // model; substituting it would instantiate a null resource, so fall
       // through to the handle the game chose.

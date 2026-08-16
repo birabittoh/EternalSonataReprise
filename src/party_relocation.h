@@ -70,8 +70,9 @@ inline constexpr uint32_t kTemplateBase = 0x8B001000;    // 12 * 136
 inline constexpr uint32_t kCharwordsBase = 0x8B001800;   // 12 * 2
 
 // Where the template table lives today, and how much of it is real game data.
-// Everything past kTemplateSeedSize is the two new characters, which start as
-// a copy of character 1 until a mod fills them in.
+// Everything past kTemplateSeedSize is the added slots, which start *zeroed*:
+// they are vacant until a mod defines one, and a definition is what fills the
+// entry in (see party_slots.h and SeedCharacterTemplate below).
 inline constexpr uint32_t kTemplateSource = 0x82016150;
 inline constexpr uint32_t kTemplateStride = 136;
 inline constexpr uint32_t kTemplateSeedCount = 10;
@@ -91,9 +92,19 @@ bool ReservePartyRelocationMemory(rex::Runtime* runtime);
 // registers and some of the ten-to-twelve fixes are stores the game never makes.
 uint8_t* PartyGuestPointer(uint32_t guest_address);
 
-// Fills the relocated template table: the ten originals copied across, then one
-// placeholder entry per new character. Called by ReservePartyRelocationMemory;
-// exposed so a mod-facing path can reseed it if it wants to rebuild the table.
+// Fills the relocated template table with the ten originals, and leaves every
+// added slot's entry zeroed. Called by ReservePartyRelocationMemory.
 bool SeedTemplateTable(rex::memory::Memory* memory);
+
+// Gives added slot `character` (1-based, above kTemplateSeedCount) a stat
+// template copied from retail character `source` (1..kTemplateSeedCount), with
+// the entry id at +0 rewritten to the slot's own id, which is what the game's
+// entity lookup matches on. This is how a mod-defined character gets starting
+// stats and growth curves; a vacant slot's entry stays zeroed.
+bool SeedCharacterTemplate(int character, int source);
+
+// Zeroes an added slot's template entry again, for when a definition is given
+// up.
+bool ClearCharacterTemplate(int character);
 
 }  // namespace eternalsonata

@@ -36,6 +36,7 @@
 #include <vector>
 
 #include <rex/hook.h>
+#include <rex/logging.h>
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
 #include <rex/system/mod_plugin.h>
@@ -43,6 +44,7 @@
 #include "eternalsonata_party_api.h"
 #include "guest_main_thread.h"
 #include "party_relocation.h"
+#include "party_slots.h"
 #include "party_system.h"
 #include "room_presence.h"
 
@@ -145,17 +147,13 @@ static_assert(kCharacterCount >= kNativeCharacterCount,
 // The cast in character-number order, as the game's own text blocks store it.
 // Note Polka is 2, Beat 3, Frederic 4.
 //
-// The game has no string at all for the two added slots, so they get a
-// placeholder rather than an empty string: every caller of
-// EternalSonataGetCharacterName puts the result straight into a label or a
-// button, and an empty one renders as a blank the user cannot identify or
-// click. A mod that supplies a real name through EternalSonataSetCharacterName
-// overrides it, and ETERNALSONATA_CHAR_FIRST_ADDED is how to tell a placeholder
-// from a name the game actually shipped.
-constexpr const char* kDefaultNames[kCharacterCount + 1] = {
-    "",      "Allegretto", "Polka",    "Beat",   "Frederic",    "Viola",
-    "Salsa", "Jazz",       "Falsetto", "Claves", "March",
-    "Character 11", "Character 12"};
+// Only the retail cast is in here. The added slots have no name of their own:
+// they are vacant until a mod defines one, and the definition is what supplies
+// the name (see party_slots.h). The host inventing a "Character 11" would be
+// the host inventing content for a slot that exists precisely so a mod can.
+constexpr const char* kDefaultNames[kNativeCharacterCount + 1] = {
+    "",      "Allegretto", "Polka",    "Beat",   "Frederic", "Viola",
+    "Salsa", "Jazz",       "Falsetto", "Claves", "March"};
 
 // ---------------------------------------------------------------------------
 // Host state
@@ -296,6 +294,20 @@ int SlotForLocked(int character) {
     return character;
   }
   return ETERNALSONATA_PARTY_ERR_INVALID_CHARACTER;
+}
+
+// Same, but refuses an added slot no mod has defined. Everything that puts a
+// character into the world - joining, stat writes, healing - goes through this
+// one rather than through SlotForLocked, so a vacant slot is inert no matter
+// which entry point is called. Reads stay permissive: answering "position 0,
+// stats zero" for a vacant slot is both true and useful to a mod enumerating
+// the cast.
+int DefinedSlotForLocked(int character) {
+  const int slot = SlotForLocked(character);
+  if (slot > 0 && !IsCharacterDefined(slot)) {
+    return ETERNALSONATA_PARTY_ERR_SLOT_VACANT;
+  }
+  return slot;
 }
 
 // ---------------------------------------------------------------------------
@@ -638,6 +650,16 @@ int ResolveSlot(int character) {
   return slot;
 }
 
+// The same, for the entry points that write: a vacant slot is refused rather
+// than quietly written to.
+int ResolveDefinedSlot(int character) {
+  const int slot = ResolveSlot(character);
+  if (slot > 0 && !IsCharacterDefined(slot)) {
+    return ETERNALSONATA_PARTY_ERR_SLOT_VACANT;
+  }
+  return slot;
+}
+
 }  // namespace
 
 extern "C" REX_MOD_PLUGIN_EXPORT uint32_t EternalSonataPartyAbiVersion(void) {
@@ -661,7 +683,14 @@ extern "C" REX_MOD_PLUGIN_EXPORT const char* EternalSonataGetCharacterName(int c
     return "";
   }
   const std::string& name = NameForSlotLocked(slot);
-  return name.empty() ? kDefaultNames[slot] : name.c_str();
+  if (!name.empty()) {
+    return name.c_str();
+  }
+  // An added slot has no name of its own. A defined one always has an override,
+  // since defining it goes through the rename path; a vacant one answers "",
+  // which is what a caller listing the cast should skip over - use
+  // EternalSonataIsCharacterDefined to tell vacant from named.
+  return slot <= kNativeCharacterCount ? kDefaultNames[slot] : "";
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPartySize(void) {
@@ -801,7 +830,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCharacterStats(
   if (!stats) {
     return ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT;
   }
-  const int slot = ResolveSlot(character);
+  const int slot = ResolveDefinedSlot(character);
   if (slot < 0) {
     return slot;
   }
@@ -814,7 +843,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCharacterStats(
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataHealCharacter(int character) {
-  const int slot = ResolveSlot(character);
+  const int slot = ResolveDefinedSlot(character);
   if (slot < 0) {
     return slot;
   }
@@ -855,7 +884,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataAddCharacterToParty(int charac
     return ETERNALSONATA_PARTY_ERR_IN_BATTLE;
   }
 
-  const int slot = SlotForLocked(character);
+  const int slot = DefinedSlotForLocked(character);
   if (slot < 0) {
     return slot;
   }
@@ -865,9 +894,19 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataAddCharacterToParty(int charac
 
   return RunOnGuestThread([slot] {
     const int joined = JoinOnGuestThread(slot);
-    if (joined == ETERNALSONATA_PARTY_OK) {
-      RefreshStatsOnGuestThread(slot);
+    if (joined != ETERNALSONATA_PARTY_OK) {
+      return joined;
     }
+    // A definition may carry starting stats, which are the mod's answer to the
+    // stat template not being able to express everything. They are applied once,
+    // on the first join, so a character that has since levelled up is not reset
+    // when it is benched and brought back.
+    EternalSonataCharacterStats starting{};
+    if (TakeStartingStats(slot, &starting)) {
+      WriteStats(kBaseStatsAddr, slot, starting);
+      WriteStats(kLiveStatsAddr, slot, starting);
+    }
+    RefreshStatsOnGuestThread(slot);
     return joined;
   });
 }
@@ -925,8 +964,11 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCharacterPosition(int chara
     }
   }
   WriteGuest<uint32_t>(PositionAddr(slot), static_cast<uint32_t>(position));
+  REXLOG_INFO("party: character {} moved from position {} to {}, rebuilding battle party",
+              slot, current, position);
   return RunOnGuestThread([] {
     g_rebuild_battle_party();
+    REXLOG_INFO("party: battle party rebuild returned");
     return ETERNALSONATA_PARTY_OK;
   });
 }

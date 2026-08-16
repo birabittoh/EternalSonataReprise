@@ -48,6 +48,7 @@
 // two more widgets in the asset, so that one is not a hook table at all.
 
 #include "party_relocation.h"
+#include "party_slots.h"
 
 #include <rex/ppc/context.h>
 
@@ -118,7 +119,10 @@ bool PartyCount_QueueScan(PPCRegister& index) {
 
 // `cmpwi r11, 0xA` / `bgt` rejecting character ids above ten before the award
 // is applied. The low end is already checked by the `cmpwi r11, 1` above it, so
-// this only has to let 11 and 12 through to the code the bgt skips.
+// this only has to let the added ids through to the code the bgt skips -- and
+// only those an actual mod has defined, so an unclaimed slot is rejected here
+// exactly as retail rejected it.
 bool PartyCount_ExtendedId(PPCRegister& id) {
-    return id.u32 > 10 && id.u32 <= kRelocatedCharacterCount;
+    return id.u32 > 10 && id.u32 <= kRelocatedCharacterCount &&
+           eternalsonata::IsCharacterDefined(static_cast<int>(id.u32));
 }

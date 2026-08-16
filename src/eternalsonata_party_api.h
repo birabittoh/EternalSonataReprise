@@ -45,10 +45,10 @@ extern "C" {
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
 //
-// Still 1 through the cast going from ten characters to twelve: nothing has
-// shipped against this ABI yet, so the mods in ../EternalSonataReprise-Mods are
-// simply rebuilt against the new constant rather than being asked to cope with
-// two versions of it. Bump this the first time a release goes out.
+// Still 1: nothing has been published against this ABI, so the mods in
+// ../EternalSonataReprise-Mods are simply rebuilt against the current header
+// rather than being asked to cope with two versions of it. Bump this the first
+// time a release goes out.
 #define ETERNALSONATA_PARTY_ABI_VERSION 1u
 
 // The game's cast. Character ids are 1-based and are the game's own numbering,
@@ -67,13 +67,16 @@ enum {
 
   // The retail game ships ten characters. Ids 11 and 12 are real slots in every
   // per-character table -- the port widens those tables and teaches the game's
-  // loops and range checks to count that far -- but the game has no content for
-  // them: no name, no portrait, no model, and a copy of character 1's stat
-  // template until something supplies a better one. They exist so a mod can add
-  // a genuinely new party member rather than disguise an existing one, and a
-  // mod that uses them is expected to ship its own assets (an asset mod
-  // overlays the game partition, so mods/<name>/game/btldata/player/pc011.bop
-  // gives character 11 a battle model).
+  // loops and range checks to count that far -- but the host puts no content in
+  // them at all. They start **vacant**: no name, no stat template, and every
+  // gate that would let one into the party stays shut, so a build with no mod
+  // loaded behaves exactly like the retail ten-character game.
+  //
+  // A mod claims a vacant slot with EternalSonataDefineCharacter, which is what
+  // supplies the name and the stat template and opens those gates. The mod is
+  // expected to ship its own assets too: an asset mod overlays the game
+  // partition, so mods/<name>/game/btldata/player/pc011.bop gives character 11
+  // a battle model. See EternalSonataCharacterDefinition below.
   ETERNALSONATA_CHAR_FIRST_ADDED = 11,
 
   ETERNALSONATA_CHARACTER_COUNT = 12
@@ -112,7 +115,13 @@ enum {
   ETERNALSONATA_PARTY_ERR_NOT_ELIGIBLE = -6,
   ETERNALSONATA_PARTY_ERR_ALREADY_IN_PARTY = -7,
   ETERNALSONATA_PARTY_ERR_NOT_IN_PARTY = -8,
-  ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT = -10
+  ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT = -10,
+
+  // The character is one of the added slots and no mod has defined it yet.
+  // Every gate that lets a character into the party refuses a vacant slot.
+  ETERNALSONATA_PARTY_ERR_SLOT_VACANT = -11,
+  // Every added slot is already defined.
+  ETERNALSONATA_PARTY_ERR_NO_SLOTS = -12
 };
 
 // One character's stats, in the units the game's own status and equipment
@@ -252,6 +261,84 @@ typedef int (*EternalSonataSetPartyLevelFn)(int level);
 // the name being replaced (Allegretto has room for ten characters, Beat for
 // four) and show a truncated name if the new one is longer.
 typedef int (*EternalSonataSetCharacterNameFn)(int character, const char* name);
+
+// ---------------------------------------------------------------------------
+// Vacant slots
+// ---------------------------------------------------------------------------
+//
+// Ids above ETERNALSONATA_NATIVE_CHARACTER_COUNT are vacant slots. The host
+// holds the widened tables for them and nothing else: until a mod defines one,
+// it has no name, no stat template, and the game's own id gates reject it
+// exactly as retail did, so it cannot join a party, be drawn on a screen, or
+// have a model asked for.
+//
+// Defining a slot does three things: it records the name every screen resolves
+// through, it seeds the slot's entry in the game's per-character stat template
+// table (copied from `template_source` so growth curves and starting stats are
+// something rather than zero), and it opens the id gates for that one slot.
+// Definitions are not persisted in a save: define the slot on every run, before
+// touching the party. Defining an already-defined slot with the same owner is
+// how you change a definition; use EternalSonataUndefineCharacter to give it up.
+
+// A vacant slot's content. Zero-initialise it, set `struct_size` to
+// sizeof(EternalSonataCharacterDefinition), then fill in what you need.
+typedef struct EternalSonataCharacterDefinition {
+  // sizeof(EternalSonataCharacterDefinition). Lets the host tell which fields a
+  // mod built against an older header actually set.
+  uint32_t struct_size;
+
+  // Display name, single-byte (CP1252/Latin-1) like
+  // EternalSonataSetCharacterName. Required: a slot with no name would draw as
+  // a blank the user can neither identify nor click. The host copies it.
+  const char* name;
+
+  // Which retail character's stat template the slot starts from, 1..
+  // ETERNALSONATA_NATIVE_CHARACTER_COUNT. This is the table the game's own
+  // character init and level-up paths read, so it decides starting stats and
+  // growth. 0 means ETERNALSONATA_CHAR_ALLEGRETTO.
+  int32_t template_source;
+
+  // The pcNNN.bop battle model to load, i.e. the NNN in
+  // "btldata\player\pc%03d.bop". 0 means the slot's own id, so character 11
+  // asks for pc011.bop and a mod that ships that file needs nothing here. Set
+  // it to borrow an existing character's model while the real one is not ready.
+  int32_t model_id;
+
+  // Starting own-stats, applied when the character first joins the party.
+  // Leave `apply_stats` 0 to let the template decide instead.
+  int32_t apply_stats;
+  EternalSonataCharacterStats stats;
+
+  uint32_t reserved[8];  // zero-fill; room for later additions
+} EternalSonataCharacterDefinition;
+
+// How many vacant slots this host has in total (defined or not), and the
+// character id of slot `index` in 0..count-1, or a negative error.
+typedef int (*EternalSonataGetAddedSlotCountFn)(void);
+typedef int (*EternalSonataGetAddedSlotFn)(int index);
+
+// 1 if `character` has content: always true for the retail cast, true for an
+// added slot only once some mod has defined it.
+typedef int (*EternalSonataIsCharacterDefinedFn)(int character);
+
+// Claims `character`, which must be an added slot, and fills it in. Defining a
+// slot that is already defined replaces the definition, since that is how a mod
+// changes its own character; the host cannot tell that apart from two mods
+// fighting over one slot, so it logs the replacement and the last caller wins.
+// A mod that does not care which slot it gets should call
+// EternalSonataDefineNextCharacter instead.
+typedef int (*EternalSonataDefineCharacterFn)(
+    int character, const EternalSonataCharacterDefinition* definition);
+
+// Claims the first free added slot. Returns its character id (>= 1), or
+// ETERNALSONATA_PARTY_ERR_NO_SLOTS when every slot is taken. This is what a mod
+// that just wants "a new character" should call, so two such mods can coexist.
+typedef int (*EternalSonataDefineNextCharacterFn)(
+    const EternalSonataCharacterDefinition* definition);
+
+// Gives a slot back: removes it from the party if it is in one, clears its name
+// and template, and closes its id gates again.
+typedef int (*EternalSonataUndefineCharacterFn)(int character);
 
 #ifdef __cplusplus
 }  // extern "C"
