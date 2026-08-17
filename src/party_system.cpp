@@ -38,6 +38,7 @@
 #include <rex/hook.h>
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
+#include <rex/system/mod_plugin.h>
 
 #include "eternalsonata_party_api.h"
 #include "guest_main_thread.h"
@@ -606,21 +607,21 @@ int ResolveSlot(int character) {
 
 }  // namespace
 
-extern "C" __declspec(dllexport) uint32_t EternalSonataPartyAbiVersion(void) {
+extern "C" REX_MOD_PLUGIN_EXPORT uint32_t EternalSonataPartyAbiVersion(void) {
   return ETERNALSONATA_PARTY_ABI_VERSION;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataIsPartyAvailable(void) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsPartyAvailable(void) {
   std::lock_guard<std::mutex> lock(g_mutex);
   return Available() ? 1 : 0;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataIsPartyEditable(void) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsPartyEditable(void) {
   std::lock_guard<std::mutex> lock(g_mutex);
   return Editable() ? 1 : 0;
 }
 
-extern "C" __declspec(dllexport) const char* EternalSonataGetCharacterName(int character) {
+extern "C" REX_MOD_PLUGIN_EXPORT const char* EternalSonataGetCharacterName(int character) {
   std::lock_guard<std::mutex> lock(g_mutex);
   const int slot = SlotForLocked(character);
   if (slot < 1 || slot > kCharacterCount) {
@@ -630,7 +631,7 @@ extern "C" __declspec(dllexport) const char* EternalSonataGetCharacterName(int c
   return name.empty() ? kDefaultNames[slot] : name.c_str();
 }
 
-extern "C" __declspec(dllexport) int EternalSonataGetPartySize(void) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPartySize(void) {
   std::lock_guard<std::mutex> lock(g_mutex);
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
@@ -638,7 +639,7 @@ extern "C" __declspec(dllexport) int EternalSonataGetPartySize(void) {
   return PartySize();
 }
 
-extern "C" __declspec(dllexport) int EternalSonataGetPartyMembers(int* out, int max) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPartyMembers(int* out, int max) {
   if (max < 0 || (max > 0 && !out)) {
     return ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT;
   }
@@ -664,7 +665,7 @@ extern "C" __declspec(dllexport) int EternalSonataGetPartyMembers(int* out, int 
   return written;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataIsCharacterInParty(int character) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsCharacterInParty(int character) {
   const int slot = ResolveSlot(character);
   if (slot < 0) {
     return 0;
@@ -672,7 +673,7 @@ extern "C" __declspec(dllexport) int EternalSonataIsCharacterInParty(int charact
   return slot != 0 && PositionOf(slot) != 0 ? 1 : 0;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataIsCharacterActive(int character) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsCharacterActive(int character) {
   const int slot = ResolveSlot(character);
   if (slot <= 0) {
     return 0;
@@ -681,7 +682,7 @@ extern "C" __declspec(dllexport) int EternalSonataIsCharacterActive(int characte
   return position >= 1 && position <= ETERNALSONATA_ACTIVE_PARTY_SIZE ? 1 : 0;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataGetCharacterPosition(int character) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetCharacterPosition(int character) {
   const int slot = ResolveSlot(character);
   if (slot < 0) {
     return slot;
@@ -692,7 +693,7 @@ extern "C" __declspec(dllexport) int EternalSonataGetCharacterPosition(int chara
   return PositionOf(slot);
 }
 
-extern "C" __declspec(dllexport) int EternalSonataGetPartyLevel(void) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPartyLevel(void) {
   std::lock_guard<std::mutex> lock(g_mutex);
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
@@ -700,7 +701,7 @@ extern "C" __declspec(dllexport) int EternalSonataGetPartyLevel(void) {
   return static_cast<int>(ReadGuest<uint32_t>(kPartyLevelAddr));
 }
 
-extern "C" __declspec(dllexport) int EternalSonataGetPartyLevelBudget(void) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPartyLevelBudget(void) {
   std::lock_guard<std::mutex> lock(g_mutex);
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
@@ -712,7 +713,7 @@ extern "C" __declspec(dllexport) int EternalSonataGetPartyLevelBudget(void) {
   return ReadGuest<uint16_t>(kBudgetCapTableAddr + 2u * (level - 1)) & 0xFF;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataGetPartyLevelBudgetUsed(void) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPartyLevelBudgetUsed(void) {
   std::lock_guard<std::mutex> lock(g_mutex);
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
@@ -720,7 +721,7 @@ extern "C" __declspec(dllexport) int EternalSonataGetPartyLevelBudgetUsed(void) 
   return ReadGuestByte(kBudgetUsedAddr);
 }
 
-extern "C" __declspec(dllexport) int EternalSonataGetPartyLevelBudgetFree(void) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPartyLevelBudgetFree(void) {
   std::lock_guard<std::mutex> lock(g_mutex);
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
@@ -728,7 +729,7 @@ extern "C" __declspec(dllexport) int EternalSonataGetPartyLevelBudgetFree(void) 
   return ReadGuestByte(kBudgetFreeAddr);
 }
 
-extern "C" __declspec(dllexport) int EternalSonataGetCharacterStats(
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetCharacterStats(
     int character, EternalSonataCharacterStats* out) {
   if (!out) {
     return ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT;
@@ -745,7 +746,7 @@ extern "C" __declspec(dllexport) int EternalSonataGetCharacterStats(
   return ETERNALSONATA_PARTY_OK;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataGetCharacterBaseStats(
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetCharacterBaseStats(
     int character, EternalSonataCharacterStats* out) {
   if (!out) {
     return ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT;
@@ -762,7 +763,7 @@ extern "C" __declspec(dllexport) int EternalSonataGetCharacterBaseStats(
   return ETERNALSONATA_PARTY_OK;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataSetCharacterStats(
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCharacterStats(
     int character, const EternalSonataCharacterStats* stats) {
   if (!stats) {
     return ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT;
@@ -779,7 +780,7 @@ extern "C" __declspec(dllexport) int EternalSonataSetCharacterStats(
   return ETERNALSONATA_PARTY_OK;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataHealCharacter(int character) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataHealCharacter(int character) {
   const int slot = ResolveSlot(character);
   if (slot < 0) {
     return slot;
@@ -795,7 +796,7 @@ extern "C" __declspec(dllexport) int EternalSonataHealCharacter(int character) {
   return ETERNALSONATA_PARTY_OK;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataHealParty(void) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataHealParty(void) {
   std::lock_guard<std::mutex> lock(g_mutex);
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
@@ -812,7 +813,7 @@ extern "C" __declspec(dllexport) int EternalSonataHealParty(void) {
   return ETERNALSONATA_PARTY_OK;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataAddCharacterToParty(int character) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataAddCharacterToParty(int character) {
   std::lock_guard<std::mutex> lock(g_mutex);
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
@@ -838,7 +839,7 @@ extern "C" __declspec(dllexport) int EternalSonataAddCharacterToParty(int charac
   });
 }
 
-extern "C" __declspec(dllexport) int EternalSonataRemoveCharacterFromParty(int character) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRemoveCharacterFromParty(int character) {
   std::lock_guard<std::mutex> lock(g_mutex);
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
@@ -856,7 +857,7 @@ extern "C" __declspec(dllexport) int EternalSonataRemoveCharacterFromParty(int c
   return RunOnGuestThread([slot] { return LeaveOnGuestThread(slot); });
 }
 
-extern "C" __declspec(dllexport) int EternalSonataSetCharacterPosition(int character,
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCharacterPosition(int character,
                                                                       int position) {
   std::lock_guard<std::mutex> lock(g_mutex);
   if (!Available()) {
@@ -897,7 +898,7 @@ extern "C" __declspec(dllexport) int EternalSonataSetCharacterPosition(int chara
   });
 }
 
-extern "C" __declspec(dllexport) int EternalSonataSwapCharacterPositions(int a, int b) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSwapCharacterPositions(int a, int b) {
   const int position_a = EternalSonataGetCharacterPosition(a);
   if (position_a < 0) {
     return position_a;
@@ -908,7 +909,7 @@ extern "C" __declspec(dllexport) int EternalSonataSwapCharacterPositions(int a, 
   return EternalSonataSetCharacterPosition(b, position_a);
 }
 
-extern "C" __declspec(dllexport) int EternalSonataSetPartyLevel(int level) {
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetPartyLevel(int level) {
   if (level < 1 || level > 6) {
     return ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT;
   }
@@ -927,7 +928,7 @@ extern "C" __declspec(dllexport) int EternalSonataSetPartyLevel(int level) {
   return ETERNALSONATA_PARTY_OK;
 }
 
-extern "C" __declspec(dllexport) int EternalSonataSetCharacterName(int character,
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCharacterName(int character,
                                                                   const char* name) {
   std::lock_guard<std::mutex> lock(g_mutex);
   const int slot = SlotForLocked(character);
