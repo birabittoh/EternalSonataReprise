@@ -65,6 +65,49 @@ constexpr uint32_t kCurrentPartySlot = 0x8243C270u;
 // re-runs sub_820FCF80 itself) instead of the plain resume.
 constexpr uint32_t kMapResetFlag = 0x8243C368u;
 
+// The map manager's second field object (mm+1528, the one sub_820FCF80's
+// forced path pairs with the leader). Non-null is what gates the two
+// sub_820F6420 calls that crash; see kSceneHandleTable below.
+constexpr uint32_t kSecondObjectPtrOffset = 1528u;
+// Field objects carry their scene-handle id at +4 and a "handle is live"
+// marker at +20. The game only ever looks a handle up after checking that
+// the byte at +20 is 1 (sub_820FCF80 does it twice, immediately after the
+// sub_820F6420 pair; sub_820F6420 does it for the leader object).
+constexpr uint32_t kObjectHandleIdOffset = 4u;
+constexpr uint32_t kObjectHandleLiveOffset = 20u;
+constexpr uint8_t kObjectHandleLive = 1u;
+// The scene object registry sub_8217BED0 resolves handle ids against.
+constexpr uint32_t kSceneHandleTable = 0x824CF500u;
+
+// sub_8217BED0: scene-handle id -> object pointer, 0 when the id is not
+// registered. See the crash note on the respawn call below.
+REX_IMPORT(__imp__sub_8217BED0, ResolveSceneHandle, u32(u32, u32));
+
+// Whether sub_820FCF80's forced path can safely run right now.
+//
+// Crash (access violation reading guest 0x140): with a3=1 (force),
+// sub_820FCF80 reaches `sub_820F6420(leader, {1,0}, sub_820FBEB8, second)`,
+// which passes the *second* object's handle id down to sub_82179A48 and on
+// into sub_82172B20. sub_82172B20 opens with
+// `*(sub_8217BED0(&dword_824CF500, id) + 320)` and never checks the result,
+// so an unregistered id faults at 0x140. sub_820F6420 checks +16/+20 on the
+// leader object but nothing at all on the second one, and the game's own
+// callers only reach this branch when the party slot actually changed, so
+// they never hit an id in that state. Forcing from here can.
+bool ForcedRespawnIsSafe() {
+  uint8_t* base = rex::system::kernel_state()->memory()->virtual_membase();
+  const uint32_t second = REX_LOAD_U32(kMapManager + kSecondObjectPtrOffset);
+  if (second == 0 || second == 0xFFFFFFFFu) {
+    // sub_820FCF80 skips the whole sub_820F6420 block when this is null.
+    return true;
+  }
+  if (REX_LOAD_U8(second + kObjectHandleLiveOffset) != kObjectHandleLive) {
+    return false;
+  }
+  return ResolveSceneHandle(kSceneHandleTable,
+                            REX_LOAD_U32(second + kObjectHandleIdOffset)) != 0;
+}
+
 // The game's own field-leader respawn. a3 != 0 forces it to run even when the
 // party slot is unchanged. Importing the plain symbol routes back through this
 // file's sub_820EE7D8 hook, so the model substitution applies to it.
@@ -238,8 +281,11 @@ REX_HOOK_RAW(sub_820F9EC8) {
   const uint32_t object = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
   // Skip the reset branch: it re-runs sub_820FCF80 itself, so a respawn here
   // would be redundant, and the spawn hook picks up the new model anyway.
+  // ForcedRespawnIsSafe covers the forced path's unguarded handle lookup. When
+  // it says no, leaving g_applied_character alone means the next resume edge
+  // retries, so the model still lands as soon as the scene is settled.
   if (character != g_applied_character && object != 0 && object != 0xFFFFFFFFu &&
-      REX_LOAD_U8(kMapResetFlag) == 0) {
+      REX_LOAD_U8(kMapResetFlag) == 0 && ForcedRespawnIsSafe()) {
     RespawnFieldLeader(kMapManager, REX_LOAD_U32(kCurrentPartySlot), 1u);
   }
   __imp__sub_820F9EC8(ctx, base);
