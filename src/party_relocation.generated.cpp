@@ -50,14 +50,6 @@ static_assert(eternalsonata::kRelocatedCharacterCount == 12,
 // The hook bodies are looked up by name by the recompiler, so they
 // keep external linkage.
 
-// charflags: 0x8243fcfc -> 0x8b001a00
-constexpr int32_t kRelocCharflagsDelta = static_cast<int32_t>(0x08bc1d04);
-
-void PartyReloc_charflags_Remap(PPCRegister& reg) {
-    // fired after the addi, so reg holds the finished old address
-    reg.u32 += kRelocCharflagsDelta;
-}
-
 // charwords: 0x824400c8 -> 0x8b001800
 constexpr int32_t kRelocCharwordsDelta = static_cast<int32_t>(0x08bc1738);
 
@@ -126,16 +118,37 @@ void PartyRelocEnd_position_Remap(PPCRegister& reg) {
     reg.u32 += kRelocEndPositionDelta;
 }
 
-// stats_base loop bound: 0x824400c8 -> 0x8b000340 (the end of the relocated array, two entries longer)
-constexpr int32_t kRelocEndStatsBaseDelta = static_cast<int32_t>(0x08bc0278);
-
-void PartyRelocEnd_stats_base_Remap(PPCRegister& reg) {
-    // fired after the addi, so reg holds the finished old address
-    reg.u32 += kRelocEndStatsBaseDelta;
+// position loop bound reached from position: 0x8b001928 -> 0x8b001930 (the end of the relocated array, two entries longer)
+void PartyRebaseEnd_position_To_position(PPCRegister& reg) {
+    reg.u32 += static_cast<int32_t>(0x00000008);
 }
 
-// position -> slotbytes: a walking pointer crossing from one array to
-// the next, already carrying the position delta.
+// stats_base loop bound reached from stats_base: 0x8b0002e0 -> 0x8b000340 (the end of the relocated array, two entries longer)
+void PartyRebaseEnd_stats_base_To_stats_base(PPCRegister& reg) {
+    reg.u32 += static_cast<int32_t>(0x00000060);
+}
+
+// charwords -> charflags: a register carrying charwords's delta while it addresses charflags.
+void PartyRebase_charwords_To_charflags(PPCRegister& reg) {
+    reg.u32 += static_cast<int32_t>(0x000005cc);
+}
+
+// position -> slotbytes: a register carrying position's delta while it addresses slotbytes.
 void PartyRebase_position_To_slotbytes(PPCRegister& reg) {
     reg.u32 += static_cast<int32_t>(0xffffe6d8);
+}
+
+// slotbytes -> position: a register carrying slotbytes's delta while it addresses position.
+void PartyRebase_slotbytes_To_position(PPCRegister& reg) {
+    reg.u32 += static_cast<int32_t>(0x00001928);
+}
+
+// stats_base -> stats_live: a register carrying stats_base's delta while it addresses stats_live.
+void PartyRebase_stats_base_To_stats_live(PPCRegister& reg) {
+    reg.u32 += static_cast<int32_t>(0x000020e0);
+}
+
+// stats_live -> stats_base: a register carrying stats_live's delta while it addresses stats_base.
+void PartyRebase_stats_live_To_stats_base(PPCRegister& reg) {
+    reg.u32 += static_cast<int32_t>(0xffffdf20);
 }

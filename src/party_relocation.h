@@ -146,18 +146,55 @@ bool ClearCharacterTemplate(int character);
 // the ten real entries rather than nonsense.
 inline constexpr uint8_t kPoisonByte = 0xCD;
 
-// The .bss block the six state arrays vacated, as [begin, end) guest ranges.
-// The two runs are the whole span each array group occupied, including the
-// dword_8243FC04 below position and the gap between slotbytes and charflags,
-// minus the addresses that were never party state to begin with.
+// The .bss the vacated arrays occupied, as [begin, end) guest ranges.
+//
+// `position` (0x8243FC08) and `slotbytes` (0x8243FC30) are deliberately NOT
+// here, and that costs real coverage -- position has more sites than any other
+// array. They sit inside the 2324-byte save block that starts at 0x8243F3E8,
+// which sub_82240AF8 restores and sub_82241190 captures as one span. That copy
+// is legitimate and unavoidable: most of the block is state that never moved, so
+// the span has to keep landing at the old addresses. A canary underneath it
+// would fire on every load and every save, and since CheckPartyPoison reports
+// each byte once, a single such false positive would blind the byte for the rest
+// of the run -- worse than not watching it. PartySave_LoadPartyBlock and
+// PartySave_StorePartyBlock in party_save.cpp carry those two arrays across that
+// block instead.
+//
+// Everything from charflags up is covered. charflags begins at 0x8243FCFC,
+// exactly where the 2324-byte block ends, and the two stat blocks reach their
+// arrays through pointers the hooks already rewrite, so nothing legitimately
+// writes this range any more.
 struct PoisonRange {
   uint32_t begin;
   uint32_t end;
 };
 inline constexpr PoisonRange kPoisonRanges[] = {
-    {0x8243FC08, 0x8243FC3A},   // position, slotbytes
     {0x8243FCFC, 0x824400DC},   // charflags, stats_live, stats_base, charwords
 };
+
+// The save block that straddles the vacated position and slotbytes arrays: the
+// span sub_822CF5B0 copies at 0x82240B28 (load) and 0x8224127C (save).
+inline constexpr uint32_t kPartyBlockBase = 0x8243F3E8;
+inline constexpr uint32_t kPartyBlockSize = 2324;
+static_assert(kPartyBlockBase + kPartyBlockSize == 0x8243FCFC,
+              "the party save block should end exactly where charflags began");
+
+// Where position and slotbytes used to live, which is where that block still
+// puts them. party_save.cpp copies between these and the relocated arrays.
+inline constexpr uint32_t kPositionStagingBase = 0x8243FC08;
+inline constexpr uint32_t kSlotbytesStagingBase = 0x8243FC30;
+// The save holds ten of each, whatever the cast size is; characters 11 and 12
+// ride in the side-car blocks.
+inline constexpr uint32_t kSavedCharacterCount = 10;
+
+// Total poisoned bytes, for the "already reported" bitmap in CheckPartyPoison.
+inline constexpr uint32_t kPoisonTotalSize = [] {
+  uint32_t total = 0;
+  for (const auto& range : kPoisonRanges) {
+    total += range.end - range.begin;
+  }
+  return total;
+}();
 
 // Fills the ranges above with kPoisonByte. Called by
 // ReservePartyRelocationMemory, after the relocated copies exist.

@@ -16,7 +16,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986536,
@@ -35,7 +36,8 @@
   "note": "dereferences r6 built at 0x820e78e4 via a copy into r7",
   "index_reg": 6,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986552,
@@ -54,7 +56,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986576,
@@ -73,7 +76,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986592,
@@ -92,7 +96,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986596,
@@ -111,7 +116,8 @@
   "note": "dereferences r6 built at 0x820e78e4 via a copy into r7",
   "index_reg": 6,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986604,
@@ -130,7 +136,8 @@
   "note": "dereferences r11 built at 0x820e7920 via a copy into r8",
   "index_reg": 11,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986672,
@@ -149,7 +156,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986676,
@@ -168,7 +176,8 @@
   "note": "dereferences r10 built at 0x820e7970",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2181986696,
@@ -187,7 +196,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986712,
@@ -206,7 +216,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986716,
@@ -225,7 +236,8 @@
   "note": "dereferences r4 built at 0x820e7998 via a copy into r5",
   "index_reg": 4,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986748,
@@ -244,7 +256,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986768,
@@ -263,7 +276,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986800,
@@ -282,7 +296,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986808,
@@ -301,7 +316,8 @@
   "note": "dereferences r7 built at 0x820e79f0 via a copy into r9",
   "index_reg": 7,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986816,
@@ -320,7 +336,8 @@
   "note": "dereferences r4 built at 0x820e7998 via a copy into r5",
   "index_reg": 4,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2181986920,
@@ -339,7 +356,8 @@
   "note": "not inside any IDA-defined function",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986928,
@@ -358,7 +376,8 @@
   "note": "not inside any IDA-defined function; dereferences r11 built at 0x820e7a68",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2181986932,
@@ -377,7 +396,8 @@
   "note": "not inside any IDA-defined function; dereferences r11 built at 0x820e7a68",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986964,
@@ -396,7 +416,8 @@
   "note": "not inside any IDA-defined function",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181986968,
@@ -415,7 +436,8 @@
   "note": "not inside any IDA-defined function; dereferences r11 built at 0x820e7a94",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2181986988,
@@ -431,10 +453,11 @@
   "setup_distance": 0,
   "role": "sentinel",
   "func": "",
-  "note": "not inside any IDA-defined function",
+  "note": "not inside any IDA-defined function; reaches slotbytes as an offset from position, built at 0x820e79f0",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": "position"
  },
  {
   "addr": 2181987016,
@@ -453,7 +476,8 @@
   "note": "not inside any IDA-defined function; role sentinel_or_base -> element by hand (see ROLE_OVERRIDES)",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181987024,
@@ -472,7 +496,8 @@
   "note": "not inside any IDA-defined function",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181987040,
@@ -491,7 +516,8 @@
   "note": "not inside any IDA-defined function; dereferences r8 built at 0x820e7ad0",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181987056,
@@ -510,7 +536,8 @@
   "note": "not inside any IDA-defined function; dereferences r10 built at 0x820e7ae0 via a copy into r8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181987092,
@@ -529,7 +556,8 @@
   "note": "not inside any IDA-defined function; dereferences r5 built at 0x820e7ac8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2181987524,
@@ -548,7 +576,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078460,
@@ -567,7 +596,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078504,
@@ -586,7 +616,8 @@
   "note": "dereferences r10 built at 0x820fdffc",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2182078508,
@@ -605,7 +636,8 @@
   "note": "dereferences r10 built at 0x820fdffc",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078564,
@@ -624,7 +656,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078568,
@@ -643,7 +676,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078572,
@@ -662,7 +696,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078576,
@@ -681,7 +716,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078580,
@@ -700,7 +736,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078584,
@@ -719,7 +756,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078588,
@@ -738,7 +776,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078592,
@@ -757,7 +796,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078596,
@@ -776,7 +816,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078600,
@@ -795,7 +836,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078616,
@@ -814,7 +856,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182078884,
@@ -833,7 +876,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993352,
@@ -852,7 +896,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993356,
@@ -871,7 +916,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993360,
@@ -890,7 +936,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993364,
@@ -909,7 +956,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993368,
@@ -928,7 +976,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993372,
@@ -947,7 +996,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993376,
@@ -966,7 +1016,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993380,
@@ -985,7 +1036,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993384,
@@ -1004,7 +1056,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993388,
@@ -1023,7 +1076,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993404,
@@ -1042,7 +1096,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993680,
@@ -1061,7 +1116,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993976,
@@ -1080,7 +1136,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182993992,
@@ -1099,7 +1156,8 @@
   "note": "dereferences r9 built at 0x821dd838",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2182994020,
@@ -1118,7 +1176,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994280,
@@ -1137,7 +1196,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994300,
@@ -1156,7 +1216,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994376,
@@ -1175,7 +1236,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994396,
@@ -1194,7 +1256,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994472,
@@ -1213,7 +1276,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994492,
@@ -1232,7 +1296,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994552,
@@ -1251,7 +1316,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994572,
@@ -1270,7 +1336,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994656,
@@ -1289,7 +1356,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994676,
@@ -1308,7 +1376,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994768,
@@ -1327,7 +1396,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994788,
@@ -1346,7 +1416,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994896,
@@ -1365,7 +1436,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182994916,
@@ -1384,7 +1456,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182995000,
@@ -1403,7 +1476,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182995020,
@@ -1422,7 +1496,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182995116,
@@ -1441,7 +1516,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182995136,
@@ -1460,7 +1536,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182995268,
@@ -1479,7 +1556,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2182999428,
@@ -1498,7 +1576,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183009856,
@@ -1517,7 +1596,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183017524,
@@ -1536,7 +1616,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027324,
@@ -1555,7 +1636,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027328,
@@ -1574,7 +1656,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027332,
@@ -1593,7 +1676,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027336,
@@ -1612,7 +1696,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027340,
@@ -1631,7 +1716,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027344,
@@ -1650,7 +1736,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027348,
@@ -1669,7 +1756,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027352,
@@ -1688,7 +1776,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027356,
@@ -1707,7 +1796,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027360,
@@ -1726,7 +1816,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027364,
@@ -1745,7 +1836,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027384,
@@ -1764,7 +1856,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183027732,
@@ -1783,7 +1876,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028100,
@@ -1802,7 +1896,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028116,
@@ -1821,7 +1916,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028120,
@@ -1840,7 +1936,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028124,
@@ -1859,7 +1956,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028128,
@@ -1878,7 +1976,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028132,
@@ -1897,7 +1996,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028136,
@@ -1916,7 +2016,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028140,
@@ -1935,7 +2036,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028144,
@@ -1954,7 +2056,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028148,
@@ -1973,7 +2076,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028152,
@@ -1992,7 +2096,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028168,
@@ -2011,7 +2116,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028180,
@@ -2030,7 +2136,8 @@
   "note": "dereferences r10 built at 0x821e5d84",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183028184,
@@ -2049,7 +2156,8 @@
   "note": "dereferences r10 built at 0x821e5d84",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028672,
@@ -2068,7 +2176,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028676,
@@ -2087,7 +2196,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028680,
@@ -2106,7 +2216,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028684,
@@ -2125,7 +2236,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028688,
@@ -2144,7 +2256,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028692,
@@ -2163,7 +2276,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028696,
@@ -2182,7 +2296,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028700,
@@ -2201,7 +2316,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028704,
@@ -2220,7 +2336,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028708,
@@ -2239,7 +2356,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028712,
@@ -2258,7 +2376,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183028928,
@@ -2277,7 +2396,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029216,
@@ -2296,7 +2416,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029220,
@@ -2315,7 +2436,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029228,
@@ -2334,7 +2456,8 @@
   "note": "dereferences r10 built at 0x821e61e0 via a copy into r11",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029232,
@@ -2353,7 +2476,8 @@
   "note": "dereferences r9 built at 0x821e61e4 via a copy into r8",
   "index_reg": 9,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029236,
@@ -2372,7 +2496,8 @@
   "note": "dereferences r10 built at 0x821e61e0 via a copy into r11",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029240,
@@ -2391,7 +2516,8 @@
   "note": "dereferences r9 built at 0x821e61e4 via a copy into r8",
   "index_reg": 9,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029244,
@@ -2410,7 +2536,8 @@
   "note": "dereferences r10 built at 0x821e61e0 via a copy into r11",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029352,
@@ -2429,7 +2556,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029356,
@@ -2448,7 +2576,8 @@
   "note": "dereferences r10 built at 0x821e6268",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183029376,
@@ -2467,7 +2596,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029404,
@@ -2486,7 +2616,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029408,
@@ -2505,7 +2636,8 @@
   "note": "dereferences r8 built at 0x821e629c via a copy into r9",
   "index_reg": 8,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029420,
@@ -2524,7 +2656,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029424,
@@ -2543,7 +2676,8 @@
   "note": "dereferences r5 built at 0x821e62ac via a copy into r6",
   "index_reg": 5,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029444,
@@ -2562,7 +2696,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029464,
@@ -2581,7 +2716,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029492,
@@ -2600,7 +2736,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029504,
@@ -2619,7 +2756,8 @@
   "note": "dereferences r7 built at 0x821e62f4 via a copy into r9",
   "index_reg": 7,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029512,
@@ -2638,7 +2776,8 @@
   "note": "dereferences r5 built at 0x821e62ac via a copy into r6",
   "index_reg": 5,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029516,
@@ -2657,7 +2796,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183029520,
@@ -2676,7 +2816,8 @@
   "note": "dereferences r11 built at 0x821e630c via a copy into r3",
   "index_reg": 11,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029556,
@@ -2692,10 +2833,11 @@
   "setup_distance": 0,
   "role": "element",
   "func": "sub_821E6240",
-  "note": "",
+  "note": "reaches position as an offset from slotbytes, built at 0x821e630c",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": "slotbytes"
  },
  {
   "addr": 2183029576,
@@ -2714,7 +2856,8 @@
   "note": "dereferences r11 built at 0x821e630c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029600,
@@ -2730,10 +2873,11 @@
   "setup_distance": 0,
   "role": "below_base",
   "func": "sub_821E6240",
-  "note": "",
+  "note": "reaches position as an offset from slotbytes, built at 0x821e630c",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": "slotbytes"
  },
  {
   "addr": 2183029604,
@@ -2752,7 +2896,8 @@
   "note": "dereferences r11 built at 0x821e630c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029608,
@@ -2771,7 +2916,8 @@
   "note": "dereferences r31 built at 0x821e6360 via a copy into r4",
   "index_reg": 31,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029612,
@@ -2790,7 +2936,8 @@
   "note": "dereferences r9 built at 0x821e6364 via a copy into r10",
   "index_reg": 9,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029624,
@@ -2809,7 +2956,8 @@
   "note": "dereferences r9 built at 0x821e6364 via a copy into r10",
   "index_reg": 9,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029664,
@@ -2825,10 +2973,11 @@
   "setup_distance": 0,
   "role": "element",
   "func": "sub_821E6240",
-  "note": "",
+  "note": "reaches position as an offset from slotbytes, built at 0x821e630c",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": "slotbytes"
  },
  {
   "addr": 2183029684,
@@ -2847,7 +2996,8 @@
   "note": "dereferences r11 built at 0x821e630c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029708,
@@ -2863,10 +3013,11 @@
   "setup_distance": 0,
   "role": "below_base",
   "func": "sub_821E6240",
-  "note": "",
+  "note": "reaches position as an offset from slotbytes, built at 0x821e630c",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": "slotbytes"
  },
  {
   "addr": 2183029712,
@@ -2885,7 +3036,8 @@
   "note": "dereferences r11 built at 0x821e630c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029716,
@@ -2904,7 +3056,8 @@
   "note": "dereferences r31 built at 0x821e63cc via a copy into r4",
   "index_reg": 31,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029720,
@@ -2923,7 +3076,8 @@
   "note": "dereferences r9 built at 0x821e63d0 via a copy into r10",
   "index_reg": 9,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029732,
@@ -2942,7 +3096,8 @@
   "note": "dereferences r9 built at 0x821e63d0 via a copy into r10",
   "index_reg": 9,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029752,
@@ -2961,7 +3116,8 @@
   "note": "dereferences r11 built at 0x821e630c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029756,
@@ -2980,7 +3136,8 @@
   "note": "dereferences r5 built at 0x821e62ac via a copy into r6",
   "index_reg": 5,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029760,
@@ -2999,7 +3156,8 @@
   "note": "dereferences r11 built at 0x821e63f8 via a copy into r3",
   "index_reg": 11,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029836,
@@ -3018,7 +3176,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183029844,
@@ -3037,7 +3196,8 @@
   "note": "dereferences r10 built at 0x821e644c via a copy into r9",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029920,
@@ -3056,7 +3216,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183029940,
@@ -3075,7 +3236,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183030180,
@@ -3094,7 +3256,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183030188,
@@ -3113,7 +3276,8 @@
   "note": "dereferences r10 built at 0x821e65a4 via a copy into r9",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183030260,
@@ -3132,7 +3296,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183030280,
@@ -3151,7 +3316,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033168,
@@ -3170,7 +3336,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033176,
@@ -3189,7 +3356,8 @@
   "note": "dereferences r10 built at 0x821e7150",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033180,
@@ -3208,7 +3376,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033188,
@@ -3224,10 +3393,11 @@
   "setup_distance": 0,
   "role": "element",
   "func": "sub_821E7138",
-  "note": "",
+  "note": "reaches charflags as an offset from charwords, built at 0x821e715c",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": "charwords"
  },
  {
   "addr": 2183033220,
@@ -3246,7 +3416,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033228,
@@ -3265,7 +3436,8 @@
   "note": "dereferences r9 built at 0x821e7164",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033236,
@@ -3284,7 +3456,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033244,
@@ -3303,7 +3476,8 @@
   "note": "dereferences r31 built at 0x821e7158",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033252,
@@ -3322,7 +3496,8 @@
   "note": "dereferences r31 built at 0x821e7158",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033264,
@@ -3341,7 +3516,8 @@
   "note": "dereferences r31 built at 0x821e7158",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033276,
@@ -3360,7 +3536,8 @@
   "note": "dereferences r31 built at 0x821e7158",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033284,
@@ -3379,7 +3556,8 @@
   "note": "dereferences r25 built at 0x821e7194",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033292,
@@ -3398,7 +3576,8 @@
   "note": "dereferences r31 built at 0x821e7158",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033616,
@@ -3417,7 +3596,8 @@
   "note": "dereferences r22 built at 0x821e718c via a copy into r27",
   "index_reg": 22,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033732,
@@ -3436,7 +3616,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183033748,
@@ -3455,7 +3636,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034404,
@@ -3474,7 +3656,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034420,
@@ -3493,7 +3676,8 @@
   "note": "dereferences r11 built at 0x821e7624 via a copy into r9",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183034424,
@@ -3512,7 +3696,8 @@
   "note": "dereferences r11 built at 0x821e7624 via a copy into r9",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034432,
@@ -3528,10 +3713,11 @@
   "setup_distance": 0,
   "role": "element",
   "func": "sub_821E7358",
-  "note": "",
+  "note": "reaches charflags as an offset from charwords, built at 0x821e7624",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": "charwords"
  },
  {
   "addr": 2183034488,
@@ -3550,7 +3736,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034492,
@@ -3566,10 +3753,11 @@
   "setup_distance": 0,
   "role": "element",
   "func": "sub_821E7668",
-  "note": "",
+  "note": "reaches charflags as an offset from charwords, built at 0x821e7678",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": "charwords"
  },
  {
   "addr": 2183034496,
@@ -3588,7 +3776,8 @@
   "note": "dereferences r11 built at 0x821e767c via a copy into r31",
   "index_reg": 11,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034544,
@@ -3607,7 +3796,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034548,
@@ -3626,7 +3816,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034552,
@@ -3645,7 +3836,8 @@
   "note": "dereferences r10 built at 0x821e76b0",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034560,
@@ -3664,7 +3856,8 @@
   "note": "dereferences r9 built at 0x821e76b4",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034588,
@@ -3680,10 +3873,11 @@
   "setup_distance": 0,
   "role": "element",
   "func": "sub_821E7668",
-  "note": "",
+  "note": "reaches charflags as an offset from charwords, built at 0x821e7678",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": "charwords"
  },
  {
   "addr": 2183034596,
@@ -3702,7 +3896,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034600,
@@ -3721,7 +3916,8 @@
   "note": "dereferences r11 built at 0x821e76dc via a copy into r31",
   "index_reg": 11,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034832,
@@ -3740,7 +3936,8 @@
   "note": "dereferences r30 built at 0x821e7678 via a copy into r10",
   "index_reg": 30,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034844,
@@ -3759,7 +3956,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034860,
@@ -3778,7 +3976,8 @@
   "note": "dereferences r10 built at 0x821e77dc",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034864,
@@ -3797,7 +3996,8 @@
   "note": "dereferences r10 built at 0x821e77dc",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034928,
@@ -3816,7 +4016,8 @@
   "note": "dereferences r28 built at 0x821e76e4",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183034956,
@@ -3835,7 +4036,8 @@
   "note": "dereferences r8 built at 0x821e76b8 via a copy into r11",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034960,
@@ -3854,7 +4056,8 @@
   "note": "dereferences r9 built at 0x821e784c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034964,
@@ -3873,7 +4076,8 @@
   "note": "dereferences r28 built at 0x821e76e4",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034984,
@@ -3892,7 +4096,8 @@
   "note": "dereferences r8 built at 0x821e7850 via a copy into r11",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183034992,
@@ -3908,10 +4113,11 @@
   "setup_distance": 0,
   "role": "element",
   "func": "sub_821E7668",
-  "note": "",
+  "note": "reaches stats_base as an offset from stats_live, built at 0x821e7850",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": "stats_live"
  },
  {
   "addr": 2183034996,
@@ -3930,7 +4136,8 @@
   "note": "dereferences r9 built at 0x821e7868",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183035000,
@@ -3949,7 +4156,8 @@
   "note": "dereferences r8 built at 0x821e7870",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183035068,
@@ -3968,7 +4176,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183035072,
@@ -3987,7 +4196,8 @@
   "note": "dereferences r10 built at 0x821e78bc",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183035100,
@@ -4006,7 +4216,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183035128,
@@ -4025,7 +4236,8 @@
   "note": "dereferences r10 built at 0x821e78dc",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036328,
@@ -4044,7 +4256,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036568,
@@ -4063,7 +4276,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036572,
@@ -4079,10 +4293,11 @@
   "setup_distance": 0,
   "role": "element",
   "func": "sub_821E7D88",
-  "note": "",
+  "note": "reaches charflags as an offset from charwords, built at 0x821e7e98",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": "charwords"
  },
  {
   "addr": 2183036576,
@@ -4101,7 +4316,8 @@
   "note": "dereferences r10 built at 0x821e7e9c via a copy into r30",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036604,
@@ -4117,10 +4333,11 @@
   "setup_distance": 0,
   "role": "element",
   "func": "sub_821E7D88",
-  "note": "",
+  "note": "reaches charflags as an offset from charwords, built at 0x821e7e98",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": "charwords"
  },
  {
   "addr": 2183036612,
@@ -4139,7 +4356,8 @@
   "note": "dereferences r10 built at 0x821e7ebc via a copy into r30",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036620,
@@ -4158,7 +4376,8 @@
   "note": "dereferences r11 built at 0x821e7e98 via a copy into r8",
   "index_reg": 11,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036668,
@@ -4177,7 +4396,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036672,
@@ -4196,7 +4416,8 @@
   "note": "dereferences r11 built at 0x821e7efc",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036724,
@@ -4215,7 +4436,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036728,
@@ -4234,7 +4456,8 @@
   "note": "dereferences r11 built at 0x821e7f34",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183036748,
@@ -4253,7 +4476,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036796,
@@ -4272,7 +4496,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036808,
@@ -4291,7 +4516,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036828,
@@ -4310,7 +4536,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036848,
@@ -4329,7 +4556,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183036896,
@@ -4348,7 +4576,8 @@
   "note": "dereferences r30 built at 0x821e7f88",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037080,
@@ -4367,7 +4596,8 @@
   "note": "dereferences r30 built at 0x821e7f88",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183037084,
@@ -4386,7 +4616,8 @@
   "note": "dereferences r27 built at 0x821e7f7c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037176,
@@ -4405,7 +4636,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037184,
@@ -4424,7 +4656,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037196,
@@ -4443,7 +4676,8 @@
   "note": "dereferences r8 built at 0x821e8100",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037244,
@@ -4462,7 +4696,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037264,
@@ -4481,7 +4716,8 @@
   "note": "dereferences r5 built at 0x821e813c via a copy into r10",
   "index_reg": 5,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037276,
@@ -4500,7 +4736,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037284,
@@ -4519,7 +4756,8 @@
   "note": "dereferences r29 built at 0x821e815c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037712,
@@ -4538,7 +4776,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037744,
@@ -4557,7 +4796,8 @@
   "note": "dereferences r10 built at 0x821e8310",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183037876,
@@ -4576,7 +4816,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183037964,
@@ -4595,7 +4836,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183038216,
@@ -4614,7 +4856,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183038324,
@@ -4633,7 +4876,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183038328,
@@ -4652,7 +4896,8 @@
   "note": "dereferences r11 built at 0x821e8574",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183038332,
@@ -4671,7 +4916,8 @@
   "note": "dereferences r11 built at 0x821e8574",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183038340,
@@ -4690,7 +4936,8 @@
   "note": "dereferences r11 built at 0x821e8574",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183038344,
@@ -4709,7 +4956,8 @@
   "note": "dereferences r11 built at 0x821e8574",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183038996,
@@ -4725,10 +4973,11 @@
   "setup_distance": 0,
   "role": "element",
   "func": "sub_821E8458",
-  "note": "",
+  "note": "reaches stats_live as an offset from stats_base, built at 0x821e8588",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": "stats_base"
  },
  {
   "addr": 2183039000,
@@ -4747,7 +4996,8 @@
   "note": "dereferences r11 built at 0x821e8814",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039588,
@@ -4766,7 +5016,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039600,
@@ -4785,7 +5036,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039608,
@@ -4804,7 +5056,8 @@
   "note": "dereferences r9 built at 0x821e8a64",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039612,
@@ -4823,7 +5076,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039660,
@@ -4842,7 +5096,8 @@
   "note": "dereferences r10 built at 0x821e8a7c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039664,
@@ -4861,7 +5116,8 @@
   "note": "dereferences r30 built at 0x821e8a70",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039668,
@@ -4880,7 +5136,8 @@
   "note": "dereferences r9 built at 0x821e8a64",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039672,
@@ -4899,7 +5156,8 @@
   "note": "dereferences r9 built at 0x821e8a64",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039700,
@@ -4918,7 +5176,8 @@
   "note": "dereferences r10 built at 0x821e8a7c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039708,
@@ -4937,7 +5196,8 @@
   "note": "dereferences r10 built at 0x821e8a7c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039732,
@@ -4956,7 +5216,8 @@
   "note": "dereferences r30 built at 0x821e8a70",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039736,
@@ -4975,7 +5236,8 @@
   "note": "dereferences r30 built at 0x821e8a70",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039740,
@@ -4994,7 +5256,8 @@
   "note": "dereferences r10 built at 0x821e8a7c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039772,
@@ -5013,7 +5276,8 @@
   "note": "dereferences r9 built at 0x821e8a64",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039776,
@@ -5032,7 +5296,8 @@
   "note": "dereferences r9 built at 0x821e8a64",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039816,
@@ -5051,7 +5316,8 @@
   "note": "dereferences r10 built at 0x821e8a7c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039832,
@@ -5070,7 +5336,8 @@
   "note": "dereferences r10 built at 0x821e8a7c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039836,
@@ -5089,7 +5356,8 @@
   "note": "dereferences r10 built at 0x821e8a7c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183039932,
@@ -5108,7 +5376,8 @@
   "note": "dereferences r30 built at 0x821e8a70",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183040128,
@@ -5127,7 +5396,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183040136,
@@ -5146,7 +5416,8 @@
   "note": "dereferences r9 built at 0x821e8c80",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183040164,
@@ -5165,7 +5436,8 @@
   "note": "dereferences r9 built at 0x821e8c80",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183040216,
@@ -5184,7 +5456,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183040220,
@@ -5203,7 +5476,8 @@
   "note": "dereferences r11 built at 0x821e8cd8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183042056,
@@ -5222,7 +5496,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183072588,
@@ -5241,7 +5516,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183072592,
@@ -5260,7 +5536,8 @@
   "note": "dereferences r10 built at 0x821f0b4c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183072596,
@@ -5279,7 +5556,8 @@
   "note": "dereferences r10 built at 0x821f0b4c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106576,
@@ -5298,7 +5576,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106580,
@@ -5317,7 +5596,8 @@
   "note": "dereferences r11 built at 0x821f9010",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183106600,
@@ -5336,7 +5616,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106656,
@@ -5355,7 +5636,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106668,
@@ -5374,7 +5656,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106692,
@@ -5393,7 +5676,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106712,
@@ -5412,7 +5696,8 @@
   "note": "dereferences r5 built at 0x821f9060",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106716,
@@ -5431,7 +5716,8 @@
   "note": "dereferences r5 built at 0x821f9060",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106780,
@@ -5450,7 +5736,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106784,
@@ -5469,7 +5756,8 @@
   "note": "dereferences r10 built at 0x821f90dc",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106788,
@@ -5488,7 +5776,8 @@
   "note": "dereferences r10 built at 0x821f90dc",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106888,
@@ -5507,7 +5796,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106892,
@@ -5526,7 +5816,8 @@
   "note": "dereferences r11 built at 0x821f9148",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183106912,
@@ -5545,7 +5836,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106940,
@@ -5564,7 +5856,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106956,
@@ -5583,7 +5876,8 @@
   "note": "dereferences r10 built at 0x821f917c via a copy into r9",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183106996,
@@ -5602,7 +5896,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183107008,
@@ -5621,7 +5916,8 @@
   "note": "dereferences r23 built at 0x821f91b4",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183107716,
@@ -5640,7 +5936,8 @@
   "note": "dereferences r23 built at 0x821f91b4",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183108148,
@@ -5659,7 +5956,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183108164,
@@ -5678,7 +5976,8 @@
   "note": "dereferences r11 built at 0x821f9634",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183108192,
@@ -5697,7 +5996,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183108336,
@@ -5716,7 +6016,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183108736,
@@ -5735,7 +6036,8 @@
   "note": "dereferences r23 built at 0x821f96f0",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183109252,
@@ -5754,7 +6056,8 @@
   "note": "dereferences r23 built at 0x821f96f0",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183112816,
@@ -5773,7 +6076,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183112820,
@@ -5792,7 +6096,8 @@
   "note": "dereferences r10 built at 0x821fa870",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183112876,
@@ -5811,7 +6116,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183113752,
@@ -5830,7 +6136,8 @@
   "note": "role sentinel_or_base -> element by hand (see ROLE_OVERRIDES)",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183113788,
@@ -5849,7 +6156,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183113796,
@@ -5868,7 +6176,8 @@
   "note": "dereferences r11 built at 0x821fac3c via a copy into r10",
   "index_reg": 11,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183114804,
@@ -5887,7 +6196,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183114816,
@@ -5906,7 +6216,8 @@
   "note": "dereferences r25 built at 0x821fb034",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183115024,
@@ -5925,7 +6236,8 @@
   "note": "dereferences r25 built at 0x821fb034",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183115188,
@@ -5944,7 +6256,8 @@
   "note": "dereferences r25 built at 0x821fb034",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183115352,
@@ -5963,7 +6276,8 @@
   "note": "dereferences r25 built at 0x821fb034",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183115768,
@@ -5982,7 +6296,8 @@
   "note": "role sentinel_or_base -> element by hand (see ROLE_OVERRIDES)",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183115844,
@@ -6001,7 +6316,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183115852,
@@ -6020,7 +6336,8 @@
   "note": "dereferences r11 built at 0x821fb444 via a copy into r10",
   "index_reg": 11,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183116628,
@@ -6039,7 +6356,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183116652,
@@ -6058,7 +6376,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183117024,
@@ -6077,7 +6396,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183117032,
@@ -6096,7 +6416,8 @@
   "note": "dereferences r10 built at 0x821fb8e0 via a copy into r28",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183145932,
@@ -6115,7 +6436,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183145956,
@@ -6134,7 +6456,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183173376,
@@ -6153,7 +6476,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183173420,
@@ -6172,7 +6496,8 @@
   "note": "dereferences r9 built at 0x82209500 via a copy into r10",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183173440,
@@ -6188,10 +6513,11 @@
   "setup_distance": 0,
   "role": "sentinel",
   "func": "sub_82209478",
-  "note": "",
+  "note": "reaches charwords as an offset from stats_base, built at 0x82209500",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": "stats_base"
  },
  {
   "addr": 2183219624,
@@ -6210,7 +6536,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183219628,
@@ -6229,7 +6556,8 @@
   "note": "dereferences r11 built at 0x822149a8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183219644,
@@ -6248,7 +6576,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183246984,
@@ -6267,7 +6596,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183246988,
@@ -6286,7 +6616,8 @@
   "note": "dereferences r8 built at 0x8221b488",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183247020,
@@ -6305,7 +6636,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183247404,
@@ -6324,7 +6656,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183247444,
@@ -6343,7 +6676,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183247484,
@@ -6362,7 +6696,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183247488,
@@ -6381,7 +6716,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183254076,
@@ -6400,7 +6736,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183261524,
@@ -6419,7 +6756,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183271184,
@@ -6438,7 +6776,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183275696,
@@ -6457,7 +6796,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183275700,
@@ -6476,7 +6816,8 @@
   "note": "dereferences r11 built at 0x822224b0",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183275720,
@@ -6495,7 +6836,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183312544,
@@ -6514,7 +6856,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183312720,
@@ -6533,7 +6876,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183332268,
@@ -6552,7 +6896,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183332280,
@@ -6571,7 +6916,8 @@
   "note": "dereferences r11 built at 0x822301ac",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183333712,
@@ -6590,7 +6936,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183333716,
@@ -6609,7 +6956,8 @@
   "note": "dereferences r11 built at 0x82230750",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183333736,
@@ -6628,7 +6976,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183333784,
@@ -6647,7 +6996,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183333796,
@@ -6666,7 +7016,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183333800,
@@ -6685,7 +7036,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183334096,
@@ -6704,7 +7056,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183334100,
@@ -6723,7 +7076,8 @@
   "note": "dereferences r10 built at 0x822308d0",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183334120,
@@ -6742,7 +7096,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183334188,
@@ -6761,7 +7116,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183334204,
@@ -6780,7 +7136,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183334208,
@@ -6799,7 +7156,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183339884,
@@ -6818,7 +7176,8 @@
   "note": "role sentinel_or_base -> element by hand (see ROLE_OVERRIDES)",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183339892,
@@ -6837,7 +7196,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183341408,
@@ -6856,7 +7216,8 @@
   "note": "dereferences r16 built at 0x82231f74",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183341412,
@@ -6875,7 +7236,8 @@
   "note": "dereferences r16 built at 0x82231f74",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183341452,
@@ -6894,7 +7256,8 @@
   "note": "dereferences r17 built at 0x82231f6c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183341720,
@@ -6913,7 +7276,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183341808,
@@ -6932,7 +7296,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183343228,
@@ -6951,7 +7316,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183345128,
@@ -6970,7 +7336,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183345140,
@@ -6989,7 +7356,8 @@
   "note": "dereferences r11 built at 0x822333e8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183348892,
@@ -7008,7 +7376,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353104,
@@ -7027,7 +7396,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353224,
@@ -7046,7 +7416,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353240,
@@ -7065,7 +7436,8 @@
   "note": "dereferences r30 built at 0x82235388",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353300,
@@ -7084,7 +7456,8 @@
   "note": "dereferences r30 built at 0x82235388",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353320,
@@ -7103,7 +7476,8 @@
   "note": "dereferences r30 built at 0x82235388",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353324,
@@ -7122,7 +7496,8 @@
   "note": "dereferences r26 built at 0x82235310",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353392,
@@ -7141,7 +7516,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353408,
@@ -7160,7 +7536,8 @@
   "note": "dereferences r30 built at 0x82235430",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353468,
@@ -7179,7 +7556,8 @@
   "note": "dereferences r30 built at 0x82235430",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353488,
@@ -7198,7 +7576,8 @@
   "note": "dereferences r30 built at 0x82235430",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353492,
@@ -7217,7 +7596,8 @@
   "note": "dereferences r26 built at 0x82235310",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353560,
@@ -7236,7 +7616,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353576,
@@ -7255,7 +7636,8 @@
   "note": "dereferences r30 built at 0x822354d8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353636,
@@ -7274,7 +7656,8 @@
   "note": "dereferences r30 built at 0x822354d8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353656,
@@ -7293,7 +7676,8 @@
   "note": "dereferences r30 built at 0x822354d8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353660,
@@ -7312,7 +7696,8 @@
   "note": "dereferences r26 built at 0x82235310",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353760,
@@ -7331,7 +7716,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353776,
@@ -7350,7 +7736,8 @@
   "note": "dereferences r30 built at 0x822355a0",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353836,
@@ -7369,7 +7756,8 @@
   "note": "dereferences r30 built at 0x822355a0",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353856,
@@ -7388,7 +7776,8 @@
   "note": "dereferences r30 built at 0x822355a0",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183353860,
@@ -7407,7 +7796,8 @@
   "note": "dereferences r26 built at 0x82235310",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183354096,
@@ -7426,7 +7816,8 @@
   "note": "dereferences r26 built at 0x82235310",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183354100,
@@ -7445,7 +7836,8 @@
   "note": "dereferences r26 built at 0x82235310",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183354228,
@@ -7464,7 +7856,8 @@
   "note": "dereferences r26 built at 0x82235310",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183358416,
@@ -7483,7 +7876,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183358428,
@@ -7502,7 +7896,8 @@
   "note": "dereferences r10 built at 0x822367d0 via a copy into r11",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183358968,
@@ -7521,7 +7916,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183358972,
@@ -7540,7 +7936,8 @@
   "note": "dereferences r11 built at 0x822369f8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183358992,
@@ -7559,7 +7956,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183360492,
@@ -7578,7 +7976,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183360504,
@@ -7597,7 +7996,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183360508,
@@ -7616,7 +8016,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183360756,
@@ -7635,7 +8036,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183360760,
@@ -7654,7 +8056,8 @@
   "note": "dereferences r11 built at 0x822370f4",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183360780,
@@ -7673,7 +8076,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183360832,
@@ -7692,7 +8096,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183360852,
@@ -7711,7 +8116,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183360872,
@@ -7730,7 +8136,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183360876,
@@ -7749,7 +8156,8 @@
   "note": "dereferences r10 built at 0x82237168 via a copy into r11",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183361380,
@@ -7768,7 +8176,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183361384,
@@ -7787,7 +8196,8 @@
   "note": "dereferences r11 built at 0x82237364",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183361404,
@@ -7806,7 +8216,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183361448,
@@ -7825,7 +8236,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183361468,
@@ -7844,7 +8256,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183361488,
@@ -7863,7 +8276,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183361492,
@@ -7882,7 +8296,8 @@
   "note": "dereferences r10 built at 0x822373d0 via a copy into r11",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183361848,
@@ -7901,7 +8316,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183361852,
@@ -7920,7 +8336,8 @@
   "note": "dereferences r11 built at 0x82237538",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183361872,
@@ -7939,7 +8356,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183361908,
@@ -7958,7 +8376,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183361928,
@@ -7977,7 +8396,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183361948,
@@ -7996,7 +8416,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183361952,
@@ -8015,7 +8436,8 @@
   "note": "dereferences r10 built at 0x8223759c via a copy into r11",
   "index_reg": 10,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183362128,
@@ -8034,7 +8456,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183362132,
@@ -8053,7 +8476,8 @@
   "note": "dereferences r10 built at 0x82237650",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183362148,
@@ -8072,7 +8496,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183362168,
@@ -8091,7 +8516,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183362172,
@@ -8110,7 +8536,8 @@
   "note": "dereferences r9 built at 0x82237678 via a copy into r10",
   "index_reg": 9,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183362776,
@@ -8129,7 +8556,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183362780,
@@ -8148,7 +8576,8 @@
   "note": "dereferences r11 built at 0x822378d8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183362800,
@@ -8167,7 +8596,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183363032,
@@ -8186,7 +8616,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183363036,
@@ -8205,7 +8636,8 @@
   "note": "dereferences r11 built at 0x822379d8",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183363056,
@@ -8224,7 +8656,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183363312,
@@ -8243,7 +8676,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183363320,
@@ -8262,7 +8696,8 @@
   "note": "dereferences r10 built at 0x82237af0",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183363336,
@@ -8281,7 +8716,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183363364,
@@ -8300,7 +8736,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183363384,
@@ -8319,7 +8756,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183364652,
@@ -8338,7 +8776,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183364700,
@@ -8357,7 +8796,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183364720,
@@ -8376,7 +8816,8 @@
   "note": "dereferences r21 built at 0x8223805c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183364776,
@@ -8395,7 +8836,8 @@
   "note": "dereferences r21 built at 0x8223805c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183364832,
@@ -8414,7 +8856,8 @@
   "note": "dereferences r22 built at 0x8223802c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183366136,
@@ -8433,7 +8876,8 @@
   "note": "dereferences r21 built at 0x8223805c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183366192,
@@ -8452,7 +8896,8 @@
   "note": "dereferences r21 built at 0x8223805c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183366248,
@@ -8471,7 +8916,8 @@
   "note": "dereferences r22 built at 0x8223802c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183366932,
@@ -8490,7 +8936,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183366968,
@@ -8509,7 +8956,8 @@
   "note": "dereferences r10 built at 0x82238914",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183366984,
@@ -8528,7 +8976,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183367012,
@@ -8547,7 +8996,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183367032,
@@ -8566,7 +9016,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183367204,
@@ -8585,7 +9036,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183367216,
@@ -8604,7 +9056,8 @@
   "note": "role sentinel_or_base -> element by hand (see ROLE_OVERRIDES)",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183367672,
@@ -8623,7 +9076,8 @@
   "note": "dereferences r20 built at 0x82238a24",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183367728,
@@ -8642,7 +9096,8 @@
   "note": "dereferences r20 built at 0x82238a24",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183367784,
@@ -8661,7 +9116,8 @@
   "note": "dereferences r18 built at 0x82238a30",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183368412,
@@ -8680,7 +9136,8 @@
   "note": "dereferences r20 built at 0x82238a24",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183368468,
@@ -8699,7 +9156,8 @@
   "note": "dereferences r20 built at 0x82238a24",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183369276,
@@ -8718,7 +9176,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183369304,
@@ -8737,7 +9196,8 @@
   "note": "dereferences r10 built at 0x8223923c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183369320,
@@ -8756,7 +9216,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183369348,
@@ -8775,7 +9236,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183369368,
@@ -8794,7 +9256,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183369520,
@@ -8813,7 +9276,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183369536,
@@ -8832,7 +9296,8 @@
   "note": "role sentinel_or_base -> element by hand (see ROLE_OVERRIDES)",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183369988,
@@ -8851,7 +9316,8 @@
   "note": "dereferences r24 built at 0x82239330",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183370044,
@@ -8870,7 +9336,8 @@
   "note": "dereferences r24 built at 0x82239330",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183370476,
@@ -8889,7 +9356,8 @@
   "note": "dereferences r24 built at 0x82239330",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183370532,
@@ -8908,7 +9376,8 @@
   "note": "dereferences r24 built at 0x82239330",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183371244,
@@ -8927,7 +9396,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183371272,
@@ -8946,7 +9416,8 @@
   "note": "dereferences r10 built at 0x822399ec",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183371288,
@@ -8965,7 +9436,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183371316,
@@ -8984,7 +9456,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183371336,
@@ -9003,7 +9476,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183371460,
@@ -9022,7 +9496,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183371468,
@@ -9041,7 +9516,8 @@
   "note": "role sentinel_or_base -> element by hand (see ROLE_OVERRIDES)",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183371744,
@@ -9060,7 +9536,8 @@
   "note": "dereferences r25 built at 0x82239ac4",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183371800,
@@ -9079,7 +9556,8 @@
   "note": "dereferences r25 built at 0x82239ac4",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183372152,
@@ -9098,7 +9576,8 @@
   "note": "dereferences r25 built at 0x82239ac4",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183372208,
@@ -9117,7 +9596,8 @@
   "note": "dereferences r25 built at 0x82239ac4",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183375140,
@@ -9136,7 +9616,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183375144,
@@ -9155,7 +9636,8 @@
   "note": "dereferences r10 built at 0x8223a924",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183375164,
@@ -9174,7 +9656,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183375736,
@@ -9193,7 +9676,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183375740,
@@ -9212,7 +9696,8 @@
   "note": "dereferences r10 built at 0x8223ab78",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183375760,
@@ -9231,7 +9716,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183376256,
@@ -9250,7 +9736,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183376260,
@@ -9269,7 +9756,8 @@
   "note": "dereferences r10 built at 0x8223ad80",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183376280,
@@ -9288,7 +9776,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183376732,
@@ -9307,7 +9796,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183376736,
@@ -9326,7 +9816,8 @@
   "note": "dereferences r10 built at 0x8223af5c",
   "index_reg": -1,
   "redundant": true,
-  "branch_target": true
+  "branch_target": true,
+  "chained_from": ""
  },
  {
   "addr": 2183376756,
@@ -9345,7 +9836,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183400280,
@@ -9364,7 +9856,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183400300,
@@ -9383,7 +9876,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183402160,
@@ -9402,7 +9896,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183402184,
@@ -9421,7 +9916,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183402456,
@@ -9440,7 +9936,8 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  },
  {
   "addr": 2183402476,
@@ -9459,6 +9956,7 @@
   "note": "",
   "index_reg": -1,
   "redundant": false,
-  "branch_target": false
+  "branch_target": false,
+  "chained_from": ""
  }
 ]

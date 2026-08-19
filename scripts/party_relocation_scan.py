@@ -219,6 +219,10 @@ class Site:
     redundant: bool = False  # dereferences an address an earlier site builds
     branch_target: bool = False  # something jumps here, so the predecessor is
                                  # not the only way in
+    chained_from: str = ""   # this site is `addi rD, rA, k` where rA already
+                             # holds a *different* array's relocated base, so
+                             # the delta it needs is the difference between the
+                             # two, not its own
 
 
 def is_element_addr(name: str, target: int) -> bool:
@@ -733,10 +737,44 @@ def mark_redundant(sites: list[Site], seg_bytes: dict, window: int = 0) -> int:
             prev = by_addr.get(s.addr - 4 * back)
             if prev is None or prev.form != "addi" or prev.reg not in regs:
                 continue
-            # A dependent site must belong to the same array as the address it
-            # is reading through. If it does not, the register is being shared
-            # between two arrays and that needs a human, not a silent skip.
+            # The register really has to still hold what `prev` put in it. This
+            # only applies to a direct match: when the value arrived through a
+            # `mr`, the register `prev` wrote is free to be reused after the
+            # copy, so the check would reject a real match. Those are rare and
+            # are called out in the note instead.
+            via_copy = s.base_reg != prev.reg
+            if not via_copy and \
+                    clobbered_between(seg_bytes, prev.addr, s.addr, s.base_reg):
+                continue
+
+            # A dependent site addressing a *different* array. The game does
+            # this: sub_821E7138's preheader is
+            #
+            #     addi r11, r11, word_824400C8@l              <- charwords
+            #     addi r9,  r11, (byte_8243FCFC - 0x824400C8) <- charflags
+            #
+            # where the second reaches charflags as an offset from charwords,
+            # because they are 0x3CC apart in the original layout. The first
+            # site's hook has already moved r11, so the second starts from the
+            # relocated charwords address and adding its own delta on top lands
+            # 0x08BC1738 past charflags. That crashed on startup with r22 at
+            # 0x93BC3137: both deltas, one after the other.
+            #
+            # It is not redundant -- the address really does have to change --
+            # and it is not an ordinary site either. What it needs is the
+            # *difference* between the two deltas, which is the same correction
+            # a walking pointer needs when it crosses from one array into the
+            # next. Recorded here and emitted as a rebase.
+            #
+            # An indexed use is a different shape (the address is consumed, not
+            # rebuilt) and is left to the strict same-array rule below.
             if prev.array != s.array:
+                if s.form == "addi" and not indexed:
+                    s.chained_from = prev.array
+                    s.note = (s.note + "; " if s.note else "") + \
+                        f"reaches {s.array} as an offset from {prev.array}, " \
+                        f"built at {prev.addr:#010x}"
+                    break
                 continue
             # The search is bounded by the function anyway, but sites whose
             # function IDA never defined have no bound, and pairing a use with a
@@ -748,15 +786,6 @@ def mark_redundant(sites: list[Site], seg_bytes: dict, window: int = 0) -> int:
             # instructions name the same address, and loosening it there would
             # start swallowing genuinely separate sites.
             if indexed and prev.target != s.target:
-                continue
-            # And the register really has to still hold what `prev` put in it.
-            # This only applies to a direct match: when the value arrived
-            # through a `mr`, the register `prev` wrote is free to be reused
-            # after the copy, so the check would reject a real match. Those are
-            # rare and are called out in the note instead.
-            via_copy = s.base_reg != prev.reg
-            if not via_copy and \
-                    clobbered_between(seg_bytes, prev.addr, s.addr, s.base_reg):
                 continue
             s.redundant = True
             s.note = (s.note + "; " if s.note else "") + \
@@ -925,6 +954,14 @@ def report(sites: list[Site]) -> None:
 
     print(f"\n{sum(1 for s in sites if s.redundant)} sites are redundant "
           f"(indexed use of an address another site builds)")
+
+    chained = [s for s in sites if s.chained_from]
+    if chained:
+        print(f"\n{len(chained)} sites reach their array as an offset from a "
+              f"different one, so they need the delta *difference*:")
+        for s in chained:
+            print(f"  {s.addr:#010x} {s.form:6s} -> {s.target:#010x} "
+                  f"{s.chained_from} -> {s.array}  {s.func}")
 
     ambig = [s for s in sites if s.role == "ambiguous_fold"]
     if ambig:

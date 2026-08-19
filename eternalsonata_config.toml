@@ -162,6 +162,26 @@ address = 0x82240600
 name = "PartySave_AppendLoadBlocks"
 registers = ["r30", "r29"]
 
+# The 2324-byte block at 0x8243F3E8 is copied as one span and contains the
+# position and slotbytes arrays, both of which moved. The span cannot be
+# redirected -- most of it never moved -- so these two carry the two arrays
+# across it. See the comment above the hook bodies in src/party_save.cpp.
+
+# sub_82240AF8 (load): after the `bl sub_822CF5B0` that restores the block.
+[[midasm_hook]]
+address = 0x82240b28
+name = "PartySave_LoadPartyBlock"
+after_instruction = true
+
+# sub_82241190 (write): on the `mr r3, r20` before the matching `bl`, so the
+# block captures the live arrays. The `bl` itself already carries no hook, but
+# one address holds one hook, and putting this on the call would run it after
+# the copy had already read the stale bytes.
+[[midasm_hook]]
+address = 0x82241278
+name = "PartySave_StorePartyBlock"
+after_instruction = true
+
 # --- src/party_bounds.cpp: the id gates --------------------------------------
 
 # sub_821E7898, the stat recompute every status and equipment screen depends on.
@@ -508,25 +528,25 @@ after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e6334  # addi -> 0x8243fc08 in sub_821E6240
-name = "PartyReloc_position_Remap"
+name = "PartyRebase_slotbytes_To_position"
 registers = ["r10"]
 after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e6360  # addi -> 0x8243fc04 in sub_821E6240
-name = "PartyReloc_position_Remap"
+name = "PartyRebase_slotbytes_To_position"
 registers = ["r31"]
 after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e63a0  # addi -> 0x8243fc08 in sub_821E6240
-name = "PartyReloc_position_Remap"
+name = "PartyRebase_slotbytes_To_position"
 registers = ["r10"]
 after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e63cc  # addi -> 0x8243fc04 in sub_821E6240
-name = "PartyReloc_position_Remap"
+name = "PartyRebase_slotbytes_To_position"
 registers = ["r31"]
 after_instruction = true
 
@@ -568,7 +588,7 @@ after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e7164  # addi -> 0x8243fcfc in sub_821E7138
-name = "PartyReloc_charflags_Remap"
+name = "PartyRebase_charwords_To_charflags"
 registers = ["r9"]
 after_instruction = true
 
@@ -604,7 +624,7 @@ after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e7640  # addi -> 0x8243fcfc in sub_821E7358
-name = "PartyReloc_charflags_Remap"
+name = "PartyRebase_charwords_To_charflags"
 registers = ["r11"]
 after_instruction = true
 
@@ -616,7 +636,7 @@ after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e767c  # addi -> 0x8243fcfc in sub_821E7668
-name = "PartyReloc_charflags_Remap"
+name = "PartyRebase_charwords_To_charflags"
 registers = ["r11"]
 after_instruction = true
 
@@ -634,7 +654,7 @@ after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e76dc  # addi -> 0x8243fcfc in sub_821E7668
-name = "PartyReloc_charflags_Remap"
+name = "PartyRebase_charwords_To_charflags"
 registers = ["r11"]
 after_instruction = true
 
@@ -652,7 +672,7 @@ after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e7870  # addi -> 0x8243fee8 in sub_821E7668
-name = "PartyReloc_stats_base_Remap"
+name = "PartyRebase_stats_live_To_stats_base"
 registers = ["r8"]
 after_instruction = true
 
@@ -682,13 +702,13 @@ after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e7e9c  # addi -> 0x8243fcfc in sub_821E7D88
-name = "PartyReloc_charflags_Remap"
+name = "PartyRebase_charwords_To_charflags"
 registers = ["r10"]
 after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e7ebc  # addi -> 0x8243fcfc in sub_821E7D88
-name = "PartyReloc_charflags_Remap"
+name = "PartyRebase_charwords_To_charflags"
 registers = ["r10"]
 after_instruction = true
 
@@ -778,7 +798,7 @@ after_instruction = true
 
 [[midasm_hook]]
 address = 0x821e8814  # addi -> 0x8243fd08 in sub_821E8458
-name = "PartyReloc_stats_live_Remap"
+name = "PartyRebase_stats_base_To_stats_live"
 registers = ["r11"]
 after_instruction = true
 
@@ -1366,7 +1386,7 @@ after_instruction = true
 
 [[midasm_hook]]
 address = 0x820e7aac  # addi -> 0x8243fc30 in no function
-name = "PartyRelocEnd_position_Remap"
+name = "PartyRebaseEnd_position_To_position"
 registers = ["r9"]
 after_instruction = true
 
@@ -1510,7 +1530,7 @@ after_instruction = true
 
 [[midasm_hook]]
 address = 0x82209540  # addi -> 0x824400c8 in sub_82209478
-name = "PartyRelocEnd_stats_base_Remap"
+name = "PartyRebaseEnd_stats_base_To_stats_base"
 registers = ["r8"]
 after_instruction = true
 

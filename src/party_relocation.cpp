@@ -171,28 +171,37 @@ uint32_t CheckPartyPoison() {
     return 0;
   }
 
+  // One report per distinct byte, tracked here rather than by repairing the
+  // byte in place. Repairing looks simpler and costs the main reason to poison
+  // the block in the first place: a host write into the watched range trips any
+  // hardware watchpoint set on it, so the first thing an lldb session catches is
+  // this function rather than the guest instruction being hunted. Nothing here
+  // writes guest memory now, so a watchpoint over kPoisonRanges sees only the
+  // guest.
+  static bool reported[kPoisonTotalSize] = {};
+
   uint32_t hits = 0;
+  uint32_t base = 0;
   for (const auto& range : kPoisonRanges) {
-    auto* host = g_memory->TranslateVirtual<uint8_t*>(range.begin);
+    const uint32_t size = range.end - range.begin;
+    const auto* host = g_memory->TranslateVirtual<const uint8_t*>(range.begin);
     if (!host) {
+      base += size;
       continue;
     }
-    const uint32_t size = range.end - range.begin;
     for (uint32_t i = 0; i < size; ++i) {
-      if (host[i] == kPoisonByte) {
+      if (host[i] == kPoisonByte || reported[base + i]) {
         continue;
       }
-      // One line per *distinct* byte, not per frame: repairing it means a site
-      // that writes every frame reports once, and the next unrelated site is not
-      // buried under it.
       REXLOG_ERROR("party relocation: {:#010x} was written ({:#04x}); an "
                    "instruction still addresses the vacated party block. "
                    "Re-run scripts/party_relocation_scan.py and check what "
                    "reaches this address.",
                    range.begin + i, host[i]);
-      host[i] = kPoisonByte;
+      reported[base + i] = true;
       ++hits;
     }
+    base += size;
   }
   return hits;
 }

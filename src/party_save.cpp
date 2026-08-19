@@ -23,16 +23,20 @@
 // expects and retail cannot read it; that is the accepted, one-directional
 // trade.
 //
-// The matching [[midasm_hook]] blocks are NOT in eternalsonata_config.toml yet,
-// for the same reason the rest of the conversion is not: half a conversion is a
-// broken game. Addresses and options, so the config can be written in the commit
-// that enables everything:
+// A second thing it does not do is redirect the 2324-byte block at 0x8243F3E8.
+// That one is copied as a span and contains position and slotbytes, both of
+// which moved; see PartySave_LoadPartyBlock at the bottom of this file.
+//
+// The matching [[midasm_hook]] blocks are in eternalsonata_config.toml, outside
+// the generated relocation block. This table is the index:
 //
 //   address     after  hook                              site
 //   0x822414D0  yes    PartySave_BumpVersion(r10)        sub_82241190 `li r10, 2`
 //   0x82241674  no     PartySave_AppendWriteBlocks(r28)  after the last DB40 call
 //   0x82241698  yes    PartySave_GrowTotalSize(r8)       the `addi r8, r8, 0x5B98`
 //   0x82240600  no     PartySave_AppendLoadBlocks(r30, r29)  loc_82240600
+//   0x82240B28  yes    PartySave_LoadPartyBlock()        after the block restore
+//   0x82241278  yes    PartySave_StorePartyBlock()       before the block capture
 //
 // On the write side r28 is the block-list descriptor and r8 is the total-size
 // argument being built by the `addis 0x52` / `addi 0x5B98` pair. On the load
@@ -42,6 +46,8 @@
 // registers for itself and before sub_8223DF80 consumes the list.
 
 #include "party_relocation.h"
+
+#include <cstring>
 
 #include <rex/logging.h>
 #include <rex/memory/utils.h>
@@ -146,6 +152,45 @@ bool AppendSideCarBlocks(uint32_t descriptor) {
   return true;
 }
 
+// position and slotbytes are inside the 2324-byte block the save copies as one
+// span, so the copy still lands on their old addresses. Carry the ten saved
+// entries of each across, in whichever direction the caller needs.
+//
+// Both arrays are plain bytes to this code -- ten 4-byte display positions and
+// ten 1-byte slot values -- so a straight memcpy is right; there is no
+// endianness to fix because nothing here interprets the values.
+bool CopyStagedPartyArrays(bool from_staging) {
+  struct Span {
+    uint32_t staging;
+    uint32_t live;
+    uint32_t size;
+    const char* name;
+  };
+  const Span spans[] = {
+      {eternalsonata::kPositionStagingBase, eternalsonata::kPositionBase,
+       eternalsonata::kSavedCharacterCount * eternalsonata::kPositionStride,
+       "position"},
+      {eternalsonata::kSlotbytesStagingBase, eternalsonata::kSlotbytesBase,
+       eternalsonata::kSavedCharacterCount, "slotbytes"},
+  };
+
+  for (const auto& span : spans) {
+    auto* staging = eternalsonata::PartyGuestPointer(span.staging);
+    auto* live = eternalsonata::PartyGuestPointer(span.live);
+    if (!staging || !live) {
+      REXLOG_ERROR("party save: no memory to carry {} across the save block",
+                   span.name);
+      return false;
+    }
+    if (from_staging) {
+      std::memcpy(live, staging, span.size);
+    } else {
+      std::memcpy(staging, live, span.size);
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 // The hook bodies are looked up by name by the recompiler, so they keep
@@ -187,4 +232,39 @@ void PartySave_AppendLoadBlocks(PPCRegister& descriptor, PPCRegister& slot) {
     return;
   }
   AppendSideCarBlocks(descriptor.u32);
+}
+
+// The 2324-byte block at 0x8243F3E8 straddles two arrays that moved.
+//
+// Everything else the relocation touches is reached through a pointer some
+// instruction materialises, so rewriting the instruction moves the access. This
+// block is not: sub_822CF5B0 copies 0x8243F3E8..0x8243FCFC as one span, and
+// position (0x8243FC08) and slotbytes (0x8243FC30) are 2080 and 2120 bytes into
+// it. The span cannot be redirected, because most of it -- party level, the
+// budget pair, and the rest of the block -- never moved and still has to land at
+// the old addresses. So the copy keeps happening, and these two hooks carry the
+// two arrays across it.
+//
+// This is what the canary found. Without them the loader restored a save's
+// party table into dead memory, the relocated position array kept whatever it
+// had, and the game hung as soon as anything read a party position -- opening
+// the status menu was enough.
+//
+// Characters 11 and 12 are not involved: the block holds ten of each, exactly as
+// retail wrote it, and the two added slots ride in the side-car blocks above.
+// (The side-car currently carries stats only, so an added character's *display
+// position* still does not survive a save. That is the next piece of this file,
+// not something these hooks should improvise.)
+
+// After the `bl sub_822CF5B0` at 0x82240B28, so the block has landed and the ten
+// saved entries can be lifted out of it into the relocated arrays.
+void PartySave_LoadPartyBlock() {
+  CopyStagedPartyArrays(/*from_staging=*/true);
+}
+
+// After the `mr r3, r20` at 0x82241278, i.e. on the instruction before the
+// matching `bl` on the write side, so the block picks up the live values rather
+// than whatever the load left at the old addresses.
+void PartySave_StorePartyBlock() {
+  CopyStagedPartyArrays(/*from_staging=*/false);
 }
