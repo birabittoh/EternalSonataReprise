@@ -148,27 +148,30 @@ inline constexpr uint8_t kPoisonByte = 0xCD;
 
 // The .bss the vacated arrays occupied, as [begin, end) guest ranges.
 //
-// `position` (0x8243FC08) and `slotbytes` (0x8243FC30) are deliberately NOT
-// here, and that costs real coverage -- position has more sites than any other
-// array. They sit inside the 2324-byte save block that starts at 0x8243F3E8,
-// which sub_82240AF8 restores and sub_82241190 captures as one span. That copy
-// is legitimate and unavoidable: most of the block is state that never moved, so
-// the span has to keep landing at the old addresses. A canary underneath it
-// would fire on every load and every save, and since CheckPartyPoison reports
-// each byte once, a single such false positive would blind the byte for the rest
-// of the run -- worse than not watching it. PartySave_LoadPartyBlock and
-// PartySave_StorePartyBlock in party_save.cpp carry those two arrays across that
-// block instead.
+// The first range, position and slotbytes, is the awkward one: it sits inside
+// the 2324-byte save block starting at 0x8243F3E8, which sub_82240AF8 restores
+// and sub_82241190 captures as one span. That copy is legitimate and cannot be
+// redirected, since most of the block is state that never moved, so it writes
+// these bytes on every load and every save.
 //
-// Everything from charflags up is covered. charflags begins at 0x8243FCFC,
+// They were dropped from the poison for a while because of that, and it left the
+// array with the most sites of any unwatched. They are back, with the save path
+// accounted for instead of excluded: the two hooks in party_save.cpp that carry
+// the arrays across the copy also re-poison the bytes and clear their reported
+// flags (RepoisonPartySaveStaging). The check can still catch the copy itself in
+// the microseconds between the memcpy and the hook, since it runs on the swap
+// thread, but that no longer costs anything permanent -- the flags are cleared
+// on the next sync, so a byte cannot be blinded for the rest of the run.
+//
+// Everything from charflags up is dead outright. charflags begins at 0x8243FCFC,
 // exactly where the 2324-byte block ends, and the two stat blocks reach their
-// arrays through pointers the hooks already rewrite, so nothing legitimately
-// writes this range any more.
+// arrays through pointers the hooks already rewrite.
 struct PoisonRange {
   uint32_t begin;
   uint32_t end;
 };
 inline constexpr PoisonRange kPoisonRanges[] = {
+    {0x8243FC08, 0x8243FC3A},   // position, slotbytes: see above
     {0x8243FCFC, 0x824400DC},   // charflags, stats_live, stats_base, charwords
 };
 
@@ -210,5 +213,12 @@ bool PoisonVacatedPartyBlock(rex::memory::Memory* memory);
 // scripts/party_relocation_scan.py missed a site. Feed the reported address back
 // into that script's ARRAYS/overrides and regenerate.
 uint32_t CheckPartyPoison();
+
+// Re-poisons the position and slotbytes staging bytes and forgets that they were
+// ever reported, so the next check starts clean. Called by the two save hooks in
+// party_save.cpp on both sides of the block copy: that copy is the one thing
+// allowed to write there, and this is what keeps it from being mistaken for a
+// missed relocation site.
+void RepoisonPartySaveStaging();
 
 }  // namespace eternalsonata

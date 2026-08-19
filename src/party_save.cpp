@@ -256,10 +256,16 @@ void PartySave_AppendLoadBlocks(PPCRegister& descriptor, PPCRegister& slot) {
 // position* still does not survive a save. That is the next piece of this file,
 // not something these hooks should improvise.)
 
+// Each of these re-poisons the staging bytes when it is done with them. Those
+// fifty bytes are watched by the canary like the rest of the vacated block, and
+// this copy is the one thing allowed to write there; re-poisoning is what keeps
+// the save path from reading as a missed relocation site. See kPoisonRanges.
+
 // After the `bl sub_822CF5B0` at 0x82240B28, so the block has landed and the ten
 // saved entries can be lifted out of it into the relocated arrays.
 void PartySave_LoadPartyBlock() {
   CopyStagedPartyArrays(/*from_staging=*/true);
+  eternalsonata::RepoisonPartySaveStaging();
 }
 
 // After the `mr r3, r20` at 0x82241278, i.e. on the instruction before the
@@ -267,4 +273,11 @@ void PartySave_LoadPartyBlock() {
 // than whatever the load left at the old addresses.
 void PartySave_StorePartyBlock() {
   CopyStagedPartyArrays(/*from_staging=*/false);
+}
+
+// After the `bl sub_822CF5B0` at 0x8224127C, once the block has taken its copy
+// of what PartySave_StorePartyBlock just staged. This is the only one of the
+// three that exists purely for the canary.
+void PartySave_StorePartyBlockDone() {
+  eternalsonata::RepoisonPartySaveStaging();
 }

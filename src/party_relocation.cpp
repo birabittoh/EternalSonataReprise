@@ -3,6 +3,7 @@
 
 #include "party_relocation.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include <rex/logging.h>
@@ -14,6 +15,15 @@ namespace {
 // Kept so the count hooks can reach guest memory. They run on the guest thread
 // long after setup, and a mid-ASM hook is handed registers and nothing else.
 rex::memory::Memory* g_memory = nullptr;
+
+// One report per distinct poisoned byte, tracked here rather than by repairing
+// the byte in place. Repairing looks simpler and costs the main reason to poison
+// the block at all: a host write into the watched range trips any hardware
+// watchpoint set on it, so the first thing an lldb session catches is the
+// checker rather than the guest instruction being hunted. Nothing in
+// CheckPartyPoison writes guest memory, so a watchpoint over kPoisonRanges sees
+// only the guest.
+bool g_reported[kPoisonTotalSize] = {};
 
 }  // namespace
 
@@ -171,15 +181,6 @@ uint32_t CheckPartyPoison() {
     return 0;
   }
 
-  // One report per distinct byte, tracked here rather than by repairing the
-  // byte in place. Repairing looks simpler and costs the main reason to poison
-  // the block in the first place: a host write into the watched range trips any
-  // hardware watchpoint set on it, so the first thing an lldb session catches is
-  // this function rather than the guest instruction being hunted. Nothing here
-  // writes guest memory now, so a watchpoint over kPoisonRanges sees only the
-  // guest.
-  static bool reported[kPoisonTotalSize] = {};
-
   uint32_t hits = 0;
   uint32_t base = 0;
   for (const auto& range : kPoisonRanges) {
@@ -190,7 +191,7 @@ uint32_t CheckPartyPoison() {
       continue;
     }
     for (uint32_t i = 0; i < size; ++i) {
-      if (host[i] == kPoisonByte || reported[base + i]) {
+      if (host[i] == kPoisonByte || g_reported[base + i]) {
         continue;
       }
       REXLOG_ERROR("party relocation: {:#010x} was written ({:#04x}); an "
@@ -198,12 +199,33 @@ uint32_t CheckPartyPoison() {
                    "Re-run scripts/party_relocation_scan.py and check what "
                    "reaches this address.",
                    range.begin + i, host[i]);
-      reported[base + i] = true;
+      g_reported[base + i] = true;
       ++hits;
     }
     base += size;
   }
   return hits;
+}
+
+void RepoisonPartySaveStaging() {
+  if (!g_memory) {
+    return;
+  }
+  // The first poison range is exactly the staging span: position followed by
+  // slotbytes, which is what the save block copy writes and nothing else should.
+  static_assert(kPoisonRanges[0].begin == kPositionStagingBase,
+                "the first poison range should be the save staging span");
+  const auto& range = kPoisonRanges[0];
+  auto* host = g_memory->TranslateVirtual<uint8_t*>(range.begin);
+  if (!host) {
+    return;
+  }
+  const uint32_t size = range.end - range.begin;
+  std::memset(host, kPoisonByte, size);
+  // Forget any report for these bytes too. The check runs on the swap thread and
+  // can land inside the copy, so without this one such race would silence the
+  // address permanently.
+  std::fill(g_reported, g_reported + size, false);
 }
 
 }  // namespace eternalsonata

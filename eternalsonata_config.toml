@@ -182,6 +182,12 @@ address = 0x82241278
 name = "PartySave_StorePartyBlock"
 after_instruction = true
 
+# And once the copy has been taken, put the staging bytes back under the canary.
+[[midasm_hook]]
+address = 0x8224127c
+name = "PartySave_StorePartyBlockDone"
+after_instruction = true
+
 # --- src/party_bounds.cpp: the id gates --------------------------------------
 
 # sub_821E7898, the stat recompute every status and equipment screen depends on.
@@ -260,25 +266,28 @@ registers = ["r11"]
 # branch. Each names the character and the asset path, which is the difference
 # between "this port gated it wrong" and "that file is missing".
 #
-# Both callers format the path into r1 + 0x60.
+# Both callers format the path into r1 + 0x60. r11 is first in every list
+# because a mid-ASM hook fires before its instruction whether or not the branch
+# is taken: all three sites are `clrlwi. r11, r3, 24` / `beq`, so the hook has
+# to re-test r11 itself or it reports a bail-out on every ordinary pass.
 
 # The voice path was built and the file behind it would not load.
 [[midasm_hook]]
 address = 0x821BD334
 name = "PartyTrace_FieldModelLoadFailed"
-registers = ["r1", "r29"]
+registers = ["r11", "r1", "r29"]
 
 # The path was never built: sub_821BD0D0's gate refused the id. Same bail-out,
 # opposite cause, so it gets its own line.
 [[midasm_hook]]
 address = 0x821BD320
 name = "PartyTrace_FieldVoicePathRejected"
-registers = ["r29"]
+registers = ["r11", "r29"]
 
 [[midasm_hook]]
 address = 0x821A0578
 name = "PartyTrace_BattleModelLoadFailed"
-registers = ["r1", "r29"]
+registers = ["r11", "r1", "r29"]
 
 # --- src/party_ui_guard.cpp: the menu draw walk -----------------------------
 

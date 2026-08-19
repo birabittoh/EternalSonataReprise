@@ -244,10 +244,24 @@ void PartyBounds_FieldModelId(PPCRegister& id) {
 //
 // Both callers format into the same place, `r1 + 0x60` (var_C0 in sub_821A03D0,
 // var_A0 in sub_821BD1C0), so the path is read from there.
+//
+// All three sites are `clrlwi. r11, r3, 24` followed by `beq`, and the hook
+// fires before the branch, which means it fires on *every* pass and not only on
+// the ones that bail. The first version of these hooks did not account for that
+// and reported a bail-out whenever execution merely reached the branch, which
+// made three ordinary retail loads look like failures. So each one re-derives
+// the branch's own condition: r11 holds the truncated return value, the `beq`
+// is taken when it is zero, and that is the only case worth a line.
 namespace {
 
 constexpr uint32_t kPathBufferOffset = 0x60;
 constexpr size_t kMaxPathChars = 192;
+
+// True when the `beq` this hook sits on will be taken, i.e. the call it follows
+// returned false and the caller is about to bail.
+bool WillBail(const PPCRegister& truncated_result) {
+  return truncated_result.u32 == 0;
+}
 
 // The formatted asset path a bail-out was about, or "<unreadable>". Plain ASCII
 // in guest memory, so no byte swapping: these are chars, not words.
@@ -267,7 +281,11 @@ std::string GuestPathAt(uint32_t address) {
 // sub_821BD1C0, at the `beq` after sub_8210C9D8 (0x821BD334): the voice path was
 // built and the file behind it would not load. r29 points at the character id
 // the caller passed down.
-void PartyTrace_FieldModelLoadFailed(PPCRegister& sp, PPCRegister& id_ptr) {
+void PartyTrace_FieldModelLoadFailed(PPCRegister& result, PPCRegister& sp,
+                                     PPCRegister& id_ptr) {
+  if (!WillBail(result)) {
+    return;
+  }
   uint32_t id = 0;
   if (const auto* host = eternalsonata::PartyGuestPointer(id_ptr.u32)) {
     id = rex::memory::load_and_swap<uint32_t>(host);
@@ -282,7 +300,11 @@ void PartyTrace_FieldModelLoadFailed(PPCRegister& sp, PPCRegister& id_ptr) {
 // built, because the voice gate refused the id. That is this port's gating, not
 // a missing file, and it is the one of the two that PartyBounds_VoiceId is
 // supposed to prevent.
-void PartyTrace_FieldVoicePathRejected(PPCRegister& id_ptr) {
+void PartyTrace_FieldVoicePathRejected(PPCRegister& result,
+                                       PPCRegister& id_ptr) {
+  if (!WillBail(result)) {
+    return;
+  }
   uint32_t id = 0;
   if (const auto* host = eternalsonata::PartyGuestPointer(id_ptr.u32)) {
     id = rex::memory::load_and_swap<uint32_t>(host);
@@ -295,7 +317,11 @@ void PartyTrace_FieldVoicePathRejected(PPCRegister& id_ptr) {
 
 // sub_821A03D0, at the `beq` after sub_8210C9D8 (0x821A0578). r29 is the battle
 // party slot index, 0..2.
-void PartyTrace_BattleModelLoadFailed(PPCRegister& sp, PPCRegister& slot) {
+void PartyTrace_BattleModelLoadFailed(PPCRegister& result, PPCRegister& sp,
+                                      PPCRegister& slot) {
+  if (!WillBail(result)) {
+    return;
+  }
   REXLOG_WARN("party: sub_821A03D0 bailed out after freeing the battle party: "
               "slot {} asked for \"{}\" and it would not load. Its objects are "
               "now dangling.",
