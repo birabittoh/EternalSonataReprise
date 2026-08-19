@@ -40,6 +40,7 @@
 //   0x821E7690  no     PartyCount_QueueScan(r31)        jump_address_on_true = 0x821E767C
 //   0x821E7EB0  no     PartyCount_QueueScan(r30)        jump_address_on_true = 0x821E7E9C
 //   0x821E76F4  no     PartyCount_ExtendedId(r11)       jump_address_on_true = 0x821E76FC
+//   0x821DD940  no     PartyCount_LayoutTen(r27)        jump_address_on_true = 0x821DD948
 //
 // Still missing, and deliberately not guessed at here: sub_821FA908, the party
 // select screen, which holds a ten-element display-order table on the stack,
@@ -117,6 +118,37 @@ void PartyCount_ClearPositionTail_RebaseSlotbytes(PPCRegister& base) {
 // two new slots; the original instruction still handles the first ten.
 bool PartyCount_QueueScan(PPCRegister& index) {
     return index.u32 < kRelocatedCharacterCount;
+}
+
+// sub_821DD808 builds the party HUD's command list, and picks a layout by how
+// many members are in the party:
+//
+//   ble  loc_821DDCF4      count == 0, nothing to draw
+//   <= 3 loc_821DDC84      sub_821DDD00 emitters
+//   <= 6 loc_821DDBB0      sub_821DED50
+//   <= 9 loc_821DDAC0      sub_821E1608
+//   == 10 fall through     sub_821E3408
+//   otherwise -> loc_821DDCF4, which is the return
+//
+// Eleven or twelve members hit that last line and the function returns having
+// emitted only its four header records. That is not merely a missing layout: the
+// per-layout emitters are what append the command VM's 0xFFFF terminator, so the
+// list is left unterminated. sub_821F2F38 dispatches `opcode / 100` through the
+// table at 0x82026428, and anything it cannot match falls into loc_821F4BC4,
+// which re-reads the same record without advancing and jumps back to the
+// dispatcher. An unterminated list is therefore an infinite loop, which is the
+// softlock on adding an eleventh party member: the VM parks on a record whose
+// first word is 570, bucket 5 handles only 500 through 503, and it spins there
+// forever.
+//
+// This takes the ten-member layout for eleven and twelve, by jumping into it
+// rather than by clamping the count: r27 is also this function's return value,
+// and the caller should still be told the real party size. Ten portraits are
+// drawn and the eleventh and twelfth are not, which is the honest outcome until
+// the ten-wide UI layout resource itself grows -- the emitters place members by
+// display position 1..10 and there is no widget behind position 11.
+bool PartyCount_LayoutTen(PPCRegister& count) {
+    return count.u32 > 10 && count.u32 <= kRelocatedCharacterCount;
 }
 
 // `cmpwi r11, 0xA` / `bgt` rejecting character ids above ten before the award

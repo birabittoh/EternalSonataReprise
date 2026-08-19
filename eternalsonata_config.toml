@@ -123,6 +123,18 @@ name = "PartyCount_ExtendedId"
 registers = ["r11"]
 jump_address_on_true = 0x821E76FC
 
+# sub_821DD808 picks a party HUD layout by member count and has arms for <=3,
+# <=6, <=9 and ==10 only. Eleven or twelve fall out of the chain and the function
+# returns having emitted no layout -- and therefore no 0xFFFF terminator for the
+# command list, which makes sub_821F2F38 dispatch forever. This takes the
+# ten-member arm for the two new counts. 0x821DD948 is the `bne`'s own
+# fall-through, i.e. the head of that arm.
+[[midasm_hook]]
+address = 0x821DD940
+name = "PartyCount_LayoutTen"
+registers = ["r27"]
+jump_address_on_true = 0x821DD948
+
 # --- src/party_save.cpp: characters 11 and 12 in the save file --------------
 
 # The save is a list of (ptr, size) blocks, not a fixed struct, and the game
