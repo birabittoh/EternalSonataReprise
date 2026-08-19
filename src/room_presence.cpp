@@ -12,6 +12,7 @@
 #include <rex/system/xmemory.h>
 
 #include "area_names.generated.h"
+#include "battle_layout.h"
 
 namespace eternalsonata {
 
@@ -70,10 +71,17 @@ constexpr uint32_t kAreaIdMaxLength = 32;
 // Session-log-verified across three battles in two runs: for a battle's whole
 // duration it reads 3 (field), and it turns 4 only as the battle *ends* --
 // consistently ~50s after the entry hook, immediately before the post-battle
-// screen. So mode 4 is the end-of-battle edge, and that is what Tick() uses to
-// leave "Fighting...". Entry cannot come from here (C8 still reads 3 well after
-// the battle has begun); it comes from the sub_820FDB80 hook.
-constexpr uint32_t kSceneModeAppliedGuestAddress = 0x824C74CB;
+// screen.
+//
+// None of this is read any more. Battle state used to be a latch: set by a
+// hook on the battle-entry function sub_820FDB80, cleared by Tick() when the
+// applied mode reached 4. That was correct for exactly one battle per session.
+// Whichever half of it failed to re-arm, the shape of the bug was inherent:
+// two unrelated edges, on two different threads, had to keep a bool in step
+// with a state neither of them owned, and nothing resynced it if they ever
+// disagreed. It is now derived from the battle FSM instead, which cannot drift
+// because it is the thing being asked about; see FsmStateIsInBattle in
+// battle_layout.h for why the state field is readable between battles too.
 
 // Guest virtual address of the party level (low byte of the big-endian
 // dword_8243F3EC, same convention as kSceneModeAppliedGuestAddress above).
@@ -131,17 +139,10 @@ void RoomPresence::Tick() {
   }
   auto* memory = kernel_state_->memory();
 
-  uint8_t scene_mode = ReadGuestU8(memory, kSceneModeAppliedGuestAddress);
-
-  bool battle_active;
+  const bool battle_active = IsBattleActive();
   bool field_active;
   {
     std::lock_guard<std::mutex> lock(area_mutex_);
-    // Mode 4 is the end-of-battle edge, not the battle itself (see above).
-    if (battle_active_ && scene_mode == 4) {
-      battle_active_ = false;
-    }
-    battle_active = battle_active_;
     field_active = field_active_;
   }
 
@@ -245,10 +246,6 @@ void RoomPresence::Tick() {
 }
 
 void RoomPresence::NotifyAreaLoad(const char* area_id) {
-  // A real area transition cannot happen mid-battle, so this doubles as a
-  // backstop: if every hooked teardown path misses, walking into the next area
-  // still clears a stuck "Fighting...".
-  NotifyBattleEnd();
   std::lock_guard<std::mutex> lock(area_mutex_);
   field_active_ = true;
   std::string id = area_id ? area_id : "";
@@ -256,16 +253,6 @@ void RoomPresence::NotifyAreaLoad(const char* area_id) {
     return;
   }
   field_area_id_ = std::move(id);
-}
-
-void RoomPresence::NotifyBattleStart() {
-  std::lock_guard<std::mutex> lock(area_mutex_);
-  battle_active_ = true;
-}
-
-void RoomPresence::NotifyBattleEnd() {
-  std::lock_guard<std::mutex> lock(area_mutex_);
-  battle_active_ = false;
 }
 
 void RoomPresence::NotifyFieldTeardown() {
@@ -277,8 +264,15 @@ void RoomPresence::NotifyFieldTeardown() {
 }
 
 bool RoomPresence::IsBattleActive() {
-  std::lock_guard<std::mutex> lock(area_mutex_);
-  return battle_active_;
+  if (!kernel_state_ || !kernel_state_->memory()) {
+    return false;
+  }
+  const auto* host = kernel_state_->memory()->TranslateVirtual<const uint8_t*>(
+      battle::kManager + battle::kFsmStateOffset);
+  if (!host) {
+    return false;
+  }
+  return battle::FsmStateIsInBattle(rex::memory::load_and_swap<uint32_t>(host));
 }
 
 RoomPresence& GetRoomPresence() {
@@ -293,7 +287,12 @@ RoomPresence& GetRoomPresence() {
 // guessing at guest memory. See room_presence.h -- battle state is not
 // reliably derivable from guest memory alone (the scene-mode register only
 // exposes the *end* of a battle, not the whole span), which is exactly the
-// mistake the party_overlay mod made before this was added.
-extern "C" REX_MOD_PLUGIN_EXPORT bool EternalSonataIsBattleActive() {
-  return eternalsonata::GetRoomPresence().IsBattleActive();
+// mistake the party_overlay mod made before this was added. It is declared
+// alongside the rest of the battle surface in src/eternalsonata_battle_api.h.
+//
+// Returns int rather than bool so the C ABI a mod resolves it through is
+// unambiguous: a bool return only defines the low byte of the return register,
+// so a caller that declared it as int could read whatever was left in the rest.
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsBattleActive() {
+  return eternalsonata::GetRoomPresence().IsBattleActive() ? 1 : 0;
 }

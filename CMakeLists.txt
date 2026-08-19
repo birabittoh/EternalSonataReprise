@@ -85,6 +85,7 @@ set(ETERNALSONATA_SOURCES
     src/eternalsonata_presence.cpp
     src/room_presence.cpp
     src/party_system.cpp
+    src/battle_system.cpp
     src/guest_main_thread.cpp
     src/force_load_area.cpp
     src/field_player_model_override.cpp

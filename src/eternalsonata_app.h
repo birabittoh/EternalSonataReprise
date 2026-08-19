@@ -22,6 +22,7 @@
 #include <rex/ui/window.h>
 #include <rex/version.h>
 
+#include "battle_system.h"
 #include "field_player_model_override.h"
 #include "fonts.generated.h"
 #include "force_load_area.h"
@@ -154,6 +155,10 @@ class EternalsonataApp : public rex::ReXApp {
     // Party state for mods: EternalSonataAddCharacterToParty and the rest of
     // src/eternalsonata_party_api.h answer "unavailable" until this runs.
     eternalsonata::BindPartySystem(runtime());
+
+    // Battle state for mods: src/eternalsonata_battle_api.h answers
+    // "unavailable" until this runs.
+    eternalsonata::BindBattleSystem(runtime());
 
     // Debug tool: force-loads a field area via the F4 settings overlay's
     // "Force Load Area..." button. See force_load_area.h.

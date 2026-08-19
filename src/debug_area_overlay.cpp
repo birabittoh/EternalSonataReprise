@@ -10,6 +10,7 @@
 
 #include "area_names.generated.h"
 #include "force_load_area.h"
+#include "room_presence.h"
 #include "settings.h"
 
 namespace eternalsonata {
@@ -27,6 +28,18 @@ class DebugAreaOverlay : public rex::ui::ImGuiDialog {
     if (!ImGui::Begin("Debug##rex", nullptr, ImGuiWindowFlags_NoCollapse)) {
       ImGui::End();
       return;
+    }
+
+    // Warping to an area mid-battle would tear the field out from under the
+    // battle, so the whole window is disabled for the duration. RoomPresence
+    // already tracks that distinction for the Discord state row (a battle
+    // leaves the field loaded underneath it, so "is a field loaded" cannot
+    // tell them apart), so reuse it rather than re-deriving it here.
+    const bool in_battle = GetRoomPresence().IsBattleActive();
+
+    ImGui::BeginDisabled(in_battle);
+    if (in_battle) {
+      ImGui::TextUnformatted("Area loading is unavailable during a battle.");
     }
 
     ImGui::SetNextItemWidth(-1.0f);
@@ -59,6 +72,7 @@ class DebugAreaOverlay : public rex::ui::ImGuiDialog {
       }
     }
     ImGui::EndChild();
+    ImGui::EndDisabled();
 
     ImGui::End();
   }
