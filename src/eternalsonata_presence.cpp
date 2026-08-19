@@ -63,26 +63,15 @@ REX_HOOK_RAW(sub_820FB420) {
   __imp__sub_820FB420(ctx, base);
 }
 
-// sub_820FDB80 is battle entry: its last act, on every path (no early return
-// before it), is to request scene mode 4 --
-//   0x820FDF94  li  r10, 4
-//   0x820FDF9C  stw r10, dword_824C74C4(r11)
-// -- so reaching it means a battle is starting. The request itself cannot be
-// polled: it is consumed and cleared faster than one rendered frame (see
-// room_presence.cpp), which is why this is a hook and not a memory read.
-REX_EXTERN(__imp__sub_820FDB80);
-
-REX_HOOK_RAW(sub_820FDB80) {
-  eternalsonata::GetRoomPresence().NotifyBattleStart();
-  __imp__sub_820FDB80(ctx, base);
-}
-
-// There is deliberately no battle-*exit* hook. The obvious candidates
-// (sub_821AB1A0, sub_821A61F0, sub_82229098, sub_8223EA48, sub_8223F3C0,
-// sub_8223F898, sub_821DD4D0) all request scene mode 3 conditionally, and
-// hooking them was tried: sub_821AB1A0 is the one that fires, but it fires
-// ~2.8s *into* the battle -- the length of the entry transition -- not at the
-// end. Exit is detected in Tick() instead; see room_presence.cpp.
+// There are deliberately no battle entry or exit hooks. Both were tried and
+// both are gone: entry hooked sub_820FDB80 (whose last act is a request for
+// scene mode 4) and exit was inferred in Tick() from the applied mode reaching
+// 4, because no candidate exit function (sub_821AB1A0, sub_821A61F0,
+// sub_82229098, sub_8223EA48, sub_8223F3C0, sub_8223F898, sub_821DD4D0) fires
+// at the right moment -- sub_821AB1A0 is the only one that fires at all, and it
+// fires ~2.8s *into* the battle. That pair only ever worked for the first
+// battle of a session. Battle state is now read straight out of the battle
+// FSM, which needs no edges at all; see RoomPresence::IsBattleActive.
 
 // sub_820FD998 is the single map-transition funnel: every map load and unload
 // goes through it. Called with a null name (r4 == 0) it takes the full

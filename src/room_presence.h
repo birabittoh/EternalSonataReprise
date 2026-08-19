@@ -77,23 +77,13 @@ class RoomPresence {
   // row can leave "Exploring..." when the player returns to a menu screen.
   void NotifyFieldTeardown();
 
-  // Called from the guest-thread battle-entry hook (sub_820FDB80, see
-  // eternalsonata_presence.cpp), whose last act is an unconditional request for
-  // scene mode 4. Marks the battle immediately; Tick() ends it again when the
-  // applied scene mode reaches 4, which is the end-of-battle edge.
-  void NotifyBattleStart();
-
-  // Ends the battle. Called from NotifyAreaLoad as a backstop: a real area
-  // transition cannot happen mid-battle, so walking into the next area clears
-  // a battle whose end Tick() somehow missed.
-  void NotifyBattleEnd();
-
-  // Thread-safe: battle_active_ is only ever set from guest threads under
-  // area_mutex_; this just takes the same lock to read it. Mods have no way
-  // to derive battle state from guest memory on their own (see
-  // room_presence.cpp for why the scene-mode register can't tell them apart),
-  // so this is exported (see EternalSonataIsBattleActive in room_presence.cpp)
-  // for them to query directly instead of re-deriving it.
+  // Whether a battle is running, read live from the battle FSM's state field
+  // (see FsmStateIsInBattle in battle_layout.h). Holds no state of its own, so
+  // there is nothing to keep in step and no lock to take: any two callers on
+  // any two threads see the same answer, and it is correct for every battle in
+  // a session rather than just the first. Exported to mods as
+  // EternalSonataIsBattleActive so they need not re-derive it; deriving it
+  // wrongly, from the scene mode, is what the mods did before it existed.
   bool IsBattleActive();
 
  private:
@@ -106,10 +96,6 @@ class RoomPresence {
   // NotifyFieldTeardown. Used in place of the game's own map-region buffer,
   // which is not reliably populated -- see room_presence.cpp.
   bool field_active_ = false;
-  // Whether a battle is running: set by NotifyBattleStart, cleared by
-  // NotifyBattleEnd. Not derivable from the scene mode -- see room_presence.cpp
-  // for why the mode register reads "field" for a battle's whole duration.
-  bool battle_active_ = false;
 
   std::string last_area_id_;
   std::string last_state_;
