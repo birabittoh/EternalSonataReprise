@@ -4,24 +4,34 @@ and the matching C++ hook bodies.
 
 Strategy
 --------
-The four per-character arrays sit back to back with no padding, so none of them
-can grow in place. But they do not all have to move. Relocating the two *cold*
-arrays leaves holes that the two *hot* ones grow into:
+The seven per-character arrays sit back to back with no padding, so none of them
+can grow in place. Every one of them therefore moves to a reserved page, and the
+whole original block is left behind as dead space.
 
-    position    0x8243FC08  10 * 4  ends 0x8243FC30  stays put
-    slotbytes   0x8243FC30  10 * 1  ends 0x8243FC3A  RELOCATED
-    stats_live  0x8243FD08  10 * 48 ends 0x8243FEE8  stays put
-    stats_base  0x8243FEE8  10 * 48 ends 0x82440068  RELOCATED
+    position    0x8243FC08  10 * 4   ends 0x8243FC30  RELOCATED
+    charflags   0x8243FCFC  10 * 1   ends 0x8243FD06  RELOCATED
+    slotbytes   0x8243FC30  10 * 1   ends 0x8243FC3A  RELOCATED
+    stats_live  0x8243FD08  10 * 48  ends 0x8243FEE8  RELOCATED
+    stats_base  0x8243FEE8  10 * 48  ends 0x824400C8  RELOCATED
+    charwords   0x824400C8  10 * 2   ends 0x824400DC  RELOCATED
+    template    0x82016150  10 * 136 ends 0x820166A0  RELOCATED
 
-Moving `slotbytes` frees 0x8243FC30..0x8243FC3A, and `position` at twelve
-entries needs 0x8243FC08..0x8243FC38, which fits. Moving `stats_base` frees
-0x8243FEE8 onwards, and `stats_live` at twelve entries needs up to 0x8243FF48,
-which also fits. So the two most heavily referenced arrays are never touched.
+An earlier revision moved only the four *cold* arrays and let the three hot ones
+grow into the space that freed up: `position` grew from 0x8243FC30 to 0x8243FC38,
+over slotbytes' old home, and `stats_live` grew over stats_base's. That halved
+the hook count, and it made every enumeration miss unrecoverable. The site table
+is built from IDA's data xrefs plus a linear constant-propagation scan, and
+neither is complete; a site the sweep never saw keeps addressing the old block.
+Under grow-in-place that stale access lands *inside a live array* -- a missed
+slotbytes store writes over position[10] and position[11] -- so the failure is
+silent corruption of the two new characters, which is exactly the symptom that
+sent the first live build back.
 
-Two more pairs join them for the same reason: the read-only `template` table,
-and the pending-award queue, whose id half (`charflags`) has two spare bytes and
-stays put while its amount half (`charwords`) is followed by a live global and
-moves. See RELOCATED and GROWN_IN_PLACE below for the current set.
+With everything relocated, the original block is untouched by any array, so a
+missed site reads and writes dead memory instead. party_relocation.cpp fills that
+block with a canary and checks it once per guest frame, which turns the miss into
+a report naming the address. Growing in place is a size optimisation and can come
+back once that check runs clean; it buys nothing functional.
 
 Hook shapes
 -----------
@@ -36,6 +46,15 @@ fires *after* to shift it back, because the same register is often still live
 (and, at five sites, is a `lis` shared with a different array). Where the load
 writes its own base register the restore is skipped, since the original value is
 gone either way and nothing downstream can want it.
+
+The shift cannot share an address with the restore, so it goes on the preceding
+instruction. Once every array relocates, that collides: the reset paths clear the
+position table as ten consecutive `stw`s through one register, so site N's
+restore and site N+1's shift both want 0x821E5A7C and friends. Consecutive sites
+sharing a base register are therefore collapsed into a *run*: shift once before
+the run, adjust by the difference at each point where the array changes (those
+runs end by walking off position into slotbytes), and restore once after the
+last. See build_runs().
 
 Usage:
     python scripts/party_relocation_emit.py --sites sites.json \\
@@ -63,21 +82,18 @@ RELOCATED = {
     # spare bytes and stays put; this one is followed by a live global, so it
     # moves. It is .bss state like the first two, so a zeroed copy is correct.
     "charwords":  dict(old=0x824400C8, count=12, stride=2,  new=0x8B001800),
+    # The three that used to grow in place. They are the hot ones, and moving
+    # them is what makes the original block dead space the canary can watch.
+    "position":   dict(old=0x8243FC08, count=12, stride=4,  new=0x8B001900),
+    "charflags":  dict(old=0x8243FCFC, count=12, stride=1,  new=0x8B001A00),
+    "stats_live": dict(old=0x8243FD08, count=12, stride=48, new=0x8B002000),
 }
 
 # Arrays that stay put but gain two entries by growing into the vacated space.
-GROWN_IN_PLACE = {
-    "position":   dict(base=0x8243FC08, stride=4,  old_end=0x8243FC30,
-                       new_end=0x8243FC38),
-    "stats_live": dict(base=0x8243FD08, stride=48, old_end=0x8243FEE8,
-                       new_end=0x8243FF48),
-    # The id half of the pending-award queue. Ten bytes with exactly two spare
-    # before stats_live, so twelve entries fit in place. Nothing in the image
-    # references its end address, so this entry usually contributes no hooks; it
-    # is here so that a bound appearing later is caught rather than ignored.
-    "charflags":  dict(base=0x8243FCFC, stride=1,  old_end=0x8243FD06,
-                       new_end=0x8243FD08),
-}
+# Empty on purpose: see the module docstring for why grow-in-place was dropped.
+# The machinery below is kept because the optimisation is worth restoring once
+# the canary check in party_relocation.cpp runs clean across a full playthrough.
+GROWN_IN_PLACE: dict[str, dict] = {}
 
 # Old end address -> the grown array whose end it is. A loop that stops when a
 # walking pointer reaches one of these has to stop at the new end instead.
@@ -104,8 +120,8 @@ RELOCATED_ENDS = {cfg["old"] + cfg["stride"] * 10: name
 # carries a hand-written hook from src/party_counts.cpp. One address still means
 # one hook, so those two get a merged hook that does both jobs.
 MERGED_WITH_COUNT_HOOK = {
-    0x821E5AA0: "PartyCount_ClearPositionTail_ShiftSlotbytes",
-    0x821E5DB4: "PartyCount_ClearPositionTail_ShiftSlotbytes",
+    0x821E5AA0: "PartyCount_ClearPositionTail_RebaseSlotbytes",
+    0x821E5DB4: "PartyCount_ClearPositionTail_RebaseSlotbytes",
 }
 
 BEGIN = "# >>> generated by scripts/party_relocation_emit.py -- do not edit by hand"
@@ -170,20 +186,36 @@ def main() -> int:
 
     # Folded bases (`base - stride`, indexed with a 1-based character id) need
     # exactly the same delta as the base itself, so they are emitted alongside
-    # the element sites rather than left for review. Folded bases of the two
-    # arrays that stay put need nothing at all.
+    # the element sites rather than left for review.
+    #
+    # `branch_target` only disqualifies a load or store. Those need their base
+    # register shifted by a hook on the *preceding* instruction, which is only
+    # sound if the preceding instruction is the only way in -- and `unsafe`
+    # above collects the ones where it is not. An `addi` has no such
+    # requirement: its hook fires after the instruction and rewrites the address
+    # the instruction just finished, so it is correct however control arrived.
+    # Filtering both forms on `branch_target` dropped 11 real addi sites (7
+    # slotbytes, 4 charflags), which then kept addressing the arrays' old homes.
     reloc = [s for s in sites
              if s["array"] in RELOCATED
              and s["role"] in ("element", "below_base")
-             and not s["branch_target"]]
+             and (s["form"] == "addi" or not s["branch_target"])]
 
+    # `addi` sites are independent: the hook fires after the instruction and
+    # rewrites the finished address, so nothing is left live across a boundary.
+    # Load and store sites are not, and are emitted per run below.
     hooks: list[dict] = []
     for s in reloc:
-        hooks += site_hooks(s, s["array"], "Reloc")
+        if s["form"] == "addi":
+            hooks += site_hooks(s, s["array"], "Reloc")
     for s in sentinel_fixes:
         hooks += site_hooks(s, SENTINEL_MOVES[s["target"]], "Bound")
     for s in relocated_bounds:
         hooks += site_hooks(s, RELOCATED_ENDS[s["target"]], "RelocEnd")
+
+    runs = build_runs([s for s in reloc if s["form"] != "addi"])
+    for run in runs:
+        hooks += run_hooks(run)
 
     # One hook per address is all the codegen can hold, so a collision would
     # silently drop one of the two. Catch it here instead.
@@ -202,6 +234,9 @@ def main() -> int:
 
     print(f"{len(reloc)} relocated sites + {len(sentinel_fixes)} moved bounds "
           f"+ {len(relocated_bounds)} relocated-array bounds -> {len(hooks)} hooks")
+    multi = [r for r in runs if len(r) > 1]
+    print(f"{len(runs)} load/store runs ({len(multi)} of more than one site, "
+          f"longest {max((len(r) for r in runs), default=0)})")
     print(f"{len(redundant)} indexed sites skipped as redundant")
     print(f"{len(unresolved)} sites left for manual review")
     for s in unresolved:
@@ -210,35 +245,106 @@ def main() -> int:
     return 0
 
 
+def clobbers_own_base(s: dict) -> bool:
+    """True if this instruction leaves its own base register holding something
+    else, so there is nothing to restore afterwards. Integer loads only: a float
+    load writes an FPR, and comparing its rD against rA would be comparing a
+    float register number with a GPR number."""
+    return s["form"] in LOAD_FORMS and s["dest_reg"] == s["base_reg"]
+
+
+def build_runs(sites: list[dict]) -> list[list[dict]]:
+    """Group load/store sites into runs of consecutive instructions that share a
+    base register.
+
+    A single site needs its base shifted before the instruction and shifted back
+    after, and since one address can only carry one hook, the shift has to sit on
+    the *preceding* instruction. Adjacent sites therefore fight over an address:
+    site N's restore and site N+1's shift both want N's address. That is not a
+    rare shape -- the two reset paths clear the position table as ten consecutive
+    `stw`s through r31, and then walk straight on into the slotbytes byte clear,
+    which is ten collisions per path.
+
+    Collapsing them is also what the code means: the register holds one walking
+    pointer for the whole run, so it wants shifting once on the way in and
+    restoring once on the way out. Where the array changes mid-run the delta
+    changes with it, which is a third hook shape (see run_hooks).
+
+    A run ends at a gap in addresses, at a change of base register, or at an
+    instruction that overwrites its own base register, after which the register
+    holds an unrelated value and the next site is starting over.
+    """
+    runs: list[list[dict]] = []
+    for s in sorted(sites, key=lambda s: s["addr"]):
+        run = runs[-1] if runs else None
+        prev = run[-1] if run else None
+        if (prev is not None
+                and s["addr"] == prev["addr"] + 4
+                and s["base_reg"] == prev["base_reg"]
+                and not clobbers_own_base(prev)):
+            run.append(s)
+        else:
+            runs.append([s])
+    return runs
+
+
+def run_hooks(run: list[dict]) -> list[dict]:
+    """Hooks for one run: shift in, rebase at every array change, restore out.
+
+    Every site in a run is guaranteed to have `branch_target` false (the caller
+    drops those), so control cannot enter partway and find the register already
+    shifted, and the shift placed on the instruction before the run cannot be
+    jumped over.
+    """
+    first, last = run[0], run[-1]
+    reg = first["base_reg"]
+
+    def hook(address: int, body: str, site: dict) -> dict:
+        # An address that already carries a hand-written hook from
+        # src/party_counts.cpp keeps that name, since the codegen holds one hook
+        # per address; the hand-written body calls `body` itself. `body` is
+        # recorded either way so the generated function is still emitted.
+        return dict(address=address,
+                    name=MERGED_WITH_COUNT_HOOK.get(address, body),
+                    body=body, registers=[f"r{reg}"], after=True, site=site)
+
+    out = [hook(first["addr"] - 4, f"PartyReloc_{first['array']}_Shift", first)]
+
+    # Where a run crosses from one array into the next -- the position clear
+    # walking on into the slotbytes clear -- the register keeps its pointer but
+    # needs a different delta from that instruction on. Correct it on the site
+    # *before* the change, which is also where a restore would have gone, so the
+    # two shapes never both want the same address.
+    for a, b in zip(run, run[1:]):
+        if a["array"] != b["array"]:
+            # `_To_` rather than a bare underscore: array names have underscores
+            # of their own, and the generated side has to split this back apart.
+            out.append(hook(a["addr"],
+                            f"PartyRebase_{a['array']}_To_{b['array']}", a))
+
+    if not clobbers_own_base(last):
+        out.append(hook(last["addr"],
+                        f"PartyReloc_{last['array']}_Unshift", last))
+    return out
+
+
 def site_hooks(s: dict, group: str, kind: str) -> list[dict]:
-    """Build the hooks for one site.
+    """Build the hook for one `addi` site.
 
     `addi` finishes the address in a register, so a single hook after the
-    instruction can rewrite it. A load or store forms `base + displacement`
-    inside the instruction itself, with nothing to rewrite afterwards, so the
-    base register is shifted before and shifted back after; the restore is
-    dropped when the instruction overwrites its own base register, since the
-    old value is gone either way. That only applies to integer loads: a float
-    load writes an FPR and always leaves its base GPR intact, so it always needs
-    the restore.
+    instruction can rewrite it, and nothing is left live across a boundary the
+    way a shifted base register is. Load and store sites go through build_runs()
+    and run_hooks() instead; every loop bound in the table is an `addi`, so this
+    only ever sees that form. If a non-addi one turns up, it needs the run
+    treatment and a group of its own, not a shift/restore pair improvised here.
     """
-    form = s["form"]
-    if form == "addi":
-        return [dict(address=s["addr"], name=f"Party{kind}_{group}_Remap",
-                     registers=[f"r{s['reg']}"], after=True, site=s)]
-
-    # The shift cannot share the site's address with the restore, so it goes on
-    # the instruction before, fired after that one has run. Control has to be
-    # unable to enter in between.
-    shift_at = s["addr"] - 4
-    name = MERGED_WITH_COUNT_HOOK.get(shift_at,
-                                      f"Party{kind}_{group}_Shift")
-    out = [dict(address=shift_at, name=name,
-                registers=[f"r{s['base_reg']}"], after=True, site=s)]
-    if not (form in LOAD_FORMS and s["dest_reg"] == s["base_reg"]):
-        out.append(dict(address=s["addr"], name=f"Party{kind}_{group}_Unshift",
-                        registers=[f"r{s['base_reg']}"], after=True, site=s))
-    return out
+    if s["form"] != "addi":
+        raise SystemExit(
+            f"{s['addr']:#010x} is a {s['form']} in the {kind} group, which only "
+            "handles addi; route it through build_runs() instead")
+    name = f"Party{kind}_{group}_Remap"
+    return [dict(address=s["addr"], name=name, body=name,
+                 registers=[f"r{s['reg']}"], after=True, site=s)]
 
 
 def write_toml(path: str, hooks, unresolved) -> None:
@@ -275,12 +381,16 @@ def write_toml(path: str, hooks, unresolved) -> None:
 
 
 def write_cpp(path: str, hooks) -> None:
-    used = {h["name"] for h in hooks}
+    # Key off the *body* name, not the hook name: an address that already holds a
+    # hand-written hook from src/party_counts.cpp is registered under that name
+    # and calls the generated function itself, so the function is still needed.
+    used = {h["body"] for h in hooks}
     out = ['// Generated by scripts/party_relocation_emit.py -- do not edit.',
            '//',
-           '// Relocates the cold per-character arrays out of the way so the hot',
-           '// ones can grow from ten to twelve entries in place. See the script',
-           '// for the layout reasoning.',
+           '// Relocates every per-character array out of the original block, so',
+           '// that block can be left poisoned and any site the sweep missed shows',
+           '// up as a canary hit rather than as corruption. See the script for the',
+           '// layout reasoning.',
            '',
            '#include "party_relocation.h"',
            '',
@@ -358,6 +468,22 @@ def write_cpp(path: str, hooks) -> None:
                     f'    reg.u32 -= k{tag}Delta;',
                     '}',
                     '']
+
+    # Rebase hooks, for a run that walks out of one array and straight into the
+    # next: the register keeps its pointer and only the delta changes, so this
+    # corrects by the difference rather than restoring and re-shifting (which
+    # would need two hooks at one address, which is the thing runs exist to
+    # avoid).
+    for body in sorted(b for b in used if b.startswith("PartyRebase_")):
+        frm, to = body[len("PartyRebase_"):].split("_To_")
+        delta = ((RELOCATED[to]["new"] - RELOCATED[to]["old"])
+                 - (RELOCATED[frm]["new"] - RELOCATED[frm]["old"]))
+        out += [f'// {frm} -> {to}: a walking pointer crossing from one array to',
+                f'// the next, already carrying the {frm} delta.',
+                f'void {body}(PPCRegister& reg) {{',
+                f'    reg.u32 += static_cast<int32_t>({delta & 0xFFFFFFFF:#010x});',
+                '}',
+                '']
 
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(out))

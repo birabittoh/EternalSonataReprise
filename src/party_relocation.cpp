@@ -65,6 +65,13 @@ bool ReservePartyRelocationMemory(rex::Runtime* runtime) {
 
   g_memory = memory;
 
+  // Only after the copies exist: the seed above reads the template table out of
+  // the image, and the poison must not run before anything that still depends on
+  // the old addresses holding their original contents.
+  if (!PoisonVacatedPartyBlock(memory)) {
+    return false;
+  }
+
   REXLOG_INFO("party relocation: reserved {:#x} bytes at {:#010x} for {} characters",
                kRelocationSize, kRelocationBase, kRelocatedCharacterCount);
   return true;
@@ -141,6 +148,53 @@ bool ClearCharacterTemplate(int character) {
   }
   std::memset(entry, 0, kTemplateStride);
   return true;
+}
+
+bool PoisonVacatedPartyBlock(rex::memory::Memory* memory) {
+  for (const auto& range : kPoisonRanges) {
+    auto* host = memory->TranslateVirtual<uint8_t*>(range.begin);
+    if (!host) {
+      REXLOG_ERROR("party relocation: poison range {:#010x} did not translate",
+                   range.begin);
+      return false;
+    }
+    std::memset(host, kPoisonByte, range.end - range.begin);
+  }
+  REXLOG_INFO("party relocation: poisoned the vacated block with {:#04x}; "
+              "any hit reported after this is a site the sweep missed",
+              kPoisonByte);
+  return true;
+}
+
+uint32_t CheckPartyPoison() {
+  if (!g_memory) {
+    return 0;
+  }
+
+  uint32_t hits = 0;
+  for (const auto& range : kPoisonRanges) {
+    auto* host = g_memory->TranslateVirtual<uint8_t*>(range.begin);
+    if (!host) {
+      continue;
+    }
+    const uint32_t size = range.end - range.begin;
+    for (uint32_t i = 0; i < size; ++i) {
+      if (host[i] == kPoisonByte) {
+        continue;
+      }
+      // One line per *distinct* byte, not per frame: repairing it means a site
+      // that writes every frame reports once, and the next unrelated site is not
+      // buried under it.
+      REXLOG_ERROR("party relocation: {:#010x} was written ({:#04x}); an "
+                   "instruction still addresses the vacated party block. "
+                   "Re-run scripts/party_relocation_scan.py and check what "
+                   "reaches this address.",
+                   range.begin + i, host[i]);
+      host[i] = kPoisonByte;
+      ++hits;
+    }
+  }
+  return hits;
 }
 
 }  // namespace eternalsonata

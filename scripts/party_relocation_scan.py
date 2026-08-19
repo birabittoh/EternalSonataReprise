@@ -268,12 +268,26 @@ def classify(target: int) -> tuple[str, str]:
                 role = "sentinel_or_base" if prev_end else "element"
                 return name, role
             return name, "element"
-    # a constant exactly one stride below a base is a folded field offset
-    for name, base, stride, count, end in ARRAYS:
-        if name in NO_FOLD:
-            continue
-        if base - stride <= target < base:
-            return name, "below_base"
+    # There is deliberately no second, wider fold test here. There used to be one
+    # -- `base - stride <= target < base`, the whole stride below each base --
+    # and it was wrong, and it was live in the first build. A fold is an address
+    # that gets *indexed*, so the only constant a folded site ever materialises
+    # is the fold base itself, which the loop at the top of this function already
+    # matched exactly; if the code already knows the index it addresses the
+    # element directly and there is no fold at all.
+    #
+    # Everything the wide window added had a non-zero offset into it, and every
+    # one of those was a `lbz` or `stb` against an unrelated global that happens
+    # to sit just below an array: 0x8243FC05 and 0x8243FC06 are bytes of
+    # dword_8243FC04 (34 sites), and 0x8243FCF4 is its own global (6 sites). All
+    # 40 were classified as party sites and given the relocation delta, which
+    # sent forty byte accesses to unrelated state into the reserved page.
+    #
+    # A struct array could in principle fold a field offset in as well
+    # (`base - 48 + 28`) and this would miss it. Nothing in the image does, and
+    # the consequence of missing one is now recoverable: it is left unclassified
+    # rather than hooked wrongly, and the canary over the original block in
+    # party_relocation.cpp catches it at runtime with an address.
     # exact end-of-array addresses used purely as bounds
     for name, base, stride, count, end in ARRAYS:
         if target == end and name not in NO_END_SENTINEL:

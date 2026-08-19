@@ -3,6 +3,7 @@
 #include "eternalsonata_party_api.h"
 #include "force_load_area.h"
 #include "generated/eternalsonata_init.h"
+#include "party_relocation.h"
 #include "party_slots.h"
 
 #include "settings.h"
@@ -46,13 +47,16 @@ constexpr const char* kCharacterNames[11] = {
     "Salsa",  "Jazz",       "Falsetto", "Claves", "March",
 };
 
-// u32[10] keyed by character number: dword_8243FC08[c - 1] is character c's
-// 1-based display position on the status screen, 0 meaning "not in the
-// party". It is a position table, not a list of ids in party order -- see the
-// derivation in party_overlay/mod_main.cpp. The active party is whoever holds
-// positions 1..3, so the party's first member is the character whose entry
-// equals 1.
-constexpr uint32_t kStatusMemberList = 0x8243FC08u;
+// u32[12] keyed by character number: entry [c - 1] is character c's 1-based
+// display position on the status screen, 0 meaning "not in the party". It is a
+// position table, not a list of ids in party order -- see the derivation in
+// party_overlay/mod_main.cpp. The active party is whoever holds positions 1..3,
+// so the party's first member is the character whose entry equals 1.
+//
+// The table was dword_8243FC08 in retail and is relocated by the twelve-
+// character work, so this reads the new base rather than a literal; the hooks
+// only rewrite guest code, not host reads like this one. See party_relocation.h.
+constexpr uint32_t kStatusMemberList = eternalsonata::kPositionBase;
 // Twelve, not ten: the port widens this table to hold the two added slots as
 // well (see party_relocation.h). Scanning only ten of it meant an added
 // character leading the party read as "no leader at all", the override left the

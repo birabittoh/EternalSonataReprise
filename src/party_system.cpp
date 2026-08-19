@@ -69,26 +69,23 @@ constexpr uint32_t kBudgetUsedAddr = 0x8243FCC5u;
 // u16[] indexed by party level - 1: the budget cap per level.
 constexpr uint32_t kBudgetCapTableAddr = 0x8202CA70u;
 
-// u32[10]: display position of character c at index c-1 (0 = not in party).
-constexpr uint32_t kPositionsAddr = 0x8243FC08u;
+// u32[12]: display position of character c at index c-1 (0 = not in party).
+// Relocated along with every other per-character array; see party_relocation.h.
+constexpr uint32_t kPositionsAddr = kPositionBase;
 
 // 48-byte stat structs, indexed by character number - 1:
 //   kBaseStatsAddr  the character's own stats (what a save holds)
 //   kLiveStatsAddr  the same with equipment folded in - what the status and
 //                   equipment screens draw
 //
-// The base stats array no longer lives at 0x8243FEE8. Raising the cast to
-// twelve moved it: the two arrays sat back to back with no padding, so the cold
-// one was relocated to free the space the hot one grows into. The mid-ASM hooks
-// rewrite the *guest code* that references it, which does nothing for the
-// direct guest-memory reads below, so this constant has to follow the array to
-// its new home by hand. See party_relocation.h.
-//
-// kLiveStatsAddr is unchanged: that array is the one that stayed put and grew
-// in place, into the bytes the base array vacated.
+// Neither array lives at its retail address any more. Raising the cast to twelve
+// moved every per-character array out of the original block, which sat back to
+// back with no padding. The mid-ASM hooks rewrite the *guest code* that
+// references them, which does nothing for the direct guest-memory reads below,
+// so these constants have to follow the arrays to their new home by hand. See
+// party_relocation.h.
 constexpr uint32_t kBaseStatsAddr = kStatsBaseBase;
-constexpr uint32_t kLiveStatsAddr = 0x8243FD08u;
-constexpr uint32_t kStatsStride = 48u;
+constexpr uint32_t kLiveStatsAddr = kStatsLiveBase;
 
 // Offsets within a stat struct, all confirmed against the equipment screen's
 // own painter sub_822352F8 (which draws +0x10, +0x0C, then +0x14/+0x16/+0x18/

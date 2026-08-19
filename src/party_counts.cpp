@@ -19,15 +19,13 @@
 //                   left in place and still handles the first ten.
 //
 //   nothing at all  the reset paths clear the position array as ten individual
-//                   stores, so entries 11 and 12 -- which live in the bytes the
-//                   relocated slotbytes array vacated -- are never written. A
-//                   hook stores the two missing zeroes. This one would present
-//                   as two phantom party members rather than as a crash.
+//                   stores, so entries 11 and 12 of the relocated twelve-entry
+//                   array are never written. A hook stores the two missing
+//                   zeroes. This one would present as two phantom party members
+//                   rather than as a crash.
 //
-// The matching [[midasm_hook]] blocks are NOT in eternalsonata_config.toml yet,
-// for the same reason the relocation table is not: half a conversion is a
-// broken game. The table below documents each hook's address and options so the
-// config can be written in the same commit that enables everything.
+// The matching [[midasm_hook]] blocks live in eternalsonata_config.toml, outside
+// the generated block. The table below is the index:
 //
 //   address     after  hook                             notes
 //   0x821E5C10  yes    PartyCount_Twelve(r10)           sub_821E5A38 slotbytes clear
@@ -35,8 +33,10 @@
 //   0x821E7190  yes    PartyCount_Twelve(r21)           sub_821E7138 character init
 //   0x821E7628  yes    PartyCount_Twelve(r10)           sub_821E7358 charwords clear
 //   0x821E7648  yes    PartyCount_Twelve(r10)           sub_821E7358 charflags clear
-//   0x821E5AA0  yes    PartyCount_ClearPositionTail()   sub_821E5A38 reset path
-//   0x821E5DB4  yes    PartyCount_ClearPositionTail()   sub_821E5D68 reset path
+//   0x821E5AA0  yes    PartyCount_ClearPositionTail_    sub_821E5A38 reset path;
+//                        RebaseSlotbytes(r31)           merged, see below
+//   0x821E5DB4  yes    PartyCount_ClearPositionTail_    sub_821E5D68 reset path;
+//                        RebaseSlotbytes(r31)           merged, see below
 //   0x821E7690  no     PartyCount_QueueScan(r31)        jump_address_on_true = 0x821E767C
 //   0x821E7EB0  no     PartyCount_QueueScan(r30)        jump_address_on_true = 0x821E7E9C
 //   0x821E76F4  no     PartyCount_ExtendedId(r11)       jump_address_on_true = 0x821E76FC
@@ -56,12 +56,11 @@ namespace {
 
 using eternalsonata::kRelocatedCharacterCount;
 
-// Where the position array's two new entries live: the bytes the relocated
-// slotbytes array vacated at 0x8243FC30. Kept here rather than in the header
-// because nothing else needs them; the relocation side only cares that the
-// array *can* grow this far.
-constexpr uint32_t kPositionBase = 0x8243FC08;
-constexpr uint32_t kPositionStride = 4;
+using eternalsonata::kPositionBase;
+using eternalsonata::kPositionStride;
+
+// How many entries the game's own reset paths clear. They store ten and stop,
+// so the two past that are this file's job.
 constexpr uint32_t kPositionClearedCount = 10;
 
 }  // namespace
@@ -76,9 +75,9 @@ void PartyCount_Twelve(PPCRegister& reg) {
 }
 
 // The reset paths clear position[0..9] as ten individual stores and stop. The
-// two entries past that are old slotbytes bytes, so without this they start as
-// whatever the ten-byte slotbytes clear left behind -- which reads as two extra
-// party members with junk display positions.
+// relocated array has twelve entries, and nothing in the game writes the last
+// two, so without this they keep whatever the reserved page held -- which reads
+// as two extra party members with junk display positions.
 void PartyCount_ClearPositionTail() {
     for (uint32_t i = kPositionClearedCount; i < kRelocatedCharacterCount; ++i) {
         const uint32_t address = kPositionBase + i * kPositionStride;
@@ -93,21 +92,24 @@ void PartyCount_ClearPositionTail() {
     }
 }
 
-// Both reset paths follow their last position store with a `stb` into the
-// relocated slotbytes array, which needs its base register shifted. A mid-ASM
-// hook is keyed by instruction address and only one can live at each, so the
-// shift cannot sit on the `stb` itself (the restore is already there, after the
-// instruction) and has to go on the instruction before -- which is exactly the
-// store this file already hooks. One address, one hook, so the two jobs are
-// merged here rather than fighting over the slot.
+// Both reset paths clear the position array as ten consecutive stores through
+// one register and then walk straight on into the slotbytes clear, still through
+// the same register. The generated table treats that as one run: the register is
+// shifted once before the run and restored once after, and where it crosses from
+// position into slotbytes the delta is corrected by the difference. That
+// correction lands on the last position store -- which is exactly the
+// instruction this file already hooks. A mid-ASM hook is keyed by instruction
+// address and only one can live at each, so the two jobs are merged here rather
+// than fighting over the slot.
 //
-// Kept in sync with PartyReloc_slotbytes_Shift in the generated file by the
-// static_assert below: both add the same delta.
-void PartyReloc_slotbytes_Shift(PPCRegister& reg);
+// The emitter knows about this merge (MERGED_WITH_COUNT_HOOK in
+// scripts/party_relocation_emit.py) and registers this name at those two
+// addresses instead of its own, while still generating the body called below.
+void PartyRebase_position_To_slotbytes(PPCRegister& reg);
 
-void PartyCount_ClearPositionTail_ShiftSlotbytes(PPCRegister& base) {
+void PartyCount_ClearPositionTail_RebaseSlotbytes(PPCRegister& base) {
     PartyCount_ClearPositionTail();
-    PartyReloc_slotbytes_Shift(base);
+    PartyRebase_position_To_slotbytes(base);
 }
 
 // `cmpwi rX, 0xA` at the top of a scan over the ten-slot pending-award queue,

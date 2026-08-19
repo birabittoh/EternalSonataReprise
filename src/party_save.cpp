@@ -51,25 +51,22 @@ namespace {
 
 using eternalsonata::kRelocatedCharacterCount;
 using eternalsonata::kStatsBaseBase;
+using eternalsonata::kStatsLiveBase;
+using eternalsonata::kStatsStride;
 
 // The stats arrays are 48-byte structs per character. Characters 11 and 12 are
 // the entries past the ten a retail save holds, so each side-car block starts
-// one retail array-length in and runs to the end of the widened array.
-constexpr uint32_t kStatsStride = 48;
+// one retail array-length in and runs to the end of the widened array. Both
+// arrays are relocated, so both side-cars are addressed off their new bases;
+// see party_relocation.h.
 constexpr uint32_t kRetailCharacterCount = 10;
 constexpr uint32_t kRetailStatsSize = kRetailCharacterCount * kStatsStride;
 constexpr uint32_t kSideCarSize =
     (kRelocatedCharacterCount - kRetailCharacterCount) * kStatsStride;
 
-// stats_live is one of the two arrays that does not move: it grows in place into
-// the bytes the relocated stats_base vacated, so its eleventh entry begins at
-// exactly the address stats_base used to start at.
-constexpr uint32_t kStatsLiveBase = 0x8243FD08;
 constexpr uint32_t kStatsLiveSideCar = kStatsLiveBase + kRetailStatsSize;
 constexpr uint32_t kStatsBaseSideCar = kStatsBaseBase + kRetailStatsSize;
 
-static_assert(kStatsLiveSideCar == 0x8243FEE8,
-              "stats_live's eleventh entry should sit where stats_base was");
 static_assert(kSideCarSize == 96, "two characters of stats, 48 bytes each");
 
 // The save version this build writes, and the lowest version that carries the

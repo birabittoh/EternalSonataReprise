@@ -125,6 +125,12 @@ class EternalsonataApp : public rex::ReXApp {
       gs->SetHostSwapCallback([this] {
         runtime()->mod_registry()->DispatchTick();
         guest_swap_count_.fetch_add(1, std::memory_order_relaxed);
+        // Checks the block the relocated party arrays left behind. Nothing
+        // should be writing there; a hit means the hook table in
+        // eternalsonata_config.toml is missing a site, and the log line names
+        // the address. Kept on the swap boundary because that is the one
+        // per-guest-frame callback this app owns.
+        eternalsonata::CheckPartyPoison();
       });
     }
     SetGuestFrameStats([this]() {
