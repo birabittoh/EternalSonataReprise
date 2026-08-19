@@ -82,8 +82,11 @@
 #include "party_slots.h"
 
 #include <atomic>
+#include <cstring>
+#include <string>
 
 #include <rex/logging.h>
+#include <rex/memory/utils.h>
 #include <rex/ppc/context.h>
 
 namespace {
@@ -228,16 +231,73 @@ void PartyBounds_FieldModelId(PPCRegister& id) {
 // Diagnostics, not fixes. Both of the party-model rebuild paths free a slot's
 // objects *before* they load the replacements, and both return early if a load
 // fails, leaving a released object linked in the engine's per-frame task list -
-// which is what a dead-vtable crash in the dispatcher sub_82132A08 looks like.
-// These two hooks sit on those early returns and say so, which is the only way
-// to tell that failure apart from the several other ways the same crash can be
-// reached.
-void PartyTrace_FieldModelLoadFailed() {
-  REXLOG_WARN("party: sub_821BD1C0 bailed out after freeing a party slot "
-              "(voice or model load failed); its object is now dangling");
+// which is what a dead-vtable crash in the dispatcher sub_82132A08 looks like,
+// and what a softlock in it looks like too when the dead task loops instead of
+// faulting.
+//
+// "voice or model load failed" was not specific enough to act on. Both callers
+// have *two* early returns -- the id gate refusing to build a path, and
+// sub_8210C9D8 failing to load the path it built -- and they mean opposite
+// things: the first is this port's gating being wrong, the second is an asset
+// that is missing or unreadable. Each site now says which, and names the file,
+// because "which asset failed" is the whole question.
+//
+// Both callers format into the same place, `r1 + 0x60` (var_C0 in sub_821A03D0,
+// var_A0 in sub_821BD1C0), so the path is read from there.
+namespace {
+
+constexpr uint32_t kPathBufferOffset = 0x60;
+constexpr size_t kMaxPathChars = 192;
+
+// The formatted asset path a bail-out was about, or "<unreadable>". Plain ASCII
+// in guest memory, so no byte swapping: these are chars, not words.
+std::string GuestPathAt(uint32_t address) {
+  const auto* host = eternalsonata::PartyGuestPointer(address);
+  if (!host) {
+    return "<unreadable>";
+  }
+  const auto* end = static_cast<const uint8_t*>(
+      std::memchr(host, '\0', kMaxPathChars));
+  const size_t length = end ? static_cast<size_t>(end - host) : kMaxPathChars;
+  return std::string(reinterpret_cast<const char*>(host), length);
 }
 
-void PartyTrace_BattleModelLoadFailed() {
-  REXLOG_WARN("party: sub_821A03D0 bailed out after freeing the battle party "
-              "(model load failed); its objects are now dangling");
+}  // namespace
+
+// sub_821BD1C0, at the `beq` after sub_8210C9D8 (0x821BD334): the voice path was
+// built and the file behind it would not load. r29 points at the character id
+// the caller passed down.
+void PartyTrace_FieldModelLoadFailed(PPCRegister& sp, PPCRegister& id_ptr) {
+  uint32_t id = 0;
+  if (const auto* host = eternalsonata::PartyGuestPointer(id_ptr.u32)) {
+    id = rex::memory::load_and_swap<uint32_t>(host);
+  }
+  REXLOG_WARN("party: sub_821BD1C0 bailed out after freeing a party slot: "
+              "character {} asked for \"{}\" and it would not load. Its object "
+              "is now dangling.",
+              id, GuestPathAt(sp.u32 + kPathBufferOffset));
+}
+
+// sub_821BD1C0, at the `beq` after sub_821BD0D0 (0x821BD320): the path was never
+// built, because the voice gate refused the id. That is this port's gating, not
+// a missing file, and it is the one of the two that PartyBounds_VoiceId is
+// supposed to prevent.
+void PartyTrace_FieldVoicePathRejected(PPCRegister& id_ptr) {
+  uint32_t id = 0;
+  if (const auto* host = eternalsonata::PartyGuestPointer(id_ptr.u32)) {
+    id = rex::memory::load_and_swap<uint32_t>(host);
+  }
+  REXLOG_WARN("party: sub_821BD0D0 refused to build a voice path for character "
+              "{}, so sub_821BD1C0 bailed out after freeing the slot. This is a "
+              "gate, not a missing asset.",
+              id);
+}
+
+// sub_821A03D0, at the `beq` after sub_8210C9D8 (0x821A0578). r29 is the battle
+// party slot index, 0..2.
+void PartyTrace_BattleModelLoadFailed(PPCRegister& sp, PPCRegister& slot) {
+  REXLOG_WARN("party: sub_821A03D0 bailed out after freeing the battle party: "
+              "slot {} asked for \"{}\" and it would not load. Its objects are "
+              "now dangling.",
+              slot.u32, GuestPathAt(sp.u32 + kPathBufferOffset));
 }
