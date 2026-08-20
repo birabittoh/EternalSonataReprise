@@ -6,10 +6,13 @@
 #include "settings.h"
 
 #include <atomic>
+#include <cstring>
 #include <string>
 
 #include <rex/cvar.h>
 #include <rex/hook.h>
+#include <rex/logging.h>
+#include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
 
 namespace {
@@ -82,6 +85,154 @@ constexpr uint32_t kSceneHandleTable = 0x824CF500u;
 // sub_8217BED0: scene-handle id -> object pointer, 0 when the id is not
 // registered. See the crash note on the respawn call below.
 REX_IMPORT(__imp__sub_8217BED0, ResolveSceneHandle, u32(u32, u32));
+
+// sub_820EE238: scene object + mesh name -> mesh index, 0xFFFF when absent.
+REX_IMPORT(__imp__sub_820EE238, MeshIndexByName, u32(u32, u32));
+
+// ---------------------------------------------------------------------------
+// Overworld weapon meshes.
+//
+// The field leader never draws the weapon it is holding: sub_820FCF80 hides it
+// explicitly right after the spawn, with sub_820EFE38(object, "weapon", 0) and
+// friends. But it only knows the three characters the retail game could put in
+// the field, and it keys off the *party slot* (0 Allegretto, 1 Polka, 2 Beat),
+// not off the model that was actually instantiated. With the model override
+// substituting anybody's model into slot 0, the hide list stays Allegretto's
+// and the borrowed character's weapon meshes are left visible.
+//
+// So the same hide has to be re-applied for whichever model really spawned.
+// The lookup is the game's own sub_820EE238 (scene object + name -> mesh index,
+// 0xFFFF when the model has no such mesh); an earlier attempt to walk the mesh
+// tables by hand instead did not reproduce it and found nothing at all. Only
+// the write is done here, and it is the one sub_820EFE38 makes: mesh visibility
+// lives at scene_object+1380 in 64-byte entries, bit 0 of entry+20 meaning
+// hidden.
+// ---------------------------------------------------------------------------
+constexpr uint32_t kSceneMeshFlagsOffset = 1380u;
+constexpr uint32_t kMeshFlagsStrideShift = 6u;
+constexpr uint32_t kMeshFlagsMask = 0x3FFFC0u;
+constexpr uint32_t kMeshFlagsWordOffset = 20u;
+constexpr uint32_t kMeshFlagHidden = 1u;
+constexpr uint32_t kMeshIndexNone = 0xFFFFu;
+
+// Every name a weapon mesh goes by across the cast, from AppKeep.bmd's model
+// list: "weapon" for most of them, Beat's sheathed "weapon_sw", and Viola's
+// weapon_01 through weapon_03, the only one split across several meshes and the
+// only one not called "weapon". No character has a weapon mesh the overworld
+// should show, so there is nothing to key on the character: all five are tried
+// against whatever model spawned and the ones it does not have simply miss.
+//
+// They live in guest memory because sub_820EE238 compares guest bytes against
+// guest bytes, so a host string literal is no use to it, and only "weapon",
+// "weapon_sw" and "weapon_01" appear in the image at all.
+enum MeshName {
+  kMeshWeapon,
+  kMeshWeaponSw,
+  kMeshWeapon01,
+  kMeshWeapon02,
+  kMeshWeapon03,
+  kMeshNameCount,
+};
+
+constexpr const char* kMeshNameText[kMeshNameCount] = {
+    "weapon", "weapon_sw", "weapon_01", "weapon_02", "weapon_03",
+};
+
+// 16 bytes apiece, the width sub_820EE238's compare is bounded to. The page is
+// a 64 KB one at the top of the XEX image heap (0x80000000..0x8BFFFFFF, 64 KB
+// pages), well past the 4.2 MB this title's image occupies, so it is free and
+// stays guest-addressable the way sub_820EE238 needs it to be.
+constexpr uint32_t kMeshNameBase = 0x8B010000u;
+constexpr uint32_t kMeshNameSize = 0x10000u;
+constexpr uint32_t kMeshNameStride = 16u;
+
+// Set once the page above is committed and the names are in it. Nothing reads
+// the mesh names before the guest is running, so a plain flag is enough.
+bool g_mesh_names_ready = false;
+
+// Guest address of a mesh name, or 0 before the page is up.
+uint32_t MeshNameAddress(MeshName name) {
+  return g_mesh_names_ready ? kMeshNameBase + name * kMeshNameStride : 0;
+}
+
+// The scene object a field object's model lives in, or 0. The +20 check is the
+// one the game makes before every handle lookup.
+uint32_t SceneObjectFor(uint8_t* base, uint32_t object) {
+  if (object == 0 || object == 0xFFFFFFFFu ||
+      REX_LOAD_U8(object + kObjectHandleLiveOffset) != kObjectHandleLive) {
+    return 0;
+  }
+  return ResolveSceneHandle(kSceneHandleTable,
+                            REX_LOAD_U32(object + kObjectHandleIdOffset));
+}
+
+// Hides the field object's weapon meshes, whichever model it is wearing.
+//
+// Call it where the game runs its own hide list, on the tail of sub_820FCF80,
+// and not from inside the sub_820EE7D8 spawn itself: doing it there hid the
+// right meshes but softlocked the next leader change, with the model only half
+// built and two guest calls made into it from the middle of its constructor.
+void HideWeaponMeshes(uint32_t object) {
+  if (!g_mesh_names_ready) {
+    return;
+  }
+  uint8_t* base = rex::system::kernel_state()->memory()->virtual_membase();
+  const uint32_t scene = SceneObjectFor(base, object);
+  if (scene == 0) {
+    return;
+  }
+  const uint32_t flags = REX_LOAD_U32(scene + kSceneMeshFlagsOffset);
+  if (flags == 0) {
+    return;
+  }
+  for (int name = 0; name < kMeshNameCount; ++name) {
+    const uint32_t index =
+        MeshIndexByName(scene, MeshNameAddress(static_cast<MeshName>(name)));
+    if (index == kMeshIndexNone) {
+      continue;
+    }
+    const uint32_t entry =
+        flags + ((index << kMeshFlagsStrideShift) & kMeshFlagsMask);
+    REX_STORE_U32(entry + kMeshFlagsWordOffset,
+                  REX_LOAD_U32(entry + kMeshFlagsWordOffset) | kMeshFlagHidden);
+  }
+}
+
+// Commits the mesh-name page and fills it in. Called from Bind, so it runs
+// before the guest starts and long before any lookup. A failure leaves
+// g_mesh_names_ready false, which costs the extra hiding and nothing else.
+void ReserveMeshNames(rex::Runtime* runtime) {
+  auto* memory = runtime ? runtime->memory() : nullptr;
+  if (!memory) {
+    REXLOG_ERROR("field leader model: no memory subsystem for the mesh names");
+    return;
+  }
+  auto* heap = memory->LookupHeap(kMeshNameBase);
+  if (!heap) {
+    REXLOG_ERROR("field leader model: no heap covers {:#010x}", kMeshNameBase);
+    return;
+  }
+  if (!heap->AllocFixed(kMeshNameBase, kMeshNameSize, heap->page_size(),
+                        rex::memory::kMemoryAllocationReserve |
+                            rex::memory::kMemoryAllocationCommit,
+                        rex::memory::kMemoryProtectRead |
+                            rex::memory::kMemoryProtectWrite)) {
+    REXLOG_ERROR("field leader model: could not commit {:#x} bytes at {:#010x}",
+                 kMeshNameSize, kMeshNameBase);
+    return;
+  }
+  auto* host = memory->TranslateVirtual<uint8_t*>(kMeshNameBase);
+  if (!host) {
+    REXLOG_ERROR("field leader model: {:#010x} did not translate", kMeshNameBase);
+    return;
+  }
+  std::memset(host, 0, kMeshNameCount * kMeshNameStride);
+  for (int i = 0; i < kMeshNameCount; ++i) {
+    std::memcpy(host + i * kMeshNameStride, kMeshNameText[i],
+                std::strlen(kMeshNameText[i]));
+  }
+  g_mesh_names_ready = true;
+}
 
 // Whether sub_820FCF80's forced path can safely run right now.
 //
@@ -189,7 +340,12 @@ int FieldPlayerModelOverride::PartyLeaderCharacter() {
   return 0;
 }
 
-void FieldPlayerModelOverride::Bind(rex::Runtime* /*runtime*/) {
+void FieldPlayerModelOverride::Bind(rex::Runtime* runtime) {
+  // The guest-side mesh names the weapon hiding looks up. Here rather than
+  // lazily, because this runs before the guest does and the hooks that need
+  // them run on the guest thread.
+  ReserveMeshNames(runtime);
+
   // Pick up the persisted value once the config files have been loaded. An
   // unrecognised token falls back to "default" rather than guessing.
   const std::string value = rex::cvar::GetFlagByName("field_leader_model");
@@ -291,6 +447,38 @@ REX_HOOK_RAW(sub_820F9EC8) {
   __imp__sub_820F9EC8(ctx, base);
 }
 
+// ---------------------------------------------------------------------------
+// sub_820EFE38(object, name, visible) is the game's own show/hide-by-name, and
+// it trusts its caller: sub_820EE238 answers 0xFFFF for a mesh the model does
+// not have, and sub_820EFE38 feeds that straight into
+// `flags + ((index << 6) & 0x3FFFC0)` and ORs a bit there, about 4 MiB past the
+// end of the array. Retail never notices, because the only models it hides
+// meshes on are the three field characters and it names meshes they all have.
+//
+// The model override breaks that assumption on the spot: sub_820FCF80 hides
+// "weapon", "tasuki_sw" and "tasuki_sp" on the field leader by party slot, and
+// with somebody else's model in that slot those names may well be absent --
+// with Viola in the field all three miss, so all three write out of bounds. So
+// the same lookup runs first here, and the original is skipped when the name is
+// not there. Nothing is lost: its only effect on an unknown name is that stray
+// write.
+// ---------------------------------------------------------------------------
+REX_EXTERN(__imp__sub_820EFE38);
+
+REX_HOOK_RAW(sub_820EFE38) {
+  const uint32_t name = ctx.r4.u32;
+  if (name != 0) {
+    const uint32_t scene = SceneObjectFor(base, ctx.r3.u32);
+    if (scene != 0 && MeshIndexByName(scene, name) == kMeshIndexNone) {
+      // What the real function returns for an unknown name, so a caller that
+      // passes the result on sees no difference.
+      ctx.r3.u32 = kMeshIndexNone;
+      return;
+    }
+  }
+  __imp__sub_820EFE38(ctx, base);
+}
+
 REX_EXTERN(__imp__sub_820EE7D8);
 
 REX_HOOK_RAW(sub_820EE7D8) {
@@ -312,4 +500,28 @@ REX_HOOK_RAW(sub_820EE7D8) {
     }
   }
   __imp__sub_820EE7D8(ctx, base);
+}
+
+// ---------------------------------------------------------------------------
+// sub_820FCF80 ends by hiding the field leader's weapon: three sub_820EFE38
+// calls picked by party slot, "weapon" plus Beat's "weapon_sw" and the tasuki
+// pair. That list is Allegretto's, Polka's or Beat's and nobody else's, so with
+// a substituted model it can be the wrong list entirely -- Viola's weapon is
+// weapon_01..03 and survives all three.
+//
+// Extending the game's own list is all this needs to be: same function, same
+// point in the spawn, just more names for the model that actually turned up.
+// ---------------------------------------------------------------------------
+REX_EXTERN(__imp__sub_820FCF80);
+
+REX_HOOK_RAW(sub_820FCF80) {
+  const uint32_t map_manager = ctx.r3.u32;
+  __imp__sub_820FCF80(ctx, base);
+
+  if (eternalsonata::FieldPlayerModelOverride::DesiredCharacter() < 1) {
+    // The override is off, so the leader is the model the game's own list was
+    // written for and there is nothing to add.
+    return;
+  }
+  HideWeaponMeshes(REX_LOAD_U32(map_manager + kFieldObjectPtrOffset));
 }
