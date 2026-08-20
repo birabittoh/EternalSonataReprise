@@ -5,6 +5,7 @@
 
 #include "debug_area_overlay.h"
 #include "field_player_model_override.h"
+#include "host_timer_resolution.h"
 
 #include <algorithm>
 #include <array>
@@ -172,10 +173,15 @@ constexpr std::array kGameDefaults = {
 // harmlessly for it on a build without Vulkan. gpu_backend no longer has a row
 // at all (it is set from the config file or the Advanced section), but stays
 // listed so an existing saved value survives a Reset-All round trip.
-constexpr std::array<const char*, 11> kBasicCvarNames = {
+// host_timer_resolution_ms is likewise listed unconditionally even though the
+// cvar only exists on Windows, for the same reason vulkan_device is: the
+// generic loops no-op on a name that is not registered, and keeping the list
+// platform-independent means a settings.toml written on Windows round-trips
+// unharmed through a Linux build.
+constexpr std::array<const char*, 12> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
-    "audio_mute", "audio_volume", "field_leader_model"};
+    "audio_mute", "audio_volume", "field_leader_model", "host_timer_resolution_ms"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -244,6 +250,39 @@ constexpr std::array kFrameRateOptions = {
     FrameRateOption{"adaptive", "Adaptive"},
     FrameRateOption{"unlocked", "Unlocked"},
 };
+
+#if defined(_WIN32)
+struct TimerResolutionOption {
+  const char* id;  // value stored by the host_timer_resolution_ms cvar
+  const char* label;
+};
+
+// How fine a host timer tick to ask Windows for. The game's audio thread arms a
+// 5ms periodic timer and Windows rounds any period up to the current system
+// timer resolution, so this is what decides whether the guest's 200Hz sequencer
+// can actually hit its period. See src/host_timer_resolution.h.
+//
+// Ordered coarsest to finest, which is also least to most power drawn.
+constexpr std::array kTimerResolutionOptions = {
+    // The host's own tick, about 15.6ms. That is 3.1x coarser than the period
+    // the game asks for, so music, voices and anything else the sequencer
+    // drives run about 3x slow. Kept as an option because it is the honest
+    // "change nothing" state and the quickest way to confirm this row is what
+    // an audio timing problem is sensitive to, not because anyone should play
+    // on it.
+    TimerResolutionOption{"0", "Host"},
+    // 5ms, exactly what the guest asks NtSetTimerEx for, and what the console
+    // itself ran at. Correct on any machine; it costs the least power of the
+    // two working settings and is the default.
+    TimerResolutionOption{"5", "Xbox 360"},
+    // 1ms. Finer than the guest asks for, so the sequencer retires a finished
+    // line sooner and the next one starts with less of a pause between them.
+    // Purely a matter of taste - the pause at 5ms is the console's own pacing -
+    // and it draws more power, since timeBeginPeriod raises the tick rate
+    // process wide.
+    TimerResolutionOption{"1", "Instantaneous"},
+};
+#endif  // _WIN32
 
 // cvars rendered generically in the collapsed Advanced section, persisted to
 // the app's normal cvar config (eternalsonata.toml).
@@ -419,6 +458,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     DrawFrameRateRow();
     DrawAudioMuteRow();
     DrawAudioVolumeRow();
+#if defined(_WIN32)
+    DrawTimerResolutionRow();
+#endif
     DrawLanguageRow();
     DrawFieldLeaderModelRow();
     DrawInputBackendRow();
@@ -629,6 +671,62 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     }
     ImGui::PopID();
   }
+
+  // How fine a host timer tick to request, which is what lets the game's audio
+  // sequencer run at the 200Hz it was written for. Applies live rather than
+  // needing a restart: timeBeginPeriod takes effect immediately and the guest's
+  // already-armed periodic timer is serviced by the system tick, so it changes
+  // pace on its next expiry without being re-armed.
+  //
+  // Windows only: a POSIX host honours the guest's 5ms period natively, so
+  // there is no trade-off to offer and host_timer_resolution_ms is not defined
+  // there at all.
+#if defined(_WIN32)
+  void DrawTimerResolutionRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("host_timer_resolution_ms");
+    if (!entry)
+      return;
+    const std::string current = entry->getter();
+    int sel = 1;  // "Xbox 360", the default and the value that matches the guest
+    for (int i = 0; i < static_cast<int>(kTimerResolutionOptions.size()); ++i) {
+      if (current == kTimerResolutionOptions[i].id) {
+        sel = i;
+        break;
+      }
+    }
+
+    ImGui::TextUnformatted("Audio Timing");
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "How precisely the game's audio clock is allowed to run.\n\n"
+          "\"Host\" leaves your system's own timer alone, which is too coarse "
+          "for this game and makes everything the audio clock drives run about "
+          "3x slow.\n\n"
+          "\"Xbox 360\" matches the console: music and voices play at the tempo "
+          "they were written for, and spoken lines are followed by a short "
+          "pause before the next one, exactly as they were on the original "
+          "hardware.\n\n"
+          "\"Instantaneous\" keeps that same tempo but moves on to the next "
+          "line as soon as the current one finishes, trimming those pauses. "
+          "Down to taste; it draws more power and can spin fans up.");
+    }
+    ImGui::SameLine(180.0f);
+    // Match the combo boxes in this menu (Language, Input Backend, ...).
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::PushID("host_timer_resolution_ms");
+    // Discrete 0..N-1 slider; format shows the label of the current option
+    // (re-evaluated per frame). NoInput keeps it snapping between presets.
+    if (ImGui::SliderInt("##v", &sel, 0, static_cast<int>(kTimerResolutionOptions.size()) - 1,
+                         kTimerResolutionOptions[sel].label, ImGuiSliderFlags_NoInput)) {
+      // ApplyHostTimerResolution is registered as this cvar's change callback,
+      // so writing it through SetFlagByName is what applies the new tick rate.
+      rex::cvar::SetFlagByName("host_timer_resolution_ms", kTimerResolutionOptions[sel].id,
+                               /*persist=*/true);
+      SaveBasic();
+    }
+    ImGui::PopID();
+  }
+#endif  // _WIN32
 
   void DrawResolutionRow() {
     const auto* entry = rex::cvar::GetFlagInfo("resolution");

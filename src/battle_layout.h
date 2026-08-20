@@ -369,6 +369,12 @@ inline constexpr uint32_t kEnemyFlagsOffset = 0x154u;
 //      timer passes 600.0 OR the player presses the skip button (sub_82199408
 //      against bit 0x1000).
 //
+// The +20 timer is NOT a frame count. sub_82181728 returns 300 / byte_82465F90
+// per tick, so the unit is 1/300 s and at 60 fps the timer advances 5.0 per
+// frame (measured live: timer=495 at t=1.71s). The thresholds above are
+// therefore 50.0 = 0.17 s of lead-in before a line starts, and 600.0 = a 2
+// second cap, not the 10 seconds a 60 Hz reading would suggest.
+//
 // Both of phase 4's finish conditions are gated on bit 0 of dword_8253923C[19]
 // being clear: story battles set it and are unskippable, and only the voice
 // line running out ends those.
@@ -392,7 +398,7 @@ inline constexpr uint32_t kIntroEnemyIndexOffset = 4u;       // i32
 inline constexpr uint32_t kIntroPartyIndexOffset = 8u;       // i32
 inline constexpr uint32_t kIntroMotionIdOffset = 12u;        // i32
 inline constexpr uint32_t kIntroSequenceHandleOffset = 16u;  // i32, < 0 = none
-inline constexpr uint32_t kIntroTimerOffset = 20u;           // float, frames
+inline constexpr uint32_t kIntroTimerOffset = 20u;           // float, 1/300 s
 inline constexpr uint32_t kIntroPhasePartySide = 4u;
 
 inline constexpr uint32_t IntroObject() { return kManager + kIntroObjectOffset; }

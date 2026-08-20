@@ -87,6 +87,7 @@ set(ETERNALSONATA_SOURCES
     src/party_system.cpp
     src/battle_system.cpp
     src/guest_main_thread.cpp
+    src/host_timer_resolution.cpp
     src/force_load_area.cpp
     src/field_player_model_override.cpp
     src/debug_area_overlay.cpp
@@ -109,3 +110,8 @@ else()
 endif()
 
 rexglue_setup_target(eternalsonata)
+
+if(WIN32)
+    # timeBeginPeriod / timeGetDevCaps, for src/host_timer_resolution.cpp.
+    target_link_libraries(eternalsonata PRIVATE winmm)
+endif()
