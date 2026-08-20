@@ -26,6 +26,7 @@
 #include "field_player_model_override.h"
 #include "fonts.generated.h"
 #include "force_load_area.h"
+#include "host_timer_resolution.h"
 #include "icon.generated.h"
 #include "party_system.h"
 #include "room_presence.h"
@@ -53,6 +54,12 @@ class EternalsonataApp : public rex::ReXApp {
     // loaded last so they win over both.
     if (std::filesystem::exists(user_settings_path()))
       rex::cvar::LoadConfig(user_settings_path());
+
+    // Both config files are loaded by now, so the cvar holds the user's value.
+    // Has to land before the guest starts: the audio thread arms its 5 ms
+    // periodic timer early, and the period it gets is whatever the host tick
+    // rate is at that moment. See host_timer_resolution.h.
+    eternalsonata::ApplyHostTimerResolution();
 
     rex::system::GameDataSelectorSettings settings;
     settings.default_xex_sha256 = "91184E7765172A358ECAA6E5CA1784DB1AE796C60F25051A45C5206F8949501E";
@@ -172,6 +179,9 @@ class EternalsonataApp : public rex::ReXApp {
   void OnShutdown() override {
     // Stop the Discord presence worker and clear the presence on exit.
     rex::discord_rpc::Stop();
+
+    // Hand the process-wide timer tick back to the host.
+    eternalsonata::ReleaseHostTimerResolution();
   }
 
   std::unique_ptr<rex::ui::ImGuiDialog> OnCreateUserSettingsOverlay() override {
