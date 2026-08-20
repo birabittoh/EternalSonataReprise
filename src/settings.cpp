@@ -131,11 +131,13 @@ constexpr std::array kGameDefaults = {
     // "fast" always copies the resolve readback to CPU memory every submission
     // (reading a one-frame-delayed buffer to avoid a GPU stall); "some" skips
     // that copy whenever the delayed buffer is still valid and only copies on
-    // a cache miss, so it is the lighter of the two. The legacy per-backend
+    // a cache miss, so it is the lighter of the two. This ships with "fast"
+    // anyway: the unconditional copy is what keeps the readback in step with
+    // what was drawn. The legacy per-backend
     // d3d12_readback_resolve/vulkan_readback_resolve bools are aliases this
     // shared cvar overrides whenever it has a non-default value, so setting
     // this is enough; they are not set here.
-    DefaultValue{"readback_resolve", "some"},
+    DefaultValue{"readback_resolve", "fast"},
     DefaultValue{"clear_memory_page_state", "true"},
     // The game binds an 8-tile-wide render target at EDRAM tile 1720 whose draws
     // give no usable height estimate, so it claims all 2048 tiles and takes
