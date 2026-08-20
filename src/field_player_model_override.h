@@ -8,6 +8,10 @@
 // screen -- the only place the game lets you reorder it -- is reflected in the
 // overworld.
 //
+// The game also hides the field leader's weapon mesh, by party slot rather than
+// by model, so a substituted model keeps a weapon the overworld should not show.
+// The .cpp extends that hide list to cover whichever model actually spawned.
+//
 // The substitution happens on the game's own (re)spawns: area transitions and
 // the boot spawn. It deliberately does NOT force a respawn to update the model
 // on the spot; forcing one leaves the character unable to move until the
