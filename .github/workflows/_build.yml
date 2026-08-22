@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ""
+      include_linux:
+        description: "Also build the linux-x64 and linux-arm64 platforms"
+        required: false
+        type: boolean
+        default: false
 
 env:
   ASSETS_REPO: ${{ vars.ASSETS_REPO }}
@@ -24,7 +29,23 @@ env:
   ASSET_CACHE_KEY: codegen-assets-v1
 
 jobs:
+  platforms:
+    runs-on: ubuntu-latest
+    outputs:
+      exclude: ${{ steps.set.outputs.exclude }}
+    steps:
+      - name: Determine excluded platforms
+        id: set
+        shell: bash
+        run: |
+          if [ "${{ inputs.include_linux }}" = "true" ]; then
+            echo 'exclude=[]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exclude=[{"platform":"linux-x64"},{"platform":"linux-arm64"}]' >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: platforms
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -36,15 +57,17 @@ jobs:
             sdk_dir: win-amd64
             artifact_suffix: windows-x64
 
-          # - platform: linux
-          #   runner: ubuntu-latest
-          #   sdk_dir: linux-amd64
-          #   artifact_suffix: linux-x64
+          - platform: linux-x64
+            runner: ubuntu-latest
+            sdk_dir: linux-amd64
+            artifact_suffix: linux-x64
 
-          # - platform: linux-arm64
-          #   runner: ubuntu-24.04-arm
-          #   sdk_dir: linux-arm64
-          #   artifact_suffix: linux-arm64
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            sdk_dir: linux-arm64
+            artifact_suffix: linux-arm64
+
+        exclude: ${{ fromJson(needs.platforms.outputs.exclude) }}
 
     steps:
       - name: Checkout
