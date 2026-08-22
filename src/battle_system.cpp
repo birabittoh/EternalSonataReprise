@@ -190,24 +190,53 @@ bool CanWinNow() {
   return !battle::UnitIsResolvingAction(UnitState(actor.kind, actor.slot));
 }
 
+int32_t Clamp(int32_t value, int32_t lo, int32_t hi) {
+  return value < lo ? lo : (value > hi ? hi : value);
+}
+
+// A plain dword write with none of KillAllEnemies' turn-order hazard: nothing
+// reads party HP the way the battle-over predicate reads enemy HP, so there
+// is nothing to wedge.
+bool SetPartyHp(int slot, int32_t hp) {
+  const int live = PartyCount();
+  if (slot < 0 || slot >= live) {
+    return false;
+  }
+  const uint32_t record = battle::PartyRecord(static_cast<uint32_t>(slot));
+  const uint32_t hp_max = ReadGuest<uint32_t>(record + battle::kPartyHpMaxOffset);
+  WriteGuest32(record + battle::kPartyHpCurOffset,
+               static_cast<uint32_t>(Clamp(hp, 0, static_cast<int32_t>(hp_max))));
+  return true;
+}
+
+// Keeps the raw counter and the cached ratio in the same invariant the game
+// itself maintains (see FillUnit above).
+bool SetEnemyHp(int slot, int32_t hp) {
+  const int live = EnemyCount();
+  if (slot < 0 || slot >= live) {
+    return false;
+  }
+  const uint32_t record = battle::EnemyRecord(static_cast<uint32_t>(slot));
+  const uint32_t part_index = ReadGuest<uint32_t>(record + battle::kEnemyPartIndexOffset);
+  if (part_index >= battle::kEnemyPartCount) {
+    return false;
+  }
+  const uint32_t part = battle::EnemyPart(static_cast<uint32_t>(slot), part_index);
+  const uint32_t hp_max = ReadGuest<uint32_t>(part + battle::kEnemyHpMaxOffset);
+  const int32_t clamped = Clamp(hp, 0, static_cast<int32_t>(hp_max));
+  WriteGuest32(part + battle::kEnemyHpCurOffset, static_cast<uint32_t>(clamped));
+
+  const float ratio = hp_max > 0 ? static_cast<float>(clamped) / static_cast<float>(hp_max) : 0.0f;
+  uint32_t bits = 0;
+  std::memcpy(&bits, &ratio, sizeof(bits));
+  WriteGuest32(record + battle::kEnemyHpRatioOffset, bits);
+  return true;
+}
+
 void KillAllEnemies() {
   const int live = EnemyCount();
   for (int i = 0; i < live; ++i) {
-    const uint32_t slot = static_cast<uint32_t>(i);
-    // The ratio is a float and 0.0f is all-zero bits, so a u32 store writes
-    // the same bytes whichever way round they go. This is the field the
-    // battle-over predicate reads, so it is the one that ends the battle.
-    WriteGuest32(battle::EnemyHpRatio(slot), 0u);
-
-    // Zero the raw counter too. The invariant the game maintains is
-    // max * ratio == current, and the AI's "target the weakest" sort reads
-    // the raw counter rather than the ratio, so leaving it at full health
-    // would have the two disagree for the frames before the battle ends.
-    const uint32_t record = battle::EnemyRecord(slot);
-    const uint32_t part_index = ReadGuest<uint32_t>(record + battle::kEnemyPartIndexOffset);
-    if (part_index < battle::kEnemyPartCount) {
-      WriteGuest32(battle::EnemyPart(slot, part_index) + battle::kEnemyHpCurOffset, 0u);
-    }
+    SetEnemyHp(i, 0);
   }
 }
 
@@ -556,4 +585,18 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSkipBattleIntro(void) {
   }
   PostToGuestMainThread([] { SkipIntroOnGuestThread(); });
   return ETERNALSONATA_BATTLE_QUEUED;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetBattlePartyHp(int slot, int32_t hp) {
+  if (!Available()) {
+    return ETERNALSONATA_BATTLE_ERR_UNAVAILABLE;
+  }
+  return SetPartyHp(slot, hp) ? ETERNALSONATA_BATTLE_OK : ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetBattleEnemyHp(int slot, int32_t hp) {
+  if (!Available()) {
+    return ETERNALSONATA_BATTLE_ERR_UNAVAILABLE;
+  }
+  return SetEnemyHp(slot, hp) ? ETERNALSONATA_BATTLE_OK : ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
 }

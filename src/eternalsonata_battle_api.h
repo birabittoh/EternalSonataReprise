@@ -41,7 +41,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_BATTLE_ABI_VERSION 1u
+#define ETERNALSONATA_BATTLE_ABI_VERSION 2u
 
 // Results. Everything >= 0 is success.
 enum {
@@ -251,6 +251,51 @@ typedef int (*EternalSonataWinBattleFn)(void);
 // refuses to skip. An in-flight voice line still plays out over the start of
 // the battle, exactly as it does when the game's own skip button is used.
 typedef int (*EternalSonataSkipBattleIntroFn)(void);
+
+// Sets a live party unit's current HP, in place, inside the battle. This
+// writes the battle side's own raw current HP dword directly (see
+// EternalSonataBattleUnit::hp), not the overworld party's stats: the two are
+// separate copies for the length of a battle, and the overworld one is only
+// overwritten from the battle's copy during the FSM's write-back step as the
+// battle ends (see ETERNALSONATA_BATTLE_FSM_ENDING). Setting the overworld
+// copy mid-battle therefore has no visible effect until the battle is already
+// over, which is why this exists as its own entry point rather than reusing
+// the party API's EternalSonataSetCharacterStats.
+//
+// `hp` is clamped to [0, hp_max]; hp_max itself is not settable here (the
+// party API's stat editor is the place for that, and it is not a per-battle
+// quantity the way current HP is). `slot` is 0-based within the party side
+// and must be below the live party count, as with EternalSonataGetBattlePartyUnit.
+//
+// Returns ETERNALSONATA_BATTLE_OK, ETERNALSONATA_BATTLE_ERR_UNAVAILABLE if no
+// battle is in progress, or ETERNALSONATA_BATTLE_ERR_INVALID_SLOT. This is a
+// plain memory write with no turn-order hazard (nothing reads party HP the
+// way the battle-over predicate reads enemy HP), so it takes effect
+// immediately and is not queued.
+typedef int (*EternalSonataSetBattlePartyHpFn)(int slot, int32_t hp);
+
+// Sets a live enemy unit's current HP, in place. Writes both the raw current
+// HP dword (EternalSonataBattleUnit::hp) and the cached current/max ratio the
+// game keeps alongside it: the ratio, not the raw counter, is what every
+// "is this enemy still up" check reads, including the battle-over predicate
+// (see src/battle_system.cpp), so the two are kept in the same invariant the
+// game itself maintains (hp_max * ratio == hp) rather than left to disagree.
+//
+// `hp` is clamped to [0, hp_max]. `slot` is 0-based within the enemy side and
+// must be below the live enemy count.
+//
+// Returns ETERNALSONATA_BATTLE_OK, ETERNALSONATA_BATTLE_ERR_UNAVAILABLE, or
+// ETERNALSONATA_BATTLE_ERR_INVALID_SLOT. This is a plain memory write and
+// takes effect immediately, EXCEPT for driving an enemy to 0 HP during that
+// same enemy's own turn: the battle-over predicate only scans enemy health on
+// a frame where a party member holds the turn and no action is mid-resolution
+// (see EternalSonataWinBattle, which queues for exactly that reason). Zeroing
+// an enemy outside that window will not wedge the battle by itself as long as
+// at least one enemy is left alive or the acting enemy's own turn is allowed
+// to finish, but zeroing every live enemy this way reproduces the same hang
+// EternalSonataWinBattle was written to avoid. Prefer EternalSonataWinBattle
+// over calling this in a loop to end a battle.
+typedef int (*EternalSonataSetBattleEnemyHpFn)(int slot, int32_t hp);
 
 #ifdef __cplusplus
 }  // extern "C"
