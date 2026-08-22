@@ -121,7 +121,6 @@ longjmp_address = 0x822D0620
 # "0x8220F4A8" = { name = "volume_ui_panel__Init" }
 # "0x8223C9E8" = { name = "message_string_allocator" }
 # "0x8226F8A0" = { name = "render_surface__Init" }
-# "0x82270CF8" = { name = "capture_file_manager" }
 # Was "buffer_name_setup". Verified wrong: this is strncpy_s. It rejects sizes
 # above 0x7FFFFFFF, strncpy's into the destination, force terminates the last
 # byte, and returns 0, E_INVALIDARG (0x80070057) or ERROR_INSUFFICIENT_BUFFER
@@ -211,6 +210,187 @@ longjmp_address = 0x822D0620
 # "0x8223E848" = { name = "BW_DRAW_EFFECT__destructor_deleting" }       # vtable off_820AA464
 # "0x8223F9E8" = { name = "BW_DRAW_TEXT1__destructor_deleting" }        # vtable off_820AA504
 # "0x82133038" = { name = "BW_DRAW_ICON__variant_destructor_deleting" } # vtable off_82083360
+
+# ############################################################################
+# Direct3D 9 (Xbox 360 static lib) and the game's renderer front end.
+#
+# The 360 D3D runtime is statically linked, so there are no imports to hook.
+# The whole library sits in one contiguous block, roughly 0x82250000..0x82280000,
+# and was located from the Vd* kernel imports outward:
+#   VdSwap / VdGetSystemCommandBuffer  -> 0x8225ECC0 (Swap)
+#   VdInitializeRingBuffer             -> 0x82264CB8 (SetRingBufferParameters)
+#   VdSetGraphicsInterruptCallback     -> 0x8226EDF0, 0x8226F158
+#
+# Useful globals (not nameable here, listed for reference):
+#   dword_82465F68  the IDirect3DDevice9. Every entry point below takes it as
+#                   arg 0, so its xrefs enumerate every D3D call site.
+#   dword_82465E80  game render state cache  (0x8210AE68 cull, 0x8210AE10,
+#                   0x8210AFA0, 0x8210B040)
+#   unk_824BBB60    game material/shader state; 0x821296D8(mgr, vs, ps)
+#   dword_824BC6F0  game shader constant cache, flushed by 0x8212CDE0
+#   dword_824BBEE8 / dword_824BC2E8  vertex / pixel shader tables, 256 entries
+#
+# The hot path is 0x8211EE80 -> 0x82122CA8 (per submesh material setup)
+# -> 0x822589D0. The game batches state itself, so most redundant D3D calls are
+# already filtered before they reach this layer.
+# ############################################################################
+
+# Device lifetime and frame boundaries.
+"0x82263568" = { name = "D3D__CreateDevice", evidence = "verified: takes a D3DPRESENT_PARAMETERS block (0x82465EB0, 1280x720) and writes the device to dword_82465F68 in the renderer init at 0x8210A148" }
+"0x8225ECC0" = { name = "D3DDevice__Swap", evidence = "verified: calls VdGetSystemCommandBuffer then VdSwap, and VdPersistDisplay on the persist path" }
+"0x82264CB8" = { name = "D3DDevice__SetRingBufferParameters", evidence = "verified: calls VdInitializeRingBuffer, VdEnableRingBufferRPtrWriteBack and VdSetSystemCommandBufferGpuIdentifierAddress" }
+"0x822604C8" = { name = "D3DDevice__Clear", evidence = "verified: called from renderer init 0x8210A148 with flags 0x3F (all clear bits), a color and Z=1.0; delegates the packet write to 0x822603A0" }
+"0x82260C68" = { name = "D3DDevice__Resolve", evidence = "verified: takes flags, a source RECT and a dest texture, and emits both DRAW_INDX (0x2200) and DRAW_INDX_2 (0x3600) headers for the resolve quad" }
+
+# Draw submission.
+"0x822589D0" = { name = "D3DDevice__DrawIndexedVertices", evidence = "verified: called as (dev, 4, 0, startIndex, 3*triCount) from the mesh loop in 0x8211EE80 and from 0x8210C738" }
+"0x822585E8" = { name = "D3DDevice__DrawVertices", evidence = "verified: called as (dev, primType, startVertex, vertexCount) from 0x82115E40" }
+"0x82258128" = { name = "D3DDevice__BeginVertices", evidence = "verified: (dev, primType, vertexCount, stride) returns a write pointer the caller fills with vertices, paired with 0x822585C8" }
+"0x822585C8" = { name = "D3DDevice__EndVertices", evidence = "verified: closes every 0x82258128 block, e.g. 0x8210B7F8" }
+
+# Stream and shader binding.
+"0x8225B550" = { name = "D3DDevice__SetStreamSource", evidence = "verified: called as (dev, 0, vertexBuffer, offset, stride, 1) immediately before the draws in 0x8211EE80 and 0x8210C738" }
+"0x8225B670" = { name = "D3DDevice__SetIndices", evidence = "verified: paired with SetStreamSource at every indexed draw site" }
+"0x822660D8" = { name = "D3DDevice__SetVertexShader", evidence = "verified: 0x8212C5A0 indexes the 256 entry table dword_824BBEE8 with the first argument of 0x821296D8(mgr, vs, ps)" }
+"0x82265E20" = { name = "D3DDevice__SetPixelShader", evidence = "verified: 0x8212C610 indexes the 256 entry table dword_824BC2E8 with the second argument of 0x821296D8(mgr, vs, ps)" }
+"0x82265AA0" = { name = "D3DDevice__SetVertexShaderConstantF", evidence = "verified: copies count vec4s from the source pointer into the vertex shader constant shadow at device+1792+16*start with lvlx/lvrx unaligned vector loads, then ORs the caller supplied dirty mask into the device+0 mask; start and stride confirmed against the direct write path in the game's constant cache flush 0x8212CDE0" }
+"0x82265BA8" = { name = "D3DDevice__SetPixelShaderConstantF", evidence = "verified: identical to 0x82265AA0 but the shadow is device+16*(start+368), that is device+5888+16*start, and it ORs into the device+8 mask" }
+"0x8225E348" = { name = "D3DDevice__SetTexture", evidence = "verified: (dev, sampler, texture, flags) writes the six texture fetch constant dwords for the sampler slot; called from the constant flush 0x8212CDE0" }
+"0x822662A8" = { name = "D3DDevice__SetVertexDeclaration", evidence = "verified: stores the argument at device+11684 and dirties bit 0x80000 of the device+16 mask; the draw time shader flush 0x82267E48 reads device+11684 and hands it to 0x82267218, which treats it as a declaration object: element count at +24, elements from +52 with a 12 byte stride, usage at element+9 and usage index at element+10, matched against the vertex fetch patch table in the shader container" }
+
+# Draw time vertex fetch patching. The bound vertex shader's microcode is not
+# used as it ships: it is copied into the command buffer and the vfetch
+# instructions are rewritten from the vertex declaration before the draw.
+"0x82267E48" = { name = "D3DDevice__FlushShaderProgram", evidence = "verified: reads the bound vertex shader (device+12560), pixel shader (device+12556) and vertex declaration (device+11684), picks a patched microcode variant or calls 0x82267AF8 to build one, and emits the PM4 packets that point the sequencer at it" }
+"0x82267AF8" = { name = "D3DDevice__EmitPatchedShaderProgram", evidence = "verified: reserves microcode_size/4+5 dwords of command buffer, writes an IM_LOAD_IMMEDIATE style type 3 header (0xC0002B00) plus the load size, memcpys the shader microcode inline into the packet with 0x822CF5B0, then calls 0x822679A8 and the vertex fetch patcher 0x82267218 over that copy" }
+"0x82267218" = { name = "D3DDevice__PatchVertexFetchInstructions", evidence = "verified: walks the shader container's vertex fetch patch table (one entry per vfetch: instruction index in bits 0..11, D3DDECLUSAGE in bits 12..15, usage index in bits 16..19), finds the matching vertex declaration element, and rewrites that instruction's fetch constant, data format, stride and offset, then groups the fetches into full plus mini fetches and memcpys each patched 12 byte instruction back over the copy; checked offline against all 132 vertex shaders, where the table entry indices equal the decoded vfetch instruction addresses exactly, 622 of 622" }
+"0x82267D08" = { name = "D3DDevice__ResolvePatchedShaderVariant", evidence = "verified: probes a 416 byte per shader cache slot (slot = base + 416*index) whose key is the vertex declaration's serial number at declaration+48 plus the 16 byte per stream fetch constant slot array at device+12392, masked by the shader's own per stream use mask; on a hit it returns 1 without touching the microcode, on a miss it assigns the declaration a serial with an lwarx/stwcx increment of dword_82426750, calls 0x82267218 to repatch, and stores the new key; returns 0 when the cached copy fell out of the command buffer, forcing 0x82267E48 to re emit" }
+"0x822679A8" = { name = "D3DDevice__PatchPixelShaderInterpolators", evidence = "verified: the second patch pass of 0x82267AF8, called with the pixel shader and the bound vertex shader; walks the two shaders' interpolator signature tables (one dword per entry, semantic key in byte +3, register index in bits 8..11, terminator bit 0x1000) in lockstep, calls 0x82267820 for every pixel shader input the vertex shader does not write and 0x822678F0 when the two disagree in bits 8..11, and finally writes the vertex shader's interpolator count into bits 20..23 of the program control word; explains the only pixel shader dump that does not byte match the static blob" }
+"0x82267820" = { name = "D3DDevice__PatchMissingInterpolator", evidence = "verified: builds a three dword instruction {0xC8000000 | entry & 0x3FFFFFF, 0, 0x1F000000} and memcpys it over every 12 byte instruction the interpolator entry chain names (instruction index in bits 0..11, chain ends at bit 0x1000), that is, it replaces reads of an interpolator the vertex shader never wrote" }
+"0x822678F0" = { name = "D3DDevice__RemapInterpolatorRegister", evidence = "verified: for each instruction in the interpolator entry chain, rewrites the low 4 bits of instruction word 0, the source register index, to bits 8..11 of the matching vertex shader output entry, so the pixel shader reads the register the vertex shader actually wrote" }
+
+# Render targets and viewport.
+"0x8225C3C0" = { name = "D3DDevice__SetRenderTarget", evidence = "verified: renderer init 0x8210A148 binds the surface from 0x8225E100 at index 0" }
+"0x8225C0E8" = { name = "D3DDevice__SetDepthStencilSurface", evidence = "verified: renderer init binds the D24S8 surface created alongside the color target" }
+"0x8225BC88" = { name = "D3DDevice__SetViewport", evidence = "verified: renderer init passes dword_82465F6C, a {0, 0, 1280, 720, 0.0, 1.0} viewport block" }
+
+# Resource creation.
+"0x8225E100" = { name = "D3DDevice__CreateRenderTarget", evidence = "verified: (w, h, format, multisample, params); renderer init builds the color and depth targets with it" }
+"0x8225DFE0" = { name = "D3DDevice__CreateTexture", evidence = "verified: (w, h, levels, usage, ?, format, ?, pool); renderer init creates the two 1280x720 scratch textures" }
+"0x82262D60" = { name = "D3DDevice__CreateVertexBuffer", evidence = "verified: allocates a 32 byte resource header plus a physical block and fills the GPU fetch constant; 0x8210BE40 calls it for a 96 byte unit cube" }
+"0x82262E88" = { name = "D3DDevice__CreateIndexBuffer", evidence = "verified: (length, usage, format, pool) in 0x8210BE40, immediately locked and filled with 16 bit indices" }
+
+# Resource lock/unlock. The two Lock wrappers share the generic implementation.
+"0x82262E28" = { name = "D3DVertexBuffer__Lock", evidence = "verified: return value is written with vertex floats in 0x8210BE40, closed by 0x82262E78" }
+"0x82262E78" = { name = "D3DVertexBuffer__Unlock", evidence = "verified: closes every 0x82262E28 block" }
+"0x82262F38" = { name = "D3DIndexBuffer__Lock", evidence = "verified: (buffer, offset, size, flags) return value is memcpy'd into in 0x8210BE40, closed by 0x82262F80" }
+"0x82262F80" = { name = "D3DIndexBuffer__Unlock", evidence = "verified: closes every 0x82262F38 block" }
+"0x822628D8" = { name = "D3DResource__Lock", evidence = "verified: shared body behind both Lock wrappers; flushes the GPU cache range, emits a wait packet when the resource is busy, then interlocked increments the lock count at +0" }
+
+# Resource lifetime.
+"0x82262C90" = { name = "D3DResource__Release", evidence = "verified: interlocked decrement of the refcount at +4, recurses into the child at +24 for type 4 resources, then calls the destroy path 0x822626F0" }
+"0x822626F0" = { name = "D3DResource__Destroy", evidence = "verified: sole target of the zero refcount branch in 0x82262C90" }
+
+# Command buffer plumbing.
+"0x82264980" = { name = "D3DDevice__ReserveCommandBufferSpace", evidence = "verified: called from every packet writer when the write pointer at device+48 passes the limit at device+56, and returns the new write pointer" }
+
+# Dirty state flush. DrawIndexedVertices tracks five dirty qwords on the device
+# and walks them at submit time:
+#   dev+0    vertex shader float constants, regs 0x4000 (SHADER_CONSTANT_000_X),
+#            shadow array at dev+1792, flushed by 0x822670A8
+#   dev+8    pixel shader float constants, regs 0x4400 (SHADER_CONSTANT_256_X),
+#            shadow array at dev+5888, flushed by 0x822670A8
+#   dev+16   context register groups, per group map:
+#              bits 0..11  regs 0x220B..0x2200, shadow dev+10420 (blend,
+#                          depth, color control, clip, cull, mode controls)
+#              bits 12..16 regs 0x2184..0x2180, shadow dev+10400 (SQ_PROGRAM_
+#                          CNTRL family)
+#              bits 21..41 regs 0x2114..0x2100, shadow dev+10316 (viewport,
+#                          RB_COLOR_MASK, blend colors, stencil masks,
+#                          RB_ALPHA_REF)
+#              bits 42..57 regs 0x200F..0x2000, shadow dev+10240 (RB surface
+#                          info, COHER_DEST_BASEs, screen scissor)
+#   dev+24   low dword: texture fetch resources via 0x82266F48; bits 34..54
+#            regs 0x2294..0x2280, shadow dev+10468 (point size, minmax, line)
+#   dev+32   bits 26..37 regs 0x230B..0x2300, shadow dev+10552 (line/aa/vtx
+#            cntl, GB adj, SQ_VS_CONST/SQ_PS_CONST selectors); bits 38..45
+#            regs 0x2387..0x2380, shadow dev+10704 (poly offsets, point radii);
+#            bits 49..54 regs 0x2388..0x238D via 0x82266DC8, shadow dev+10144
+#            (user clip plane UCP_0/UCP_1); bit 56 reg block 0x4900 (boolean
+#            shader constants), shadow dev+9984
+# Callers pre-shift each 0x82266D08 group so the top global bit lands at bit
+# 63, so inside a block bit i maps to register base+(top-i) and shadow+4*(top-i):
+# higher dirty bit, lower register. Verified anchors: cull mode writes dev+10440
+# and dirties bit 6 (reg 0x2205 PA_SU_SC_MODE_CNTL); alpha ref writes dev+10372
+# and dirties bit 27 (reg 0x210E RB_ALPHA_REF).
+"0x82266D08" = { name = "D3DDevice__FlushDirtyRegisters", evidence = "verified: cntlzd walk over a 64-bit dirty mask emitting SET_CONTEXT_REG runs ((count-1)<<16)|reg with values copied sequentially from the shadow array argument" }
+"0x82266DC8" = { name = "D3DDevice__FlushDirtyUserClipPlanes", evidence = "verified: fixed base variant of 0x82266D08 hard coding reg base 0x2388 (PA_CL_UCP_0_X) with the shadow at device+10144, four dwords per set bit, plus a COHER preamble" }
+"0x82266F48" = { name = "D3DDevice__FlushDirtyTextureFetchConstants", evidence = "verified: emits one six dword SET_CONTEXT_REG per set bit starting at reg 0x4800, stage stride 24 bytes from device+1020, NOP packet appended" }
+"0x822670A8" = { name = "D3DDevice__FlushDirtyShaderConstants", evidence = "verified: same cntlzd walk as 0x82266D08 but one set bit covers a group of four vec4s, so it advances the register index by 16 and the shadow by 64 per bit and copies with lvx128/stvx pairs, padding with 0x80000000 NOPs to reach 16 byte alignment first" }
+
+# Frame pacing. Swap brackets its throttle (spin while the submitted counter at
+# device+16408 runs more than 15 frames ahead of the retired one at device+
+# 16416) with this trio. The public API these belong to was never confirmed, so
+# the names below describe the observed behaviour only; do not read them as the
+# real Xbox 360 D3D symbol names.
+"0x82263178" = { name = "D3DDevice__ThrottleWait_Begin", evidence = "verified: records {device, type, fence snapshot, gpu timestamp twice, mftb} into the caller's wait record" }
+"0x82263328" = { name = "D3DDevice__ThrottleWait_Poll", evidence = "verified: refreshes the fence snapshot each spin, returns 1 while inside a 5000 timebase tick window, otherwise calls recovery 0x82273098" }
+"0x82273098" = { name = "D3DDevice__OnGpuHang", evidence = "verified: the recovery path ThrottleWait_Poll calls once the 5000 tick window expires; prints the D3D hang banner, and either resets the ring buffer read pointer and resumes via 0x822685C0 when the hang handler at device+13288 is installed, or prints 'Breaking into the debugger. The GPU is hung' and traps" }
+"0x822631A8" = { name = "D3DDevice__ThrottleWait_End", evidence = "verified: accumulates mftb and gpu deltas into device+21440/+21448 (type 3 versus others) and fires the callback at device vtable offset 13292 with elapsed milliseconds scaled by the float at device+21436" }
+
+# xbmovie capture (PIX style video capture).
+"0x82271098" = { name = "D3DDevice__ServiceMovieCapture", evidence = "verified: the dispatcher Swap calls; gated on byte_82426D86, it routes to BeginMovieCapture on the first pass (logging PIX!{CaptureFileCreationEnded} with the hresult), then to MovieCaptureEncodeFrame per frame, then to EndMovieCapture once byte_82426D84 is set" }
+"0x82270CF8" = { name = "D3DDevice__BeginMovieCapture", evidence = "verified: splits the partition prefix off the capture path, ObCreateSymbolicLink mounts it, then creates numbered 'xbmovie' segment files pre-sized via file info calls" }
+"0x82270448" = { name = "D3DDevice__MovieCaptureEncodeFrame", evidence = "verified: flushes every dirty state block, programs SQ_PROGRAM_CNTL/VGT inline plus a texture fetch resource from the swap chain params, then emits fullscreen draws chunked at 65534 indices through the scaler ring" }
+"0x82270078" = { name = "D3DDevice__EndMovieCapture", evidence = "verified: waits for the capture writer (dword_822F1FF0 equals dword_82566C08), closes segment handles, logs PIX!{CaptureEnded}, deletes the partition symlink" }
+
+# Device bring up and teardown. Both are device wide, not just the interrupt
+# callback: the interrupt registration is one step inside each.
+"0x8226EDF0" = { name = "D3DDevice__Init", evidence = "verified: VdInitializeEngines(0x8226E770), ExRegisterTitleTerminateNotification, then VdSetGraphicsInterruptCallback(0x82263910, device)" }
+"0x82263910" = { name = "D3DDevice__GraphicsInterruptCallback", evidence = "verified: the routine 0x8226EDF0 hands to VdSetGraphicsInterruptCallback; on source 1 it invokes the callback stored at the interrupt block device+10772 and clears this core's pending bit under KeAcquireSpinLockAtRaisedIrql, trapping with 'Unanticipated CPU_INTERRUPT' first if the callback slot still holds its 0xBADDF00D poison, and on source 0 it runs the vblank path 0x8225E510" }
+"0x8226CA78" = { name = "D3DDevice__NotifyGraphicsRoutines", evidence = "verified: packs the two short arguments plus the pair at device+21388/+21392 into a record and calls VdCallGraphicsNotificationRoutines(1, record)" }
+"0x8226F158" = { name = "D3DDevice__Shutdown", evidence = "verified: full teardown, releasing the four objects at device+21476, calling VdSetSystemCommandBufferGpuIdentifierAddress(0), tearing down the ring buffer via 0x82264CB8(device, 0), then VdSetGraphicsInterruptCallback(0, 0), unregistering the terminate notification and calling VdShutdownEngines" }
+
+# SetRenderState_* family. The renderer init at 0x8210A148 calls this run of
+# small setters back to back, which is what marked them as a family. Each one
+# was then pinned by taking the device offset it writes, subtracting the shadow
+# base from the dirty state map above, and reading off the register: shadow
+# device+10420 is 0x2200, +10400 is 0x2180, +10316 is 0x2100, +10240 is 0x2000,
+# +10468 is 0x2280, +10552 is 0x2300. Field names come from xenia's registers.h.
+"0x82259108" = { name = "D3DDevice__SetRenderState_CullMode", evidence = "verified: sole callee of the game's cull state cache 0x8210AE68, which swaps 2 and 6 for mirrored geometry and skips redundant sets via dword_82465FAC" }
+"0x82259828" = { name = "D3DDevice__SetRenderState_ZEnable", evidence = "verified: sets bit 1 (z_enable) of the RB_DEPTHCONTROL shadow at device+10420, forced to 0 when the depth surface flag at device+12320 is clear, caching the requested value at device+11740" }
+"0x822598D0" = { name = "D3DDevice__SetRenderState_StencilEnable", evidence = "verified: sets bit 0 (stencil_enable) of the same RB_DEPTHCONTROL shadow at device+10420, forced to 0 when the depth surface flag at device+12320 is clear, caching the requested value at device+11744" }
+"0x822595C8" = { name = "D3DDevice__SetRenderState_AlphaRef", evidence = "verified: writes the 0..255 argument scaled by 1/255 as a float to device+10372, which is RB_ALPHA_REF (0x210E), dirtying bit 27; this is the alpha ref anchor documented above" }
+"0x82259630" = { name = "D3DDevice__SetRenderState_AlphaFunc", evidence = "verified: writes the low 3 bits (alpha_func) of the RB_COLORCONTROL shadow at device+10428, dirty bit 9 which maps to reg 0x2202" }
+"0x82259F88" = { name = "D3DDevice__SetRenderState_PointSizeMax", evidence = "verified: writes the float argument times 16 (12.4 fixed) to the high halfword at device+10472, the max_size field of PA_SU_POINT_MINMAX (0x2281), dirty bit 21 of device+24; caches the float at device+11764" }
+"0x82259F30" = { name = "D3DDevice__SetRenderState_PointSizeMin", evidence = "verified: same register as 0x82259F88 but the low halfword at device+10474, the min_size field of PA_SU_POINT_MINMAX; caches the float at device+11760" }
+"0x8225A390" = { name = "D3DDevice__SetRenderState_HighPrecisionBlendEnable", evidence = "verified: when the bound color surface at device+12304 has format 2, 3, 10 or 12, rewrites the format nibble of RB_COLOR_INFO (0x2001, shadow device+10244) between k_2_10_10_10 and k_2_10_10_10_AS_10_10_10_10 (2 <-> 10) or their float pair (3 <-> 12), and patches the surface object in place" }
+"0x8225A730" = { name = "D3DDevice__SetRenderState_MultiPrimIBEnable", evidence = "verified: sets bit 21 (multi_prim_ib_ena) of the PA_SU_SC_MODE_CNTL shadow at device+10440, dirty bit 6, the same register and shadow the cull mode setter 0x82259108 writes" }
+
+# SetSamplerState family. These do not write context registers at all, which is
+# why they were not found next to the render state setters: they patch fields
+# inside the texture fetch constant for the stage, at device+1024+24*stage (the
+# same array 0x82266F48 flushes), and dirty the fetch constant mask in the low
+# dword of device+24. Word 3 of the fetch constant holds the filters, word 4 the
+# aniso walk bits and the LOD bias.
+"0x8225AA20" = { name = "D3DDevice__SetSamplerState_MinFilter", evidence = "verified: clears 0x0E600000 in fetch constant word 3, which is min_filter (+21) plus aniso_filter (+25), and sets min_aniso_walk (bit 11) in word 4" }
+"0x8225ABA8" = { name = "D3DDevice__SetSamplerState_MagFilter", evidence = "verified: identical to 0x8225AA20 but clears 0x0E180000 in word 3, which is mag_filter (+19) plus aniso_filter, and sets mag_aniso_walk (bit 10) in word 4" }
+"0x8225AF40" = { name = "D3DDevice__SetSamplerState_MipMapLodBias", evidence = "verified: writes the float argument times 32 into bits 12..21 (mask 0x3FF000) of fetch constant word 4, which is lod_bias, a 10 bit signed field with 5 fractional bits" }
+
+# ----------------------------------------------------------------------------
+# Worklist. Located but not individually identified, so they are not emitted.
+# Restore one only after decompiling it and adding an `evidence` field.
+#
+# The rest of the constant setter family, all called from the game's constant
+# cache flush 0x8212CDE0 next to the two named above, with the same
+# (device, start, source, count) shape. The flush calls them in a fixed order
+# and the index ranges in its scalar path (256, 512, 528, 544, 672, 800) say
+# which is which, but none has been decompiled yet:
+# "0x82265D70"  source flt_824BE6F0, indices 512..527
+# "0x82265DC8"  source dword_824BE7F0, indices 528..543
+# "0x82265CB0"  source dword_824BE8F0, indices 544..671
+# "0x82265D10"  source dword_824BEAF0, indices 672..799
+# ----------------------------------------------------------------------------
 
 # ============================================================================
 # memmove_s is intentionally absent: this title links memcpy_s but no standalone
