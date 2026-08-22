@@ -441,5 +441,68 @@ inline constexpr bool UnitIsResolvingAction(uint32_t state) {
   return state >= 16u && (state <= 17u || (state - 68u) <= 5u);
 }
 
+// --- Turn timers -----------------------------------------------------------
+//
+// One "action timer" object per current actor, pointed to by
+// manager+533100, refreshed once per turn (state 6, turn setup) and ticked
+// every frame by the generic per-object updater sub_820D6168. Two
+// independent timers live inside it.
+//
+// Command timer (+6440/+6444/+6448): the grace window for choosing and
+// landing an action once it is your turn. Its duration is read from a
+// per-party-level byte table (kCommandTimerLevelTableAddr, byte =
+// table[level - 1], times 300 for 1/300s ticks; 255 means "disabled" - the
+// table ships 255 for levels 1 and 2) and stashed at +6440 (reset value) and
+// +6444 (live countdown) during state 6. It then sits idle at
+// kCommandTimerModeReady until the state-11 handler (sub_821ACBF8's
+// "command committed" branch, the same one that bumps the turn counter and
+// advances the FSM to 12) flips +6448 to kCommandTimerModeArmed the instant a
+// command is chosen - that flip is what makes sub_820D6168 start decrementing
+// +6444 by the frame delta, clamped at 0.
+//
+// Completion (sub_821A9C98) is ALSO party-level dependent, not just the
+// duration: at party level 1 the timer is ignored outright and completion
+// instead waits for the acting unit's animation FSM to go idle; at any other
+// level completion is a plain "+6444 <= 0".
+//
+// Turn-end counter (+6464/+8480/+8484): what the state-12 handler polls every
+// frame to decide when to advance to state 13 (turn end): it holds in state
+// 12 while +8480 > 0, unless the mode below is 3, which always falls
+// through. Mode (+6464, 2 or 3) is chosen at the same state-11 commit
+// instant as the command timer, from a byte stashed at +8473 the last time
+// this object was reused. Mode 2 decrements +8480 by the frame delta every
+// tick; mode 3 decrements it by the fixed step at +8484 instead, but only on
+// a frame where the frame delta is positive. Armed at the same instant as
+// the command timer, but since nothing reads it until the FSM handler for
+// state 12 runs, its effect is only observable from state 12 onward.
+//
+// Reverse-engineered 2026-08-22 via IDA (sub_821ACBF8's state 11/12
+// handlers, sub_8218A618's duration setup, sub_8218A7C0/sub_821A9C98's
+// completion checks, sub_820D6168's per-frame decay). Not yet cross-checked
+// against a live battle.
+inline constexpr uint32_t kActionTimerObjectPtrOffset = 533100u;
+inline constexpr uint32_t kCommandTimerDurationOffset = 6440u;   // i32, 1/300s ticks, reset value
+inline constexpr uint32_t kCommandTimerRemainingOffset = 6444u;  // i32, 1/300s ticks, live countdown
+inline constexpr uint32_t kCommandTimerModeOffset = 6448u;       // i32
+inline constexpr uint32_t kCommandTimerModeReady = 2u;
+inline constexpr uint32_t kCommandTimerModeArmed = 1u;
+inline constexpr uint32_t kTurnEndModeOffset = 6464u;    // i32, 2 or 3
+inline constexpr uint32_t kTurnEndCounterOffset = 8480u; // i32, 1/300s ticks, live countdown
+inline constexpr uint32_t kTurnEndStepOffset = 8484u;    // i32, mode 3's fixed per-tick step
+
+// Per-party-level duration table for the command timer above:
+// byte[level - 1] * 300 = duration in 1/300s ticks. sub_8218A618 indexes it
+// as table[(party level) - 1]; the shipped bytes are {255, 255, 3, 1, 0, 0}
+// for levels 1-6, i.e. levels 1-2 disable the timer outright (255 is the
+// sentinel) and every level above it gets progressively less grace.
+inline constexpr uint32_t kCommandTimerLevelTableAddr = 0x8238E2B9u;
+inline constexpr uint32_t kCommandTimerLevelTableStride = 20u;
+inline constexpr uint8_t kCommandTimerDisabled = 255u;
+
+// The save's current party level (the same field as party_system.cpp's
+// private kPartyLevelAddr): what selects the row in the table above, and
+// what sub_821A9C98 branches on for the command timer's completion rule.
+inline constexpr uint32_t kCurrentPartyLevelAddr = 0x8243F3ECu;
+
 }  // namespace battle
 }  // namespace eternalsonata
