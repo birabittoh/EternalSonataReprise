@@ -80,3 +80,10 @@ __pycache__/
 # DLC content packages (STFS containers dropped in by the user; see
 # src/dlc_auto_install.cpp)
 /dlc/
+
+# IDA working files (created alongside .i64 when a database is open)
+*.id0
+*.id1
+*.id2
+*.nam
+*.til

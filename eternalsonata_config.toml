@@ -11,6 +11,207 @@ longjmp_address = 0x822D0620
 [functions]
 "0x8228D440" = {}
 
+# Names recovered from the PS3 build's RTTI table (ps3/classes_rtti.txt) and
+# transferred to the Xbox 360 build by string anchoring. The 360 build has no
+# RTTI, so every entry below is backed by a literal string the two builds share.
+# Each was re-verified by decompilation.
+# 0x822CCDB0 was named NAMEABLE_ITEM__SetName here. It is really strncpy, so it
+# now lives in the [rexcrt] table at the bottom of this file and gets a native
+# host implementation. Everything below that was justified as "calls SetName" is
+# really just "calls strncpy"; see the warning on the batch 2-9 block.
+"0x820CF140" = { name = "TEXTURE_LOT__GetInstance", evidence = "verified: lazy singleton on dword_82440564, allocates 112 bytes and tags it \"local alloc for texlot\"" }
+# Verified genuine constructors by decompilation: both zero their fields, load a
+# model, and SetName themselves with the matching literal. Their vtables
+# (off_820831F8, off_82083200) pair them with the destructors in the Phase 3
+# block below.
+"0x82131668" = { name = "OP_CREDIT_TASK__ctor", evidence = "verified: zeroes its fields, loads op.bmd, installs vtable off_820831F8, names itself \"OP_CREDIT_TASK\" at +8" }
+"0x821317F8" = { name = "ED_CREDIT_TASK__ctor", evidence = "verified: same shape, installs vtable off_82083200, names itself \"ED_CREDIT_TASK\" at +8" }
+"0x82133130" = { name = "TITLE_TASK__Init", evidence = "verified: loads title.bmd, sets up the title camera and fade, names itself \"TITLE_TASK\" at +8" }
+
+# ############################################################################
+# Names verified by decompilation. Each carries its evidence.
+#
+# These are the survivors of a larger block generated from "94 SetName call
+# sites". That premise was false: 0x822CCDB0 is strncpy, not a SetName method,
+# so those were 94 strncpy call sites and the names hung off nothing. Sampling
+# the guesses found 5 of 7 wrong outright. The rest of the block is commented
+# out below; do not restore an entry without decompiling it first.
+# ############################################################################
+"0x820E64F0" = { name = "OBJECT__ctor", evidence = "verified: base constructor. Stores the OBJECT base vtable off_82082B60, zeroes +8/+16, then names the object from a3 or an auto-generated %08x counter" }
+"0x820F91A8" = { name = "MEMORY_HEAP__Init", evidence = "verified: creates the \"Union HEAP\" and \"MapSE HEAP\" heaps via sub_82112240, plus several pool inits" }
+"0x821A3888" = { name = "enemy_character_spawner", evidence = "verified: loops over *(a1+673) enemies, formats %03dbEnemy names, allocates each model via sub_82176398" }
+
+# Was "tree_find". Verified wrong: it is a hash table insert/remove, not a tree
+# and not a pure lookup. It hashes a name, walks a bucket chain (next at +24,
+# prev at +20), then inserts a 32 byte entry when a3 is non null or unlinks the
+# entry when a3 is zero, all under a lock.
+"0x8210F050" = { name = "named_hashtable__SetEntry", evidence = "bucket chain walk + insert/unlink on a3, locked by sub_82109618/sub_82109670" }
+
+# Was "dynamic_named_object__Init". Verified wrong: it strncpy's a 0x104 (MAX_PATH)
+# string into a global and sets a flag. It is the {BeginCaptureFileCreation}
+# handler in the PIX command table at 0x8226F450.
+"0x8226F3B0" = { name = "PIX__SetCaptureFileName", evidence = "handler entry in the 0x8226F450 PIX command table; copies MAX_PATH name to byte_82426C80" }
+# Was "pix_capture_logger". Verified wrong: it is the PIX command dispatcher. It
+# builds a table of 8 command strings ({Connect}, {Disconnect}, {Version},
+# {LimitCaptureSize}, {BeginCaptureFileCreation}, {EndCaptureFileCreation},
+# {BeginCapture}, {EndCapture}) each paired with a handler, matches the input
+# against them, invokes the handler, and reports "PIX!OK" or "PIX!NO".
+"0x8226F450" = { name = "PIX__DispatchCommand", evidence = "8 entry command string/handler table, returns PIX!OK or PIX!NO" }
+# Was "object_instance_factory". Verified wrong: it allocates via sub_822D1200,
+# and on failure sets error code 63 plus an error string, then populates a three
+# entry callback table at a2[0..2]. A callback table installer, not a factory.
+"0x822985C0" = { name = "callback_table__Install", evidence = "fills a2[0..2] with sub_82298488/sub_82298520/sub_822985B8; error path sets code 63" }
+
+# 0x820EE7D8 is deliberately left unnamed. It was labelled DIALOG_TEXT__utility
+# here, which contradicts this repo's own analysis (see the comments in
+# src/field_player_model_override.cpp: it is the field-object model
+# instantiator), and renaming it broke the REX_HOOK_RAW(sub_820EE7D8) there.
+
+# ############################################################################
+# UNVERIFIED, DISABLED. Everything below to the Phase 3 block was invented from
+# context around a strncpy call, with no anchor. Left here as a worklist of
+# addresses that do something name-worthy, not as names. To restore one,
+# decompile it, confirm the name, and add an `evidence` field.
+# ############################################################################
+# "0x820C1F98" = { name = "efc_2d__ctor" }
+# "0x820EDAB8" = { name = "CF_DEMO__ctor" }
+# "0x820D5A78" = { name = "base_window__Init" }
+# "0x820D6048" = { name = "TTwin__Init" }
+# "0x820E8170" = { name = "EFC__utility" }
+# "0x820D9A70" = { name = "BATTLE_SCREEN__Init" }        # strncpy'd: exp_window, exp_text_icon, exp_nums, golby_window, golby_num, golby_total_num, findings_window
+# "0x820DC338" = { name = "BATTLE_HUD_STATS__ctor" }     # strncpy'd: lv_window, lv_text_icon, lv_nums, hp_window, hp_text_icon, hp_nums, hp_add_nums, param_add, skill_window
+# "0x820DAE98" = { name = "BATTLE_CHAR_DISPLAY__ctor" }  # strncpy'd: base_window, char_face, next_icon
+# "0x820F8E50" = { name = "CF_TASK__ctor" }
+# "0x820FA2F8" = { name = "PAUSE_MENU__Init" }
+# "0x8210F218" = { name = "tree_lookup" }                # likely the lookup half of named_hashtable__SetEntry
+# "0x82112308" = { name = "string_buffer_container" }
+# "0x821143A0" = { name = "object_loader" }
+# "0x8211DAB8" = { name = "object_deserialize" }
+# "0x8212D350" = { name = "EFC_chunk_load" }
+# "0x8212D420" = { name = "data_search_pair" }
+# "0x8212D560" = { name = "EFC_find_or_create" }
+# "0x8212D740" = { name = "data_pair_lookup" }
+# "0x8212DA18" = { name = "FontManager__Init" }
+# "0x82162568" = { name = "screen_setup__Init" }
+# "0x82164578" = { name = "action_task__Init" }
+# "0x82167008" = { name = "scene_object_loader" }
+# "0x8216A3F8" = { name = "action_control__Init" }
+# "0x8216BD10" = { name = "scene_action__Init" }
+# "0x82170E30" = { name = "scene_object_allocator" }
+# "0x82176078" = { name = "ObjectList_Task__Init" }
+# "0x82176398" = { name = "object_queue_allocator" }
+# "0x8218E0F0" = { name = "BattleEnd_Task__Init" }
+# "0x8218E558" = { name = "battle_effect__Init" }
+# "0x82193EC8" = { name = "data_pair_initializer" }
+# "0x821989B8" = { name = "character_object__Init" }
+# "0x82199898" = { name = "component_module__Init" }
+# "0x82199968" = { name = "key_mark__utility" }
+# "0x821A1C00" = { name = "map_area_loader" }
+# "0x821A2B38" = { name = "battle_parameter__Init" }
+# "0x821A60F8" = { name = "component_overdrive__Init" }
+# "0x821A82A8" = { name = "battle_manager__Init" }
+# "0x821C32F0" = { name = "sound_effect_footer__Init" }
+# "0x821CDE20" = { name = "arrow_ui_element__Init" }
+# "0x821D1A90" = { name = "TextMgr_Task__Init" }
+# "0x821D3890" = { name = "message_text_processor" }
+# "0x821DA678" = { name = "effect_entity__Init" }
+# "0x821EB228" = { name = "camp_task__Init" }
+# "0x821EB828" = { name = "camp_task_variant__Init" }
+# "0x821F7F38" = { name = "effect_particle__Init" }
+# "0x8220F4A8" = { name = "volume_ui_panel__Init" }
+# "0x8223C9E8" = { name = "message_string_allocator" }
+# "0x8226F8A0" = { name = "render_surface__Init" }
+# "0x82270CF8" = { name = "capture_file_manager" }
+# Was "buffer_name_setup". Verified wrong: this is strncpy_s. It rejects sizes
+# above 0x7FFFFFFF, strncpy's into the destination, force terminates the last
+# byte, and returns 0, E_INVALIDARG (0x80070057) or ERROR_INSUFFICIENT_BUFFER
+# (0x8007007A) depending on whether the source fit. Kept here rather than in
+# [rexcrt]: the SDK's String group has strcpy_s but no strncpy_s, so mapping it
+# there would just rename it and leave us owing an implementation. The guest_
+# prefix avoids colliding with the host CRT declaration.
+"0x82276410" = { name = "guest_strncpy_s", evidence = "strncpy + forced NUL + E_INVALIDARG/ERROR_INSUFFICIENT_BUFFER returns" }
+
+# ============================================================================
+# PHASE 3: VTABLE SLOT 0 DESTRUCTORS (23 functions from 22 vtables)
+#
+# VERIFIED: these are all vtable slot 0 entries, i.e. destructors, not
+# constructors. Every one was decompiled and shows the same shape: store the
+# class vtable, tear down sub-objects, then overwrite the vtable with the OBJECT
+# base (off_82082B60) and call sub_8212DDA8. Those taking a char flag are the
+# deleting variants (the flag gates a final sub_82113FD0 free of `this`).
+#
+# NOT VERIFIED: the CLASS NAMES. The classes are real (they all appear in
+# ps3/classes_rtti.txt, which is a genuine RTTI dump; its offsets are uniformly
+# 0x10000 low and include the _ZTS length prefix), but the address-to-class
+# assignment does not hold up:
+#
+#  * The Action/Param addresses ascend monotonically while matching the RTTI
+#    list's alphabetical order exactly. That is two sorted lists zipped
+#    together, not evidence.
+#  * Two assignments in this block were already disproved by vtable identity
+#    (OP_CREDIT_TASK, ED_CREDIT_TASK) and one by a duplicate vtable
+#    (BW_DRAW_ICON).
+#  * For the queue managers there was no signal to match on at all. On PS3 the
+#    C2dCanvasQueueManager and CLightQueueManager destructors are byte-for-byte
+#    the same shape, differing only in which TOC constant they load, so they
+#    cannot anchor distinct 360 functions. On the 360 side neither vtable's
+#    constructor copies a name literal, so there is no string anchor either.
+#  * Concretely, off_82087530 (called CLightQueueManager here) is constructed
+#    inline in sub_821F09A0 as a 104 byte object with x/y position and scale,
+#    placed by sub_821F66C8 and registered with 2D draw calls: a per item 2D
+#    element, not a light manager. off_8208754C (called C2dCanvasQueueManager)
+#    is the one with a 384 slot handle table, which is what actually looks like
+#    a manager. The names appear shifted within the family.
+#
+# So only the two whose class is pinned by vtable identity stay enabled. The
+# rest are commented out: the address and the destructor finding are preserved
+# as a worklist, the unfounded class name is not emitted. To restore one, tie
+# its vtable to a constructor that names itself, then add an `evidence` field.
+# ============================================================================
+
+# 0x82131758 / 0x82131908 install vtables off_820831F8 / off_82083200, which the
+# verified OP_CREDIT_TASK / ED_CREDIT_TASK constructors above also install. That
+# pins the class independently of the RTTI guesswork.
+"0x82131758" = { name = "OP_CREDIT_TASK__destructor_deleting", evidence = "installs off_820831F8, same vtable as the verified OP_CREDIT_TASK ctor at 0x82131668" }
+"0x82131908" = { name = "ED_CREDIT_TASK__destructor_deleting", evidence = "installs off_82083200, same vtable as the verified ED_CREDIT_TASK ctor at 0x821317F8" }
+
+# Camera system
+# "0x82101390" = { name = "CIntelligenceCamera__destructor" }           # vtable off_82082D08
+# "0x82109870" = { name = "CAMERA__destructor_deleting" }               # vtable off_82082E58
+
+# Action/Param hierarchy
+# "0x82132780" = { name = "CColorParam__destructor_deleting" }          # vtable off_82083240
+# "0x82141E18" = { name = "CDistanceAction__destructor_deleting" }      # vtable off_8208374C
+# "0x82144190" = { name = "CDistanceParam__destructor" }                # vtable off_82083780
+# "0x82145E98" = { name = "CFreeRangeAction__destructor" }              # vtable off_82083798
+
+# Queue managers. Names here are especially suspect: see the note above about
+# off_82087530 looking like a per item 2D element and off_8208754C looking like
+# the actual manager.
+# "0x821D16E8" = { name = "CEffectQueueManager__destructor_deleting" }  # vtable off_820873C0
+# "0x821D1A10" = { name = "CBaseQueueManager__destructor_deleting" }    # vtable off_820873C8
+# "0x821D1050" = { name = "CModelQueueManager__destructor_deleting" }   # vtable off_82087378
+# "0x821E91B8" = { name = "CMarkerQueueManager__destructor" }           # vtable off_82087468
+# "0x821F6660" = { name = "CLightQueueManager__destructor" }            # vtable off_82087530
+# "0x821F7A40" = { name = "C2dCanvasQueueManager__destructor" }         # vtable off_8208754C
+# "0x821DA350" = { name = "CTextureQueueManager__destructor" }          # vtable off_820873D0
+
+# UI/Window system
+# "0x8220FBA8" = { name = "CWindowView__destructor" }                   # vtable off_82087D0C
+# "0x8220A410" = { name = "CPopWindow__destructor_deleting" }           # vtable off_82087CC0
+# "0x8220F1A8" = { name = "CText__destructor_deleting" }                # vtable off_82087CD4
+
+# Draw system. 0x8223CB88 and 0x8223CC98 install the same vtable (off_820A9FEC),
+# so they are the deleting and plain destructors of one class, not two classes,
+# whatever that class turns out to be.
+# "0x8223B698" = { name = "BW_DRAW_RECT__destructor_deleting" }         # vtable off_820A9F84
+# "0x8223C3B0" = { name = "BW_DRAW_TEXT__destructor" }                  # vtable off_820A9FE4
+# "0x8223CB88" = { name = "BW_DRAW_ICON__destructor_deleting" }         # vtable off_820A9FEC
+# "0x8223CC98" = { name = "BW_DRAW_ICON__destructor" }                  # vtable off_820A9FEC
+# "0x8223E848" = { name = "BW_DRAW_EFFECT__destructor_deleting" }       # vtable off_820AA464
+# "0x8223F9E8" = { name = "BW_DRAW_TEXT1__destructor_deleting" }        # vtable off_820AA504
+# "0x82133038" = { name = "BW_DRAW_ICON__variant_destructor_deleting" } # vtable off_82083360
+
 # ============================================================================
 # memmove_s is intentionally absent: this title links memcpy_s but no standalone
 # 4-arg memmove_s -- every memmove caller is game code or an unrelated struct-arg
@@ -22,3 +223,4 @@ memmove  = 0x822CE550
 memset   = 0x822CFB40
 memcpy_s = 0x822D5748
 XMemCpy  = 0x822530B8
+strncpy  = 0x822CCDB0
