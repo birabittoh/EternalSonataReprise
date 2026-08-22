@@ -166,13 +166,19 @@ uint32_t SceneObjectFor(uint8_t* base, uint32_t object) {
                             REX_LOAD_U32(object + kObjectHandleIdOffset));
 }
 
+// Falsetto's character number (see kCharacterSlotAddr above). Unlike every
+// other model, her rigging attaches the arms to "weapon_sw" rather than to
+// the body mesh, so hiding it the way every other character's sheathed
+// weapon gets hidden leaves her armless. "weapon" is still hers to hide.
+constexpr int kCharacterFalsetto = 8;
+
 // Hides the field object's weapon meshes, whichever model it is wearing.
 //
 // Call it where the game runs its own hide list, on the tail of sub_820FCF80,
 // and not from inside the sub_820EE7D8 spawn itself: doing it there hid the
 // right meshes but softlocked the next leader change, with the model only half
 // built and two guest calls made into it from the middle of its constructor.
-void HideWeaponMeshes(uint32_t object) {
+void HideWeaponMeshes(uint32_t object, int character) {
   if (!g_mesh_names_ready) {
     return;
   }
@@ -186,6 +192,9 @@ void HideWeaponMeshes(uint32_t object) {
     return;
   }
   for (int name = 0; name < kMeshNameCount; ++name) {
+    if (name == kMeshWeaponSw && character == kCharacterFalsetto) {
+      continue;
+    }
     const uint32_t index =
         MeshIndexByName(scene, MeshNameAddress(static_cast<MeshName>(name)));
     if (index == kMeshIndexNone) {
@@ -518,10 +527,11 @@ REX_HOOK_RAW(sub_820FCF80) {
   const uint32_t map_manager = ctx.r3.u32;
   __imp__sub_820FCF80(ctx, base);
 
-  if (eternalsonata::FieldPlayerModelOverride::DesiredCharacter() < 1) {
+  const int character = eternalsonata::FieldPlayerModelOverride::DesiredCharacter();
+  if (character < 1) {
     // The override is off, so the leader is the model the game's own list was
     // written for and there is nothing to add.
     return;
   }
-  HideWeaponMeshes(REX_LOAD_U32(map_manager + kFieldObjectPtrOffset));
+  HideWeaponMeshes(REX_LOAD_U32(map_manager + kFieldObjectPtrOffset), character);
 }
