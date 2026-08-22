@@ -293,6 +293,8 @@ longjmp_address = 0x822D0620
 
 # Command buffer plumbing.
 "0x82264980" = { name = "D3DDevice__ReserveCommandBufferSpace", evidence = "verified: called from every packet writer when the write pointer at device+48 passes the limit at device+56, and returns the new write pointer" }
+"0x82264330" = { name = "D3DDevice__BlockUntilFenceRetired", evidence = "verified: takes a fence value, compares it against the submitted counter at device+10780 and the retired counter the GPU writes at **(device+10768) (the block handed to VdSetSystemCommandBufferGpuIdentifierAddress), and spins on 0x82263328 inside a 0x82263178/0x822631A8 ThrottleWait bracket until the retired counter passes it; the wait underneath both Swap's frame throttle and BlockUntilGpuIdle" }
+"0x82264BE8" = { name = "D3DDevice__BlockUntilGpuIdle", evidence = "verified: writes a type 3 wait packet (header 1480, body 0x20000) at the device+48 write pointer, submits it through 0x82264330, then busy waits on device+10872 until the GPU clears it; called at the top of SetRingBufferParameters 0x82264CB8 to drain the previous ring before it is torn down" }
 
 # Dirty state flush. DrawIndexedVertices tracks five dirty qwords on the device
 # and walks them at submit time:
