@@ -256,6 +256,32 @@ void WinBattleOnGuestThread(int frames_waited) {
 
 uint32_t FsmState() { return ReadGuest<uint32_t>(battle::kManager + battle::kFsmStateOffset); }
 
+// The current actor's action-timer object, or 0 between turns / before one
+// has ever been set up. See battle_layout.h "Turn timers".
+uint32_t ActionTimerObject() {
+  return ReadGuest<uint32_t>(battle::kManager + battle::kActionTimerObjectPtrOffset);
+}
+
+void FillTimers(EternalSonataBattleState* out) {
+  out->command_timer_active = 0;
+  out->command_timer_ticks = -1;
+  out->turn_end_mode = 0;
+  out->turn_end_ticks = -1;
+
+  const uint32_t timer_obj = ActionTimerObject();
+  if (timer_obj == 0) {
+    return;
+  }
+  const uint32_t mode = ReadGuest<uint32_t>(timer_obj + battle::kCommandTimerModeOffset);
+  out->command_timer_active = (mode == battle::kCommandTimerModeArmed) ? 1 : 0;
+  out->command_timer_ticks =
+      static_cast<int32_t>(ReadGuest<uint32_t>(timer_obj + battle::kCommandTimerRemainingOffset));
+  out->turn_end_mode =
+      static_cast<int32_t>(ReadGuest<uint32_t>(timer_obj + battle::kTurnEndModeOffset));
+  out->turn_end_ticks =
+      static_cast<int32_t>(ReadGuest<uint32_t>(timer_obj + battle::kTurnEndCounterOffset));
+}
+
 // --- Enemy names ---------------------------------------------------------
 //
 // Resolving one means calling the guest's text lookup, which needs a guest
@@ -447,6 +473,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetBattleState(
   out->actor_kind = actor.kind;
   out->actor_slot = actor.slot;
   out->can_win_now = CanWinNow() ? 1 : 0;
+  FillTimers(out);
   return ETERNALSONATA_BATTLE_OK;
 }
 

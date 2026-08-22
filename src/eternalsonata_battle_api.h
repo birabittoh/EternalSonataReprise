@@ -124,7 +124,29 @@ typedef struct EternalSonataBattleState {
   // queued EternalSonataWinBattle waits for this by itself; the flag is here
   // so a UI can say why nothing has happened yet.
   int32_t can_win_now;
-  int32_t reserved[9];  // zero-filled; room for later additions
+  // The two per-turn timers. Both come from one per-actor object the
+  // game refreshes each turn; see battle_layout.h "Turn timers" for the full
+  // reverse-engineering writeup. Both report
+  // command_timer_ticks == -1 / turn_end_ticks == -1 when the object is not
+  // currently resolvable (e.g. between turns).
+  //
+  // command_timer_active: 1 while the command timer is armed and counting
+  // down (armed the instant a command is committed, i.e. from FSM state 11
+  // onward). command_timer_ticks: ticks left, in 1/300s units (divide by 300
+  // for seconds). Its starting value depends on the current party level, and
+  // at party level 1 the game ignores this timer for completion purposes
+  // entirely (see battle_layout.h) - a UI may want to say so rather than
+  // just showing a number that never seems to matter.
+  int32_t command_timer_active;
+  int32_t command_timer_ticks;
+  // turn_end_mode: 2 or 3, selecting how turn_end_ticks decays (see
+  // battle_layout.h); 0 if unavailable. turn_end_ticks: ticks left, 1/300s
+  // units, before FSM state 12 lets the turn advance to state 13. Armed at
+  // the same instant as the command timer, but only consulted once the FSM
+  // reaches state 12.
+  int32_t turn_end_mode;
+  int32_t turn_end_ticks;
+  int32_t reserved[5];  // zero-filled; room for later additions
 } EternalSonataBattleState;
 
 // One unit on either side. Fields the host cannot resolve for that side are
