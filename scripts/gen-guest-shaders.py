@@ -53,7 +53,7 @@ import extract_shaders as X  # noqa: E402
 import xenos_hlsl as H  # noqa: E402
 
 PACK_MAGIC = b"ESGS"
-PACK_VERSION = 2
+PACK_VERSION = 4
 
 # Both guest tables are 256 entries; the pack holds vertex slots first, then
 # pixel slots, so an entry index is `kind_base + slot`.
