@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <rex/logging.h>
+#include <rex/memory/utils.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -78,7 +79,18 @@ uint64_t GuestRangeReadableBytes(const uint8_t* start, uint64_t bytes) {
   }
   return cursor > end ? bytes : uint64_t(cursor - start);
 #else
-  return bytes;
+  const uint8_t* cursor = start;
+  const uint8_t* end = start + bytes;
+  while (cursor < end) {
+    size_t region_length = 0;
+    rex::memory::PageAccess access = rex::memory::PageAccess::kNoAccess;
+    if (!rex::memory::QueryProtect(const_cast<uint8_t*>(cursor), region_length, access))
+      break;
+    if (access == rex::memory::PageAccess::kNoAccess || region_length == 0)
+      break;
+    cursor += region_length;
+  }
+  return cursor > end ? bytes : uint64_t(cursor - start);
 #endif
 }
 
