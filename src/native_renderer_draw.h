@@ -77,6 +77,12 @@ struct GuestDrawCall {
   int32_t base_vertex = 0;
 
   GuestDrawStream streams[kMaxPipelineStreams];
+
+  // The same state the pipeline was keyed on. The pipeline consumed the depth,
+  // cull and blend half of it; what is left for the draw is the alpha test,
+  // which is fixed function on the console and has to reach the pixel shader as
+  // constants because no host pipeline state can express it.
+  GuestRenderState state;
 };
 
 // Record the draw. False when it could not be issued, which is always counted

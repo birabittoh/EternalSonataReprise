@@ -170,12 +170,14 @@ RenderFormat MapVertexFormat(uint32_t type) {
     // host input format rather than unpacked in the shader: Plume gained
     // R10G10B10A2_UNORM (DXGI R10G10B10A2_UNORM, Vulkan A2B10G10R10_PACK32,
     // Metal RGB10A2Unorm), all of which pack red in the low bits exactly as the
-    // Xenos format does. There is no signed or unnormalised variant anywhere in
-    // that set, so those two spellings still have no host equivalent and fall
-    // through to the packed refusal below.
+    // Xenos format does. The signed spelling, which this title uses for its
+    // normals and tangents, has no host equivalent anywhere in that set and is
+    // repacked into R8G8B8A8_SNORM on upload instead -- same four bytes, so the
+    // stride and every offset are untouched. See VertexFormatRepacksToSnorm8.
+    // The unnormalised spelling has neither, and falls through.
     case kVf_2_10_10_10:
-      if (!is_signed && !is_integer)
-        return RenderFormat::R10G10B10A2_UNORM;
+      if (!is_integer)
+        return is_signed ? RenderFormat::R8G8B8A8_SNORM : RenderFormat::R10G10B10A2_UNORM;
       [[fallthrough]];
 
     // 10_11_11 and 11_11_10 have no host input-assembler equivalent at all, and
@@ -231,6 +233,123 @@ RenderPrimitiveTopology MapTopology(uint32_t primitive_type) {
   }
 }
 
+// Xenos CompareFunction is the same 0..7 ordering the host uses, but spelling
+// the map out is what makes that a decision rather than a coincidence.
+RenderComparisonFunction MapCompare(GuestCompare func) {
+  switch (func) {
+    case GuestCompare::kNever:
+      return RenderComparisonFunction::NEVER;
+    case GuestCompare::kLess:
+      return RenderComparisonFunction::LESS;
+    case GuestCompare::kEqual:
+      return RenderComparisonFunction::EQUAL;
+    case GuestCompare::kLessEqual:
+      return RenderComparisonFunction::LESS_EQUAL;
+    case GuestCompare::kGreater:
+      return RenderComparisonFunction::GREATER;
+    case GuestCompare::kNotEqual:
+      return RenderComparisonFunction::NOT_EQUAL;
+    case GuestCompare::kGreaterEqual:
+      return RenderComparisonFunction::GREATER_EQUAL;
+    default:
+      return RenderComparisonFunction::ALWAYS;
+  }
+}
+
+// A blend factor the host has no name for. Counted rather than substituted,
+// because a wrong factor is a picture that looks nearly right.
+uint64_t g_blend_factor_unknown = 0;
+uint64_t g_stencil_draws = 0;
+uint64_t g_cull_both_draws = 0;
+
+// xenos::BlendFactor. The gaps (2, 3) are not defined by the hardware.
+RenderBlend MapBlendFactor(uint32_t factor, bool alpha_half) {
+  switch (factor) {
+    case 0:
+      return RenderBlend::ZERO;
+    case 1:
+      return RenderBlend::ONE;
+    // The colour factors have no meaning in the alpha half of a host blend
+    // desc, which takes only the alpha channel; the console applies the colour
+    // factor's alpha component there, so SRC_COLOR in the alpha half is
+    // SRC_ALPHA. That is the same substitution xenia's kBlendFactorAlphaMap
+    // makes.
+    case 4:
+      return alpha_half ? RenderBlend::SRC_ALPHA : RenderBlend::SRC_COLOR;
+    case 5:
+      return alpha_half ? RenderBlend::INV_SRC_ALPHA : RenderBlend::INV_SRC_COLOR;
+    case 6:
+      return RenderBlend::SRC_ALPHA;
+    case 7:
+      return RenderBlend::INV_SRC_ALPHA;
+    case 8:
+      return alpha_half ? RenderBlend::DEST_ALPHA : RenderBlend::DEST_COLOR;
+    case 9:
+      return alpha_half ? RenderBlend::INV_DEST_ALPHA : RenderBlend::INV_DEST_COLOR;
+    case 10:
+      return RenderBlend::DEST_ALPHA;
+    case 11:
+      return RenderBlend::INV_DEST_ALPHA;
+    case 12:
+    case 14:
+      return RenderBlend::BLEND_FACTOR;
+    case 13:
+    case 15:
+      return RenderBlend::INV_BLEND_FACTOR;
+    case 16:
+      return RenderBlend::SRC_ALPHA_SAT;
+    default:
+      ++g_blend_factor_unknown;
+      return RenderBlend::ONE;
+  }
+}
+
+RenderBlendOperation MapBlendOp(uint32_t op) {
+  switch (op) {
+    case 0:
+      return RenderBlendOperation::ADD;
+    case 1:
+      return RenderBlendOperation::SUBTRACT;
+    case 2:
+      return RenderBlendOperation::MIN;
+    case 3:
+      return RenderBlendOperation::MAX;
+    case 4:
+      return RenderBlendOperation::REV_SUBTRACT;
+    default:
+      return RenderBlendOperation::ADD;
+  }
+}
+
+RenderBlendDesc MapBlend(const GuestRenderState& state) {
+  RenderBlendDesc blend = RenderBlendDesc::Copy();
+  blend.renderTargetWriteMask = uint8_t(state.write_mask);
+  if (!state.blend_enabled)
+    return blend;
+
+  blend.blendEnabled = true;
+  blend.blendOp = MapBlendOp((state.blend_control >> 5) & 7u);
+  blend.blendOpAlpha = MapBlendOp((state.blend_control >> 21) & 7u);
+  blend.srcBlend = MapBlendFactor(state.blend_control & 0x1Fu, false);
+  blend.dstBlend = MapBlendFactor((state.blend_control >> 8) & 0x1Fu, false);
+  blend.srcBlendAlpha = MapBlendFactor((state.blend_control >> 16) & 0x1Fu, true);
+  blend.dstBlendAlpha = MapBlendFactor((state.blend_control >> 24) & 0x1Fu, true);
+
+  // MIN and MAX ignore the factors on the console, and a host that applies them
+  // would blend something else entirely. Forcing ONE is what makes the two
+  // agree; this is xenia's rule as well.
+  if (blend.blendOp == RenderBlendOperation::MIN || blend.blendOp == RenderBlendOperation::MAX) {
+    blend.srcBlend = RenderBlend::ONE;
+    blend.dstBlend = RenderBlend::ONE;
+  }
+  if (blend.blendOpAlpha == RenderBlendOperation::MIN ||
+      blend.blendOpAlpha == RenderBlendOperation::MAX) {
+    blend.srcBlendAlpha = RenderBlend::ONE;
+    blend.dstBlendAlpha = RenderBlend::ONE;
+  }
+  return blend;
+}
+
 struct PipelineKey {
   uint8_t vertex_slot = 0;
   uint8_t pixel_slot = 0;
@@ -239,10 +358,22 @@ struct PipelineKey {
   uint32_t declaration_serial = 0;
   uint32_t strides[kMaxPipelineStreams] = {};
 
+  // The guest's own register values, not a decode of them. Two states that
+  // differ in a bit no host pipeline reads cost one extra pipeline, which is
+  // cheap; two states that decode the same but were reached differently cannot
+  // be confused, which is not. Alpha test is deliberately absent: it lives in
+  // the pixel shader, not in the state object.
+  uint32_t depth_control = 0;
+  uint32_t blend_control = 0;
+  uint32_t mode_cntl = 0;
+  uint32_t color_mask = 0;
+
   bool operator==(const PipelineKey& other) const {
     if (vertex_slot != other.vertex_slot || pixel_slot != other.pixel_slot ||
         topology != other.topology || targets != other.targets ||
-        declaration_serial != other.declaration_serial) {
+        declaration_serial != other.declaration_serial ||
+        depth_control != other.depth_control || blend_control != other.blend_control ||
+        mode_cntl != other.mode_cntl || color_mask != other.color_mask) {
       return false;
     }
     for (uint32_t i = 0; i < kMaxPipelineStreams; ++i) {
@@ -254,6 +385,13 @@ struct PipelineKey {
 };
 
 }  // namespace
+
+// The one predicate the upload path and the input layout must not disagree
+// about. Kept next to MapVertexFormat, which is the other half of the same
+// decision.
+bool VertexFormatRepacksToSnorm8(uint32_t type) {
+  return (type & 0x3Fu) == kVf_2_10_10_10 && ((type >> 8) & 1u) != 0 && ((type >> 9) & 1u) == 0;
+}
 
 // Deliberately outside the anonymous namespace: the type is named in the public
 // header, so it has to be the same type there and here.
@@ -300,29 +438,49 @@ RenderPipelineLayout* EnsureLayout(RenderDevice* device) {
   if (g_layout_failed)
     return nullptr;
 
-  // One range of 16 for each type, so the whole t0..t15 / s0..s15 range is
-  // reserved whatever a given pixel shader declares. The pack carries a texture
-  // slot mask per shader, so a narrower layout per shader is possible; it would
-  // buy nothing but more pipeline layouts to manage.
-  const RenderDescriptorRange ranges[] = {
+  // Two sets, not one: t0..t15 in set 0 and s0..s15 in set 1, which is register
+  // space 1 in the emitted HLSL because Plume maps a set's index onto
+  // RegisterSpace.
+  //
+  // They are split because the two live in different heaps with very different
+  // sizes. A D3D12 shader-visible sampler heap holds 1024 descriptors against
+  // the view heap's 65536, so a cache of sets carrying sixteen samplers each
+  // exhausts the sampler heap after sixty four sets -- which this title reaches
+  // on loading a save. Splitting them means the many distinct *texture*
+  // combinations cost only view descriptors, and the handful of distinct
+  // sampler combinations cost sampler descriptors.
+  //
+  // The whole range is reserved in each whatever a given pixel shader declares.
+  // The pack carries a texture slot mask per shader, so a narrower layout per
+  // shader is possible; it would buy nothing but more layouts to manage.
+  const RenderDescriptorRange texture_ranges[] = {
       RenderDescriptorRange(RenderDescriptorRangeType::TEXTURE, 0, kTextureSlots),
+  };
+  const RenderDescriptorRange sampler_ranges[] = {
       RenderDescriptorRange(RenderDescriptorRangeType::SAMPLER, 0, kTextureSlots),
   };
-  const RenderDescriptorSetDesc set_desc(ranges, uint32_t(std::size(ranges)));
+  const RenderDescriptorSetDesc set_descs[] = {
+      RenderDescriptorSetDesc(texture_ranges, uint32_t(std::size(texture_ranges))),
+      RenderDescriptorSetDesc(sampler_ranges, uint32_t(std::size(sampler_ranges))),
+  };
 
   // The four constant banks, as root descriptors rather than a descriptor set:
   // they change per draw and a root CBV is the cheapest way to point at a new
-  // slice of an upload buffer.
+  // slice of an upload buffer. b0/b1 are the vertex float and bool banks,
+  // b2/b3 the pixel ones, and b4 is the alpha test, which is render state
+  // rather than a guest constant bank: the console tests alpha in fixed
+  // function hardware and the host has to do it in the shader.
   const RenderRootDescriptorDesc root_descriptors[] = {
       RenderRootDescriptorDesc(0, 0, RenderRootDescriptorType::CONSTANT_BUFFER),
       RenderRootDescriptorDesc(1, 0, RenderRootDescriptorType::CONSTANT_BUFFER),
       RenderRootDescriptorDesc(2, 0, RenderRootDescriptorType::CONSTANT_BUFFER),
       RenderRootDescriptorDesc(3, 0, RenderRootDescriptorType::CONSTANT_BUFFER),
+      RenderRootDescriptorDesc(4, 0, RenderRootDescriptorType::CONSTANT_BUFFER),
   };
 
   RenderPipelineLayoutDesc desc;
-  desc.descriptorSetDescs = &set_desc;
-  desc.descriptorSetDescsCount = 1;
+  desc.descriptorSetDescs = set_descs;
+  desc.descriptorSetDescsCount = uint32_t(std::size(set_descs));
   desc.rootDescriptorDescs = root_descriptors;
   desc.rootDescriptorDescsCount = uint32_t(std::size(root_descriptors));
   desc.allowInputLayout = true;
@@ -430,6 +588,12 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   key.topology = uint8_t(topology);
   key.targets = uint8_t((request.has_color_target ? 1u : 0u) | (request.has_depth_target ? 2u : 0u));
   key.declaration_serial = request.declaration->serial;
+  if (request.state.valid) {
+    key.depth_control = request.state.depth_control;
+    key.blend_control = request.state.blend_control;
+    key.mode_cntl = request.state.mode_cntl;
+    key.color_mask = request.state.color_mask;
+  }
 
   // Only the streams this declaration references, so an unrelated stream the
   // guest left bound cannot split the cache.
@@ -568,22 +732,53 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
     desc.renderTargetCount = 1;
   }
 
-  // Render state is a placeholder, and knowingly so. The nine SetRenderState_*
-  // setters and the blend state are named in the config but not mirrored yet, so
-  // there is nothing to build a real depth, cull or blend state out of. Depth
-  // test and write are on with LESS_EQUAL when a depth target is bound, which is
-  // what a 3D title's default is and is far closer than off; culling is off,
-  // because getting the winding wrong loses half the geometry while leaving it
-  // off only costs overdraw. Both belong in the key once the setters are
-  // mirrored, and adding them there is what makes this correct rather than
-  // merely plausible.
+  // Render state, out of the guest's register shadows. Before this existed the
+  // whole block was a placeholder -- depth on with LESS_EQUAL, no culling, no
+  // blending -- which is why alpha blended UI came out opaque.
+  const GuestRenderState& state = request.state;
+
   if (request.has_depth_target) {
     desc.depthTargetFormat = FrameDepthFormat();
-    desc.depthEnabled = true;
-    desc.depthWriteEnabled = true;
-    desc.depthFunction = RenderComparisonFunction::LESS_EQUAL;
+    if (state.valid) {
+      desc.depthEnabled = state.depth_enabled;
+      desc.depthWriteEnabled = state.depth_write;
+      desc.depthFunction = MapCompare(state.depth_func);
+    } else {
+      desc.depthEnabled = true;
+      desc.depthWriteEnabled = true;
+      desc.depthFunction = RenderComparisonFunction::LESS_EQUAL;
+    }
   }
-  desc.cullMode = RenderCullMode::NONE;
+
+  // Stencil is read but not applied: the host reference and masks live in
+  // RB_STENCILREFMASK, and nothing has checked which of the two faces this title
+  // uses. Counted so a title that leans on it says so.
+  if (state.valid && state.stencil_enabled)
+    ++g_stencil_draws;
+
+  // Culling. `face` says which winding is front, and the two cull bits are
+  // independent, so "cull both" is expressible on the console and is not on the
+  // host; it is a draw that produces nothing, and NONE is the wrong answer for
+  // it, so it is counted and left uncalled rather than silently inverted.
+  if (state.valid) {
+    if (state.cull_front && state.cull_back) {
+      ++g_cull_both_draws;
+      desc.cullMode = RenderCullMode::NONE;
+    } else if (state.cull_front) {
+      desc.cullMode = RenderCullMode::FRONT;
+    } else if (state.cull_back) {
+      desc.cullMode = RenderCullMode::BACK;
+    } else {
+      desc.cullMode = RenderCullMode::NONE;
+    }
+    desc.frontFace = state.front_is_clockwise ? RenderFrontFace::CLOCKWISE
+                                              : RenderFrontFace::COUNTER_CLOCKWISE;
+  } else {
+    desc.cullMode = RenderCullMode::NONE;
+  }
+
+  if (request.has_color_target && state.valid)
+    desc.renderTargetBlend[0] = MapBlend(state);
 
   pipeline->pipeline = device->createGraphicsPipeline(desc);
   if (!pipeline->pipeline) {
@@ -616,6 +811,16 @@ void LogPipelineSummary() {
   for (uint32_t i = 0; i < kRefuseCount; ++i) {
     if (g_refusals[i] != 0)
       REXLOG_INFO("native_renderer:   refused {}x: {}", g_refusals[i], kRefusalNames[i]);
+  }
+
+  // Render state the host cannot express, all of it counted rather than
+  // substituted for. Zeroes here are what say the mapping above is complete for
+  // this title.
+  if (g_stencil_draws != 0 || g_cull_both_draws != 0 || g_blend_factor_unknown != 0) {
+    REXLOG_INFO(
+        "native_renderer:   render state not applied: stencil enabled on {} pipeline(s), both "
+        "faces culled on {}, unknown blend factor {}x",
+        g_stencil_draws, g_cull_both_draws, g_blend_factor_unknown);
   }
 
   // The vertex formats the declarations actually use, which is what says whether

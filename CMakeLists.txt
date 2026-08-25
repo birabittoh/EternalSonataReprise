@@ -232,6 +232,7 @@ set(ETERNALSONATA_SOURCES
     src/native_renderer_pipeline.cpp
     src/native_renderer_plume.cpp
     src/native_renderer_overlay.cpp
+    src/native_renderer_state.cpp
     src/native_renderer_texture.cpp
     src/settings.cpp
     ${ETERNALSONATA_AREA_NAMES_HEADER}
