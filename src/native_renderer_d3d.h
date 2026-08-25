@@ -189,6 +189,23 @@ TextureFetch DecodeTextureFetch(const uint32_t words[6]);
 bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out,
                           GuestSamplerState* sampler_out = nullptr);
 
+// A counter bumped whenever anything a texture binding is derived from changes:
+// SetTexture, the three sampler setters, a resolve (which can replace the host
+// image behind an address without the guest touching a fetch constant), and the
+// frame boundary.
+//
+// The frame boundary is in there for correctness, not for tidiness. The texture
+// mirror notices the guest rewriting a texture under an address it already
+// holds by hashing the source once per texture per frame, so a draw path that
+// skips the mirror on an unchanged generation must still visit it at least once
+// per frame or the font atlas stops refreshing. That was a real bug; see the
+// trap about sampled hashes in the handoff.
+//
+// The intended use is a cache of work derived from the fetch constants: hold
+// the generation alongside the result and redo the work when it moves. It never
+// wraps in practice and a wrap would only cost one stale frame anyway.
+uint64_t TextureBindingGeneration();
+
 // Guest address of the device object, or 0 before D3D__CreateDevice returns.
 uint32_t D3DDeviceAddress();
 

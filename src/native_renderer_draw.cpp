@@ -26,12 +26,23 @@ std::chrono::steady_clock::time_point g_profile_window_start = std::chrono::stea
 
 namespace {
 
+// In enum order. A name out of step with the enum silently mislabels every
+// number below it, which is worth one comment to prevent.
 const char* const kPhaseNames[kPhaseCount] = {
-    "present",          "  acquire image",  "  fence wait",
-    "resolve",          "clear",             "draw",
-    "  vertex upload",  "  index upload",    "  constants",
-    "  texture bind",   "    texture walk",  "    texture hash",
-    "    guest pointer", "    texture upload", "  descriptor sets",
+    "present",
+    "  fence wait",
+    "draw",
+    "  vertex upload",
+    "  index upload",
+    "  constants",
+    "  texture bind",
+    "    fetch decode",
+    "    mirror lookup",
+    "    acquire sampler",
+    "      texture hash",
+    "      texture upload",
+    "      aperture walk",
+    "  descriptor sets",
     "decl decode",
 };
 
@@ -41,8 +52,6 @@ const char* const kPhaseNames[kPhaseCount] = {
 bool PhaseIsNested(uint32_t phase) {
   switch (phase) {
     case kPhasePresent:
-    case kPhaseResolve:
-    case kPhaseClear:
     case kPhaseDraw:
     case kPhaseDeclDecode:
       return false;
@@ -146,6 +155,21 @@ struct ArenaBlock {
 
 std::vector<ArenaBlock> g_arena;
 uint32_t g_arena_block = 0;
+
+// The last draw's texture and sampler descriptor sets, held against the mirror
+// generation and shader slot mask they were built from. See its use in
+// IssueGuestDraw for why a single entry is enough and why the generation has to
+// include the frame boundary.
+struct BindingCache {
+  uint64_t generation = 0;
+  uint32_t mask = 0;
+  RenderDescriptorSet* texture_set = nullptr;
+  RenderDescriptorSet* sampler_set = nullptr;
+  bool valid = false;
+};
+BindingCache g_binding_cache;
+uint64_t g_binding_cache_hits = 0;
+uint64_t g_binding_cache_misses = 0;
 
 // Staging for the endian swap, so it never happens in the arena itself. See the
 // note at its use: the arena is write-combined and reads out of it are what a
@@ -346,30 +370,6 @@ struct BindingSetEntry {
   BindingKey key;
   std::unique_ptr<RenderDescriptorSet> set;
 };
-
-// One resolved sixteen slot binding, keyed on the raw fetch constants it was
-// resolved from. See its use in IssueGuestDraw.
-//
-// Small and scanned linearly on purpose: a memcmp of 384 bytes of cached memory
-// is a few tens of nanoseconds against the microseconds the walk costs, and the
-// title binds only a handful of distinct combinations in any run of draws. A
-// ring rather than an LRU, because the access pattern is runs rather than
-// reuse at a distance, and a wrong eviction costs one walk.
-constexpr uint32_t kTextureBindingCacheSize = 8;
-
-struct TextureBindingCacheEntry {
-  uint8_t fetch[d3d::kSamplerCount * d3d::kTextureFetchStride] = {};
-  uint32_t mask = 0;
-  uint64_t generation = 0;
-  BindingKey textures;
-  BindingKey samplers;
-  bool valid = false;
-};
-
-TextureBindingCacheEntry g_texture_binding_cache[kTextureBindingCacheSize];
-uint32_t g_texture_binding_next = 0;
-uint64_t g_texture_binding_hits = 0;
-uint64_t g_texture_binding_misses = 0;
 
 std::vector<BindingSetEntry> g_texture_sets;
 std::vector<BindingSetEntry> g_sampler_sets;
@@ -1215,76 +1215,72 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   // setters patch fields inside the fetch constant rather than writing a
   // register. A slot the shader does not declare keeps the fallback sampler,
   // for the same reason it keeps the white texture.
+  // All of that is derived from the fetch constants and the shader's slot mask,
+  // and neither moves between most consecutive draws: this title issues roughly
+  // three draws per SetTexture call. So the whole loop, and the two set lookups
+  // under it, are cached against the mirror's binding generation.
+  //
+  // The generation moves on SetTexture, on the sampler setters, on a resolve
+  // and at every frame boundary. That last one is what keeps this honest: the
+  // texture mirror refreshes a rewritten texture at most once per texture per
+  // frame, so a cache that survived a frame boundary would freeze the font
+  // atlas, which is a bug this renderer has already had once. Within a frame,
+  // skipping the mirror on an unchanged generation is exactly equivalent, since
+  // the second visit would find the refresh already throttled out.
   const uint32_t texture_mask = GuestPipelineTextureMask(call.pipeline);
-  BindingKey textures;
-  BindingKey samplers;
-  {
-  ProfileZone texture_zone(kPhaseTextureBind);
+  const uint64_t binding_generation = TextureBindingGeneration();
 
-  // Memoised on the fetch constants themselves. The walk below is a pure
-  // function of this one 384 byte block and the shader's slot mask, apart from
-  // the events TextureMirrorGeneration counts, so a run of draws that does not
-  // touch a fetch constant can reuse the answer rather than decode sixteen
-  // slots again. That run is the common shape here: this was 3.35 us per draw
-  // over 700k draws a window, the largest single cost in the frame once the
-  // vertex upload was fixed.
-  const uint8_t* fetch_block = call.device + d3d::kTextureFetchConstants;
-  const uint64_t generation = TextureMirrorGeneration();
-  TextureBindingCacheEntry* hit = nullptr;
-  for (auto& entry : g_texture_binding_cache) {
-    if (entry.valid && entry.generation == generation && entry.mask == texture_mask &&
-        std::memcmp(entry.fetch, fetch_block, sizeof(entry.fetch)) == 0) {
-      hit = &entry;
-      break;
-    }
-  }
-
-  if (hit != nullptr) {
-    textures = hit->textures;
-    samplers = hit->samplers;
-    ++g_texture_binding_hits;
-  } else {
-  ProfileZone walk_zone(kPhaseTextureWalk);
-  for (uint32_t stage = 0; stage < kTextureSlots; ++stage) {
-    RenderTexture* texture = nullptr;
-    RenderSampler* sampler = g_sampler.get();
-    TextureFetch fetch;
-    GuestSamplerState sampler_state;
-    if ((texture_mask & (1u << stage)) != 0 &&
-        GetBoundTextureFetch(call.memory_base, stage, fetch, &sampler_state)) {
-      texture = static_cast<RenderTexture*>(TextureMirrorLookup(call.memory_base, fetch));
-      sampler = AcquireSampler(device, sampler_state);
-    }
-    textures.slots[stage] = texture != nullptr ? texture : g_white_texture.get();
-    samplers.slots[stage] = sampler;
-  }
-
-    // Stamped with the generation as it stands *after* the walk, because the
-    // walk itself can bump it: a slot whose texture had to be decoded or
-    // refreshed does so from inside the loop above.
-    TextureBindingCacheEntry& entry = g_texture_binding_cache[g_texture_binding_next];
-    g_texture_binding_next = (g_texture_binding_next + 1) % kTextureBindingCacheSize;
-    std::memcpy(entry.fetch, fetch_block, sizeof(entry.fetch));
-    entry.mask = texture_mask;
-    entry.generation = TextureMirrorGeneration();
-    entry.textures = textures;
-    entry.samplers = samplers;
-    entry.valid = true;
-    ++g_texture_binding_misses;
-  }
-  }
-
-  // Sets matching these bindings, not a rewrite of shared ones. See the note
-  // above AcquireBindingSet: rewriting would change what every draw already
-  // recorded this frame reads, not what this draw reads.
   RenderDescriptorSet* texture_set;
   RenderDescriptorSet* sampler_set;
-  {
+  if (g_binding_cache.valid && g_binding_cache.generation == binding_generation &&
+      g_binding_cache.mask == texture_mask) {
+    ++g_binding_cache_hits;
+    texture_set = g_binding_cache.texture_set;
+    sampler_set = g_binding_cache.sampler_set;
+  } else {
+    BindingKey textures;
+    BindingKey samplers;
+    {
+      ProfileZone texture_zone(kPhaseTextureBind);
+      for (uint32_t stage = 0; stage < kTextureSlots; ++stage) {
+        RenderTexture* texture = nullptr;
+        RenderSampler* sampler = g_sampler.get();
+        TextureFetch fetch;
+        GuestSamplerState sampler_state;
+        bool have_fetch = false;
+        if ((texture_mask & (1u << stage)) != 0) {
+          ProfileZone fetch_zone(kPhaseFetchDecode);
+          have_fetch = GetBoundTextureFetch(call.memory_base, stage, fetch, &sampler_state);
+        }
+        if (have_fetch) {
+          {
+            ProfileZone lookup_zone(kPhaseMirrorLookup);
+            texture = static_cast<RenderTexture*>(TextureMirrorLookup(call.memory_base, fetch));
+          }
+          ProfileZone sampler_zone(kPhaseAcquireSampler);
+          sampler = AcquireSampler(device, sampler_state);
+        }
+        textures.slots[stage] = texture != nullptr ? texture : g_white_texture.get();
+        samplers.slots[stage] = sampler;
+      }
+    }
+
+    // Sets matching these bindings, not a rewrite of shared ones. See the note
+    // above AcquireBindingSet: rewriting would change what every draw already
+    // recorded this frame reads, not what this draw reads.
     ProfileZone set_zone(kPhaseDescriptorSet);
     texture_set = AcquireBindingSet(device, g_texture_sets, kMaxTextureSets, false, textures,
                                     &g_texture_set_misses);
     sampler_set = AcquireBindingSet(device, g_sampler_sets, kMaxSamplerSets, true, samplers,
                                     &g_sampler_set_misses);
+    ++g_binding_cache_misses;
+    g_binding_cache.generation = binding_generation;
+    g_binding_cache.mask = texture_mask;
+    g_binding_cache.texture_set = texture_set;
+    g_binding_cache.sampler_set = sampler_set;
+    // A failed lookup is not worth remembering, and caching a null set would
+    // hand the next draw the same failure without retrying it.
+    g_binding_cache.valid = texture_set != nullptr && sampler_set != nullptr;
   }
   if (texture_set == nullptr || sampler_set == nullptr) {
     Drop(kDropNoArena, "a descriptor set could not be created; the heap behind it is full");
@@ -1318,6 +1314,11 @@ void ResetGuestDrawArena() {
   // Safe here and only here: this runs from the present, after the fence wait,
   // so the frame that recorded draws against these sets is done with them.
   g_transient_sets.clear();
+
+  // A cached set may be one of those, so it cannot outlive them. The frame
+  // boundary bumps the binding generation too, which would invalidate this on
+  // its own; this is here so the lifetime does not depend on that ordering.
+  g_binding_cache.valid = false;
 }
 
 void LogGuestDrawSummary() {
@@ -1340,12 +1341,13 @@ void LogGuestDrawSummary() {
 
   REXLOG_INFO(
       "native_renderer:   samplers={} (overflowed {}x, inexact clamp mode {}x, alpha test {}x) | "
-      "descriptor sets: texture={} (misses {}) sampler={} (misses {}) transient={} failed={} | "
-      "fetch bindings reused {}x, walked {}x",
+      "descriptor sets: texture={} (misses {}) sampler={} (misses {}) transient={} failed={}",
       g_sampler_count, g_sampler_overflow, g_clamp_inexact, g_alpha_test_draws,
       g_texture_sets.size(), g_texture_set_misses, g_sampler_sets.size(), g_sampler_set_misses,
-      g_texture_set_transient, g_binding_set_failed, g_texture_binding_hits,
-      g_texture_binding_misses);
+      g_texture_set_transient, g_binding_set_failed);
+
+  REXLOG_INFO("native_renderer:   binding cache: hits={} misses={}", g_binding_cache_hits,
+              g_binding_cache_misses);
 }
 
 void LogProfileSummary() {
