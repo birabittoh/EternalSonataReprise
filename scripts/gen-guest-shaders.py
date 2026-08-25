@@ -53,7 +53,7 @@ import extract_shaders as X  # noqa: E402
 import xenos_hlsl as H  # noqa: E402
 
 PACK_MAGIC = b"ESGS"
-PACK_VERSION = 4
+PACK_VERSION = 5
 
 # Both guest tables are 256 entries; the pack holds vertex slots first, then
 # pixel slots, so an entry index is `kind_base + slot`.
@@ -102,6 +102,9 @@ class Translated:
         self.keys = sorted(e["key"] for e in emitted.interpolators)
         self.texture_mask = 0
         self.flags = 0
+        # 16 floats for constants 252..255, or None. See xenos_ucode's note
+        # above PREFIX_CANDIDATES for why this has to travel with the shader.
+        self.literals = emitted.literals
         if kind == "ps":
             for texture_slot, kind_name in emitted.textures.items():
                 self.texture_mask |= 1 << texture_slot
@@ -204,6 +207,24 @@ def pack(entries, formats):
     inputs = bytearray()
     keys = bytearray()
 
+    # The literal constant pools, deduplicated: 64 bytes each, host order, and
+    # a shader without one indexes the sentinel below. Entry 0 is reserved for
+    # "no pool" so the per entry field can stay a plain index.
+    literals = bytearray(64)
+    literal_index = {}
+
+    def place_literals(values):
+        if values is None:
+            return 0
+        data = struct.pack("<16f", *values)
+        existing = literal_index.get(data)
+        if existing is not None:
+            return existing
+        where = len(literals) // 64
+        literals.extend(data)
+        literal_index[data] = where
+        return where
+
     # Deduplicating identical blobs is free here and worth doing: the same
     # microcode compiled for two slots is byte identical.
     seen = {}
@@ -239,17 +260,19 @@ def pack(entries, formats):
         keys.extend(entry.keys)
 
         table[index] = struct.pack(
-            "<IIIIIHBBHBB",
+            "<IIIIIHBBHBBH",
             dxil[0], dxil[1], spirv[0], spirv[1], entry.texture_mask,
             input_offset, len(entry.inputs), entry.flags,
-            key_offset, len(entry.keys), 0)
+            key_offset, len(entry.keys), 0, place_literals(entry.literals))
 
-    empty = struct.pack("<IIIIIHBBHBB", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    empty = struct.pack("<IIIIIHBBHBBH", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
     body = b"".join(slot if slot is not None else empty for slot in table)
 
-    header = struct.pack("<4sIIIII", PACK_MAGIC, PACK_VERSION, SLOTS,
-                         len(inputs) // 2, len(keys), len(blob))
-    return header + body + bytes(inputs) + bytes(keys) + bytes(blob), len(blob)
+    header = struct.pack("<4sIIIIII", PACK_MAGIC, PACK_VERSION, SLOTS,
+                         len(inputs) // 2, len(keys), len(literals) // 64,
+                         len(blob))
+    return (header + body + bytes(inputs) + bytes(keys) + bytes(literals)
+            + bytes(blob)), len(blob)
 
 
 def main():
