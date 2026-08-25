@@ -102,6 +102,11 @@ def compute_codegen_hash(manifest, manifest_path):
     return h.hexdigest()
 
 
+# The native renderer's ahead-of-time compiled shader pack, built by
+# scripts/gen-guest-shaders.py as part of the CMake build.
+GUEST_SHADER_PACK = "guest_shaders.bin"
+
+
 def copy_runtime_libs(is_windows, sdk_dir, build_type):
     # The SDK ships all build variants of each shared lib side by side
     # (e.g. rexruntime.dll, rexruntimed.dll, rexruntimerd.dll for release,
@@ -135,7 +140,8 @@ def do_package(name, project_name, is_windows):
 
     exe = f"{project_name}.exe" if is_windows else project_name
     lib_suffix = ".dll" if is_windows else ".so"
-    candidates = [exe] + sorted(f for f in os.listdir(".") if f.endswith(lib_suffix))
+    candidates = [exe, GUEST_SHADER_PACK] + \
+        sorted(f for f in os.listdir(".") if f.endswith(lib_suffix))
     for src in candidates:
         if os.path.isfile(src):
             print(f"+ cp {src} {pkg_dir}/")
@@ -268,6 +274,14 @@ def main():
 
     print(f"+ cp {build_output} {exe_name}")
     shutil.copy2(build_output, exe_name)
+
+    # The native renderer reads its ahead-of-time compiled shaders from a pack
+    # next to the exe (see src/guest_shaders.h), so it follows the exe out of
+    # the build directory.
+    pack = os.path.join("out", "build", preset, GUEST_SHADER_PACK)
+    if os.path.isfile(pack):
+        print(f"+ cp {pack} {GUEST_SHADER_PACK}")
+        shutil.copy2(pack, GUEST_SHADER_PACK)
 
     copy_runtime_libs(is_windows, sdk_dir, build_type)
 
