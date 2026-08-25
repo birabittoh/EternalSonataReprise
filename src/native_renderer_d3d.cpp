@@ -106,6 +106,26 @@ struct SamplerSnapshot {
 SamplerSnapshot g_sampler_snapshot[d3d::kSamplerCount];
 bool g_clobber_reported[d3d::kSamplerCount] = {};
 
+// The tiling extent, refreshed wherever the device is in hand. BeginTiling is
+// not hooked: it does not have to be, because the extent is device state and
+// reading it is the same argument as reading the register shadows.
+std::atomic<uint32_t> g_tiling_width{0};
+std::atomic<uint32_t> g_tiling_height{0};
+
+void UpdateTilingExtent(uint8_t* base, uint32_t device) {
+  if (base == nullptr || device == 0)
+    return;
+  const uint32_t width = REX_LOAD_U32(device + d3d::kTilingExtentWidth);
+  const uint32_t height = REX_LOAD_U32(device + d3d::kTilingExtentHeight);
+
+  // Bounded before it is believed, the same way the surface decode is: this is
+  // guest memory, and a plausible extent is the check on the offsets.
+  if (width == 0 || height == 0 || width > 8192 || height > 8192)
+    return;
+  g_tiling_width.store(width, std::memory_order_relaxed);
+  g_tiling_height.store(height, std::memory_order_relaxed);
+}
+
 uint32_t FetchConstantWord(uint8_t* base, uint32_t device, uint32_t stage, uint32_t word) {
   return REX_LOAD_U32(device + d3d::kTextureFetchConstants + d3d::kTextureFetchStride * stage +
                       4 * word);
@@ -513,6 +533,15 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
     request.strides[0] = params.inline_stride;
   request.has_color_target = REX_LOAD_U32(device + d3d::kColorSurfaces) != 0;
   request.has_depth_target = REX_LOAD_U32(device + d3d::kDepthSurface) != 0;
+
+  // Depth, cull, blend and colour mask, read out of the register shadows rather
+  // than mirrored from the setters, so state a setter nobody has named still
+  // arrives. See native_renderer_state.h.
+  request.state = ReadGuestRenderState(base, device);
+
+  // Cheap, and it keeps the extent current even if a frame never rebinds a
+  // target: the host target is sized from it.
+  UpdateTilingExtent(base, device);
   const GuestPipeline* pipeline = AcquireGuestPipeline(request);
 
   // And issue it. Everything below turns guest addresses into host pointers;
@@ -528,6 +557,7 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
     call.count = vertex_count;
     call.indexed = params.indexed;
     call.base_vertex = params.base_vertex;
+    call.state = request.state;
 
     if (params.inlined) {
       if (params.inline_address != 0 && params.inline_stride != 0) {
@@ -816,7 +846,8 @@ uint32_t D3DDeviceAddress() { return g_device.load(std::memory_order_relaxed); }
 // the only other pointer to hand at a draw is the *host* pointer to the device
 // object and REX_LOAD_U32 wants the guest one. Conflating the two reads garbage
 // that decodes as an unbound stage, so the failure is silent.
-bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out) {
+bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out,
+                          GuestSamplerState* sampler_out) {
   const uint32_t device = g_device.load(std::memory_order_relaxed);
   if (base == nullptr || stage >= d3d::kSamplerCount || device == 0)
     return false;
@@ -825,8 +856,17 @@ bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out) {
   for (uint32_t i = 0; i < 6; ++i)
     words[i] = FetchConstantWord(base, device, stage, i);
 
+  if (sampler_out != nullptr)
+    *sampler_out = DecodeSamplerState(words);
   out = DecodeTextureFetch(words);
   return out.type == 2 && out.base_address != 0 && out.width != 0 && out.height != 0;
+}
+
+void D3DTilingExtent(uint32_t* width, uint32_t* height) {
+  if (width != nullptr)
+    *width = g_tiling_width.load(std::memory_order_relaxed);
+  if (height != nullptr)
+    *height = g_tiling_height.load(std::memory_order_relaxed);
 }
 
 void LogD3DMirrorSummary() {
@@ -1192,6 +1232,12 @@ REX_HOOK_RAW(D3DDevice__CreateTexture) {
 // (device, index, surface). The store is to device+12304+4*index, so the hook
 // records the index it was given and the summary reads the device to confirm.
 REX_HOOK_RAW(D3DDevice__SetRenderTarget) {
+  // Every argument is read *before* the call, because r3..r12 are volatile: the
+  // callee has overwritten r3 with its return value by the time it comes back,
+  // and the device pointer is gone. This is exactly what the index and surface
+  // above have always done, and reading the device after the call instead is
+  // what made the game crash a few seconds in.
+  const uint32_t device = ctx.r3.u32;
   const uint32_t index = ctx.r4.u32;
   const uint32_t surface = ctx.r5.u32;
   __imp__D3DDevice__SetRenderTarget(ctx, base);
@@ -1201,6 +1247,10 @@ REX_HOOK_RAW(D3DDevice__SetRenderTarget) {
     eternalsonata::g_color_surface[index] = surface;
 
   using namespace eternalsonata;
+
+  // Before the target is acquired, because the host target is sized from it.
+  UpdateTilingExtent(base, device);
+
   Surface decoded;
   if (surface != 0 && DecodeSurface(base, surface, decoded))
     FrameSetColorSurface(index, &decoded);
@@ -1209,6 +1259,7 @@ REX_HOOK_RAW(D3DDevice__SetRenderTarget) {
 }
 
 REX_HOOK_RAW(D3DDevice__SetDepthStencilSurface) {
+  const uint32_t device = ctx.r3.u32;  // volatile across the call; see above
   const uint32_t surface = ctx.r4.u32;
   __imp__D3DDevice__SetDepthStencilSurface(ctx, base);
   if (!eternalsonata::NativeRendererEnabled())
@@ -1216,6 +1267,8 @@ REX_HOOK_RAW(D3DDevice__SetDepthStencilSurface) {
   eternalsonata::g_depth_surface = surface;
 
   using namespace eternalsonata;
+  UpdateTilingExtent(base, device);
+
   Surface decoded;
   if (surface != 0 && DecodeSurface(base, surface, decoded))
     FrameSetDepthSurface(&decoded);

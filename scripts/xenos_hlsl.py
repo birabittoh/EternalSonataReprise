@@ -88,6 +88,40 @@ int xe_loop_start(uint v) { return int((v >> 8u) & 0xFFu); }
 int xe_loop_step(uint v) { return int(v << 8u) >> 24; }
 """
 
+# Alpha test, which is fixed function on the console and does not exist on any
+# host this targets. RB_COLORCONTROL carries the compare function and
+# RB_ALPHA_REF the reference value, and both are ordinary render state that the
+# guest changes between draws, so baking them into the shader would mean a
+# variant per (shader, function) pair. They arrive as constants instead and the
+# branch is uniform, which costs nothing a real branch would not.
+#
+# The disabled case is spelled as ALWAYS by the runtime that fills this, so a
+# shader with the alpha test off takes the same path with no discard.
+PRELUDE_ALPHA_TEST = """\
+cbuffer XeAlphaTest : register(b%(cb_alpha)d) {
+    uint xe_alpha_func;  // xenos::CompareFunction
+    float xe_alpha_ref;
+    uint2 xe_alpha_pad;
+};
+
+void xe_alpha_test(float a) {
+    bool pass;
+    switch (xe_alpha_func) {
+        case 0u:  pass = false;             break;  // never
+        case 1u:  pass = a <  xe_alpha_ref; break;  // less
+        case 2u:  pass = a == xe_alpha_ref; break;  // equal
+        case 3u:  pass = a <= xe_alpha_ref; break;  // lessequal
+        case 4u:  pass = a >  xe_alpha_ref; break;  // greater
+        case 5u:  pass = a != xe_alpha_ref; break;  // notequal
+        case 6u:  pass = a >= xe_alpha_ref; break;  // greaterequal
+        default:  pass = true;              break;  // always
+    }
+    if (!pass) {
+        discard;
+    }
+}
+"""
+
 PRELUDE_ALU = """\
 // Xenos writes the scalar result of a dot product to every masked component.
 float4 xe_dp4(float4 a, float4 b) { return dot(a, b).xxxx; }
@@ -849,6 +883,10 @@ class PixelShader(Shader):
     CB_FLOAT = 2
     CB_BOOL = 3
 
+    # The alpha test constants, pixel side only: nothing in a vertex shader can
+    # discard. See PRELUDE_ALPHA_TEST.
+    CB_ALPHA = 4
+
     def _scan_fetch(self, address, instr):
         if instr["opcode"] != 1:
             self.unsupported.append(
@@ -898,11 +936,20 @@ class PixelShader(Shader):
 
     def emit(self, source_name):
         out = self._prelude(source_name)
+        out.append(PRELUDE_ALPHA_TEST % {"cb_alpha": self.CB_ALPHA})
 
+        # Samplers live in their own descriptor set, which is register space 1:
+        # Plume maps a descriptor set's index straight onto RegisterSpace. They
+        # are split from the textures because a D3D12 shader-visible *sampler*
+        # heap holds only 1024 descriptors, so a cache of sets carrying sixteen
+        # samplers each runs out after sixty four sets, while the view heap holds
+        # 65536. The title binds a few hundred distinct texture combinations and
+        # only a handful of distinct sampler ones, so splitting them puts each in
+        # a heap it fits in. See AcquireTextureSet in native_renderer_draw.cpp.
         for slot in sorted(self.textures):
-            out.append("%s xe_texture%d : register(t%d);"
+            out.append("%s xe_texture%d : register(t%d, space0);"
                        % (self.textures[slot], slot, slot))
-            out.append("SamplerState xe_sampler%d : register(s%d);"
+            out.append("SamplerState xe_sampler%d : register(s%d, space1);"
                        % (slot, slot))
         if self.textures:
             out.append("")
@@ -932,6 +979,7 @@ class PixelShader(Shader):
         self._emit_body(out, "    ")
 
         out.append("")
+        out.append("    xe_alpha_test(out_color.a);")
         out.append("    return out_color;")
         out.append("}")
         return "\n".join(out) + "\n"

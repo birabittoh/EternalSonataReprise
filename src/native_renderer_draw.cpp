@@ -90,6 +90,10 @@ uint64_t g_constant_bytes = 0;
 uint64_t g_stream_cache_hits = 0;
 uint64_t g_rect_draws = 0;
 uint64_t g_rect_fallbacks = 0;
+
+// Draws that arrive with the fixed function alpha test on, which the pixel
+// shader has to do instead. Zero would mean this title never uses it.
+uint64_t g_alpha_test_draws = 0;
 bool g_rect_fallback_reported = false;
 
 // ---------------------------------------------------------------------------
@@ -161,7 +165,6 @@ Allocation ArenaAllocate(RenderDevice* device, uint64_t bytes) {
 
 std::unique_ptr<RenderTexture> g_white_texture;
 std::unique_ptr<RenderSampler> g_sampler;
-std::unique_ptr<RenderDescriptorSet> g_texture_set;
 std::unique_ptr<RenderBuffer> g_null_stream;
 bool g_resources_ready = false;
 bool g_resources_failed = false;
@@ -211,10 +214,10 @@ bool EnsureResources(RenderDevice* device) {
     queue->waitForCommandFence(fence.get());
   }
 
-  // One sampler for every slot. The guest's real sampler state lives in the
-  // texture fetch constants (see item 4 of the handoff), which the texture
-  // mirror will read; until then linear and wrapping is the least surprising
-  // default.
+  // The fallback sampler, for a slot the pixel shader does not declare and for
+  // one whose fetch constant could not be read. Every declared slot gets a
+  // sampler built from the guest's own fetch constant instead; see
+  // AcquireSampler.
   RenderSamplerDesc sampler_desc;
   sampler_desc.minFilter = RenderFilter::LINEAR;
   sampler_desc.magFilter = RenderFilter::LINEAR;
@@ -224,21 +227,9 @@ bool EnsureResources(RenderDevice* device) {
   sampler_desc.addressW = RenderTextureAddressMode::WRAP;
   g_sampler = device->createSampler(sampler_desc);
 
-  // The same shape the pipeline layout declares for set 0, because it has to be
-  // the same shape: t0..t15 then s0..s15, and Plume numbers the descriptors
-  // flat across the ranges in order, so the samplers start at kTextureSlots.
-  const RenderDescriptorRange ranges[] = {
-      RenderDescriptorRange(RenderDescriptorRangeType::TEXTURE, 0, kTextureSlots),
-      RenderDescriptorRange(RenderDescriptorRangeType::SAMPLER, 0, kTextureSlots),
-  };
-  g_texture_set = device->createDescriptorSet(RenderDescriptorSetDesc(ranges, 2));
-  if (!g_sampler || !g_texture_set) {
+  if (!g_sampler) {
     g_resources_failed = true;
     return false;
-  }
-  for (uint32_t i = 0; i < kTextureSlots; ++i) {
-    g_texture_set->setTexture(i, g_white_texture.get(), RenderTextureLayout::SHADER_READ);
-    g_texture_set->setSampler(kTextureSlots + i, g_sampler.get());
   }
 
   // The missing-attribute stream: a vertex shader input the declaration has no
@@ -259,6 +250,236 @@ bool EnsureResources(RenderDevice* device) {
   g_resources_ready = true;
   REXLOG_INFO("native_renderer: guest draw path up, with the texture mirror behind it");
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Descriptor sets, one per distinct set of bindings.
+//
+// This has to be a set per binding combination and cannot be one set rewritten
+// per draw, which is what it was and what made every draw in a frame sample the
+// same textures. A descriptor set is a range of a GPU visible heap, and
+// `setGraphicsDescriptorSet` records a pointer to it, not a copy of it: the GPU
+// reads the contents when the command list *executes*, which here is at the
+// present, long after every draw in the frame was recorded. Rewriting the set
+// between draws therefore does not rebind anything, it retroactively changes
+// what every draw already recorded reads, and the whole frame ends up with the
+// bindings of the last draw. The symptom is a late drawn effect's texture
+// appearing on everything.
+//
+// The overlay never had the bug because it keeps a descriptor set per texture.
+// The guest side cannot do that -- a binding is sixteen textures and sixteen
+// samplers, not one -- so the sets are cached on their contents instead. That
+// keeps the count near the number of distinct material bindings the title uses
+// rather than the number of draws.
+
+// Textures and samplers are two separate sets, and that split is not cosmetic.
+// D3D12 gives a shader-visible *sampler* heap 1024 descriptors against the view
+// heap's 65536. A single set carrying sixteen of each therefore costs 1/64th of
+// the sampler heap, and a cache of them dies after sixty four sets -- which this
+// title reaches on loading a save, at which point Plume's allocator fails and
+// (before it was fixed) handed back a set whose descriptor writes went through
+// an invalid heap offset, faulting inside the driver.
+//
+// Split, the many distinct texture combinations cost only view descriptors and
+// the handful of distinct sampler combinations cost sampler descriptors. The
+// emitted HLSL declares samplers in space1 to match; see the pipeline layout.
+
+struct BindingKey {
+  const void* slots[kTextureSlots] = {};
+
+  bool operator==(const BindingKey& other) const {
+    return std::memcmp(slots, other.slots, sizeof(slots)) == 0;
+  }
+
+  uint64_t Hash() const {
+    uint64_t hash = 1469598103934665603ull;  // FNV-1a
+    const auto* bytes = reinterpret_cast<const uint8_t*>(slots);
+    for (size_t i = 0; i < sizeof(slots); ++i) {
+      hash ^= bytes[i];
+      hash *= 1099511628211ull;
+    }
+    return hash;
+  }
+};
+
+struct BindingSetEntry {
+  uint64_t hash = 0;
+  BindingKey key;
+  std::unique_ptr<RenderDescriptorSet> set;
+};
+
+std::vector<BindingSetEntry> g_texture_sets;
+std::vector<BindingSetEntry> g_sampler_sets;
+
+// Sets created because a cache was full, thrown away at the end of the frame.
+// This is the safety valve: it is correct but allocates per draw, so a non-zero
+// count in the summary means the cap wants raising rather than that anything is
+// wrong.
+std::vector<std::unique_ptr<RenderDescriptorSet>> g_transient_sets;
+
+// What each heap can actually hold, in sets of sixteen, less a margin for the
+// overlay and the transient sets. These are not arbitrary: they are the heap
+// sizes Plume creates divided by the descriptors a set uses.
+constexpr uint32_t kMaxTextureSets = 3072;  // view heap is 65536 / 16 = 4096
+constexpr uint32_t kMaxSamplerSets = 48;    // sampler heap is 1024 / 16 = 64
+uint64_t g_texture_set_misses = 0;
+uint64_t g_sampler_set_misses = 0;
+uint64_t g_texture_set_transient = 0;
+uint64_t g_binding_set_failed = 0;
+
+RenderDescriptorSet* AcquireBindingSet(RenderDevice* device, std::vector<BindingSetEntry>& cache,
+                                       uint32_t cap, bool samplers, const BindingKey& key,
+                                       uint64_t* misses) {
+  const uint64_t hash = key.Hash();
+  for (auto& entry : cache) {
+    if (entry.hash == hash && entry.key == key)
+      return entry.set.get();
+  }
+
+  ++*misses;
+
+  // The same shape the pipeline layout declares for this set, because it has to
+  // be the same shape.
+  const RenderDescriptorRange range(
+      samplers ? RenderDescriptorRangeType::SAMPLER : RenderDescriptorRangeType::TEXTURE, 0,
+      kTextureSlots);
+  auto set = device->createDescriptorSet(RenderDescriptorSetDesc(&range, 1));
+  if (!set) {
+    // The heap is full. Plume returns null for this now rather than a set that
+    // writes through an invalid offset, so it is a dropped draw instead of a
+    // fault in the driver.
+    ++g_binding_set_failed;
+    return nullptr;
+  }
+
+  for (uint32_t i = 0; i < kTextureSlots; ++i) {
+    if (samplers)
+      set->setSampler(i, static_cast<RenderSampler*>(const_cast<void*>(key.slots[i])));
+    else
+      set->setTexture(i, static_cast<RenderTexture*>(const_cast<void*>(key.slots[i])),
+                      RenderTextureLayout::SHADER_READ);
+  }
+
+  if (cache.size() >= cap) {
+    ++g_texture_set_transient;
+    g_transient_sets.push_back(std::move(set));
+    return g_transient_sets.back().get();
+  }
+
+  BindingSetEntry entry;
+  entry.hash = hash;
+  entry.key = key;
+  entry.set = std::move(set);
+  cache.push_back(std::move(entry));
+  return cache.back().set.get();
+}
+
+// ---------------------------------------------------------------------------
+// Samplers, out of the guest's texture fetch constants.
+//
+// Sampler state is not a register bank on this hardware: the three
+// SetSamplerState_* setters patch fields inside the fetch constant for the
+// stage, and SetTexture writes the rest of the same six dwords. So the fetch
+// constant the texture came out of is also the sampler description, which is
+// why this is decoded from the same read.
+//
+// It is safe to take it at face value for this title because every tfetch in
+// all 128 pixel shaders sets its own filter fields to "use the fetch constant"
+// and uses no explicit LOD, LOD bias or texel offset. Nothing overrides what is
+// decoded here.
+
+// The distinct samplers the title asks for. Small in practice, so a linear
+// probe over a flat array is the right shape; the count is reported so a title
+// that has more than this says so instead of falling back silently.
+constexpr uint32_t kMaxSamplers = 64;
+
+struct SamplerCacheEntry {
+  uint64_t key = 0;
+  std::unique_ptr<RenderSampler> sampler;
+};
+SamplerCacheEntry g_samplers[kMaxSamplers];
+uint32_t g_sampler_count = 0;
+uint64_t g_sampler_overflow = 0;
+
+// Clamp modes with no host equivalent, substituted for and counted. 4 and 5
+// clamp to *halfway into the border*, which no host API has; the nearest thing
+// is the ordinary clamp, and the difference is one texel at the edge.
+uint64_t g_clamp_inexact = 0;
+
+RenderTextureAddressMode MapClamp(uint32_t clamp) {
+  switch (clamp) {
+    case 0:  // kRepeat
+      return RenderTextureAddressMode::WRAP;
+    case 1:  // kMirroredRepeat
+      return RenderTextureAddressMode::MIRROR;
+    case 2:  // kClampToEdge
+      return RenderTextureAddressMode::CLAMP;
+    case 3:  // kMirrorClampToEdge
+      return RenderTextureAddressMode::MIRROR_ONCE;
+    case 4:  // kClampToHalfway
+      ++g_clamp_inexact;
+      return RenderTextureAddressMode::CLAMP;
+    case 5:  // kMirrorClampToHalfway
+      ++g_clamp_inexact;
+      return RenderTextureAddressMode::MIRROR_ONCE;
+    case 6:  // kClampToBorder
+      return RenderTextureAddressMode::BORDER;
+    default:  // kMirrorClampToBorder
+      ++g_clamp_inexact;
+      return RenderTextureAddressMode::BORDER;
+  }
+}
+
+RenderSampler* AcquireSampler(RenderDevice* device, const GuestSamplerState& state) {
+  const uint64_t key = GuestSamplerKey(state);
+  for (uint32_t i = 0; i < g_sampler_count; ++i) {
+    if (g_samplers[i].key == key)
+      return g_samplers[i].sampler.get();
+  }
+  if (g_sampler_count == kMaxSamplers) {
+    ++g_sampler_overflow;
+    return g_sampler.get();
+  }
+
+  RenderSamplerDesc desc;
+  // TextureFilter: 0 point, 1 linear. 2 (basemap) only occurs on the mip
+  // filter, where it means "no mipmapping at all", and 3 cannot occur in a
+  // fetch constant since this *is* the fetch constant.
+  desc.minFilter = state.min_filter == 0 ? RenderFilter::NEAREST : RenderFilter::LINEAR;
+  desc.magFilter = state.mag_filter == 0 ? RenderFilter::NEAREST : RenderFilter::LINEAR;
+  desc.mipmapMode =
+      state.mip_filter == 1 ? RenderMipmapMode::LINEAR : RenderMipmapMode::NEAREST;
+  desc.addressU = MapClamp(state.clamp_x);
+  desc.addressV = MapClamp(state.clamp_y);
+  desc.addressW = MapClamp(state.clamp_z);
+  desc.mipLODBias = state.lod_bias;
+
+  // AnisoFilter: 0 disabled, 1..5 are max 1:1 through 16:1, i.e. 1 << (n-1).
+  if (state.aniso >= 1 && state.aniso <= 5) {
+    desc.anisotropyEnabled = state.aniso > 1;
+    desc.maxAnisotropy = 1u << (state.aniso - 1);
+  } else {
+    desc.anisotropyEnabled = false;
+    desc.maxAnisotropy = 1;
+  }
+
+  // BorderColor 0 is black with an alpha the hardware documentation does not
+  // pin down and 1 is opaque white; the two YCbCr blacks have no host spelling
+  // and are not used by anything that samples ordinary textures.
+  desc.borderColor = state.border_color == 1 ? RenderBorderColor::OPAQUE_WHITE
+                                             : RenderBorderColor::OPAQUE_BLACK;
+
+  // Only the base level is uploaded by the texture mirror, so there is nothing
+  // above LOD 0 to sample even when the guest asks for mipmapping. Left as the
+  // full range deliberately: a texture created with one level clamps by itself,
+  // and pinning maxLOD here would have to be undone the moment mips arrive.
+  auto sampler = device->createSampler(desc);
+  if (!sampler)
+    return g_sampler.get();
+
+  g_samplers[g_sampler_count].key = key;
+  g_samplers[g_sampler_count].sampler = std::move(sampler);
+  return g_samplers[g_sampler_count++].sampler.get();
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +547,11 @@ struct SwapField {
   uint32_t offset = 0;
   uint32_t component_bytes = 0;
   uint32_t component_count = 0;
+
+  // Signed k_2_10_10_10, which has no host input layout format. Repacked in
+  // place into R8G8B8A8_SNORM after the swap; see VertexFormatRepacksToSnorm8
+  // in native_renderer_pipeline.h for why this and not a widening conversion.
+  bool repack_snorm8 = false;
 };
 
 struct SwapPlan {
@@ -345,6 +571,7 @@ bool BuildSwapPlan(const VertexDeclaration& decl, uint32_t stream, SwapPlan* pla
     field.offset = element.offset;
     if (!VertexFormatSwap(element.type, &field.component_bytes, &field.component_count))
       return false;
+    field.repack_snorm8 = VertexFormatRepacksToSnorm8(element.type);
     if (element.usage == 0 && element.usage_index == 0 && VertexFormatIsFloat(element.type))
       plan->position_field = int32_t(plan->count);
     plan->fields[plan->count++] = field;
@@ -354,10 +581,49 @@ bool BuildSwapPlan(const VertexDeclaration& decl, uint32_t stream, SwapPlan* pla
   return true;
 }
 
+// Signed k_2_10_10_10 -> R8G8B8A8_SNORM, in the same four bytes.
+//
+// The Xenos packing puts x in bits 0..9, y in 10..19, z in 20..29 and w in the
+// top two, each two's complement, and normalises an n bit signed component by
+// its positive maximum with the most negative value clamped to -1. So x, y and
+// z divide by 511 and w, which has the single positive value 1, divides by 1.
+// R8G8B8A8_SNORM reads back the same way against 127, and -128 is the value the
+// host clamps to -1, so the two ends line up exactly rather than by rounding.
+uint32_t RepackSnorm8(uint32_t packed) {
+  auto component = [](int32_t raw, int32_t bits) {
+    const int32_t sign_bit = 1 << (bits - 1);
+    if (raw & sign_bit)
+      raw -= (sign_bit << 1);
+    const float scale = float(sign_bit - 1);
+    float value = float(raw) / scale;
+    if (value < -1.0f)
+      value = -1.0f;
+    const float scaled = value * 127.0f;
+    int32_t out = int32_t(scaled >= 0.0f ? scaled + 0.5f : scaled - 0.5f);
+    if (out > 127)
+      out = 127;
+    if (out < -127)
+      out = -127;
+    return uint32_t(uint8_t(int8_t(out)));
+  };
+
+  return component(int32_t(packed & 0x3FFu), 10) |
+         (component(int32_t((packed >> 10) & 0x3FFu), 10) << 8) |
+         (component(int32_t((packed >> 20) & 0x3FFu), 10) << 16) |
+         (component(int32_t((packed >> 30) & 0x3u), 2) << 24);
+}
+
 void SwapVertex(uint8_t* vertex, const SwapPlan& plan) {
   for (uint32_t f = 0; f < plan.count; ++f) {
     const SwapField& field = plan.fields[f];
     uint8_t* at = vertex + field.offset;
+    if (field.repack_snorm8) {
+      uint32_t value;
+      std::memcpy(&value, at, 4);
+      value = RepackSnorm8(Swap32(value));
+      std::memcpy(at, &value, 4);
+      continue;
+    }
     if (field.component_bytes == 4) {
       for (uint32_t c = 0; c < field.component_count; ++c) {
         uint32_t value;
@@ -478,6 +744,16 @@ struct ConstantCacheEntry {
   bool valid = false;
 };
 ConstantCacheEntry g_constant_cache[3];
+
+// The alpha test constants, which are built rather than copied, so they are
+// cached on their two values instead of on the guest bytes behind them.
+struct AlphaTestCache {
+  uint32_t func = 0;
+  float ref = 0.0f;
+  RenderBufferReference buffer;
+  bool valid = false;
+};
+AlphaTestCache g_alpha_cache;
 
 // Copy a constant bank out of the device, swapping, and reuse the previous
 // upload when the guest bytes have not changed. The comparison is against the
@@ -748,6 +1024,37 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
     return false;
   }
 
+  // The alpha test. Not a guest bank: these are host-order values built from
+  // RB_COLORCONTROL and RB_ALPHA_REF, so nothing here swaps. The disabled case
+  // is sent as ALWAYS rather than skipped, because the buffer has to hold
+  // something and a stale enabled test would discard the whole draw.
+  //
+  // Reused between draws while the state holds, the same way the constant banks
+  // are: a 256 byte root CBV allocation per draw would otherwise be the largest
+  // single consumer of the arena, and this changes far less often than it is
+  // read.
+  const bool alpha_enabled = call.state.valid && call.state.alpha_test_enabled;
+  if (alpha_enabled)
+    ++g_alpha_test_draws;
+  const uint32_t alpha_func = alpha_enabled ? uint32_t(call.state.alpha_func) : 7u;  // 7 is ALWAYS
+  if (!g_alpha_cache.valid || g_alpha_cache.func != alpha_func ||
+      g_alpha_cache.ref != call.state.alpha_ref) {
+    const Allocation allocation = ArenaAllocate(device, kUploadAlignment);
+    if (!allocation) {
+      Drop(kDropNoArena, "the alpha test constants could not be uploaded");
+      return false;
+    }
+    std::memcpy(allocation.cpu, &alpha_func, 4);
+    std::memcpy(allocation.cpu + 4, &call.state.alpha_ref, 4);
+    std::memset(allocation.cpu + 8, 0, 8);
+    g_alpha_cache.func = alpha_func;
+    g_alpha_cache.ref = call.state.alpha_ref;
+    g_alpha_cache.buffer = allocation.ref;
+    g_alpha_cache.valid = true;
+    g_constant_bytes += kUploadAlignment;
+  }
+  const RenderBufferReference alpha_test = g_alpha_cache.buffer;
+
   // The viewport, clamped to the target. The guest renders 720p through EDRAM
   // in bands, so its viewport can be taller than the surface it is bound to;
   // the band's own origin is what the resolve carries, not what this does.
@@ -778,6 +1085,7 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   commands->setGraphicsRootDescriptor(bool_loops, kRootVertexBoolConstants);
   commands->setGraphicsRootDescriptor(pixel_floats, kRootPixelFloatConstants);
   commands->setGraphicsRootDescriptor(bool_loops, kRootPixelBoolConstants);
+  commands->setGraphicsRootDescriptor(alpha_test, kRootAlphaTest);
 
   // The texture mirror.
   //
@@ -793,18 +1101,43 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   // would otherwise stay bound. An undeclared slot, and one whose texture the
   // mirror could not produce, gets the white placeholder, so a draw the mirror
   // cannot serve appears in flat colour rather than not at all.
+  //
+  // The sampler comes out of the same six dwords as the texture, because on
+  // this hardware it *is* the same six dwords: the three SetSamplerState_*
+  // setters patch fields inside the fetch constant rather than writing a
+  // register. A slot the shader does not declare keeps the fallback sampler,
+  // for the same reason it keeps the white texture.
   const uint32_t texture_mask = GuestPipelineTextureMask(call.pipeline);
+  BindingKey textures;
+  BindingKey samplers;
   for (uint32_t stage = 0; stage < kTextureSlots; ++stage) {
     RenderTexture* texture = nullptr;
+    RenderSampler* sampler = g_sampler.get();
     TextureFetch fetch;
+    GuestSamplerState sampler_state;
     if ((texture_mask & (1u << stage)) != 0 &&
-        GetBoundTextureFetch(call.memory_base, stage, fetch))
+        GetBoundTextureFetch(call.memory_base, stage, fetch, &sampler_state)) {
       texture = static_cast<RenderTexture*>(TextureMirrorLookup(call.memory_base, fetch));
-    g_texture_set->setTexture(stage, texture != nullptr ? texture : g_white_texture.get(),
-                              RenderTextureLayout::SHADER_READ);
+      sampler = AcquireSampler(device, sampler_state);
+    }
+    textures.slots[stage] = texture != nullptr ? texture : g_white_texture.get();
+    samplers.slots[stage] = sampler;
   }
 
-  commands->setGraphicsDescriptorSet(g_texture_set.get(), kTextureDescriptorSet);
+  // Sets matching these bindings, not a rewrite of shared ones. See the note
+  // above AcquireBindingSet: rewriting would change what every draw already
+  // recorded this frame reads, not what this draw reads.
+  RenderDescriptorSet* texture_set = AcquireBindingSet(
+      device, g_texture_sets, kMaxTextureSets, false, textures, &g_texture_set_misses);
+  RenderDescriptorSet* sampler_set = AcquireBindingSet(
+      device, g_sampler_sets, kMaxSamplerSets, true, samplers, &g_sampler_set_misses);
+  if (texture_set == nullptr || sampler_set == nullptr) {
+    Drop(kDropNoArena, "a descriptor set could not be created; the heap behind it is full");
+    return false;
+  }
+
+  commands->setGraphicsDescriptorSet(texture_set, kTextureDescriptorSet);
+  commands->setGraphicsDescriptorSet(sampler_set, kSamplerDescriptorSet);
   commands->setVertexBuffers(0, views, slot_count, slots);
 
   if (call.indexed) {
@@ -825,6 +1158,11 @@ void ResetGuestDrawArena() {
   g_stream_cache.clear();
   for (ConstantCacheEntry& cache : g_constant_cache)
     cache.valid = false;
+  g_alpha_cache.valid = false;
+
+  // Safe here and only here: this runs from the present, after the fence wait,
+  // so the frame that recorded draws against these sets is done with them.
+  g_transient_sets.clear();
 }
 
 void LogGuestDrawSummary() {
@@ -844,6 +1182,13 @@ void LogGuestDrawSummary() {
     if (g_drops[i] != 0)
       REXLOG_INFO("native_renderer:   dropped {}x: {}", g_drops[i], kDropNames[i]);
   }
+
+  REXLOG_INFO(
+      "native_renderer:   samplers={} (overflowed {}x, inexact clamp mode {}x, alpha test {}x) | "
+      "descriptor sets: texture={} (misses {}) sampler={} (misses {}) transient={} failed={}",
+      g_sampler_count, g_sampler_overflow, g_clamp_inexact, g_alpha_test_draws,
+      g_texture_sets.size(), g_texture_set_misses, g_sampler_sets.size(), g_sampler_set_misses,
+      g_texture_set_transient, g_binding_set_failed);
 }
 
 void ShutdownGuestDraws() {
@@ -858,7 +1203,15 @@ void ShutdownGuestDraws() {
     cache.valid = false;
     cache.raw.clear();
   }
-  g_texture_set.reset();
+  g_alpha_cache.valid = false;
+  g_texture_sets.clear();
+  g_sampler_sets.clear();
+  g_transient_sets.clear();
+  for (SamplerCacheEntry& entry : g_samplers) {
+    entry.sampler.reset();
+    entry.key = 0;
+  }
+  g_sampler_count = 0;
   g_sampler.reset();
   g_white_texture.reset();
   g_null_stream.reset();

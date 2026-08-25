@@ -21,6 +21,8 @@
 
 #include <cstdint>
 
+#include "native_renderer_state.h"
+
 namespace eternalsonata {
 
 // Guest device object layout. Every offset below is verified by decompilation;
@@ -62,6 +64,24 @@ inline constexpr uint32_t kSamplerCount = 16;
 inline constexpr uint32_t kVertexDeclaration = 11684;
 inline constexpr uint32_t kBoundPixelShader = 12556;
 inline constexpr uint32_t kBoundVertexShader = 12560;
+
+// Predicated tiling, set up by BeginTiling (0x82261C20). This title renders
+// 720p through EDRAM in horizontal bands, and this is the state that says so:
+// the tile count, the per tile rectangles, and the extent that bounds them all.
+//
+// +13044 / +13048 are the maximum x2 and y2 over every tile, that is the **full
+// logical render extent** (1280x720), as opposed to the EDRAM surface, which
+// holds one band (1280x384). SetViewport (0x8225BA10) clamps to these rather
+// than to the surface when tiling is active, which is the confirmation that
+// they are screen space and not a band.
+//
+// The per tile origin at +12856/+12860 (each rounded down to 32) is what gets
+// negated into PA_SC_WINDOW_OFFSET by 0x82258E28, shifting a band's geometry
+// down into the EDRAM surface. None of that is reproduced here: the host renders
+// the whole screen at once, so the window offset has nothing to offset into.
+inline constexpr uint32_t kTileCount = 12612;
+inline constexpr uint32_t kTilingExtentWidth = 13044;
+inline constexpr uint32_t kTilingExtentHeight = 13048;
 
 // Per stream fetch constant slots, a 16 byte array indexed by the declaration
 // element's stream index. Stream 0 lands at vf95. Read by the vertex fetch
@@ -162,10 +182,22 @@ TextureFetch DecodeTextureFetch(const uint32_t words[6]);
 // REX_LOAD_U32 needs in scope; the device's own guest address is taken from the
 // mirror rather than passed in, because the pointer to hand at a draw is the
 // *host* pointer to the device object and the two are not interchangeable.
-bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out);
+// `sampler_out`, when given, receives the sampler half of the same six dwords,
+// so a draw that wants both pays for one read rather than two. It is filled
+// whenever the words were read at all, including when the fetch itself is not a
+// usable texture, because the caller may still want to know.
+bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out,
+                          GuestSamplerState* sampler_out = nullptr);
 
 // Guest address of the device object, or 0 before D3D__CreateDevice returns.
 uint32_t D3DDeviceAddress();
+
+// The full logical render extent BeginTiling last established, or 0x0 before it
+// has ever run. This is what a host render target has to be sized to: the guest
+// renders the whole screen through an EDRAM surface a fraction of its height and
+// replays the command buffer once per band, which is a thing the host neither
+// needs nor can do.
+void D3DTilingExtent(uint32_t* width, uint32_t* height);
 
 // One element of a vertex declaration. `type` is left raw deliberately: it is
 // the hardware fetch encoding (data format in bits 0..5, signedness in 8..9,

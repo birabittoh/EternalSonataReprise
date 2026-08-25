@@ -40,6 +40,7 @@
 #include <cstdint>
 
 #include "native_renderer_d3d.h"
+#include "native_renderer_state.h"
 
 namespace eternalsonata {
 
@@ -58,6 +59,26 @@ inline constexpr uint32_t kMaxPipelineStreams = 16;
 // constant fill does.
 inline constexpr uint32_t kNullInputSlot = kMaxPipelineStreams;
 
+// Signed k_2_10_10_10 has no host input layout format in any of the three
+// backends: DXGI carries only the UNORM and UINT spellings, and Plume's own
+// R10G10B10A2_UNORM (added for the unsigned case) is the whole of what is
+// available. This title uses the signed spelling for most of its normals and
+// tangents, so refusing it costs most of the geometry.
+//
+// The way out taken here is to repack it on upload into R8G8B8A8_SNORM, which
+// is the same four bytes, so the vertex stride and every element offset stay
+// exactly what the guest declared and the declaration stays out of the shader's
+// key. It costs precision: 10 bits per component down to 8, and the 2 bit w down
+// to the same 8. For unit length normals and tangents that is what a great many
+// titles ship natively; if it ever shows, the fix is a widening conversion into
+// a host layout of our own offsets, which the upload pass could do in the same
+// loop but the pipeline's input layout would then have to be built from the host
+// offsets rather than the guest's.
+//
+// The pipeline cache and the upload path have to agree about exactly which
+// elements this applies to, so both ask here.
+bool VertexFormatRepacksToSnorm8(uint32_t type);
+
 // What a draw needs a pipeline for. Everything here is state the guest has
 // already set by the time a draw entry point is reached.
 struct PipelineRequest {
@@ -75,6 +96,13 @@ struct PipelineRequest {
 
   bool has_color_target = false;
   bool has_depth_target = false;
+
+  // The guest's depth, cull, blend and colour write state, read straight out of
+  // the register shadows rather than mirrored from the setters. The raw register
+  // values are part of the cache key, so a state change makes a new pipeline the
+  // same way a shader change does. An invalid state (no device yet) keeps the
+  // conservative defaults this used before the state was read at all.
+  GuestRenderState state;
 };
 
 // An assembled pipeline. Opaque here; native_renderer_pipeline_internal.h turns

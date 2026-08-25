@@ -206,6 +206,15 @@ struct MirroredTexture {
   uint32_t width = 0;
   uint32_t height = 0;
   std::unique_ptr<RenderTexture> texture;
+
+  // What the guest bytes behind this texture looked like when it was uploaded.
+  // Without it the cache serves whatever was at this address the first time it
+  // was bound, forever, which is not a corner case in this title: the game
+  // streams a new texture into a buffer it already owns rather than allocating
+  // a new one, so a cutscene effect and a menu background can be the same
+  // address at the same size and format. See CheckSourceChanged.
+  uint64_t content_hash = 0;
+  uint64_t source_bytes = 0;
 };
 
 std::vector<std::unique_ptr<MirroredTexture>> g_textures;
@@ -218,9 +227,66 @@ uint64_t g_refused_extent = 0;
 uint64_t g_refused_upload = 0;
 uint64_t g_refused_unmapped = 0;
 
+// Cached textures whose guest bytes changed under them and were re-uploaded.
+uint64_t g_refreshed = 0;
+
 // Report each unhandled guest format once. There are only 64 of them, so a flat
 // array is cheaper than deciding whether it is worth being cleverer.
 bool g_format_reported[64] = {};
+
+// How many bytes of guest memory this texture occupies, which is both what
+// bounds the read below and what the content hash covers. Tiled and linear
+// disagree: the tiled swizzle's highest offset is not the last block of the
+// last row, so it is bounded by the whole macro tile grid instead.
+uint64_t SourceExtentBytes(const TextureFetch& fetch, const FormatInfo& info) {
+  const uint32_t height_blocks = (fetch.height + info.block - 1) / info.block;
+  const uint32_t pitch_texels = fetch.pitch > fetch.width ? fetch.pitch : fetch.width;
+  const uint32_t pitch_blocks = (pitch_texels + info.block - 1) / info.block;
+
+  if (fetch.tiled) {
+    const uint32_t pitch_macro_tiles = pitch_blocks / 32 > 1 ? pitch_blocks / 32 : 1;
+    const uint32_t macro_rows = (height_blocks + 31) / 32;
+    return uint64_t(pitch_macro_tiles) * macro_rows * 32 * 32 * info.block_bytes;
+  }
+  return uint64_t(pitch_blocks) * info.block_bytes * height_blocks;
+}
+
+// A cheap fingerprint of the guest bytes, used to notice that the game has
+// replaced a texture's contents under an address the cache has already seen.
+//
+// Bounded rather than complete, and deliberately so: this runs on every bind
+// that hits the cache, roughly seven hundred times a frame, and hashing a
+// 1280x720 surface each time would cost more than decoding it did. It samples a
+// fixed number of chunks spread evenly across the whole extent, so the cost does
+// not depend on the texture's size, and a wholesale replacement -- which is what
+// streaming a new asset into the same buffer is -- changes essentially all of
+// them. What it can miss is an edit small enough to fall between two samples.
+constexpr uint32_t kHashChunks = 64;
+constexpr uint32_t kHashChunkBytes = 32;
+
+uint64_t HashSource(const uint8_t* source, uint64_t bytes) {
+  uint64_t hash = 1469598103934665603ull;  // FNV-1a
+  auto mix = [&hash](uint64_t value) {
+    hash ^= value;
+    hash *= 1099511628211ull;
+  };
+
+  // The size itself, so two different extents cannot collide even if every
+  // sampled chunk agrees.
+  mix(bytes);
+
+  const uint64_t stride = bytes > kHashChunks * kHashChunkBytes
+                              ? bytes / kHashChunks
+                              : kHashChunkBytes;
+  for (uint64_t offset = 0; offset + kHashChunkBytes <= bytes; offset += stride) {
+    for (uint32_t i = 0; i < kHashChunkBytes; i += 8) {
+      uint64_t chunk;
+      std::memcpy(&chunk, source + offset + i, sizeof(chunk));
+      mix(chunk);
+    }
+  }
+  return hash;
+}
 
 // Read the texels out of guest memory into `out`, laid out linearly at
 // `dest_row_bytes` per row of blocks, untiling and byte swapping on the way.
@@ -246,12 +312,8 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
     const uint32_t pitch_macro_tiles = pitch_blocks / 32 > 1 ? pitch_blocks / 32 : 1;
     const uint32_t block_bytes_log2 = Log2Exact(info.block_bytes);
 
-    // What the tiled layout can address, which is what bounds the read. The
-    // last block of the last row is not the highest offset the swizzle
-    // produces, so bound by the whole macro tile grid instead of by that.
-    const uint32_t macro_rows = (height_blocks + 31) / 32;
-    const uint64_t source_bytes =
-        uint64_t(pitch_macro_tiles) * macro_rows * 32 * 32 * info.block_bytes;
+    // What the tiled layout can address, which is what bounds the read.
+    const uint64_t source_bytes = SourceExtentBytes(fetch, info);
     if (source_bytes > kMaxTextureBytes) {
       ++g_refused_extent;
       return false;
@@ -272,7 +334,7 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
     }
   } else {
     const uint32_t source_row_bytes = pitch_blocks * info.block_bytes;
-    const uint64_t source_bytes = uint64_t(source_row_bytes) * height_blocks;
+    const uint64_t source_bytes = SourceExtentBytes(fetch, info);
     if (source_bytes > kMaxTextureBytes) {
       ++g_refused_extent;
       return false;
@@ -299,11 +361,15 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
   return true;
 }
 
-// Decode and upload, returning the host texture or null. Only ever called on a
-// cache miss.
-std::unique_ptr<RenderTexture> CreateMirroredTexture(uint8_t* memory_base,
-                                                     const TextureFetch& fetch,
-                                                     const FormatInfo& info) {
+// Decode and upload. `existing` is null on a cache miss, in which case a texture
+// is created; on a refresh it is the texture already in the cache and the texels
+// are copied over it in place. Reusing the object is what makes a refresh safe:
+// the descriptor sets and command lists that already point at it stay valid,
+// where destroying and replacing it would be a use-after-free on whatever is
+// still in flight. It is always the same size and format, because those are part
+// of the cache key.
+std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const TextureFetch& fetch,
+                                               const FormatInfo& info, RenderTexture* existing) {
   RenderDevice* device = PlumeDevice();
   RenderCommandQueue* queue = PlumeQueue();
   if (device == nullptr || queue == nullptr)
@@ -333,11 +399,15 @@ std::unique_ptr<RenderTexture> CreateMirroredTexture(uint8_t* memory_base,
     return nullptr;
   }
 
-  auto texture = device->createTexture(
-      RenderTextureDesc::Texture2D(fetch.width, fetch.height, 1, info.host));
-  if (!texture) {
-    ++g_refused_upload;
-    return nullptr;
+  std::unique_ptr<RenderTexture> created;
+  if (existing == nullptr) {
+    created = device->createTexture(
+        RenderTextureDesc::Texture2D(fetch.width, fetch.height, 1, info.host));
+    if (!created) {
+      ++g_refused_upload;
+      return nullptr;
+    }
+    existing = created.get();
   }
 
   auto staging = device->createBuffer(RenderBufferDesc::UploadBuffer(texels.size()));
@@ -359,13 +429,13 @@ std::unique_ptr<RenderTexture> CreateMirroredTexture(uint8_t* memory_base,
   auto fence = device->createCommandFence();
   upload->begin();
   upload->barriers(RenderBarrierStage::COPY,
-                   RenderTextureBarrier(texture.get(), RenderTextureLayout::COPY_DEST));
+                   RenderTextureBarrier(existing, RenderTextureLayout::COPY_DEST));
   upload->copyTextureRegion(
-      RenderTextureCopyLocation::Subresource(texture.get()),
+      RenderTextureCopyLocation::Subresource(existing),
       RenderTextureCopyLocation::PlacedFootprint(staging.get(), info.host, fetch.width,
                                                  fetch.height, 1, upload_row_texels));
   upload->barriers(RenderBarrierStage::GRAPHICS,
-                   RenderTextureBarrier(texture.get(), RenderTextureLayout::SHADER_READ));
+                   RenderTextureBarrier(existing, RenderTextureLayout::SHADER_READ));
   upload->end();
 
   const RenderCommandList* submit = upload.get();
@@ -379,7 +449,10 @@ std::unique_ptr<RenderTexture> CreateMirroredTexture(uint8_t* memory_base,
         fetch.width, fetch.height, fetch.format, fetch.tiled ? "tiled" : "linear", fetch.pitch,
         fetch.endianness, fetch.base_address);
   }
-  return texture;
+
+  // On a refresh there is no new object to hand back; the caller keeps the one
+  // it already has, which now holds the new contents.
+  return created;
 }
 
 }  // namespace
@@ -390,7 +463,8 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
 
   // A resolve destination first: the frame layer already owns the image, and
   // the guest memory behind that address holds nothing the host wrote.
-  if (void* resolved = FrameResolveTextureByAddress(fetch.base_address)) {
+  if (void* resolved =
+          FrameResolveTextureByAddress(fetch.base_address, fetch.width, fetch.height)) {
     ++g_resolve_hits;
     return resolved;
   }
@@ -412,13 +486,32 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   }
 
   for (auto& candidate : g_textures) {
-    if (candidate->address == fetch.base_address && candidate->format == fetch.format &&
-        candidate->width == fetch.width && candidate->height == fetch.height) {
-      ++g_decode_hits;
-      // A failed decode is cached as a null entry so it is not retried on every
-      // bind; the counters above already recorded why it failed.
-      return candidate->texture.get();
+    if (candidate->address != fetch.base_address || candidate->format != fetch.format ||
+        candidate->width != fetch.width || candidate->height != fetch.height) {
+      continue;
     }
+    ++g_decode_hits;
+
+    // A failed decode is cached as a null entry so it is not retried on every
+    // bind; the counters above already recorded why it failed. There is also
+    // nothing safe to hash, since the reason may well be that the source is not
+    // readable.
+    if (!candidate->texture)
+      return nullptr;
+
+    // Has the guest replaced what is at this address? This is the check that
+    // was missing, and its absence is what showed a cutscene's texture as a
+    // menu background: the game reuses a buffer rather than allocating a new
+    // one, so the address, format and extent all match while the contents do
+    // not.
+    const uint64_t hash = HashSource(
+        GuestPhysicalPointer(memory_base, fetch.raw_base_address), candidate->source_bytes);
+    if (hash != candidate->content_hash) {
+      ++g_refreshed;
+      DecodeAndUpload(memory_base, fetch, info, candidate->texture.get());
+      candidate->content_hash = hash;
+    }
+    return candidate->texture.get();
   }
 
   auto entry = std::make_unique<MirroredTexture>();
@@ -426,7 +519,15 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   entry->format = fetch.format;
   entry->width = fetch.width;
   entry->height = fetch.height;
-  entry->texture = CreateMirroredTexture(memory_base, fetch, info);
+  entry->source_bytes = SourceExtentBytes(fetch, info);
+  entry->texture = DecodeAndUpload(memory_base, fetch, info, nullptr);
+
+  // Hashed after the upload rather than before, so a source that changed
+  // between the two is noticed on the next bind instead of being recorded as
+  // already current.
+  if (entry->texture)
+    entry->content_hash =
+        HashSource(GuestPhysicalPointer(memory_base, fetch.raw_base_address), entry->source_bytes);
 
   RenderTexture* result = entry->texture.get();
   g_textures.push_back(std::move(entry));
@@ -435,9 +536,9 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
 
 void LogTextureMirrorSummary() {
   REXLOG_INFO(
-      "native_renderer: textures decoded={} cached={} | binds resolve={} cache={} | refused "
-      "format={} extent={} unmapped={} upload={}",
-      g_decoded, g_textures.size(), g_resolve_hits, g_decode_hits, g_refused_format,
+      "native_renderer: textures decoded={} cached={} refreshed={} | binds resolve={} cache={} | "
+      "refused format={} extent={} unmapped={} upload={}",
+      g_decoded, g_textures.size(), g_refreshed, g_resolve_hits, g_decode_hits, g_refused_format,
       g_refused_extent, g_refused_unmapped, g_refused_upload);
 }
 
