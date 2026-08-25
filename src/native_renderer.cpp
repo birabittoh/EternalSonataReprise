@@ -23,7 +23,18 @@ void InitNativeRenderer(rex::ui::Window* window) {
   // The window is already created and is ours to render into however we like;
   // the SDK is not presenting the guest in this mode, and will not draw its own
   // overlays either until we hand it a drawer.
+  //
+  // Plume's SDL/Vulkan backend takes an SDL_Window* directly (it creates its
+  // own VkSurfaceKHR via SDL_Vulkan_CreateSurface, which already knows how to
+  // talk to whichever platform backend SDL picked, X11 or Wayland). Plain
+  // GetNativeWindowHandle() only ever returns a platform-native handle
+  // (HWND on Windows); on Linux it's always null, since there's no single
+  // native handle to hand back.
+#if defined(PLUME_SDL_VULKAN_ENABLED)
+  void* handle = window ? window->GetSDLWindowHandle() : nullptr;
+#else
   void* handle = window ? window->GetNativeWindowHandle() : nullptr;
+#endif
   REXLOG_INFO(
       "native_renderer: no GPU plugin loaded, so there is no ring buffer and the guest's D3D "
       "packet writers are dead code. Native window handle {}.",
