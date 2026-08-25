@@ -1423,6 +1423,7 @@ REX_HOOK_RAW(D3DDevice__Swap) {
     return;
 
   eternalsonata::PlumePresentFrame();
+  eternalsonata::TextureMirrorBeginFrame();
 
   static uint64_t swaps = 0;
   if (++swaps % 300 == 0) {
