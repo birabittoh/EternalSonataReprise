@@ -7,8 +7,10 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <vector>
 
+#include <rex/cvar.h>
 #include <rex/logging.h>
 
 #include <plume_render_interface.h>
@@ -18,6 +20,7 @@
 #include "native_renderer_texture.h"
 #include "native_renderer_pipeline.h"
 #include "native_renderer_plume_internal.h"
+#include "native_renderer_profile.h"
 
 namespace plume {
 #ifdef _WIN32
@@ -191,6 +194,24 @@ bool InitPlumeBackend(void* window_handle) {
     return false;
   }
 
+  // Honour the project's `vsync` cvar, which defaults to false.
+  //
+  // Nothing used to read it here, because that setting was written for the SDK's
+  // presenter and in detached mode there is no presenter: this swap chain is
+  // ours, and Plume's own default is vsync *on*. So the setting silently did
+  // not apply, and every present ran at SyncInterval 1 over two buffers.
+  //
+  // That is not just a frame rate ceiling. The queue blocks until a backbuffer
+  // frees, which lands in the fence wait after the present, and because the CPU
+  // is fully serialised behind that fence the whole frame quantises to a vblank
+  // multiple: 60, then 30, with nothing in between. A frame of work slightly
+  // over 16.6 ms therefore presents as 30 fps rather than as 57. This title is
+  // frame clocked, so that also halves the speed of the game itself, which is
+  // the reason the cvar exists and defaults to false in the first place.
+  const std::string vsync = rex::cvar::GetFlagByName("vsync");
+  const bool vsync_enabled = vsync == "true" || vsync == "1";
+  g_backend.swap_chain->setVsyncEnabled(vsync_enabled);
+
   // The swap chain has no textures until the first resize, so this is required
   // rather than defensive; the example does the same.
   g_backend.swap_chain->resize();
@@ -215,6 +236,7 @@ bool PlumeBackendReady() { return g_ready.load(std::memory_order_acquire); }
 void PlumePresentFrame() {
   if (!g_ready.load(std::memory_order_acquire))
     return;
+  ProfileZone present_zone(kPhasePresent);
 
   // Both the queued resize and the swap chain's own "I need one" answer, since
   // a minimise or a DPI change can invalidate it without an event we hooked.
@@ -232,7 +254,16 @@ void PlumePresentFrame() {
   }
 
   uint32_t image = 0;
-  if (!g_backend.swap_chain->acquireTexture(g_backend.acquire_semaphore.get(), &image)) {
+  bool acquired;
+  {
+    // Separated from the fence wait because the two mean opposite things. Time
+    // here is the display holding us back (vsync, or the frame limiter's own
+    // pacing); time in the fence is the GPU still working. Reading one number
+    // for both makes a capped frame look GPU bound.
+    ProfileZone acquire_zone(kPhaseAcquire);
+    acquired = g_backend.swap_chain->acquireTexture(g_backend.acquire_semaphore.get(), &image);
+  }
+  if (!acquired) {
     // Usually means the swap chain went out of date between the check above and
     // here; the next frame's resize picks it up. Counted rather than logged per
     // occurrence so a resize storm cannot flood the log.
@@ -300,7 +331,10 @@ void PlumePresentFrame() {
   // One command list and one fence, so the next frame cannot start recording
   // until this one is done with them. Fine at this size; it becomes a real
   // frames-in-flight ring once there is actual work per frame.
-  g_backend.queue->waitForCommandFence(g_backend.fence.get());
+  {
+    ProfileZone fence_zone(kPhaseFenceWait);
+    g_backend.queue->waitForCommandFence(g_backend.fence.get());
+  }
 
   // Safe only because of the wait above: the frame that owned those bytes has
   // retired, so the next one can hand them out again. This is the assumption to

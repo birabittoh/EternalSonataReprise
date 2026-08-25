@@ -17,6 +17,7 @@
 #include "native_renderer_frame.h"
 #include "native_renderer_pipeline.h"
 #include "native_renderer_plume.h"
+#include "native_renderer_profile.h"
 
 REX_EXTERN(__imp__D3D__CreateDevice);
 REX_EXTERN(__imp__D3DDevice__SetVertexShaderConstantF);
@@ -798,6 +799,7 @@ bool DecodeResourceTexture(uint8_t* base, uint32_t address, TextureFetch& out) {
 }
 
 bool DecodeVertexDeclaration(uint8_t* base, uint32_t address, VertexDeclaration& out) {
+  ProfileZone zone(kPhaseDeclDecode);
   if (address == 0)
     return false;
 
@@ -1435,6 +1437,7 @@ REX_HOOK_RAW(D3DDevice__Swap) {
     eternalsonata::LogPipelineSummary();
     eternalsonata::LogGuestDrawSummary();
     eternalsonata::LogTextureMirrorSummary();
+    eternalsonata::LogProfileSummary();
   }
 }
 
