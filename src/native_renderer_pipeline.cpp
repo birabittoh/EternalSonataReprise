@@ -415,6 +415,12 @@ struct GuestPipeline {
   // there, which the guest never fetches from because its shader does not name
   // the slot; anything that reads all sixteen is reading state nothing owns.
   uint32_t texture_mask = 0;
+
+  // The two shaders' literal constant pools, resolved once here so the draw
+  // path does not have to look a shader up per draw. Each is 64 bytes that
+  // overlay constants 252..255 of its own bank. See GuestShader::literals.
+  const uint8_t* vertex_literals = nullptr;
+  const uint8_t* pixel_literals = nullptr;
 };
 
 namespace {
@@ -553,6 +559,14 @@ uint32_t GuestPipelineTextureMask(const GuestPipeline* pipeline) {
   return pipeline != nullptr ? pipeline->texture_mask : 0;
 }
 
+const uint8_t* GuestPipelineVertexLiterals(const GuestPipeline* pipeline) {
+  return pipeline != nullptr ? pipeline->vertex_literals : nullptr;
+}
+
+const uint8_t* GuestPipelinePixelLiterals(const GuestPipeline* pipeline) {
+  return pipeline != nullptr ? pipeline->pixel_literals : nullptr;
+}
+
 const uint32_t* GuestPipelineSlotStreams(const GuestPipeline* pipeline, uint32_t* count) {
   if (pipeline == nullptr) {
     if (count)
@@ -654,6 +668,8 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   auto pipeline = std::make_unique<GuestPipeline>();
   pipeline->key = key;
   pipeline->texture_mask = pixel.texture_mask;
+  pipeline->vertex_literals = vertex.literals;
+  pipeline->pixel_literals = pixel.literals;
 
   std::vector<RenderInputElement> elements;
   elements.reserve(vertex.input_count);

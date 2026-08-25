@@ -443,6 +443,17 @@ def read_dwords(data):
 # shader the dumped microcode is a byte exact suffix of the extracted payload,
 # starting at 64 exactly when `patch_table_offset` is non zero and at 0
 # otherwise (35 samples, and the split matches the 209 / 51 population counts).
+#
+# That prefix is the compiler's *literal constant pool*: four big endian float4s
+# that occupy constant registers 252, 253, 254 and 255 of the shader's own bank.
+# The game never writes them through either constant setter, so nothing reaches
+# the register shadows and they read as zero unless they are taken from here.
+# The correlation is exact over all 260 shaders: every shader with a prefix
+# reads constants in 252..255 and no others above 240, and every shader without
+# one reads none of them. Missing this is not subtle. Nearly every pixel shader
+# spells saturate as `min(x, c253.w)` or clamps its alpha with `min(x, c255.x)`,
+# so a zero pool collapses the alpha to 0 and the fixed function alpha test,
+# which this title runs as GREATER on most draws, then discards the pixel.
 PREFIX_CANDIDATES = (0, 64)
 
 
@@ -462,6 +473,19 @@ def find_prefix(data):
     if best is None:
         raise UcodeError("no control flow block found at any known prefix")
     return best
+
+
+def literal_constants(data, prefix=None):
+    """Return the shader's literal pool as 16 floats, or None if it has none.
+
+    The four float4s land in constant registers 252..255 of the shader's own
+    bank, in order. See the note above PREFIX_CANDIDATES.
+    """
+    if prefix is None:
+        prefix = find_prefix(data)
+    if prefix == 0:
+        return None
+    return list(struct.unpack(">16f", data[:64]))
 
 
 def decode(data, prefix=None):

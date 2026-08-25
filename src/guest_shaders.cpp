@@ -7,10 +7,12 @@
 // for the process, so the pointers handed out below point straight into it.
 //
 //   header    magic 'ESGS', version, slot count, input count, key bytes,
-//             blob bytes
+//             literal block count, blob bytes
 //   entries   2 * slot count records: vertex table first, then pixel
 //   inputs    (usage, usage index) pairs, referenced by offset from an entry
 //   keys      interpolator semantic keys, referenced by byte offset
+//   literals  64 byte blocks of four float4s, referenced by block index.
+//             Block 0 is a reserved all-zero sentinel meaning "no pool".
 //   blob      the compiled shaders, referenced by offset and size
 //
 // Every offset is validated against the section it indexes before anything is
@@ -36,7 +38,8 @@ constexpr uint32_t kMagic = 0x53475345;  // 'ESGS', little endian
 // Bumped to 2 when the emitter moved the pixel shaders' constant buffers to b2
 // and b3. The pack layout did not change, so a stale pack would load and bind
 // the vertex float bank to every pixel shader; refusing it is the point.
-constexpr uint32_t kVersion = 4;
+// Bumped to 5 for the literal constant pool section.
+constexpr uint32_t kVersion = 5;
 constexpr char kDefaultName[] = "guest_shaders.bin";
 
 constexpr uint8_t kFlagPointSize = 1 << 0;
@@ -49,6 +52,7 @@ struct PackHeader {
   uint32_t slots;
   uint32_t input_count;
   uint32_t key_bytes;
+  uint32_t literal_blocks;
   uint32_t blob_bytes;
 };
 
@@ -64,11 +68,12 @@ struct PackEntry {
   uint16_t key_offset;  // in bytes, into the key section
   uint8_t key_count;
   uint8_t reserved;
+  uint16_t literal_block;  // index into the literal section, 0 means none
 };
 #pragma pack(pop)
 
-static_assert(sizeof(PackHeader) == 24, "pack header layout");
-static_assert(sizeof(PackEntry) == 28, "pack entry layout");
+static_assert(sizeof(PackHeader) == 28, "pack header layout");
+static_assert(sizeof(PackEntry) == 30, "pack entry layout");
 
 std::vector<uint8_t> g_pack;
 std::vector<GuestShader> g_vertex;
@@ -93,7 +98,8 @@ bool ReadFile(const std::filesystem::path& path, std::vector<uint8_t>& out) {
 // which is the whole validation: a truncated or mismatched pack is rejected here
 // rather than at the point a blob is handed to the driver.
 bool Decode(const PackEntry& entry, const PackHeader& header, const uint8_t* blob,
-            const GuestVertexInput* inputs, const uint8_t* keys, GuestShader& out) {
+            const GuestVertexInput* inputs, const uint8_t* keys, const uint8_t* literals,
+            GuestShader& out) {
   auto in_blob = [&](uint32_t offset, uint32_t size) {
     return size == 0 || (offset <= header.blob_bytes && size <= header.blob_bytes - offset);
   };
@@ -103,6 +109,8 @@ bool Decode(const PackEntry& entry, const PackHeader& header, const uint8_t* blo
   if (entry.input_offset + entry.input_count > header.input_count)
     return false;
   if (entry.key_offset + entry.key_count > header.key_bytes)
+    return false;
+  if (entry.literal_block >= header.literal_blocks)
     return false;
 
   if (entry.dxil_size) {
@@ -118,6 +126,10 @@ bool Decode(const PackEntry& entry, const PackHeader& header, const uint8_t* blo
   out.input_count = entry.input_count;
   out.interpolator_keys = entry.key_count ? keys + entry.key_offset : nullptr;
   out.interpolator_key_count = entry.key_count;
+  // Always pointed somewhere: block 0 is the all-zero sentinel, so a shader
+  // with no pool reads the zeros it would have read on the hardware anyway.
+  out.literals = literals + size_t(entry.literal_block) * 64;
+  out.has_literals = entry.literal_block != 0;
   out.exports_point_size = (entry.flags & kFlagPointSize) != 0;
   out.has_cube_texture = (entry.flags & kFlagHasCube) != 0;
   return true;
@@ -154,7 +166,8 @@ bool LoadGuestShaders(const char* path) {
   const size_t entries_bytes = size_t(header.slots) * 2 * sizeof(PackEntry);
   const size_t expected = sizeof(PackHeader) + entries_bytes +
                           size_t(header.input_count) * sizeof(GuestVertexInput) +
-                          size_t(header.key_bytes) + size_t(header.blob_bytes);
+                          size_t(header.key_bytes) + size_t(header.literal_blocks) * 64 +
+                          size_t(header.blob_bytes);
   if (g_pack.size() != expected) {
     REXLOG_ERROR("guest_shaders: {} is {} bytes, expected {}", resolved, g_pack.size(), expected);
     return false;
@@ -167,13 +180,15 @@ bool LoadGuestShaders(const char* path) {
   cursor += size_t(header.input_count) * sizeof(GuestVertexInput);
   const uint8_t* keys = cursor;
   cursor += header.key_bytes;
+  const uint8_t* literals = cursor;
+  cursor += size_t(header.literal_blocks) * 64;
   const uint8_t* blob = cursor;
 
   g_vertex.assign(header.slots, GuestShader{});
   g_pixel.assign(header.slots, GuestShader{});
   for (uint32_t i = 0; i < header.slots * 2; ++i) {
     GuestShader& out = i < header.slots ? g_vertex[i] : g_pixel[i - header.slots];
-    if (!Decode(records[i], header, blob, inputs, keys, out)) {
+    if (!Decode(records[i], header, blob, inputs, keys, literals, out)) {
       REXLOG_ERROR("guest_shaders: entry {} in {} is out of range", i, resolved);
       g_vertex.clear();
       g_pixel.clear();
