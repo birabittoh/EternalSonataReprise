@@ -13,10 +13,43 @@
 #include "native_renderer_frame.h"
 #include "native_renderer_pipeline_internal.h"
 #include "native_renderer_plume_internal.h"
+#include "native_renderer_profile.h"
 #include "native_renderer_texture.h"
 
 namespace eternalsonata {
+
+// The profiler's storage lives here because this is the translation unit that
+// enters most of its zones. See native_renderer_profile.h.
+uint64_t g_profile_ns[kPhaseCount] = {};
+uint64_t g_profile_hits[kPhaseCount] = {};
+std::chrono::steady_clock::time_point g_profile_window_start = std::chrono::steady_clock::now();
+
 namespace {
+
+const char* const kPhaseNames[kPhaseCount] = {
+    "present",          "  acquire image",  "  fence wait",
+    "resolve",          "clear",             "draw",
+    "  vertex upload",  "  index upload",    "  constants",
+    "  texture bind",   "    texture walk",  "    texture hash",
+    "    guest pointer", "    texture upload", "  descriptor sets",
+    "decl decode",
+};
+
+// Phases that nest inside another phase. Their time is already inside their
+// parent's, so they must not be subtracted from the wall clock a second time
+// when working out what is unaccounted for.
+bool PhaseIsNested(uint32_t phase) {
+  switch (phase) {
+    case kPhasePresent:
+    case kPhaseResolve:
+    case kPhaseClear:
+    case kPhaseDraw:
+    case kPhaseDeclDecode:
+      return false;
+    default:
+      return true;
+  }
+}
 
 using namespace plume;
 
@@ -113,6 +146,12 @@ struct ArenaBlock {
 
 std::vector<ArenaBlock> g_arena;
 uint32_t g_arena_block = 0;
+
+// Staging for the endian swap, so it never happens in the arena itself. See the
+// note at its use: the arena is write-combined and reads out of it are what a
+// swap in place would be made of. Kept across draws to avoid reallocating; it
+// settles at the largest stream the title binds.
+std::vector<uint8_t> g_swap_scratch;
 
 struct Allocation {
   RenderBufferReference ref;
@@ -307,6 +346,30 @@ struct BindingSetEntry {
   BindingKey key;
   std::unique_ptr<RenderDescriptorSet> set;
 };
+
+// One resolved sixteen slot binding, keyed on the raw fetch constants it was
+// resolved from. See its use in IssueGuestDraw.
+//
+// Small and scanned linearly on purpose: a memcmp of 384 bytes of cached memory
+// is a few tens of nanoseconds against the microseconds the walk costs, and the
+// title binds only a handful of distinct combinations in any run of draws. A
+// ring rather than an LRU, because the access pattern is runs rather than
+// reuse at a distance, and a wrong eviction costs one walk.
+constexpr uint32_t kTextureBindingCacheSize = 8;
+
+struct TextureBindingCacheEntry {
+  uint8_t fetch[d3d::kSamplerCount * d3d::kTextureFetchStride] = {};
+  uint32_t mask = 0;
+  uint64_t generation = 0;
+  BindingKey textures;
+  BindingKey samplers;
+  bool valid = false;
+};
+
+TextureBindingCacheEntry g_texture_binding_cache[kTextureBindingCacheSize];
+uint32_t g_texture_binding_next = 0;
+uint64_t g_texture_binding_hits = 0;
+uint64_t g_texture_binding_misses = 0;
 
 std::vector<BindingSetEntry> g_texture_sets;
 std::vector<BindingSetEntry> g_sampler_sets;
@@ -825,6 +888,7 @@ void DrawSetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height, fl
 }
 
 bool IssueGuestDraw(const GuestDrawCall& call) {
+  ProfileZone zone(kPhaseDraw);
   ++g_draws_requested;
 
   if (call.pipeline == nullptr) {
@@ -924,6 +988,7 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
       ++g_stream_cache_hits;
       views[slot] = RenderVertexBufferView(cached->ref, cached->size);
     } else {
+      ProfileZone upload_zone(kPhaseVertexUpload);
       const Allocation allocation = ArenaAllocate(device, out_bytes);
       if (!allocation) {
         Drop(kDropNoArena, "an upload buffer could not be created");
@@ -955,14 +1020,30 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
           // one, and falling back to the unexpanded triples keeps the draw
           // rather than losing it.
           ++g_rect_fallbacks;
-          std::memcpy(allocation.cpu, stream.data, size_t(triples) * 3 * stride);
+          const size_t bytes = size_t(triples) * 3 * stride;
+          g_swap_scratch.resize(bytes);
+          std::memcpy(g_swap_scratch.data(), stream.data, bytes);
           for (uint32_t v = 0; v < triples * 3; ++v)
-            SwapVertex(allocation.cpu + size_t(v) * stride, plan);
+            SwapVertex(g_swap_scratch.data() + size_t(v) * stride, plan);
+          std::memcpy(allocation.cpu, g_swap_scratch.data(), bytes);
         }
       } else {
-        std::memcpy(allocation.cpu, stream.data, size_t(out_bytes));
+        // Swapped in ordinary memory and written out once, rather than swapped
+        // in place in the arena.
+        //
+        // The arena is an upload heap, which is write-combined: writes to it
+        // are cheap and coalesced, but *reads* are uncached and cost about two
+        // orders of magnitude more than a read from RAM. Swapping in place
+        // reads every vertex back out of it, and that alone was 76% of the
+        // frame (93 us per upload, 420 ns per vertex) on the in-game scenes.
+        // The extra pass over cached memory here is far cheaper than the reads
+        // it removes. The rect expansion path above already had this shape, via
+        // its own stack scratch, which is why it never showed the cost.
+        g_swap_scratch.resize(size_t(out_bytes));
+        std::memcpy(g_swap_scratch.data(), stream.data, size_t(out_bytes));
         for (uint32_t v = 0; v < out_vertices; ++v)
-          SwapVertex(allocation.cpu + size_t(v) * stream.stride, plan);
+          SwapVertex(g_swap_scratch.data() + size_t(v) * stream.stride, plan);
+        std::memcpy(allocation.cpu, g_swap_scratch.data(), size_t(out_bytes));
       }
 
       g_vertex_bytes += out_bytes;
@@ -997,6 +1078,7 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   // Indices.
   RenderIndexBufferView index_view;
   if (call.indexed) {
+    ProfileZone index_zone(kPhaseIndexUpload);
     if (call.indices == nullptr) {
       Drop(kDropIndicesMissing, "SetIndices was never called, or its buffer decodes as null");
       return false;
@@ -1032,15 +1114,19 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   // them, with the bool and loop bank shared by both stages because the guest's
   // is one register file with the vertex half first.
   RenderBufferReference vertex_floats, pixel_floats, bool_loops;
-  const bool constants_ok =
-      UploadConstantBank(device, call.device + d3d::kVertexConstantShadow,
-                         d3d::kConstantRegisters * 16, g_constant_cache[0], &vertex_floats,
-                         GuestPipelineVertexLiterals(call.pipeline)) &&
-      UploadConstantBank(device, call.device + d3d::kPixelConstantShadow,
-                         d3d::kConstantRegisters * 16, g_constant_cache[1], &pixel_floats,
-                         GuestPipelinePixelLiterals(call.pipeline)) &&
-      UploadConstantBank(device, call.device + d3d::kBoolConstantShadow,
-                         d3d::kBoolLoopConstantBytes, g_constant_cache[2], &bool_loops);
+  bool constants_ok;
+  {
+    ProfileZone constant_zone(kPhaseConstantUpload);
+    constants_ok =
+        UploadConstantBank(device, call.device + d3d::kVertexConstantShadow,
+                           d3d::kConstantRegisters * 16, g_constant_cache[0], &vertex_floats,
+                           GuestPipelineVertexLiterals(call.pipeline)) &&
+        UploadConstantBank(device, call.device + d3d::kPixelConstantShadow,
+                           d3d::kConstantRegisters * 16, g_constant_cache[1], &pixel_floats,
+                           GuestPipelinePixelLiterals(call.pipeline)) &&
+        UploadConstantBank(device, call.device + d3d::kBoolConstantShadow,
+                           d3d::kBoolLoopConstantBytes, g_constant_cache[2], &bool_loops);
+  }
   if (!constants_ok) {
     Drop(kDropNoArena, "a constant bank could not be uploaded");
     return false;
@@ -1132,6 +1218,33 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   const uint32_t texture_mask = GuestPipelineTextureMask(call.pipeline);
   BindingKey textures;
   BindingKey samplers;
+  {
+  ProfileZone texture_zone(kPhaseTextureBind);
+
+  // Memoised on the fetch constants themselves. The walk below is a pure
+  // function of this one 384 byte block and the shader's slot mask, apart from
+  // the events TextureMirrorGeneration counts, so a run of draws that does not
+  // touch a fetch constant can reuse the answer rather than decode sixteen
+  // slots again. That run is the common shape here: this was 3.35 us per draw
+  // over 700k draws a window, the largest single cost in the frame once the
+  // vertex upload was fixed.
+  const uint8_t* fetch_block = call.device + d3d::kTextureFetchConstants;
+  const uint64_t generation = TextureMirrorGeneration();
+  TextureBindingCacheEntry* hit = nullptr;
+  for (auto& entry : g_texture_binding_cache) {
+    if (entry.valid && entry.generation == generation && entry.mask == texture_mask &&
+        std::memcmp(entry.fetch, fetch_block, sizeof(entry.fetch)) == 0) {
+      hit = &entry;
+      break;
+    }
+  }
+
+  if (hit != nullptr) {
+    textures = hit->textures;
+    samplers = hit->samplers;
+    ++g_texture_binding_hits;
+  } else {
+  ProfileZone walk_zone(kPhaseTextureWalk);
   for (uint32_t stage = 0; stage < kTextureSlots; ++stage) {
     RenderTexture* texture = nullptr;
     RenderSampler* sampler = g_sampler.get();
@@ -1146,13 +1259,33 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
     samplers.slots[stage] = sampler;
   }
 
+    // Stamped with the generation as it stands *after* the walk, because the
+    // walk itself can bump it: a slot whose texture had to be decoded or
+    // refreshed does so from inside the loop above.
+    TextureBindingCacheEntry& entry = g_texture_binding_cache[g_texture_binding_next];
+    g_texture_binding_next = (g_texture_binding_next + 1) % kTextureBindingCacheSize;
+    std::memcpy(entry.fetch, fetch_block, sizeof(entry.fetch));
+    entry.mask = texture_mask;
+    entry.generation = TextureMirrorGeneration();
+    entry.textures = textures;
+    entry.samplers = samplers;
+    entry.valid = true;
+    ++g_texture_binding_misses;
+  }
+  }
+
   // Sets matching these bindings, not a rewrite of shared ones. See the note
   // above AcquireBindingSet: rewriting would change what every draw already
   // recorded this frame reads, not what this draw reads.
-  RenderDescriptorSet* texture_set = AcquireBindingSet(
-      device, g_texture_sets, kMaxTextureSets, false, textures, &g_texture_set_misses);
-  RenderDescriptorSet* sampler_set = AcquireBindingSet(
-      device, g_sampler_sets, kMaxSamplerSets, true, samplers, &g_sampler_set_misses);
+  RenderDescriptorSet* texture_set;
+  RenderDescriptorSet* sampler_set;
+  {
+    ProfileZone set_zone(kPhaseDescriptorSet);
+    texture_set = AcquireBindingSet(device, g_texture_sets, kMaxTextureSets, false, textures,
+                                    &g_texture_set_misses);
+    sampler_set = AcquireBindingSet(device, g_sampler_sets, kMaxSamplerSets, true, samplers,
+                                    &g_sampler_set_misses);
+  }
   if (texture_set == nullptr || sampler_set == nullptr) {
     Drop(kDropNoArena, "a descriptor set could not be created; the heap behind it is full");
     return false;
@@ -1207,10 +1340,48 @@ void LogGuestDrawSummary() {
 
   REXLOG_INFO(
       "native_renderer:   samplers={} (overflowed {}x, inexact clamp mode {}x, alpha test {}x) | "
-      "descriptor sets: texture={} (misses {}) sampler={} (misses {}) transient={} failed={}",
+      "descriptor sets: texture={} (misses {}) sampler={} (misses {}) transient={} failed={} | "
+      "fetch bindings reused {}x, walked {}x",
       g_sampler_count, g_sampler_overflow, g_clamp_inexact, g_alpha_test_draws,
       g_texture_sets.size(), g_texture_set_misses, g_sampler_sets.size(), g_sampler_set_misses,
-      g_texture_set_transient, g_binding_set_failed);
+      g_texture_set_transient, g_binding_set_failed, g_texture_binding_hits,
+      g_texture_binding_misses);
+}
+
+void LogProfileSummary() {
+  const auto now = std::chrono::steady_clock::now();
+  const uint64_t wall_ns = uint64_t(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(now - g_profile_window_start).count());
+  if (wall_ns == 0)
+    return;
+
+  // Only the top level phases count against the wall clock; the nested ones are
+  // already inside one of those.
+  uint64_t accounted = 0;
+  for (uint32_t i = 0; i < kPhaseCount; ++i) {
+    if (!PhaseIsNested(i))
+      accounted += g_profile_ns[i];
+  }
+
+  REXLOG_INFO("native_renderer: frame time over {:.1f} ms of wall clock, {:.2f} ms/frame average",
+              double(wall_ns) / 1e6, double(wall_ns) / 1e6 / 300.0);
+  for (uint32_t i = 0; i < kPhaseCount; ++i) {
+    if (g_profile_hits[i] == 0)
+      continue;
+    REXLOG_INFO("native_renderer:   {:<18} {:7.2f} ms/frame {:5.1f}% over {} call(s), {:.2f} us each",
+                kPhaseNames[i], double(g_profile_ns[i]) / 1e6 / 300.0,
+                100.0 * double(g_profile_ns[i]) / double(wall_ns), g_profile_hits[i],
+                double(g_profile_ns[i]) / 1e3 / double(g_profile_hits[i]));
+  }
+  REXLOG_INFO("native_renderer:   {:<18} {:7.2f} ms/frame {:5.1f}% (guest CPU and anything not instrumented)",
+              "other", double(wall_ns - accounted) / 1e6 / 300.0,
+              100.0 * double(wall_ns - accounted) / double(wall_ns));
+
+  for (uint32_t i = 0; i < kPhaseCount; ++i) {
+    g_profile_ns[i] = 0;
+    g_profile_hits[i] = 0;
+  }
+  g_profile_window_start = now;
 }
 
 void ShutdownGuestDraws() {

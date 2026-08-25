@@ -10,6 +10,8 @@
 #include <rex/logging.h>
 
 #include "native_renderer_plume_internal.h"
+#include "native_renderer_texture.h"
+#include "native_renderer_profile.h"
 
 namespace eternalsonata {
 namespace {
@@ -367,6 +369,7 @@ void FrameSetDepthSurface(const Surface* surface) {
 }
 
 void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
+  ProfileZone zone(kPhaseClear);
   // D3DCLEAR_TARGET / _ZBUFFER / _STENCIL.
   const bool clear_color = (flags & 0x1u) != 0;
   const bool clear_depth = (flags & 0x2u) != 0;
@@ -441,6 +444,7 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
 void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
                   uint32_t dest_height, int32_t src_x1, int32_t src_y1, int32_t src_x2,
                   int32_t src_y2, int32_t dest_x, int32_t dest_y) {
+  ProfileZone zone(kPhaseResolve);
   // 4 is the depth stencil. Resolving depth out is a real thing this title does,
   // but it is not what the screen shows and the host depth format does not copy
   // into a colour texture, so it is left alone for now.
@@ -451,6 +455,11 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
     ++g_resolves_dropped;
     return;
   }
+
+  // A resolve is the other way a texture binding changes underneath a draw: the
+  // next SetTexture at this address gets the render target back, and a draw that
+  // memoised its bindings before this point must not keep the old one.
+  TextureMirrorBumpGeneration();
 
   // The rectangle is in screen space, not in the guest surface's own space,
   // because this title renders 720p through EDRAM in horizontal bands: the
