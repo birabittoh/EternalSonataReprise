@@ -7,7 +7,6 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <string>
 #include <vector>
 
 #include <rex/cvar.h>
@@ -194,23 +193,20 @@ bool InitPlumeBackend(void* window_handle) {
     return false;
   }
 
-  // Honour the project's `vsync` cvar, which defaults to false.
+  // Vsync from the game's own cvar, which defaults to false (see settings.cpp
+  // for why; the SDK's vblank pump ties the presentation-interval wait to it).
+  // Plume's swap chains come up with vsync *on*, so without this the setting
+  // silently did not apply to the native renderer at all.
   //
-  // Nothing used to read it here, because that setting was written for the SDK's
-  // presenter and in detached mode there is no presenter: this swap chain is
-  // ours, and Plume's own default is vsync *on*. So the setting silently did
-  // not apply, and every present ran at SyncInterval 1 over two buffers.
-  //
-  // That is not just a frame rate ceiling. The queue blocks until a backbuffer
-  // frees, which lands in the fence wait after the present, and because the CPU
-  // is fully serialised behind that fence the whole frame quantises to a vblank
-  // multiple: 60, then 30, with nothing in between. A frame of work slightly
-  // over 16.6 ms therefore presents as 30 fps rather than as 57. This title is
-  // frame clocked, so that also halves the speed of the game itself, which is
-  // the reason the cvar exists and defaults to false in the first place.
-  const std::string vsync = rex::cvar::GetFlagByName("vsync");
-  const bool vsync_enabled = vsync == "true" || vsync == "1";
-  g_backend.swap_chain->setVsyncEnabled(vsync_enabled);
+  // It is not just a tearing preference here. There are two swap chain buffers
+  // and the present waits on its fence, so a frame that misses the vblank
+  // cannot start the next one until the one after: the frame rate quantises to
+  // 60, 30, 20 with nothing in between, and anything over 16.7 ms of real work
+  // reads as exactly 30 fps regardless of how much over it is. Measured on the
+  // heavy scenes: 28.7 ms/frame with vsync on became a flat 16.67 ms cap hit
+  // with it off.
+  const bool vsync = rex::cvar::GetFlagByName("vsync") == "true";
+  g_backend.swap_chain->setVsyncEnabled(vsync);
 
   // The swap chain has no textures until the first resize, so this is required
   // rather than defensive; the example does the same.
@@ -222,10 +218,11 @@ bool InitPlumeBackend(void* window_handle) {
 
   const RenderDeviceDescription& description = g_backend.device->getDescription();
   REXLOG_INFO(
-      "native_renderer: Plume up on {} using \"{}\", swap chain {}x{} with {} buffers. The "
-      "window is now ours to draw into.",
+      "native_renderer: Plume up on {} using \"{}\", swap chain {}x{} with {} buffers, vsync {}. "
+      "The window is now ours to draw into.",
       g_backend.api_name, description.name, g_backend.swap_chain->getWidth(),
-      g_backend.swap_chain->getHeight(), g_backend.swap_chain->getTextureCount());
+      g_backend.swap_chain->getHeight(), g_backend.swap_chain->getTextureCount(),
+      vsync ? "on" : "off");
 
   g_ready.store(true, std::memory_order_release);
   return true;
@@ -254,16 +251,7 @@ void PlumePresentFrame() {
   }
 
   uint32_t image = 0;
-  bool acquired;
-  {
-    // Separated from the fence wait because the two mean opposite things. Time
-    // here is the display holding us back (vsync, or the frame limiter's own
-    // pacing); time in the fence is the GPU still working. Reading one number
-    // for both makes a capped frame look GPU bound.
-    ProfileZone acquire_zone(kPhaseAcquire);
-    acquired = g_backend.swap_chain->acquireTexture(g_backend.acquire_semaphore.get(), &image);
-  }
-  if (!acquired) {
+  if (!g_backend.swap_chain->acquireTexture(g_backend.acquire_semaphore.get(), &image)) {
     // Usually means the swap chain went out of date between the check above and
     // here; the next frame's resize picks it up. Counted rather than logged per
     // occurrence so a resize storm cannot flood the log.
