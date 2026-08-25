@@ -6,6 +6,7 @@
 
 #include <cstring>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include <rex/logging.h>
@@ -244,33 +245,65 @@ struct MirroredTexture {
   uint64_t content_hash = 0;
   uint64_t source_bytes = 0;
 
+  // The aperture-resolved host pointer to this texture's source, and the frame
+  // the choice was last validated in.
+  //
+  // Picking the aperture means asking which of the three spans the bytes, which
+  // is a VirtualQuery walk over the whole source. That was measured at 73 us a
+  // call against the 12 us hash it feeds, once per texture per frame: the
+  // single largest cost in the frame after the vertex upload was fixed. The
+  // answer is a property of the guest's memory map rather than of the frame, so
+  // it is kept and revalidated occasionally instead.
+  //
+  // Revalidation is cheap insurance rather than a correctness requirement. The
+  // walk never protected this path anyway: when no aperture spans the range it
+  // returns the cached one regardless and lets the read proceed, which is what
+  // the hash has always done.
+  const uint8_t* source_pointer = nullptr;
+  uint64_t source_pointer_frame = ~0ull;
+
   // The frame this texture's source was last hashed in. The hash covers the
   // whole source and is therefore too expensive to repeat on every bind, so it
   // runs at most once per texture per frame; a texture bound two hundred times
   // in a frame is hashed once. See HashSource.
   uint64_t hashed_frame = ~0ull;
-
-  // The aperture-resolved host pointer for this texture's source bytes.
-  //
-  // Resolving it asks which of the three physical apertures actually spans the
-  // source, which is a VirtualQuery walk over the whole range. That is far too
-  // expensive to repeat: doing it on every per frame hash was 50 us per texture
-  // binding walk and the largest cost in the frame once the vertex upload and
-  // the binding memo were dealt with. The answer depends only on the address,
-  // the length and the guest's memory map, so it is resolved once per texture
-  // and kept.
-  //
-  // This does not weaken anything: the hash sites already read through whatever
-  // pointer came back without rechecking it, because a texture that decoded
-  // once has been readable at least once. The decode path still resolves
-  // afresh, and a decode that failed still retries from scratch on every bind.
-  const uint8_t* source = nullptr;
 };
 
 // Bumped once per guest swap. Only ever compared for equality.
 uint64_t g_frame = 0;
 
+// How often a cached aperture choice is checked again.
+//
+// The three apertures alias the same physical pages, so a stale choice only
+// matters if the one that was picked stops being committed while another still
+// spans the range. At 64 frames that window is about a second, and the walks it
+// costs are a rounding error: measured at 77 per 300 frames with a 256 frame
+// period, so a few hundred here against the 22,827 this replaced.
+constexpr uint64_t kApertureRevalidateFrames = 64;
+
+// Walks behind the cache, so the saving is visible rather than assumed.
+uint64_t g_aperture_walks = 0;
+uint64_t g_aperture_reuses = 0;
+
 std::vector<std::unique_ptr<MirroredTexture>> g_textures;
+
+// An index over the same entries, because the cache is unbounded and a linear
+// scan of it is paid per texture slot per draw. At a few hundred entries that
+// was the single largest cost in the frame; the working set here reaches ~390.
+//
+// The key is exact rather than a hash of the fields: a fetch's address is 32
+// bits, its format 6, and its width and height 13 each, which is 64 bits with
+// nothing to spare. So a match on the key is a match on all four fields and the
+// entries need no further comparison.
+//
+// Nothing is ever evicted (see the note on the cache being unbounded), so this
+// only ever grows alongside g_textures and needs no invalidation.
+std::unordered_map<uint64_t, MirroredTexture*> g_texture_index;
+
+uint64_t TextureKey(uint32_t address, uint32_t format, uint32_t width, uint32_t height) {
+  return (uint64_t(address) << 32) | (uint64_t(format & 0x3F) << 26) |
+         (uint64_t(width & 0x1FFF) << 13) | uint64_t(height & 0x1FFF);
+}
 
 uint64_t g_resolve_hits = 0;
 uint64_t g_decode_hits = 0;
@@ -339,9 +372,6 @@ uint64_t SourceExtentBytes(const TextureFetch& fetch, const FormatInfo& info) {
 // Bytes fed through HashSource, so the cost of completeness is visible in the
 // summary instead of being guessed at.
 uint64_t g_hash_bytes = 0;
-
-// See TextureMirrorGeneration.
-uint64_t g_generation = 1;
 
 uint64_t HashSource(const uint8_t* source, uint64_t bytes) {
   ProfileZone zone(kPhaseTextureHash);
@@ -461,9 +491,6 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
 std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const TextureFetch& fetch,
                                                const FormatInfo& info, RenderTexture* existing) {
   ProfileZone zone(kPhaseTextureUpload);
-  // Reached only when a texture is created, refreshed or retried, each of which
-  // can change what a memoised binding should resolve to.
-  ++g_generation;
   RenderDevice* device = PlumeDevice();
   RenderCommandQueue* queue = PlumeQueue();
   if (device == nullptr || queue == nullptr)
@@ -564,6 +591,25 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
 
 }  // namespace
 
+// The source pointer for an entry the mirror already holds, resolving the
+// aperture at most once every kApertureRevalidateFrames. See the fields on
+// MirroredTexture for why this is cached at all.
+const uint8_t* EntrySourcePointer(MirroredTexture* entry, uint8_t* memory_base,
+                                  const TextureFetch& fetch) {
+  const bool stale = entry->source_pointer == nullptr ||
+                     entry->source_pointer_frame == ~0ull ||
+                     g_frame - entry->source_pointer_frame >= kApertureRevalidateFrames;
+  if (stale) {
+    ++g_aperture_walks;
+    entry->source_pointer =
+        GuestPhysicalPointer(memory_base, fetch.raw_base_address, entry->source_bytes);
+    entry->source_pointer_frame = g_frame;
+  } else {
+    ++g_aperture_reuses;
+  }
+  return entry->source_pointer;
+}
+
 void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   if (memory_base == nullptr || fetch.base_address == 0)
     return nullptr;
@@ -592,11 +638,10 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     return nullptr;
   }
 
-  for (auto& candidate : g_textures) {
-    if (candidate->address != fetch.base_address || candidate->format != fetch.format ||
-        candidate->width != fetch.width || candidate->height != fetch.height) {
-      continue;
-    }
+  const uint64_t key = TextureKey(fetch.base_address, fetch.format, fetch.width, fetch.height);
+  const auto found = g_texture_index.find(key);
+  if (found != g_texture_index.end()) {
+    MirroredTexture* candidate = found->second;
     ++g_decode_hits;
 
     // A failed decode is remembered, but it is *not* final. The reason is
@@ -619,9 +664,8 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
         return nullptr;
       ++g_recovered;
       candidate->hashed_frame = g_frame;
-      candidate->source =
-          GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes);
-      candidate->content_hash = HashSource(candidate->source, candidate->source_bytes);
+      candidate->content_hash = HashSource(EntrySourcePointer(candidate, memory_base, fetch),
+                                           candidate->source_bytes);
       return candidate->texture.get();
     }
 
@@ -636,11 +680,8 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     // bound hundreds of times before the frame ends.
     if (candidate->hashed_frame != g_frame) {
       candidate->hashed_frame = g_frame;
-      if (candidate->source == nullptr) {
-        candidate->source =
-            GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes);
-      }
-      const uint64_t hash = HashSource(candidate->source, candidate->source_bytes);
+      const uint64_t hash = HashSource(EntrySourcePointer(candidate, memory_base, fetch),
+                                       candidate->source_bytes);
       if (hash != candidate->content_hash) {
         ++g_refreshed;
         DecodeAndUpload(memory_base, fetch, info, candidate->texture.get());
@@ -663,12 +704,12 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   // already current.
   if (entry->texture) {
     entry->hashed_frame = g_frame;
-    entry->source =
-        GuestPhysicalPointer(memory_base, fetch.raw_base_address, entry->source_bytes);
-    entry->content_hash = HashSource(entry->source, entry->source_bytes);
+    entry->content_hash =
+        HashSource(EntrySourcePointer(entry.get(), memory_base, fetch), entry->source_bytes);
   }
 
   RenderTexture* result = entry->texture.get();
+  g_texture_index.emplace(key, entry.get());
   g_textures.push_back(std::move(entry));
   return result;
 }
@@ -681,19 +722,16 @@ void LogTextureMirrorSummary() {
       g_decoded, g_textures.size(), g_refreshed, g_hash_bytes / (1024 * 1024), g_resolve_hits,
       g_decode_hits, g_refused_format, g_refused_extent, g_refused_unmapped, g_refused_upload,
       g_retries, g_recovered);
+
+  REXLOG_INFO("native_renderer:   aperture walks={} reused={}", g_aperture_walks,
+              g_aperture_reuses);
 }
 
-void TextureMirrorBeginFrame() {
-  ++g_frame;
-  // A new frame re-arms the per texture content hash, so a binding memoised in
-  // the previous frame must not be reused: doing so would skip the hash that
-  // notices the guest rewriting a texture in place.
-  ++g_generation;
+void TextureMirrorBeginFrame() { ++g_frame; }
+
+void ShutdownTextureMirror() {
+  g_texture_index.clear();
+  g_textures.clear();
 }
-
-uint64_t TextureMirrorGeneration() { return g_generation; }
-void TextureMirrorBumpGeneration() { ++g_generation; }
-
-void ShutdownTextureMirror() { g_textures.clear(); }
 
 }  // namespace eternalsonata
