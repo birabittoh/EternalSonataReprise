@@ -16,6 +16,7 @@
 
 #include "native_renderer_frame.h"
 #include "native_renderer_plume_internal.h"
+#include "native_renderer_profile.h"
 
 namespace eternalsonata {
 namespace {
@@ -105,6 +106,7 @@ bool GuestRangeReadable(const uint8_t* start, uint64_t bytes) {
 // its resolve destination and would be a page of skew here.
 const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t raw_base_address,
                                     uint64_t bytes) {
+  ProfileZone zone(kPhaseGuestPointer);
   const uint32_t offset = raw_base_address & 0x1FFFFFFFu;
   const uint8_t* first = nullptr;
   for (uint32_t aperture : {0xA0000000u, 0xC0000000u, 0xE0000000u}) {
@@ -247,6 +249,22 @@ struct MirroredTexture {
   // runs at most once per texture per frame; a texture bound two hundred times
   // in a frame is hashed once. See HashSource.
   uint64_t hashed_frame = ~0ull;
+
+  // The aperture-resolved host pointer for this texture's source bytes.
+  //
+  // Resolving it asks which of the three physical apertures actually spans the
+  // source, which is a VirtualQuery walk over the whole range. That is far too
+  // expensive to repeat: doing it on every per frame hash was 50 us per texture
+  // binding walk and the largest cost in the frame once the vertex upload and
+  // the binding memo were dealt with. The answer depends only on the address,
+  // the length and the guest's memory map, so it is resolved once per texture
+  // and kept.
+  //
+  // This does not weaken anything: the hash sites already read through whatever
+  // pointer came back without rechecking it, because a texture that decoded
+  // once has been readable at least once. The decode path still resolves
+  // afresh, and a decode that failed still retries from scratch on every bind.
+  const uint8_t* source = nullptr;
 };
 
 // Bumped once per guest swap. Only ever compared for equality.
@@ -322,7 +340,11 @@ uint64_t SourceExtentBytes(const TextureFetch& fetch, const FormatInfo& info) {
 // summary instead of being guessed at.
 uint64_t g_hash_bytes = 0;
 
+// See TextureMirrorGeneration.
+uint64_t g_generation = 1;
+
 uint64_t HashSource(const uint8_t* source, uint64_t bytes) {
+  ProfileZone zone(kPhaseTextureHash);
   g_hash_bytes += bytes;
 
   // Four independent FNV-1a lanes rather than one. A single accumulator makes
@@ -438,6 +460,10 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
 // of the cache key.
 std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const TextureFetch& fetch,
                                                const FormatInfo& info, RenderTexture* existing) {
+  ProfileZone zone(kPhaseTextureUpload);
+  // Reached only when a texture is created, refreshed or retried, each of which
+  // can change what a memoised binding should resolve to.
+  ++g_generation;
   RenderDevice* device = PlumeDevice();
   RenderCommandQueue* queue = PlumeQueue();
   if (device == nullptr || queue == nullptr)
@@ -593,9 +619,9 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
         return nullptr;
       ++g_recovered;
       candidate->hashed_frame = g_frame;
-      candidate->content_hash = HashSource(
-          GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes),
-        candidate->source_bytes);
+      candidate->source =
+          GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes);
+      candidate->content_hash = HashSource(candidate->source, candidate->source_bytes);
       return candidate->texture.get();
     }
 
@@ -610,9 +636,11 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     // bound hundreds of times before the frame ends.
     if (candidate->hashed_frame != g_frame) {
       candidate->hashed_frame = g_frame;
-      const uint64_t hash = HashSource(
-          GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes),
-          candidate->source_bytes);
+      if (candidate->source == nullptr) {
+        candidate->source =
+            GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes);
+      }
+      const uint64_t hash = HashSource(candidate->source, candidate->source_bytes);
       if (hash != candidate->content_hash) {
         ++g_refreshed;
         DecodeAndUpload(memory_base, fetch, info, candidate->texture.get());
@@ -635,9 +663,9 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   // already current.
   if (entry->texture) {
     entry->hashed_frame = g_frame;
-    entry->content_hash =
-        HashSource(GuestPhysicalPointer(memory_base, fetch.raw_base_address, entry->source_bytes),
-                   entry->source_bytes);
+    entry->source =
+        GuestPhysicalPointer(memory_base, fetch.raw_base_address, entry->source_bytes);
+    entry->content_hash = HashSource(entry->source, entry->source_bytes);
   }
 
   RenderTexture* result = entry->texture.get();
@@ -655,7 +683,16 @@ void LogTextureMirrorSummary() {
       g_retries, g_recovered);
 }
 
-void TextureMirrorBeginFrame() { ++g_frame; }
+void TextureMirrorBeginFrame() {
+  ++g_frame;
+  // A new frame re-arms the per texture content hash, so a binding memoised in
+  // the previous frame must not be reused: doing so would skip the hash that
+  // notices the guest rewriting a texture in place.
+  ++g_generation;
+}
+
+uint64_t TextureMirrorGeneration() { return g_generation; }
+void TextureMirrorBumpGeneration() { ++g_generation; }
 
 void ShutdownTextureMirror() { g_textures.clear(); }
 
