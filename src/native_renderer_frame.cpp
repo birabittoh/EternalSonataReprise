@@ -37,6 +37,21 @@ struct GuestTarget {
   uint32_t guest_format = 0;
   bool depth = false;
 
+  // What the host image is actually sized to, which is not the guest surface.
+  //
+  // The guest renders 720p through an EDRAM surface of 1280x384 and has the GPU
+  // replay the command buffer once per band, shifting each band's geometry with
+  // PA_SC_WINDOW_OFFSET. We see each draw once and execute it once, so there is
+  // no replay to hang the second band off: the host renders the whole screen in
+  // one pass and each band's resolve takes its own rows out of it. That only
+  // works if the image is the size of the screen rather than of the band, which
+  // is what BeginTiling's extent at device+13044/13048 gives.
+  //
+  // Part of the target's identity, so an extent that grows produces a new target
+  // rather than a resize of one the previous frame may still be reading.
+  uint32_t host_width = 0;
+  uint32_t host_height = 0;
+
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
 };
@@ -62,13 +77,45 @@ struct ResolvedTexture {
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
 };
 
+// Binds of an address that is a known resolve destination but at an extent that
+// is not the one resolved there, i.e. memory that has stopped being a render
+// target. Counted because it is the discriminator between the two, and a large
+// number would mean the rule is too strict rather than that the game is
+// recycling buffers.
+uint64_t g_resolve_extent_mismatch = 0;
+
 std::vector<std::unique_ptr<GuestTarget>> g_targets;
 std::vector<std::unique_ptr<ResolvedTexture>> g_resolved;
 std::vector<FramebufferEntry> g_framebuffers;
 
-// What the guest currently has bound, already resolved to host targets.
-GuestTarget* g_bound_color[d3d::kColorSurfaceCount] = {};
-GuestTarget* g_bound_depth = nullptr;
+// What the guest currently has bound, kept as the *surfaces* rather than as
+// resolved host targets.
+//
+// Resolving them lazily is not a style choice. A host target's size depends on
+// the tiling extent, which BeginTiling does not establish until some way into
+// the first frame, so a target acquired before it and one acquired after it
+// have different heights. Binding colour and depth at different moments would
+// then pair a full screen colour attachment with a band-tall depth one, and
+// Plume takes a framebuffer's size from the colour attachment alone without
+// ever checking that the depth attachment agrees -- so it builds, and the first
+// draw runs off the end of the depth buffer. Acquiring both at the point of use
+// means they are always resolved against the same extent.
+Surface g_bound_color_surface[d3d::kColorSurfaceCount];
+bool g_bound_color_valid[d3d::kColorSurfaceCount] = {};
+Surface g_bound_depth_surface;
+bool g_bound_depth_valid = false;
+
+GuestTarget* AcquireTarget(const Surface& surface, bool depth);
+
+GuestTarget* BoundColorTarget(uint32_t index) {
+  if (index >= d3d::kColorSurfaceCount || !g_bound_color_valid[index])
+    return nullptr;
+  return AcquireTarget(g_bound_color_surface[index], false);
+}
+
+GuestTarget* BoundDepthTarget() {
+  return g_bound_depth_valid ? AcquireTarget(g_bound_depth_surface, true) : nullptr;
+}
 
 // The framebuffer the command list currently has bound, so a run of draws into
 // the same target does not re-set it. This is not just a saving: Plume's Vulkan
@@ -96,9 +143,17 @@ uint64_t g_clears_applied = 0;
 uint64_t g_clears_dropped = 0;
 uint64_t g_resolves_copied = 0;
 uint64_t g_resolves_dropped = 0;
+
+// Resolves taken through the old band-relative reading, i.e. against a host
+// target that does not cover the screen. Non-zero means BeginTiling's extent was
+// not known when the target was created, and the vertical duplication that
+// motivated all this would be back for those.
+uint64_t g_resolves_banded = 0;
 uint64_t g_composites = 0;
 uint64_t g_composites_skipped = 0;
 uint32_t g_size_mismatch_reported = 0;
+uint64_t g_attachment_mismatch = 0;
+uint32_t g_attachment_mismatch_reported = 0;
 uint32_t g_resolve_rect_reported = 0;
 uint32_t g_resolve_examples = 0;
 uint32_t g_clear_examples = 0;
@@ -117,10 +172,29 @@ void Transition(RenderCommandList* commands, RenderTexture* texture,
 }
 
 GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
+  // The host image covers the whole screen, not the band the EDRAM surface
+  // holds; see GuestTarget::host_height. Before BeginTiling has ever run the
+  // extent is zero and the surface is all there is to go on, which is correct
+  // for a title that is not tiling.
+  // Only a surface that is plausibly a *band of this tiling setup* is grown: the
+  // widths have to agree and the surface has to be the shorter one. A target
+  // that is neither, a small off screen one say, keeps its own size, which
+  // matters because otherwise every render target in the title would be
+  // inflated to the size of the screen.
+  uint32_t extent_width = 0;
+  uint32_t extent_height = 0;
+  D3DTilingExtent(&extent_width, &extent_height);
+
+  uint32_t host_width = surface.width;
+  uint32_t host_height = surface.height;
+  if (extent_width == surface.width && extent_height > surface.height)
+    host_height = extent_height;
+
   for (auto& candidate : g_targets) {
     if (candidate->base_tile == surface.base_tile && candidate->width == surface.width &&
         candidate->height == surface.height && candidate->msaa == surface.msaa &&
-        candidate->depth == depth) {
+        candidate->depth == depth && candidate->host_width == host_width &&
+        candidate->host_height == host_height) {
       return candidate.get();
     }
   }
@@ -136,6 +210,8 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
   target->msaa = surface.msaa;
   target->guest_format = surface.format;
   target->depth = depth;
+  target->host_width = host_width;
+  target->host_height = host_height;
 
   // Multisampling is recorded but the host image is single sampled for now.
   // Nothing draws yet, so the only thing this loses is edge quality on a target
@@ -143,22 +219,41 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
   // it is logged so the choice is visible rather than assumed.
   target->texture =
       depth ? device->createTexture(
-                  RenderTextureDesc::DepthTarget(surface.width, surface.height, kDepthFormat))
+                  RenderTextureDesc::DepthTarget(host_width, host_height, kDepthFormat))
             : device->createTexture(
-                  RenderTextureDesc::ColorTarget(surface.width, surface.height, kColorFormat));
+                  RenderTextureDesc::ColorTarget(host_width, host_height, kColorFormat));
   if (!target->texture)
     return nullptr;
 
   REXLOG_INFO(
-      "native_renderer: host {} target for EDRAM tile {}: {}x{} msaa {} (guest format 0x{:X})",
-      depth ? "depth" : "colour", surface.base_tile, surface.width, surface.height, surface.msaa,
-      surface.format);
+      "native_renderer: host {} target for EDRAM tile {}: {}x{} for a {}x{} guest surface, msaa "
+      "{} (guest format 0x{:X})",
+      depth ? "depth" : "colour", surface.base_tile, host_width, host_height, surface.width,
+      surface.height, surface.msaa, surface.format);
 
   g_targets.push_back(std::move(target));
   return g_targets.back().get();
 }
 
 RenderFramebuffer* AcquireFramebuffer(GuestTarget* color, GuestTarget* depth) {
+  // Plume sizes a framebuffer from its colour attachment and never checks that
+  // the depth attachment matches, so a mismatched pair builds happily and then
+  // draws off the end of the smaller one. Refusing here turns that into a
+  // dropped draw with a reason, which is the difference between a bug that is
+  // findable and one that removes the device.
+  if (color != nullptr && depth != nullptr &&
+      (color->host_width != depth->host_width || color->host_height != depth->host_height)) {
+    if (g_attachment_mismatch_reported < 8) {
+      ++g_attachment_mismatch_reported;
+      REXLOG_WARN(
+          "native_renderer: colour target is {}x{} but depth is {}x{}; refusing the framebuffer "
+          "rather than rendering past the end of one of them",
+          color->host_width, color->host_height, depth->host_width, depth->host_height);
+    }
+    ++g_attachment_mismatch;
+    depth = nullptr;
+  }
+
   const RenderTexture* color_texture = color ? color->texture.get() : nullptr;
   const RenderTexture* depth_texture = depth ? depth->texture.get() : nullptr;
   if (color_texture == nullptr && depth_texture == nullptr)
@@ -194,11 +289,15 @@ RenderFramebuffer* AcquireFramebuffer(GuestTarget* color, GuestTarget* depth) {
 void FrameSetColorSurface(uint32_t index, const Surface* surface) {
   if (index >= d3d::kColorSurfaceCount)
     return;
-  g_bound_color[index] = surface ? AcquireTarget(*surface, false) : nullptr;
+  g_bound_color_valid[index] = surface != nullptr;
+  if (surface != nullptr)
+    g_bound_color_surface[index] = *surface;
 }
 
 void FrameSetDepthSurface(const Surface* surface) {
-  g_bound_depth = surface ? AcquireTarget(*surface, true) : nullptr;
+  g_bound_depth_valid = surface != nullptr;
+  if (surface != nullptr)
+    g_bound_depth_surface = *surface;
 }
 
 void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
@@ -207,8 +306,8 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
   const bool clear_depth = (flags & 0x2u) != 0;
   const bool clear_stencil = (flags & 0x4u) != 0;
 
-  GuestTarget* color = clear_color ? g_bound_color[0] : nullptr;
-  GuestTarget* depth = (clear_depth || clear_stencil) ? g_bound_depth : nullptr;
+  GuestTarget* color = clear_color ? BoundColorTarget(0) : nullptr;
+  GuestTarget* depth = (clear_depth || clear_stencil) ? BoundDepthTarget() : nullptr;
   if (color == nullptr && depth == nullptr) {
     ++g_clears_dropped;
     return;
@@ -275,25 +374,45 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
   // into a colour texture, so it is left alone for now.
   if (source >= d3d::kColorSurfaceCount)
     return;
-  GuestTarget* target = g_bound_color[source];
+  GuestTarget* target = BoundColorTarget(source);
   if (target == nullptr || dest_address == 0 || dest_width == 0 || dest_height == 0) {
     ++g_resolves_dropped;
     return;
   }
 
-  // The rectangle is in screen space, not in the render target's own space, and
-  // that distinction is the whole reason this title's screen is not a single
-  // surface. It renders 720p through EDRAM in horizontal bands: the colour
-  // surface is 1280x384 and the second band's resolve asks for rows 352..720
-  // of a surface that is only 384 rows tall. What makes that consistent is the
-  // destination point, which is where the same rows land in the destination, so
-  // the band's origin inside the surface is the rectangle minus the point.
+  // The rectangle is in screen space, not in the guest surface's own space,
+  // because this title renders 720p through EDRAM in horizontal bands: the
+  // colour surface holds 1280x384 and the second band's resolve asks for rows
+  // 352..720.
   //
-  // Read that way every rectangle observed so far falls inside its surface. The
-  // clamp below is therefore a bound, not the mechanism, and it says so when it
-  // has to do anything -- if the model were wrong it would be firing constantly.
-  const int32_t local_x = src_x1 - dest_x;
-  const int32_t local_y = src_y1 - dest_y;
+  // On the console those rows are inside the surface, because the GPU replayed
+  // the draws with PA_SC_WINDOW_OFFSET shifting the band's geometry down into
+  // it, so the band's origin in the surface is the rectangle minus the
+  // destination point. That subtraction is precisely the window offset, and it
+  // is what this used to do.
+  //
+  // The host does not replay and does not apply the window offset: it renders
+  // the whole screen once, into a target sized to the tiling extent rather than
+  // to the band (see GuestTarget::host_height). So the rectangle is already in
+  // the target's space and the subtraction has nothing to undo -- doing it
+  // anyway is what put both bands at the top of the image and made the screen
+  // a vertically duplicated pair.
+  //
+  // The old reading is kept as the fallback for a target that is not full
+  // screen, which is what a title that never calls BeginTiling would produce,
+  // and the two agree there anyway since such a resolve has a zero destination
+  // point.
+  //
+  // A resolve with no rectangle passes 0x7FFFFFFF and means "the whole
+  // surface", so it is not evidence that the target is too small.
+  const bool unbounded_rect = src_x2 == 0x7FFFFFFF;
+  const bool host_covers_screen =
+      unbounded_rect ||
+      (int32_t(target->host_height) >= src_y2 && int32_t(target->host_width) >= src_x2);
+  const int32_t local_x = host_covers_screen ? src_x1 : src_x1 - dest_x;
+  const int32_t local_y = host_covers_screen ? src_y1 : src_y1 - dest_y;
+  if (!host_covers_screen)
+    ++g_resolves_banded;
   int32_t x1 = local_x < 0 ? 0 : local_x;
   int32_t y1 = local_y < 0 ? 0 : local_y;
   int32_t x2 = x1 + (src_x2 - src_x1);
@@ -301,8 +420,8 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
 
   // Clamp against the source surface and against what is left of the
   // destination from the point the copy starts at.
-  const int32_t source_right = int32_t(target->width);
-  const int32_t source_bottom = int32_t(target->height);
+  const int32_t source_right = int32_t(target->host_width);
+  const int32_t source_bottom = int32_t(target->host_height);
   const int32_t dest_right = int32_t(dest_width) - (dest_x < 0 ? 0 : dest_x) + x1;
   const int32_t dest_bottom = int32_t(dest_height) - (dest_y < 0 ? 0 : dest_y) + y1;
   const int32_t limit_right = source_right < dest_right ? source_right : dest_right;
@@ -321,21 +440,21 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
           "native_renderer: resolve rectangle ({},{})..({},{}) to ({},{}) is empty against a "
           "{}x{} source. Either the rect is not the third argument or D3DRECT is not four "
           "int32s.",
-          src_x1, src_y1, src_x2, src_y2, dest_x, dest_y, target->width, target->height);
+          src_x1, src_y1, src_x2, src_y2, dest_x, dest_y, target->host_width,
+          target->host_height);
     }
     return;
   }
   // A resolve with no rectangle means the whole surface, so being cut down to
   // the surface is the point rather than a surprise; only a rectangle the guest
   // actually asked for is worth a warning.
-  const bool whole_surface = src_x2 == 0x7FFFFFFF;
-  if (clamped && !whole_surface && g_resolve_rect_reported < 8) {
+  if (clamped && !unbounded_rect && g_resolve_rect_reported < 8) {
     ++g_resolve_rect_reported;
     REXLOG_WARN(
         "native_renderer: resolve rectangle ({},{})..({},{}) to ({},{}) does not fit its {}x{} "
         "source or its {}x{} destination and was clamped",
-        src_x1, src_y1, src_x2, src_y2, dest_x, dest_y, target->width, target->height, dest_width,
-        dest_height);
+        src_x1, src_y1, src_x2, src_y2, dest_x, dest_y, target->host_width, target->host_height,
+        dest_width, dest_height);
   }
 
   ResolvedTexture* destination = nullptr;
@@ -401,12 +520,25 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
   g_present_texture = destination;
 }
 
-void* FrameResolveTextureByAddress(uint32_t address) {
+void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t height) {
   if (address == 0)
     return nullptr;
   for (auto& candidate : g_resolved) {
-    if (candidate->address == address)
-      return candidate->texture.get();
+    if (candidate->address != address)
+      continue;
+
+    // The extent has to agree, and this is not a formality. An address that was
+    // once a resolve destination would otherwise be treated as one forever, so
+    // if the guest frees that buffer and loads an ordinary texture into it, the
+    // mirror would keep handing back the render target the scene before last
+    // drew. A disagreement about the extent is the cheapest evidence that the
+    // memory is no longer the image this owns; the caller falls through to
+    // decoding it as an asset, which is what it now is.
+    if (candidate->width != width || candidate->height != height) {
+      ++g_resolve_extent_mismatch;
+      return nullptr;
+    }
+    return candidate->texture.get();
   }
   return nullptr;
 }
@@ -414,10 +546,12 @@ void* FrameResolveTextureByAddress(uint32_t address) {
 void LogFrameSummary() {
   REXLOG_INFO(
       "native_renderer: frame targets={} framebuffers={} resolve destinations={} | clears "
-      "applied={} dropped={} | resolves copied={} dropped={} | composites={} skipped={} | "
-      "presenting 0x{:08X} ({}x{})",
+      "applied={} dropped={} | resolves copied={} dropped={} banded={} extent mismatch={} | "
+      "attachment mismatch={} | "
+      "composites={} skipped={} | presenting 0x{:08X} ({}x{})",
       g_targets.size(), g_framebuffers.size(), g_resolved.size(), g_clears_applied,
-      g_clears_dropped, g_resolves_copied, g_resolves_dropped, g_composites, g_composites_skipped,
+      g_clears_dropped, g_resolves_copied, g_resolves_dropped, g_resolves_banded,
+      g_resolve_extent_mismatch, g_attachment_mismatch, g_composites, g_composites_skipped,
       g_present_texture ? g_present_texture->address : 0,
       g_present_texture ? g_present_texture->width : 0,
       g_present_texture ? g_present_texture->height : 0);
@@ -429,8 +563,8 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   // title only for the resolve source selector to name, and the pixel shaders
   // export a single colour (e0, all 128 of them), so one attachment is the whole
   // story rather than a simplification.
-  GuestTarget* color = g_bound_color[0];
-  GuestTarget* depth = g_bound_depth;
+  GuestTarget* color = BoundColorTarget(0);
+  GuestTarget* depth = BoundDepthTarget();
   if (color == nullptr && depth == nullptr)
     return nullptr;
 
@@ -506,9 +640,9 @@ void ShutdownFrameTargets() {
   g_framebuffers.clear();
   g_targets.clear();
   g_resolved.clear();
-  for (auto& bound : g_bound_color)
-    bound = nullptr;
-  g_bound_depth = nullptr;
+  for (bool& bound : g_bound_color_valid)
+    bound = false;
+  g_bound_depth_valid = false;
   g_present_texture = nullptr;
 }
 

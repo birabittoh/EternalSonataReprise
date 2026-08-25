@@ -36,9 +36,25 @@ inline constexpr uint32_t kRootVertexBoolConstants = 1;
 inline constexpr uint32_t kRootPixelFloatConstants = 2;
 inline constexpr uint32_t kRootPixelBoolConstants = 3;
 
-// The descriptor set index the textures and samplers live in, which is also the
-// HLSL register space they are declared in.
+// The alpha test, which is not a guest constant bank at all: it is render state
+// (RB_COLORCONTROL's compare function and RB_ALPHA_REF), handed to the pixel
+// shader because the console tests alpha in fixed function hardware and no host
+// pipeline state object can express that. See PRELUDE_ALPHA_TEST in
+// scripts/xenos_hlsl.py.
+inline constexpr uint32_t kRootAlphaTest = 4;
+
+// The descriptor set indices, which are also the HLSL register spaces the
+// resources are declared in: textures are `t0..t15, space0` and samplers
+// `s0..s15, space1`.
+//
+// Two sets rather than one because the heaps behind them are very differently
+// sized. D3D12 gives a shader-visible sampler heap 1024 descriptors against the
+// view heap's 65536, so a descriptor set carrying sixteen of each costs 1/64th
+// of the sampler heap, and a cache of them runs out after sixty four sets. The
+// title has many distinct texture combinations and only a handful of distinct
+// sampler ones; splitting puts each in the heap that can hold it.
 inline constexpr uint32_t kTextureDescriptorSet = 0;
+inline constexpr uint32_t kSamplerDescriptorSet = 1;
 
 // The number of texture and sampler slots the layout reserves. The pixel
 // shaders in this title declare slots 0..15, so the whole range is bound

@@ -54,7 +54,12 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
 // Look up a resolved texture by guest base address. Returns nullptr if the
 // address is not a resolve destination. This is what connects a SetTexture
 // bind to the render target the frame layer produced.
-void* FrameResolveTextureByAddress(uint32_t address);
+//
+// The extent the caller is sampling at has to match the one that was resolved.
+// An address is not a render target forever: the guest can free the buffer and
+// load an ordinary texture into it, and without this an old render target would
+// keep being served in its place.
+void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t height);
 
 void LogFrameSummary();
 

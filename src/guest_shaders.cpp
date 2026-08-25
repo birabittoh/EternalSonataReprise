@@ -36,7 +36,7 @@ constexpr uint32_t kMagic = 0x53475345;  // 'ESGS', little endian
 // Bumped to 2 when the emitter moved the pixel shaders' constant buffers to b2
 // and b3. The pack layout did not change, so a stale pack would load and bind
 // the vertex float bank to every pixel shader; refusing it is the point.
-constexpr uint32_t kVersion = 2;
+constexpr uint32_t kVersion = 4;
 constexpr char kDefaultName[] = "guest_shaders.bin";
 
 constexpr uint8_t kFlagPointSize = 1 << 0;
