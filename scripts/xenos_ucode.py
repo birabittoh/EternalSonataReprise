@@ -56,6 +56,12 @@ SCALAR_OPS = [
     ("opcode_60", 0), ("opcode_61", 0), ("opcode_62", 0), ("opcode_63", 0),
 ]
 
+# Single-operand scalar ops that consume two components of that operand rather
+# than one (xenia's `single_operand_is_two_component`).
+SCALAR_TWO_COMPONENT = {
+    "adds", "muls", "muls_prev2", "maxs", "mins", "maxas", "maxasf", "subs",
+}
+
 VECTOR_OPS = [
     ("add", 2), ("mul", 2), ("max", 2), ("min", 2),
     ("seq", 2), ("sgt", 2), ("sge", 2), ("sne", 2),
@@ -264,6 +270,10 @@ def decode_alu(w0, w1, w2):
         text = ("r%d" if is_temp else "c%d") % (reg[i] & (0x3F if is_temp else 0xFF))
         if component_count == 1:
             comps = COMPONENTS[swizzled_component(swiz[i], 3)]
+        elif component_count == -2:
+            # The scalar half's two-component form reads swizzle slots 3 then 0.
+            comps = "".join(COMPONENTS[swizzled_component(swiz[i], j)]
+                            for j in (3, 0))
         else:
             comps = "".join(COMPONENTS[swizzled_component(swiz[i], j)]
                             for j in range(component_count))
@@ -304,7 +314,7 @@ def decode_alu(w0, w1, w2):
             if negate[3]:
                 srcs = "-" + srcs
         elif sca_operands == 1:
-            srcs = operand(3, 1)
+            srcs = operand(3, -2 if sca_name in SCALAR_TWO_COMPONENT else 1)
         else:
             srcs = ""
         lines.append("%s%s%s %s.%s%s" % (

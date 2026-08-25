@@ -468,7 +468,11 @@ class Shader:
             if source["negate"]:
                 text = "-%s" % text
             return text
-        component = U.swizzled_component(swizzle, 0 if which == 0 else 1)
+        # The scalar half reads swizzle slots 3 and 0, in that order, not 0 and
+        # 1: xenia's shader_interpreter takes `(3 + i) & 3`. Reading slot 0
+        # twice made every two-component op fold to a constant (`subs` to 0,
+        # which then reached a `rcp` and produced an infinity).
+        component = U.swizzled_component(swizzle, 3 if which == 0 else 0)
         base = self._source(instr, address, 3, 4)
         # `_source` already applied negate/abs around the full swizzle, so
         # rebuild with the single component instead of indexing the result.
