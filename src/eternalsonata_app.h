@@ -28,6 +28,9 @@
 #include "force_load_area.h"
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
+#include "native_renderer.h"
+#include "native_renderer_overlay.h"
+#include "native_renderer_plume.h"
 #include "party_system.h"
 #include "photo_system.h"
 #include "room_presence.h"
@@ -103,7 +106,25 @@ class EternalsonataApp : public rex::ReXApp {
     config.startup_hint = "Press F4 to open settings.";
   }
 
+  // With gpu_plugin set to "" the SDK loads no graphics backend, and this
+  // project renders the guest itself at the Direct3D level rather than
+  // emulating Xenos. Runs before the guest starts, so no D3D call can arrive
+  // ahead of it. See native_renderer.h.
+  void OnPreLaunchModule() override { eternalsonata::InitNativeRenderer(window()); }
+
+  // Detached overlay mode: with no GPU plugin the SDK creates no presenter and
+  // asks the app for a drawer instead. Returning null here is what left the
+  // window without F3/F4 and every other overlay. See native_renderer_overlay.h.
+  std::unique_ptr<rex::ui::ImmediateDrawer> OnCreateImmediateDrawer() override {
+    return eternalsonata::CreatePlumeImmediateDrawer();
+  }
+
   void OnPostSetup() override {
+    // The overlays record into the host frame, so the renderer needs the drawer
+    // that produces them. Done here because imgui_drawer() is only live once
+    // presentation has been set up.
+    eternalsonata::PlumeSetOverlayDrawer(imgui_drawer());
+
     // Seed the GPU plugin/Vulkan device lists once here rather than every
     // time the F4 settings overlay is opened (see settings.cpp).
     eternalsonata::InitSettingsCaches();
@@ -186,7 +207,17 @@ class EternalsonataApp : public rex::ReXApp {
     eternalsonata::FieldPlayerModelOverride::Bind(runtime());
   }
 
+  // The host swap chain follows the window. Only records the request: this
+  // arrives on the UI thread, and every other swap chain call happens on the
+  // guest thread at present time.
+  void OnWindowPixelSizeChanged(uint32_t pixel_width, uint32_t pixel_height) override {
+    eternalsonata::PlumeNotifyResize(pixel_width, pixel_height);
+  }
+
   void OnShutdown() override {
+    // Tear the host renderer down before the window goes away.
+    eternalsonata::ShutdownPlumeBackend();
+
     // Stop the Discord presence worker and clear the presence on exit.
     rex::discord_rpc::Stop();
 
