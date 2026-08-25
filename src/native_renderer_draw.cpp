@@ -740,6 +740,10 @@ std::vector<StreamCacheEntry> g_stream_cache;
 
 struct ConstantCacheEntry {
   std::vector<uint8_t> raw;  // the guest bytes, unswapped, as last uploaded
+  // The literal pool overlaid on top of them, which belongs to the bound shader
+  // rather than to the device, so the same guest bytes under two shaders are
+  // two different uploads.
+  const uint8_t* literals = nullptr;
   RenderBufferReference ref;
   bool valid = false;
 };
@@ -759,9 +763,17 @@ AlphaTestCache g_alpha_cache;
 // upload when the guest bytes have not changed. The comparison is against the
 // raw guest memory rather than against our own idea of what was set, so a write
 // that did not come through the two constant setters cannot go unnoticed.
+//
+// `literals`, when given, is 64 host order bytes written over registers
+// 252..255 after the copy. That pool comes from the bound shader's own
+// container and the guest never puts it in the shadow, so without this every
+// shader that reads c252..c255 reads zero. It is compared by pointer rather
+// than by value because the pack deduplicates identical pools, so two shaders
+// sharing one are genuinely the same 64 bytes.
 bool UploadConstantBank(RenderDevice* device, const uint8_t* source, uint32_t bytes,
-                        ConstantCacheEntry& cache, RenderBufferReference* out) {
-  if (cache.valid && cache.raw.size() == bytes &&
+                        ConstantCacheEntry& cache, RenderBufferReference* out,
+                        const uint8_t* literals = nullptr) {
+  if (cache.valid && cache.raw.size() == bytes && cache.literals == literals &&
       std::memcmp(cache.raw.data(), source, bytes) == 0) {
     *out = cache.ref;
     return true;
@@ -781,7 +793,15 @@ bool UploadConstantBank(RenderDevice* device, const uint8_t* source, uint32_t by
     std::memcpy(out_bytes + 4 * i, &value, 4);
   }
 
+  // The pool occupies the last four float4s of a 256 entry bank. A bank that is
+  // not the float bank (the bool/loop one) never gets a pool, so the size check
+  // is what keeps this from writing past a smaller allocation.
+  constexpr uint32_t kLiteralBytes = 64;
+  if (literals != nullptr && bytes >= kLiteralBytes)
+    std::memcpy(out_bytes + bytes - kLiteralBytes, literals, kLiteralBytes);
+
   cache.raw.assign(source, source + bytes);
+  cache.literals = literals;
   cache.ref = allocation.ref;
   cache.valid = true;
   g_constant_bytes += bytes;
@@ -1014,9 +1034,11 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   RenderBufferReference vertex_floats, pixel_floats, bool_loops;
   const bool constants_ok =
       UploadConstantBank(device, call.device + d3d::kVertexConstantShadow,
-                         d3d::kConstantRegisters * 16, g_constant_cache[0], &vertex_floats) &&
+                         d3d::kConstantRegisters * 16, g_constant_cache[0], &vertex_floats,
+                         GuestPipelineVertexLiterals(call.pipeline)) &&
       UploadConstantBank(device, call.device + d3d::kPixelConstantShadow,
-                         d3d::kConstantRegisters * 16, g_constant_cache[1], &pixel_floats) &&
+                         d3d::kConstantRegisters * 16, g_constant_cache[1], &pixel_floats,
+                         GuestPipelinePixelLiterals(call.pipeline)) &&
       UploadConstantBank(device, call.device + d3d::kBoolConstantShadow,
                          d3d::kBoolLoopConstantBytes, g_constant_cache[2], &bool_loops);
   if (!constants_ok) {

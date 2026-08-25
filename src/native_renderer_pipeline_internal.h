@@ -76,6 +76,12 @@ bool GuestPipelineUsesNullSlot(const GuestPipeline* pipeline);
 // read through an address whose resource is long gone.
 uint32_t GuestPipelineTextureMask(const GuestPipeline* pipeline);
 
+// The bound shaders' literal constant pools, 64 bytes each, to overlay on
+// constants 252..255 of their own banks. Null when the shader has none. See
+// GuestShader::literals for why the guest's own shadows do not carry them.
+const uint8_t* GuestPipelineVertexLiterals(const GuestPipeline* pipeline);
+const uint8_t* GuestPipelinePixelLiterals(const GuestPipeline* pipeline);
+
 // The guest stream each host slot reads from, parallel to the slot array. A
 // value of kNullInputSlot means the missing-attribute stream, which the draw
 // path binds a zero-filled buffer to rather than any guest memory.

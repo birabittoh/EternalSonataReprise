@@ -286,6 +286,10 @@ class Shader:
         self.name = name
         self.decoded = U.decode(ucode)
         self.dwords = U.read_dwords(ucode[self.decoded["prefix"]:])
+        # The literal pool the compiler placed in constants 252..255. Not part
+        # of the emitted code: the host has to upload it alongside the guest's
+        # own constants, because nothing in the guest ever writes it.
+        self.literals = U.literal_constants(ucode, self.decoded["prefix"])
         self.header = header
         self.interpolators = U.interpolator_signature(header) if header else []
         # The interpolator layout both stages declare.
