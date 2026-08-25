@@ -25,6 +25,9 @@ eternalsonata
 eternalsonata.exe
 eternalsonata.pdb
 eternalsonata.toml
+# The native renderer's shader pack, rebuilt from assets/default.xex by
+# scripts/gen-guest-shaders.py (see src/guest_shaders.h)
+guest_shaders.bin
 /*.so
 /*.dll
 /*.rdc
