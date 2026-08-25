@@ -241,7 +241,16 @@ struct MirroredTexture {
   // address at the same size and format. See CheckSourceChanged.
   uint64_t content_hash = 0;
   uint64_t source_bytes = 0;
+
+  // The frame this texture's source was last hashed in. The hash covers the
+  // whole source and is therefore too expensive to repeat on every bind, so it
+  // runs at most once per texture per frame; a texture bound two hundred times
+  // in a frame is hashed once. See HashSource.
+  uint64_t hashed_frame = ~0ull;
 };
+
+// Bumped once per guest swap. Only ever compared for equality.
+uint64_t g_frame = 0;
 
 std::vector<std::unique_ptr<MirroredTexture>> g_textures;
 
@@ -290,39 +299,59 @@ uint64_t SourceExtentBytes(const TextureFetch& fetch, const FormatInfo& info) {
   return uint64_t(pitch_blocks) * info.block_bytes * height_blocks;
 }
 
-// A cheap fingerprint of the guest bytes, used to notice that the game has
-// replaced a texture's contents under an address the cache has already seen.
+// A fingerprint of the guest bytes, used to notice that the game has replaced
+// a texture's contents under an address the cache has already seen.
 //
-// Bounded rather than complete, and deliberately so: this runs on every bind
-// that hits the cache, roughly seven hundred times a frame, and hashing a
-// 1280x720 surface each time would cost more than decoding it did. It samples a
-// fixed number of chunks spread evenly across the whole extent, so the cost does
-// not depend on the texture's size, and a wholesale replacement -- which is what
-// streaming a new asset into the same buffer is -- changes essentially all of
-// them. What it can miss is an edit small enough to fall between two samples.
-constexpr uint32_t kHashChunks = 64;
-constexpr uint32_t kHashChunkBytes = 32;
+// This covers **every byte**, and it has to. An earlier version sampled 64
+// chunks of 32 bytes spread across the extent, on the theory that the change
+// worth catching is a wholesale replacement -- streaming a new asset into a
+// buffer the game already owns -- which changes essentially all of them. That
+// is true of assets and false of the one texture that matters most: the font
+// glyph cache is an 864x864 atlas the game fills a cell at a time, and a cell
+// is roughly 30x34 pixels in three megabytes. Sampling covered 2048 bytes of
+// 2,985,984, so a newly rasterised glyph fell between two samples every time,
+// the atlas never refreshed, and the cell kept whatever character had been
+// rasterised into it earlier. On screen that is "Brani" reading as "trani":
+// correct quads, correct UVs, correct atlas *cell*, stale atlas *content*.
+//
+// Completeness costs, so the caller pays it at most once per texture per frame
+// (see MirroredTexture::hashed_frame) rather than on each of the ~700 binds a
+// frame contains. Within a frame the first bind decides, which means a glyph
+// the guest rasterises mid frame appears on the next one.
+// Bytes fed through HashSource, so the cost of completeness is visible in the
+// summary instead of being guessed at.
+uint64_t g_hash_bytes = 0;
 
 uint64_t HashSource(const uint8_t* source, uint64_t bytes) {
-  uint64_t hash = 1469598103934665603ull;  // FNV-1a
-  auto mix = [&hash](uint64_t value) {
-    hash ^= value;
-    hash *= 1099511628211ull;
-  };
+  g_hash_bytes += bytes;
 
-  // The size itself, so two different extents cannot collide even if every
-  // sampled chunk agrees.
-  mix(bytes);
+  // Four independent FNV-1a lanes rather than one. A single accumulator makes
+  // every multiply wait for the previous one, which is the whole cost of the
+  // loop; four lanes fill that latency and cost nothing in collision terms,
+  // since they are folded together at the end. This is what makes hashing the
+  // full extent affordable enough to do at all.
+  constexpr uint64_t kPrime = 1099511628211ull;
+  uint64_t lanes[4] = {1469598103934665603ull, 1469598103934665603ull ^ bytes,
+                       1469598103934665603ull, 1469598103934665603ull ^ (bytes << 17)};
 
-  const uint64_t stride = bytes > kHashChunks * kHashChunkBytes
-                              ? bytes / kHashChunks
-                              : kHashChunkBytes;
-  for (uint64_t offset = 0; offset + kHashChunkBytes <= bytes; offset += stride) {
-    for (uint32_t i = 0; i < kHashChunkBytes; i += 8) {
-      uint64_t chunk;
-      std::memcpy(&chunk, source + offset + i, sizeof(chunk));
-      mix(chunk);
+  uint64_t offset = 0;
+  for (; offset + 32 <= bytes; offset += 32) {
+    uint64_t chunk[4];
+    std::memcpy(chunk, source + offset, sizeof(chunk));
+    for (uint32_t i = 0; i < 4; ++i) {
+      lanes[i] ^= chunk[i];
+      lanes[i] *= kPrime;
     }
+  }
+
+  uint64_t hash = bytes;
+  for (uint32_t i = 0; i < 4; ++i) {
+    hash ^= lanes[i];
+    hash *= kPrime;
+  }
+  for (; offset < bytes; ++offset) {
+    hash ^= source[offset];
+    hash *= kPrime;
   }
   return hash;
 }
@@ -563,6 +592,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
       if (!candidate->texture)
         return nullptr;
       ++g_recovered;
+      candidate->hashed_frame = g_frame;
       candidate->content_hash = HashSource(
           GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes),
         candidate->source_bytes);
@@ -573,14 +603,21 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     // was missing, and its absence is what showed a cutscene's texture as a
     // menu background: the game reuses a buffer rather than allocating a new
     // one, so the address, format and extent all match while the contents do
-    // not.
-    const uint64_t hash = HashSource(
-        GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes),
-        candidate->source_bytes);
-    if (hash != candidate->content_hash) {
-      ++g_refreshed;
-      DecodeAndUpload(memory_base, fetch, info, candidate->texture.get());
-      candidate->content_hash = hash;
+    // not. It also catches the font atlas being filled a glyph at a time, which
+    // is why the hash has to be complete rather than sampled.
+    //
+    // Once per frame: the hash reads the whole source, and this texture may be
+    // bound hundreds of times before the frame ends.
+    if (candidate->hashed_frame != g_frame) {
+      candidate->hashed_frame = g_frame;
+      const uint64_t hash = HashSource(
+          GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes),
+          candidate->source_bytes);
+      if (hash != candidate->content_hash) {
+        ++g_refreshed;
+        DecodeAndUpload(memory_base, fetch, info, candidate->texture.get());
+        candidate->content_hash = hash;
+      }
     }
     return candidate->texture.get();
   }
@@ -596,10 +633,12 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   // Hashed after the upload rather than before, so a source that changed
   // between the two is noticed on the next bind instead of being recorded as
   // already current.
-  if (entry->texture)
+  if (entry->texture) {
+    entry->hashed_frame = g_frame;
     entry->content_hash =
         HashSource(GuestPhysicalPointer(memory_base, fetch.raw_base_address, entry->source_bytes),
                    entry->source_bytes);
+  }
 
   RenderTexture* result = entry->texture.get();
   g_textures.push_back(std::move(entry));
@@ -608,11 +647,15 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
 
 void LogTextureMirrorSummary() {
   REXLOG_INFO(
-      "native_renderer: textures decoded={} cached={} refreshed={} | binds resolve={} cache={} | "
+      "native_renderer: textures decoded={} cached={} refreshed={} hashed={} MiB | "
+      "binds resolve={} cache={} | "
       "refused format={} extent={} unmapped={} upload={} | retries={} recovered={}",
-      g_decoded, g_textures.size(), g_refreshed, g_resolve_hits, g_decode_hits, g_refused_format,
-      g_refused_extent, g_refused_unmapped, g_refused_upload, g_retries, g_recovered);
+      g_decoded, g_textures.size(), g_refreshed, g_hash_bytes / (1024 * 1024), g_resolve_hits,
+      g_decode_hits, g_refused_format, g_refused_extent, g_refused_unmapped, g_refused_upload,
+      g_retries, g_recovered);
 }
+
+void TextureMirrorBeginFrame() { ++g_frame; }
 
 void ShutdownTextureMirror() { g_textures.clear(); }
 

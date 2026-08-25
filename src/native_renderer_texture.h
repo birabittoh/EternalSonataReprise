@@ -48,6 +48,11 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch);
 
 // Counters for the swap-time summary: what was resolved from the frame layer,
 // what was decoded from guest memory, and every reason a decode was refused.
+// Tick the frame counter the content hash is throttled against. Called once per
+// guest swap; without it every cached texture is hashed only once, ever, and a
+// texture the guest rewrites in place is never noticed.
+void TextureMirrorBeginFrame();
+
 void LogTextureMirrorSummary();
 
 // Drop every host texture. The device is going away, so this has to run first.
