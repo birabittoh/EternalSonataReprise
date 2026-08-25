@@ -50,29 +50,38 @@ uint32_t AlignUp(uint32_t value, uint32_t alignment) {
 //
 // The first texture the title binds is exactly this case (0x0AF5C000 at the
 // second pipeline), so without the check the mirror crashes on its first real
-// decode. Once per cache miss, not once per bind.
-bool GuestRangeReadable(const uint8_t* start, uint64_t bytes) {
+// decode.
+//
+// Returns how many bytes from `start` are readable, capped at `bytes`. The
+// count rather than a flag, because a refusal that stops one page short of the
+// end is a different bug from one that finds nothing mapped at all, and the two
+// are indistinguishable from the counters alone.
+uint64_t GuestRangeReadableBytes(const uint8_t* start, uint64_t bytes) {
   if (start == nullptr || bytes == 0)
-    return false;
+    return 0;
 #ifdef _WIN32
   const uint8_t* cursor = start;
   const uint8_t* end = start + bytes;
   while (cursor < end) {
     MEMORY_BASIC_INFORMATION info = {};
     if (VirtualQuery(cursor, &info, sizeof(info)) == 0)
-      return false;
+      break;
     if (info.State != MEM_COMMIT)
-      return false;
+      break;
     const DWORD readable = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ |
                            PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
     if ((info.Protect & readable) == 0 || (info.Protect & PAGE_GUARD) != 0)
-      return false;
+      break;
     cursor = static_cast<const uint8_t*>(info.BaseAddress) + info.RegionSize;
   }
-  return true;
+  return cursor > end ? bytes : uint64_t(cursor - start);
 #else
-  return true;
+  return bytes;
 #endif
+}
+
+bool GuestRangeReadable(const uint8_t* start, uint64_t bytes) {
+  return GuestRangeReadableBytes(start, bytes) >= bytes;
 }
 
 // A host pointer to guest physical memory.
@@ -83,14 +92,31 @@ bool GuestRangeReadable(const uint8_t* start, uint64_t bytes) {
 // 0xE0000000 against a texture that would not read -- the first two are
 // unmapped and the last three all alias the same pages.
 //
-// 0xA0000000 is the cached one, and any of the three would give identical
-// bytes. It is derived from the *raw* fetch field rather than the fixed-up
-// address, because the fixup's 0x1000 exists only to make an E-aperture
-// resource compare equal to its resolve destination and would be a page of
-// skew here.
-const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t raw_base_address) {
-  const uint32_t aliased = 0xA0000000u | (raw_base_address & 0x1FFFFFFFu);
-  return memory_base + aliased;
+// 0xA0000000 is the cached one and the three alias the same physical pages, so
+// where all three are mapped the bytes are identical. They do **not** all cover
+// the same range, though, which is what made the first intro logo white: its
+// 1280x720 DXT1 source at 0x08567000 needs 460800 bytes and the A aperture is
+// committed only as far as 0x085C0000, 364544 bytes in, while C and E carry the
+// whole thing. So the aperture is chosen per read, by asking which one actually
+// spans the bytes wanted, rather than fixed.
+//
+// The offset is the *raw* fetch field rather than the fixed-up address, because
+// the fixup's 0x1000 exists only to make an E-aperture resource compare equal to
+// its resolve destination and would be a page of skew here.
+const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t raw_base_address,
+                                    uint64_t bytes) {
+  const uint32_t offset = raw_base_address & 0x1FFFFFFFu;
+  const uint8_t* first = nullptr;
+  for (uint32_t aperture : {0xA0000000u, 0xC0000000u, 0xE0000000u}) {
+    const uint8_t* candidate = memory_base + (aperture | offset);
+    if (first == nullptr)
+      first = candidate;
+    if (GuestRangeReadableBytes(candidate, bytes) >= bytes)
+      return candidate;
+  }
+  // Nothing spans it. Hand back the cached aperture anyway so the caller's own
+  // readability check is what refuses, and reports against the usual one.
+  return first;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +253,19 @@ uint64_t g_refused_extent = 0;
 uint64_t g_refused_upload = 0;
 uint64_t g_refused_unmapped = 0;
 
+// Failed decodes that were attempted again on a later bind, and how many of
+// those attempts eventually succeeded. A refusal is counted once per address,
+// on the first attempt only, so that the refusal counters stay a count of
+// distinct textures the mirror could not produce rather than a count of binds.
+uint64_t g_retries = 0;
+uint64_t g_recovered = 0;
+bool g_count_refusals = true;
+
+void CountRefusal(uint64_t& counter) {
+  if (g_count_refusals)
+    ++counter;
+}
+
 // Cached textures whose guest bytes changed under them and were re-uploaded.
 uint64_t g_refreshed = 0;
 
@@ -315,11 +354,11 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
     // What the tiled layout can address, which is what bounds the read.
     const uint64_t source_bytes = SourceExtentBytes(fetch, info);
     if (source_bytes > kMaxTextureBytes) {
-      ++g_refused_extent;
+      CountRefusal(g_refused_extent);
       return false;
     }
     if (!GuestRangeReadable(source, source_bytes)) {
-      ++g_refused_unmapped;
+      CountRefusal(g_refused_unmapped);
       return false;
     }
 
@@ -336,11 +375,11 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
     const uint32_t source_row_bytes = pitch_blocks * info.block_bytes;
     const uint64_t source_bytes = SourceExtentBytes(fetch, info);
     if (source_bytes > kMaxTextureBytes) {
-      ++g_refused_extent;
+      CountRefusal(g_refused_extent);
       return false;
     }
     if (!GuestRangeReadable(source, source_bytes)) {
-      ++g_refused_unmapped;
+      CountRefusal(g_refused_unmapped);
       return false;
     }
 
@@ -387,14 +426,27 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
   const uint32_t upload_row_texels = upload_row_blocks * info.block;
 
   std::vector<uint8_t> texels;
-  if (!ReadTexels(GuestPhysicalPointer(memory_base, fetch.raw_base_address), fetch, info,
+  if (!ReadTexels(GuestPhysicalPointer(memory_base, fetch.raw_base_address,
+                                       SourceExtentBytes(fetch, info)),
+                  fetch, info,
                   upload_row_bytes, texels)) {
     // ReadTexels has already counted why, so this does not count it again.
-    if (g_refused_unmapped + g_refused_extent <= 8) {
+    // Only on the first attempt at an address: a retry that fails again is the
+    // expected case for a slot holding a stale fetch constant, and logging it
+    // would be one line per bind forever.
+    if (g_count_refusals && g_refused_unmapped + g_refused_extent <= 8) {
+      const uint64_t wanted = SourceExtentBytes(fetch, info);
+      const uint32_t offset = fetch.raw_base_address & 0x1FFFFFFFu;
       REXLOG_INFO(
-          "native_renderer: texture mirror refused {}x{} fmt {} {} pitch {} at 0x{:08X}",
+          "native_renderer: texture mirror refused {}x{} fmt {} {} pitch {} at 0x{:08X}, "
+          "of {} source byte(s) readable: A={} C={} E={} 0={} 8={}",
           fetch.width, fetch.height, fetch.format, fetch.tiled ? "tiled" : "linear", fetch.pitch,
-          fetch.base_address);
+          fetch.base_address, wanted,
+          GuestRangeReadableBytes(memory_base + (0xA0000000u | offset), wanted),
+          GuestRangeReadableBytes(memory_base + (0xC0000000u | offset), wanted),
+          GuestRangeReadableBytes(memory_base + (0xE0000000u | offset), wanted),
+          GuestRangeReadableBytes(memory_base + offset, wanted),
+          GuestRangeReadableBytes(memory_base + (0x80000000u | offset), wanted));
     }
     return nullptr;
   }
@@ -404,7 +456,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
     created = device->createTexture(
         RenderTextureDesc::Texture2D(fetch.width, fetch.height, 1, info.host));
     if (!created) {
-      ++g_refused_upload;
+      CountRefusal(g_refused_upload);
       return nullptr;
     }
     existing = created.get();
@@ -412,12 +464,12 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
 
   auto staging = device->createBuffer(RenderBufferDesc::UploadBuffer(texels.size()));
   if (!staging) {
-    ++g_refused_upload;
+    CountRefusal(g_refused_upload);
     return nullptr;
   }
   auto* mapped = static_cast<uint8_t*>(staging->map());
   if (mapped == nullptr) {
-    ++g_refused_upload;
+    CountRefusal(g_refused_upload);
     return nullptr;
   }
   std::memcpy(mapped, texels.data(), texels.size());
@@ -470,7 +522,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   }
 
   if (fetch.width > kMaxTextureExtent || fetch.height > kMaxTextureExtent) {
-    ++g_refused_extent;
+    CountRefusal(g_refused_extent);
     return nullptr;
   }
 
@@ -492,12 +544,30 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     }
     ++g_decode_hits;
 
-    // A failed decode is cached as a null entry so it is not retried on every
-    // bind; the counters above already recorded why it failed. There is also
-    // nothing safe to hash, since the reason may well be that the source is not
-    // readable.
-    if (!candidate->texture)
-      return nullptr;
+    // A failed decode is remembered, but it is *not* final. The reason is
+    // usually that the source was not readable yet, and the game streams a
+    // texture into a buffer some frames before it first samples it, so the very
+    // first bind of an asset can lose a race the second bind would win. Caching
+    // the failure permanently turns that race into a texture that is white for
+    // the rest of the run, which is what the two intro logos were.
+    //
+    // Retried on every bind rather than on a timer: the readability walk is a
+    // couple of VirtualQuery calls and is cheaper than the content hash the
+    // success path below already pays. The refusal counters are frozen for the
+    // retry so they stay a count of distinct textures, not of binds.
+    if (!candidate->texture) {
+      ++g_retries;
+      g_count_refusals = false;
+      candidate->texture = DecodeAndUpload(memory_base, fetch, info, nullptr);
+      g_count_refusals = true;
+      if (!candidate->texture)
+        return nullptr;
+      ++g_recovered;
+      candidate->content_hash = HashSource(
+          GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes),
+        candidate->source_bytes);
+      return candidate->texture.get();
+    }
 
     // Has the guest replaced what is at this address? This is the check that
     // was missing, and its absence is what showed a cutscene's texture as a
@@ -505,7 +575,8 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     // one, so the address, format and extent all match while the contents do
     // not.
     const uint64_t hash = HashSource(
-        GuestPhysicalPointer(memory_base, fetch.raw_base_address), candidate->source_bytes);
+        GuestPhysicalPointer(memory_base, fetch.raw_base_address, candidate->source_bytes),
+        candidate->source_bytes);
     if (hash != candidate->content_hash) {
       ++g_refreshed;
       DecodeAndUpload(memory_base, fetch, info, candidate->texture.get());
@@ -527,7 +598,8 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   // already current.
   if (entry->texture)
     entry->content_hash =
-        HashSource(GuestPhysicalPointer(memory_base, fetch.raw_base_address), entry->source_bytes);
+        HashSource(GuestPhysicalPointer(memory_base, fetch.raw_base_address, entry->source_bytes),
+                   entry->source_bytes);
 
   RenderTexture* result = entry->texture.get();
   g_textures.push_back(std::move(entry));
@@ -537,9 +609,9 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
 void LogTextureMirrorSummary() {
   REXLOG_INFO(
       "native_renderer: textures decoded={} cached={} refreshed={} | binds resolve={} cache={} | "
-      "refused format={} extent={} unmapped={} upload={}",
+      "refused format={} extent={} unmapped={} upload={} | retries={} recovered={}",
       g_decoded, g_textures.size(), g_refreshed, g_resolve_hits, g_decode_hits, g_refused_format,
-      g_refused_extent, g_refused_unmapped, g_refused_upload);
+      g_refused_extent, g_refused_unmapped, g_refused_upload, g_retries, g_recovered);
 }
 
 void ShutdownTextureMirror() { g_textures.clear(); }

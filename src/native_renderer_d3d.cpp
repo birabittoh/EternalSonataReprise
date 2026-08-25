@@ -490,6 +490,20 @@ uint32_t PhysicalAddress(uint32_t raw) {
   return (raw & 0x1FFFFFFFu) + (((raw >> 20) + 512) & 0x1000u);
 }
 
+// The address to actually *read* a resource through, which is not the one
+// above. PhysicalAddress is a key: its extra page exists only so that an
+// E-aperture resource compares equal to its resolve destination, and reading
+// through it is a page of skew into whatever follows -- or, when the resource
+// sits near the top of its allocation, an access violation.
+//
+// A guest address that already carries aperture bits is readable as it stands.
+// A bare physical one is not: only 0xA0000000, 0xC0000000 and 0xE0000000 back
+// those pages, so it is aliased into one. See GuestPhysicalPointer in the
+// texture mirror, which is the same choice for the same reason.
+uint32_t ReadableAddress(uint32_t raw) {
+  return raw >= 0x80000000u ? raw : (0xC0000000u | (raw & 0x1FFFFFFFu));
+}
+
 // Common tail of every draw: sample the pipeline the draw is about to run with,
 // then issue it.
 void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
@@ -570,12 +584,28 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
         const StreamSource& stream = g_streams[i];
         if (stream.buffer == 0 || stream.stride == 0)
           continue;
-        // The resource carries its own fetch constant: +24 is the address it
-        // was created at and +28 its size, which is what SetStreamSource itself
-        // reads to build the stream's fetch constant.
-        const uint32_t raw = REX_LOAD_U32(stream.buffer + 24) + stream.offset;
-        const uint32_t size = REX_LOAD_U32(stream.buffer + 28) - stream.offset;
-        call.streams[i].data = REX_RAW_ADDR(PhysicalAddress(raw));
+        // The resource carries its own vertex fetch constant at +24, and it is
+        // a *packed* one, which is not obvious from how SetStreamSource uses it:
+        //
+        //   +24  type : 2 | address : 30   address counted in dwords
+        //   +28  endian : 2 | size : 24 | pad : 6   size counted in dwords
+        //
+        // 0x8225B550 stores `*(res+24) + offset` and `*(res+28) - offset`
+        // straight into the device without unpacking either, which reads as a
+        // byte address and a byte size until you notice that a byte offset is a
+        // multiple of four and so lands exactly on the dword-counted field in
+        // both words. That is the confirmation of the packing.
+        //
+        // Read as raw dwords instead: the type in the low two bits of +24 is a
+        // three byte skew on every stream, and the endian bits in +28 make the
+        // size read as hundreds of megabytes, which is what dropped every
+        // indexed draw in the frame.
+        const uint32_t fetch_address = REX_LOAD_U32(stream.buffer + 24);
+        const uint32_t fetch_size = REX_LOAD_U32(stream.buffer + 28);
+        const uint32_t raw = (fetch_address & ~3u) + stream.offset;
+        const uint32_t size_bytes = ((fetch_size >> 2) & 0xFFFFFFu) * 4;
+        const uint32_t size = size_bytes > stream.offset ? size_bytes - stream.offset : 0;
+        call.streams[i].data = REX_RAW_ADDR(ReadableAddress(raw));
         call.streams[i].size = size;
         call.streams[i].stride = stream.stride;
       }
@@ -590,9 +620,15 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
       if (index_buffer != 0) {
         const bool index_32 = (REX_LOAD_U32(index_buffer) & 0x80000000u) != 0;
         const uint32_t element = index_32 ? 4u : 2u;
-        const uint32_t raw = REX_LOAD_U32(index_buffer + 24) + element * params.start_index;
+        // Same packed fetch constant as a vertex stream's, so the type in the
+        // low two bits comes off before the start index is added. It matters
+        // more here than there: at two bytes an element the added offset is not
+        // always a multiple of four, so the guest's own add-into-the-packed-word
+        // trick does not apply and the unpack cannot be skipped.
+        const uint32_t raw =
+            (REX_LOAD_U32(index_buffer + 24) & ~3u) + element * params.start_index;
         call.index_32bit = index_32;
-        call.indices = REX_RAW_ADDR(PhysicalAddress(raw));
+        call.indices = REX_RAW_ADDR(ReadableAddress(raw));
       }
     }
 

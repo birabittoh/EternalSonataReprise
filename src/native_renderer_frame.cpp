@@ -31,6 +31,7 @@ constexpr RenderFormat kDepthFormat = RenderFormat::D32_FLOAT;
 // objects freely over the same tiles and the image behind them is the same one.
 struct GuestTarget {
   uint32_t base_tile = 0;
+  uint32_t tiles = 0;  // EDRAM footprint, so two targets can be asked to overlap
   uint32_t width = 0;
   uint32_t height = 0;
   uint32_t msaa = 0;
@@ -141,6 +142,11 @@ ResolvedTexture* g_present_texture = nullptr;
 
 uint64_t g_clears_applied = 0;
 uint64_t g_clears_dropped = 0;
+
+// Clears repeated onto a second host image over the same EDRAM. Zero would mean
+// the title never aliases its render targets, and that the aliasing path in
+// FrameClear is dead code; it is not zero here.
+uint64_t g_clears_aliased = 0;
 uint64_t g_resolves_copied = 0;
 uint64_t g_resolves_dropped = 0;
 
@@ -205,6 +211,7 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
 
   auto target = std::make_unique<GuestTarget>();
   target->base_tile = surface.base_tile;
+  target->tiles = surface.edram_tiles;
   target->width = surface.width;
   target->height = surface.height;
   target->msaa = surface.msaa;
@@ -284,6 +291,65 @@ RenderFramebuffer* AcquireFramebuffer(GuestTarget* color, GuestTarget* depth) {
   return g_framebuffers.back().framebuffer.get();
 }
 
+// Do two targets stand for overlapping EDRAM?
+//
+// The console has one EDRAM, and the title uses the same tiles under two
+// different surface descriptions in a single frame: a 1280x720 single sampled
+// colour surface at tile 0 with its depth at tile 720, and a 1280x384 2x
+// multisampled one, also at tile 0, whose depth is at tile 768. Both are the
+// same bytes on hardware; here they are separate host images, because the size
+// and sample count have to be part of a target's identity for anything else to
+// work.
+bool TargetsOverlap(const GuestTarget& a, const GuestTarget& b) {
+  // A footprint of zero means the surface decode did not give one, in which case
+  // the only honest answer is the exact same base.
+  if (a.tiles == 0 || b.tiles == 0)
+    return a.base_tile == b.base_tile;
+  return a.base_tile < b.base_tile + b.tiles && b.base_tile < a.base_tile + a.tiles;
+}
+
+// Clear one (colour, depth) pair. Split out of FrameClear because the same
+// clear has to be applied to more than one host image; see FrameClear.
+bool ClearTargets(RenderCommandList* commands, GuestTarget* color, GuestTarget* depth,
+                  uint32_t argb, bool clear_depth, bool clear_stencil, float z, uint32_t stencil,
+                  uint32_t* out_width, uint32_t* out_height) {
+  if (color) {
+    Transition(commands, color->texture.get(), color->layout, RenderBarrierStage::GRAPHICS,
+               RenderTextureLayout::COLOR_WRITE);
+  }
+  if (depth) {
+    Transition(commands, depth->texture.get(), depth->layout, RenderBarrierStage::GRAPHICS,
+               RenderTextureLayout::DEPTH_WRITE);
+  }
+
+  RenderFramebuffer* framebuffer = AcquireFramebuffer(color, depth);
+  if (framebuffer == nullptr)
+    return false;
+  BindFramebuffer(commands, framebuffer);
+
+  const uint32_t width = framebuffer->getWidth();
+  const uint32_t height = framebuffer->getHeight();
+  commands->setViewports(RenderViewport(0.0f, 0.0f, float(width), float(height)));
+  commands->setScissors(RenderRect(0, 0, int32_t(width), int32_t(height)));
+
+  if (color) {
+    // D3DCOLOR is packed ARGB, most significant byte first.
+    const float a = float((argb >> 24) & 0xFFu) / 255.0f;
+    const float r = float((argb >> 16) & 0xFFu) / 255.0f;
+    const float g = float((argb >> 8) & 0xFFu) / 255.0f;
+    const float b = float(argb & 0xFFu) / 255.0f;
+    commands->clearColor(0, RenderColor(r, g, b, a));
+  }
+  if (depth)
+    commands->clearDepthStencil(clear_depth, clear_stencil, z, stencil);
+
+  if (out_width != nullptr)
+    *out_width = width;
+  if (out_height != nullptr)
+    *out_height = height;
+  return true;
+}
+
 }  // namespace
 
 void FrameSetColorSurface(uint32_t index, const Surface* surface) {
@@ -319,37 +385,43 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
     return;
   }
 
-  if (color) {
-    Transition(commands, color->texture.get(), color->layout, RenderBarrierStage::GRAPHICS,
-               RenderTextureLayout::COLOR_WRITE);
-  }
-  if (depth) {
-    Transition(commands, depth->texture.get(), depth->layout, RenderBarrierStage::GRAPHICS,
-               RenderTextureLayout::DEPTH_WRITE);
-  }
-
-  RenderFramebuffer* framebuffer = AcquireFramebuffer(color, depth);
-  if (framebuffer == nullptr) {
+  uint32_t width = 0;
+  uint32_t height = 0;
+  if (!ClearTargets(commands, color, depth, argb, clear_depth, clear_stencil, z, stencil, &width,
+                    &height)) {
     ++g_clears_dropped;
     return;
   }
-  BindFramebuffer(commands, framebuffer);
 
-  const uint32_t width = framebuffer->getWidth();
-  const uint32_t height = framebuffer->getHeight();
-  commands->setViewports(RenderViewport(0.0f, 0.0f, float(width), float(height)));
-  commands->setScissors(RenderRect(0, 0, int32_t(width), int32_t(height)));
-
-  if (color) {
-    // D3DCOLOR is packed ARGB, most significant byte first.
-    const float a = float((argb >> 24) & 0xFFu) / 255.0f;
-    const float r = float((argb >> 16) & 0xFFu) / 255.0f;
-    const float g = float((argb >> 8) & 0xFFu) / 255.0f;
-    const float b = float(argb & 0xFFu) / 255.0f;
-    commands->clearColor(0, RenderColor(r, g, b, a));
+  // And again for every other host image standing over the same EDRAM.
+  //
+  // A clear writes bytes, and on the console those bytes are visible through
+  // whichever surface description is bound next. This title relies on that: the
+  // 720p single sampled pair at tiles 0 and 720 is what BeginTiling's clear
+  // reaches, while the scene is drawn through the 2x multisampled 1280x384 pair
+  // at tiles 0 and 768. Without this the scene's depth buffer is never cleared,
+  // holds zero, and every draw after the first fails LESS_EQUAL against it --
+  // which is what left the second intro logo white while its geometry, shaders
+  // and textures were all correct.
+  //
+  // Clearing the whole aliasing image rather than the intersection is coarser
+  // than the hardware: the two footprints here overlap by 87% and the remainder
+  // is not addressed by the surface that is about to be drawn through. A partial
+  // clear would need a real EDRAM model, which is exactly what this renderer is
+  // built to avoid.
+  for (auto& candidate : g_targets) {
+    GuestTarget* other = candidate.get();
+    const bool alias_color =
+        color != nullptr && other != color && !other->depth && TargetsOverlap(*other, *color);
+    const bool alias_depth =
+        depth != nullptr && other != depth && other->depth && TargetsOverlap(*other, *depth);
+    if (!alias_color && !alias_depth)
+      continue;
+    if (ClearTargets(commands, alias_color ? other : nullptr, alias_depth ? other : nullptr, argb,
+                     clear_depth, clear_stencil, z, stencil, nullptr, nullptr)) {
+      ++g_clears_aliased;
+    }
   }
-  if (depth)
-    commands->clearDepthStencil(clear_depth, clear_stencil, z, stencil);
 
   // The colours themselves, because with no draws yet the clear *is* the frame:
   // a black screen is the correct output if this is what the guest asks for,
@@ -360,7 +432,7 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
     REXLOG_INFO(
         "native_renderer: clear flags 0x{:X} colour 0x{:08X} z {} on EDRAM tile {} ({}x{})",
         flags, argb, z, color ? color->base_tile : (depth ? depth->base_tile : 0),
-        framebuffer->getWidth(), framebuffer->getHeight());
+        width, height);
   }
 
   ++g_clears_applied;
@@ -546,11 +618,11 @@ void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t he
 void LogFrameSummary() {
   REXLOG_INFO(
       "native_renderer: frame targets={} framebuffers={} resolve destinations={} | clears "
-      "applied={} dropped={} | resolves copied={} dropped={} banded={} extent mismatch={} | "
+      "applied={} dropped={} aliased={} | resolves copied={} dropped={} banded={} extent mismatch={} | "
       "attachment mismatch={} | "
       "composites={} skipped={} | presenting 0x{:08X} ({}x{})",
       g_targets.size(), g_framebuffers.size(), g_resolved.size(), g_clears_applied,
-      g_clears_dropped, g_resolves_copied, g_resolves_dropped, g_resolves_banded,
+      g_clears_dropped, g_clears_aliased, g_resolves_copied, g_resolves_dropped, g_resolves_banded,
       g_resolve_extent_mismatch, g_attachment_mismatch, g_composites, g_composites_skipped,
       g_present_texture ? g_present_texture->address : 0,
       g_present_texture ? g_present_texture->width : 0,
