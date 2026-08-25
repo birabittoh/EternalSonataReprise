@@ -59,6 +59,20 @@ struct GuestShader {
   const uint8_t* interpolator_keys = nullptr;
   uint32_t interpolator_key_count = 0;
 
+  // The compiler's literal constant pool: 64 bytes, four host order float4s
+  // that belong in constant registers 252, 253, 254 and 255 of this shader's
+  // own bank. Never null; a shader that carries no pool points at zeros.
+  //
+  // The guest writes these through neither constant setter, so they are not in
+  // the register shadows and have to be overlaid on top of the bank a draw
+  // uploads. 209 of the 260 shaders carry one, and they are not decorative:
+  // nearly every pixel shader spells saturate as `min(x, c253.w)` and clamps
+  // its exported alpha against `c255.x`, so a zero pool makes alpha zero and
+  // the fixed function alpha test then discards the pixel. See the note above
+  // PREFIX_CANDIDATES in scripts/xenos_ucode.py.
+  const uint8_t* literals = nullptr;
+  bool has_literals = false;
+
   bool exports_point_size = false;
   bool has_cube_texture = false;
 
