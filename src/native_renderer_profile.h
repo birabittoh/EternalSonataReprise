@@ -31,19 +31,18 @@ namespace eternalsonata {
 // `kPhaseCount` is the array size; keep `kPhaseNames` in step with it.
 enum ProfilePhase : uint32_t {
   kPhasePresent = 0,     // PlumePresentFrame, everything in it
-  kPhaseAcquire,         // waiting for a swap chain image, i.e. vsync backpressure
   kPhaseFenceWait,       // the CPU/GPU serialisation inside that present
-  kPhaseResolve,         // FrameResolve, on the guest thread between draws
-  kPhaseClear,           // FrameClear, likewise
   kPhaseDraw,            // IssueGuestDraw, everything in it
   kPhaseVertexUpload,    // stream swap and copy into the arena
   kPhaseIndexUpload,     // index swap and copy
   kPhaseConstantUpload,  // the four constant banks
   kPhaseTextureBind,     // the fetch decode and sampler loop, hashing included
-  kPhaseTextureWalk,     // the sixteen slot walk alone, when it is not memoised
+  kPhaseFetchDecode,     // GetBoundTextureFetch alone, per slot
+  kPhaseMirrorLookup,    // TextureMirrorLookup alone, per slot
+  kPhaseAcquireSampler,  // AcquireSampler alone, per slot
   kPhaseTextureHash,     // the content hash alone, a subset of the above
-  kPhaseGuestPointer,    // choosing the aperture a texture's source is readable in
   kPhaseTextureUpload,   // decode, untile and upload of a texture that changed
+  kPhaseGuestPointer,    // the VirtualQuery aperture walk behind a source read
   kPhaseDescriptorSet,   // binding set lookup and creation
   kPhaseDeclDecode,      // vertex declaration decode on the hook thread
   kPhaseCount,

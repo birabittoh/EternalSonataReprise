@@ -53,18 +53,6 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch);
 // texture the guest rewrites in place is never noticed.
 void TextureMirrorBeginFrame();
 
-// A counter that changes whenever anything a resolved texture binding depends
-// on has changed: a new frame (which re-arms the per frame content hash), a
-// texture created or refreshed, or a resolve producing a new destination image.
-//
-// The draw path resolves sixteen texture slots out of one 384 byte block of
-// fetch constants, which is pure with respect to that block *except* for these
-// events. Stamping a memoised result with this counter is what lets the draw
-// path skip the walk without the risk of handing back a texture that has since
-// been replaced. Bump it from anywhere that invalidates such a result.
-uint64_t TextureMirrorGeneration();
-void TextureMirrorBumpGeneration();
-
 void LogTextureMirrorSummary();
 
 // Drop every host texture. The device is going away, so this has to run first.
