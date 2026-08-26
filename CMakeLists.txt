@@ -20,29 +20,16 @@ include(generated/rexglue.cmake)
 # project compiles the guest's shaders offline (scripts/xenos_hlsl.py) rather
 # than translating microcode at runtime.
 #
-# Prefer a sibling checkout when there is one, so local Plume edits are picked
-# up without a re-fetch; otherwise fetch the pin. Plume carries its own
-# dependencies as submodules (volk, Vulkan-Headers, VMA, D3D12MemoryAllocator)
-# and loads Vulkan dynamically through volk, so no Vulkan SDK is needed to
-# build -- which is what keeps this working in CI.
-set(ETERNALSONATA_PLUME_DIR "${CMAKE_SOURCE_DIR}/../plume" CACHE PATH
-    "Local Plume checkout to build against; fetched if it does not exist")
-set(ETERNALSONATA_PLUME_TAG "d890ac899e505fb30040e037a4037cdeca68f033" CACHE STRING
-    "Plume commit to fetch when ETERNALSONATA_PLUME_DIR does not exist")
-
-if(EXISTS "${ETERNALSONATA_PLUME_DIR}/plume_render_interface.h")
-    message(STATUS "eternalsonata - using local Plume at ${ETERNALSONATA_PLUME_DIR}")
-    add_subdirectory("${ETERNALSONATA_PLUME_DIR}" "${CMAKE_BINARY_DIR}/plume" EXCLUDE_FROM_ALL)
-else()
-    message(STATUS "eternalsonata - fetching Plume ${ETERNALSONATA_PLUME_TAG}")
-    include(FetchContent)
-    FetchContent_Declare(plume
-        GIT_REPOSITORY https://github.com/renderbag/plume.git
-        GIT_TAG ${ETERNALSONATA_PLUME_TAG}
-        GIT_SUBMODULES_RECURSE ON
-    )
-    FetchContent_MakeAvailable(plume)
+# Plume is tracked as a submodule, including its own dependencies (volk,
+# Vulkan-Headers, VMA and D3D12MemoryAllocator). Keeping the renderer revision
+# in the superproject makes local and CI builds use the same source.
+set(ETERNALSONATA_PLUME_DIR "${CMAKE_SOURCE_DIR}/plume")
+if(NOT EXISTS "${ETERNALSONATA_PLUME_DIR}/plume_render_interface.h")
+    message(FATAL_ERROR
+        "Plume submodule is missing. Run: git submodule update --init --recursive")
 endif()
+message(STATUS "eternalsonata - using Plume submodule at ${ETERNALSONATA_PLUME_DIR}")
+add_subdirectory("${ETERNALSONATA_PLUME_DIR}" "${CMAKE_BINARY_DIR}/plume" EXCLUDE_FROM_ALL)
 
 # Plume's D3D12 backend returns D3D12_HEAP_TYPE_GPU_UPLOAD from its heap type
 # mapping without guarding it, so it only builds against a Windows SDK new
