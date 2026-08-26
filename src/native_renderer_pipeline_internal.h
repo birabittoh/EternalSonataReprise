@@ -30,6 +30,13 @@ namespace eternalsonata {
 // Null before the first pipeline is built, or if the device is not up.
 plume::RenderPipelineLayout* GuestPipelineLayout();
 
+// The register space the five constant buffers are declared in, which is also
+// the descriptor set index they occupy under Vulkan. Not space 0, because that
+// belongs to the textures and DXC maps a b register onto a SPIR-V binding
+// number inside its own space, so b0..b4 there would collide with t0..t4. See
+// CB_SPACE in scripts/xenos_hlsl.py, which has to agree with this.
+inline constexpr uint32_t kConstantRegisterSpace = 2;
+
 // Root descriptor indices, in the order the layout declares them.
 inline constexpr uint32_t kRootVertexFloatConstants = 0;
 inline constexpr uint32_t kRootVertexBoolConstants = 1;
