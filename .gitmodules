@@ -1,0 +1,3 @@
+[submodule "plume"]
+	path = plume
+	url = https://github.com/birabittoh/plume.git
