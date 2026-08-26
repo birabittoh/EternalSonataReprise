@@ -228,6 +228,7 @@ def main():
     cmake_configure_args = [
         f"-DCMAKE_PREFIX_PATH={sdk_dir}",
         f"-DCMAKE_CXX_COMPILER={cxx_compiler}",
+        f"-DPython3_EXECUTABLE={sys.executable}",
     ]
     if shutil.which("sccache"):
         cmake_configure_args += [
