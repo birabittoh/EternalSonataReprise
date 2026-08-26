@@ -595,6 +595,13 @@ const uint8_t* GuestPipelinePixelLiterals(const GuestPipeline* pipeline) {
   return pipeline != nullptr ? pipeline->pixel_literals : nullptr;
 }
 
+void GuestPipelineShaderSlots(const GuestPipeline* pipeline, int* vertex_slot, int* pixel_slot) {
+  if (vertex_slot)
+    *vertex_slot = pipeline != nullptr ? int(pipeline->key.vertex_slot) : -1;
+  if (pixel_slot)
+    *pixel_slot = pipeline != nullptr ? int(pipeline->key.pixel_slot) : -1;
+}
+
 const uint32_t* GuestPipelineSlotStreams(const GuestPipeline* pipeline, uint32_t* count) {
   if (pipeline == nullptr) {
     if (count)
