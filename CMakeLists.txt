@@ -164,6 +164,13 @@ plume_shaders_init()
 set(ETERNALSONATA_GUEST_SHADER_DIR ${CMAKE_BINARY_DIR}/guest_shaders)
 set(ETERNALSONATA_GUEST_SHADER_PACK ${CMAKE_BINARY_DIR}/guest_shaders.bin)
 
+# The sidecar the F2 shader debugger reads: per shader, the microcode
+# disassembly and the emitted HLSL. Separate from the pack above because it is
+# the larger of the two and the renderer never reads it; only the overlay does,
+# a span at a time. See src/native_renderer_shader_debug.h.
+set(ETERNALSONATA_GUEST_SHADER_DEBUG_PACK
+    ${CMAKE_BINARY_DIR}/guest_shaders_debug.bin)
+
 # DXIL is Windows-only; SPIR-V is built everywhere, since Plume reaches Vulkan
 # through volk on every platform it supports.
 if(WIN32)
@@ -179,11 +186,12 @@ else()
 endif()
 
 add_custom_command(
-    OUTPUT ${ETERNALSONATA_GUEST_SHADER_PACK}
+    OUTPUT ${ETERNALSONATA_GUEST_SHADER_PACK} ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-guest-shaders.py
         --xex ${CMAKE_SOURCE_DIR}/assets/default.xex
         --out ${ETERNALSONATA_GUEST_SHADER_DIR}
         --pack ${ETERNALSONATA_GUEST_SHADER_PACK}
+        --debug-pack ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK}
         --dxc ${PLUME_DXC_EXECUTABLE}
         ${ETERNALSONATA_DXC_LIB_ARG}
         --formats ${ETERNALSONATA_SHADER_FORMATS}
@@ -197,7 +205,9 @@ add_custom_command(
     COMMENT "Translating and compiling the guest's 260 shaders"
     VERBATIM
 )
-add_custom_target(eternalsonata_guest_shaders DEPENDS ${ETERNALSONATA_GUEST_SHADER_PACK})
+add_custom_target(eternalsonata_guest_shaders
+    DEPENDS ${ETERNALSONATA_GUEST_SHADER_PACK}
+            ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK})
 
 # Sources
 set(ETERNALSONATA_SOURCES
@@ -225,6 +235,7 @@ set(ETERNALSONATA_SOURCES
     src/native_renderer_pipeline.cpp
     src/native_renderer_plume.cpp
     src/native_renderer_overlay.cpp
+    src/native_renderer_shader_debug.cpp
     src/native_renderer_state.cpp
     src/native_renderer_texture.cpp
     src/settings.cpp
@@ -262,6 +273,8 @@ add_dependencies(eternalsonata eternalsonata_guest_shaders)
 add_custom_command(TARGET eternalsonata POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${ETERNALSONATA_GUEST_SHADER_PACK} $<TARGET_FILE_DIR:eternalsonata>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK} $<TARGET_FILE_DIR:eternalsonata>
     COMMENT "Deploying guest_shaders.bin"
     VERBATIM
 )

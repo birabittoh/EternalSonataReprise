@@ -4,6 +4,7 @@
 
 #include "native_renderer_draw.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
@@ -16,6 +17,7 @@
 #include "native_renderer_pipeline_internal.h"
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_profile.h"
+#include "native_renderer_shader_debug.h"
 #include "native_renderer_texture.h"
 
 namespace eternalsonata {
@@ -102,6 +104,7 @@ enum DropReason {
   kDropStreamTooBig,
   kDropVertexFormat,
   kDropIndicesMissing,
+  kDropShaderDisabled,
   kDropCount,
 };
 constexpr const char* kDropNames[kDropCount] = {
@@ -114,6 +117,7 @@ constexpr const char* kDropNames[kDropCount] = {
     "a bound stream claims an implausible size",
     "a declaration element is in a format the upload path cannot byte swap",
     "an indexed draw with no index buffer bound",
+    "a bound shader is switched off in the shader debugger",
 };
 uint64_t g_drops[kDropCount] = {};
 bool g_drop_reported[kDropCount] = {};
@@ -979,10 +983,49 @@ void DrawSetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height, fl
   g_viewport = {x, y, width, height, min_z, max_z, true};
 }
 
+namespace {
+bool RecordGuestDraw(const GuestDrawCall& call);
+}  // namespace
+
+// The draw, plus the shader debugger's two hooks into it: a shader switched off
+// in the F2 overlay drops every draw that binds it, and one that draws is
+// marked active (and timed, while the overlay has profiling on). Both live out
+// here rather than inside the recording below so that a dropped draw still
+// counts as a request and a shader is only marked active when it really drew.
 bool IssueGuestDraw(const GuestDrawCall& call) {
   ProfileZone zone(kPhaseDraw);
   ++g_draws_requested;
 
+  int vertex_slot = -1, pixel_slot = -1;
+  if (call.pipeline != nullptr)
+    GuestPipelineShaderSlots(call.pipeline, &vertex_slot, &pixel_slot);
+  if (GuestShaderDrawDisabled(vertex_slot, pixel_slot)) {
+    Drop(kDropShaderDisabled, "toggled off in the F2 shader debugger");
+    return false;
+  }
+
+  const bool profiling = GuestShaderProfilingEnabled();
+  const std::chrono::steady_clock::time_point started =
+      profiling ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+
+  if (!RecordGuestDraw(call))
+    return false;
+
+  uint64_t elapsed_ns = 0;
+  if (profiling) {
+    const auto delta = std::chrono::steady_clock::now() - started;
+    // Zero means "not profiling" to the registry, so a draw too fast for the
+    // clock is charged one nanosecond rather than being silently uncounted.
+    elapsed_ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count());
+    elapsed_ns = elapsed_ns != 0 ? elapsed_ns : 1;
+  }
+  NoteGuestShaderDraw(vertex_slot, pixel_slot, elapsed_ns);
+  return true;
+}
+
+namespace {
+
+bool RecordGuestDraw(const GuestDrawCall& call) {
   if (call.pipeline == nullptr) {
     Drop(kDropNoPipeline, "the pipeline cache refused this draw");
     return false;
@@ -1432,6 +1475,8 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   ++g_draws_issued;
   return true;
 }
+
+}  // namespace
 
 void ResetGuestDrawArena() {
   for (ArenaBlock& block : g_arena)
