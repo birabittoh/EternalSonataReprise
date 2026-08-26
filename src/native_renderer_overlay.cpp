@@ -12,8 +12,10 @@
 #include <rex/ui/immediate_drawer.h>
 
 #include "native_renderer_plume_internal.h"
+#ifdef _WIN32
 #include "shaders/imguiVert.hlsl.dxil.h"
 #include "shaders/imguiFrag.hlsl.dxil.h"
+#endif
 #include "shaders/imguiVert.hlsl.spirv.h"
 #include "shaders/imguiFrag.hlsl.spirv.h"
 
@@ -153,12 +155,15 @@ bool PlumeImmediateDrawer::EnsureResources() {
   pipeline_layout_ = device_->createPipelineLayout(layout_desc);
 
   const RenderShaderFormat shader_format = PlumeShaderFormat();
+#ifdef _WIN32
   if (shader_format == RenderShaderFormat::DXIL) {
     vertex_shader_ = device_->createShader(imguiVertBlobDXIL, sizeof(imguiVertBlobDXIL), "VSMain",
                                            shader_format);
     pixel_shader_ = device_->createShader(imguiFragBlobDXIL, sizeof(imguiFragBlobDXIL), "PSMain",
                                           shader_format);
-  } else if (shader_format == RenderShaderFormat::SPIRV) {
+  } else
+#endif
+      if (shader_format == RenderShaderFormat::SPIRV) {
     vertex_shader_ = device_->createShader(imguiVertBlobSPIRV, sizeof(imguiVertBlobSPIRV),
                                            "VSMain", shader_format);
     pixel_shader_ = device_->createShader(imguiFragBlobSPIRV, sizeof(imguiFragBlobSPIRV), "PSMain",
