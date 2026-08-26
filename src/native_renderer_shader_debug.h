@@ -11,8 +11,11 @@
 // dialog asks: what exists, what is running, what is slow, and what should stop
 // drawing.
 //
-// The identifier handed to the dialog is `type << 32 | slot`, with type 0 for
-// vertex and 1 for pixel (the dialog's own ordering). It is stable across runs,
+// The identifier handed to the dialog is the guest table slot, with 0x100 set
+// for a pixel shader. The type bit has to stay below bit 32, because the dialog
+// derives an ImGui id with `PushID(static_cast<int>(hash))` and a bit above
+// that is truncated away, which puts vs_007 and ps_007 on screen as two visible
+// items with the same id. It is stable across runs,
 // which is what makes the dialog's shaders.toml -- where the user's names and
 // the disable flags are persisted -- meaningful here: a name written against
 // vs_017 still means vs_017 tomorrow. A microcode hash would have been just as
