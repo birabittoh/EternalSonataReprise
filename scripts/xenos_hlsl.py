@@ -31,11 +31,12 @@ Usage:
 Deliberate divergences from the hardware, all of which matter only for values
 a renderer should never depend on:
 
-* `mul`/`muls` do not reproduce the Direct3D 9 "0 or denormal times anything is
-  +0" rule; plain HLSL multiply is emitted.
-* `rcp`, `rsq` and `log` are emitted as the plain HLSL intrinsic. The `*c`
-  (clamped) and `*f` (flushed) variants of those opcodes do carry their
-  infinity clamping, since there the clamp is the whole point of the opcode.
+* `rcp`, `rsq` and `log` are emitted as the plain HLSL intrinsic, so a
+  reciprocal of zero is an infinity rather than a clamped value. That is
+  survivable only because `mul` reproduces the hardware's zero rule below,
+  which turns the `0 * inf` that follows back into `0`. The `*c` (clamped)
+  and `*f` (flushed) variants do carry their infinity clamping, since there
+  the clamp is the whole point of the opcode.
 * Denormal flushing on operand read is not reproduced.
 * `tfetch`'s per-instruction filter and aniso fields are ignored. Every texture
   fetch in this title sets them to "take it from the fetch constant", so all
@@ -123,11 +124,41 @@ void xe_alpha_test(float a) {
 """
 
 PRELUDE_ALU = """\
+// Xenos multiplies are not IEEE. If either operand is zero (or denormal, which
+// the hardware flushes to zero on read) the result is +0 even when the other
+// operand is an infinity or a NaN, where IEEE would give NaN. Reproducing this
+// is not pedantry: the guest parks unused light slots at constants that make a
+// divisor zero, so the reciprocal is an infinity and the product after it is
+// finite only because the hardware forces it to zero. A plain `*` leaks a NaN
+// into the colour, and a NaN written to a UNORM target reads back as black.
+//
+// The test is min(|a|, |b|) == 0 so that a NaN operand does not satisfy it:
+// NaN compares false, which leaves the IEEE product alone, which is also what
+// the hardware does.
+float4 xe_mul(float4 a, float4 b) {
+    float4 p = a * b;
+    float4 z = min(abs(a), abs(b));
+    return float4(z.x == 0.0f ? 0.0f : p.x, z.y == 0.0f ? 0.0f : p.y,
+                  z.z == 0.0f ? 0.0f : p.z, z.w == 0.0f ? 0.0f : p.w);
+}
+float xe_muls(float a, float b) {
+    return min(abs(a), abs(b)) == 0.0f ? 0.0f : a * b;
+}
+
 // Xenos writes the scalar result of a dot product to every masked component.
-float4 xe_dp4(float4 a, float4 b) { return dot(a, b).xxxx; }
-float4 xe_dp3(float4 a, float4 b) { return dot(a.xyz, b.xyz).xxxx; }
+// The products go through the rule above and are summed in order, because a
+// zeroed product and a NaN one do not sum the same way.
+float4 xe_dp4(float4 a, float4 b) {
+    float4 p = xe_mul(a, b);
+    return (((p.x + p.y) + p.z) + p.w).xxxx;
+}
+float4 xe_dp3(float4 a, float4 b) {
+    float4 p = xe_mul(a, b);
+    return ((p.x + p.y) + p.z).xxxx;
+}
 float4 xe_dp2add(float4 a, float4 b, float4 c) {
-    return (dot(a.xy, b.xy) + c.x).xxxx;
+    float4 p = xe_mul(a, b);
+    return ((p.x + p.y) + c.x).xxxx;
 }
 float4 xe_max4(float4 a) {
     return max(max(a.x, a.y), max(a.z, a.w)).xxxx;
@@ -201,13 +232,13 @@ def _vector_emitters():
         return lambda s: "%s(%s)" % (name, ", ".join(s[:count]))
 
     return {
-        "add": binary("+"), "mul": binary("*"),
+        "add": binary("+"), "mul": call("xe_mul", 2),
         "max": call("max", 2), "min": call("min", 2),
         "seq": compare("=="), "sgt": compare(">"),
         "sge": compare(">="), "sne": compare("!="),
         "frc": call("frac", 1), "trunc": call("trunc", 1),
         "floor": call("floor", 1),
-        "mad": lambda s: "(%s * %s + %s)" % (s[0], s[1], s[2]),
+        "mad": lambda s: "(xe_mul(%s, %s) + %s)" % (s[0], s[1], s[2]),
         "cndeq": call("xe_cndeq", 3), "cndge": call("xe_cndge", 3),
         "cndgt": call("xe_cndgt", 3),
         "dp4": call("xe_dp4", 2), "dp3": call("xe_dp3", 2),
@@ -227,9 +258,9 @@ VECTOR_HELPER_PRELUDES = {"cube": PRELUDE_CUBE}
 SCALAR_EMITTERS = {
     "adds": "({a} + {b})",
     "adds_prev": "({a} + ps)",
-    "muls": "({a} * {b})",
-    "muls_prev": "({a} * ps)",
-    "muls_prev2": "({a} * ps)",
+    "muls": "xe_muls({a}, {b})",
+    "muls_prev": "xe_muls({a}, ps)",
+    "muls_prev2": "xe_muls({a}, ps)",
     "maxs": "max({a}, {b})",
     "mins": "min({a}, {b})",
     "seqs": "float({a} == 0.0f)",
@@ -255,7 +286,7 @@ SCALAR_EMITTERS = {
     "subs_prev": "({a} - ps)",
     "maxas": "max({a}, {b})",
     "maxasf": "max({a}, {b})",
-    "mulsc": "({a} * {b})",
+    "mulsc": "xe_muls({a}, {b})",
     "addsc": "({a} + {b})",
     "subsc": "({a} - {b})",
     "retain_prev": "ps",
