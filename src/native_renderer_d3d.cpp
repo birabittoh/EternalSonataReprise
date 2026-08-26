@@ -526,6 +526,16 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
   const int vs = ResolveShaderSlot(base, d3d::kVertexShaderTable, g_vertex_shader);
   const int ps = ResolveShaderSlot(base, d3d::kPixelShaderTable, g_pixel_shader);
 
+  // RenderDoc identified this fullscreen path by its static shader slot. Its
+  // list-ordered vertices can only come from RECTANGLE_LIST expansion, whereas
+  // the captured strip topology says the guest submitted TRIANGLE_STRIP. Log
+  // the raw primitive at the hook boundary to distinguish those cases.
+  if (vs == 5229) {
+    REXLOG_INFO(
+        "native_renderer: VS 5229 draw: prim_type={} count={} indexed={} inlined={} PS={}",
+        prim_type, vertex_count, params.indexed, params.inlined, ps);
+  }
+
   // Read the declaration from the device rather than from the SetVertexDeclaration
   // hook's shadow: the flush at 0x82267E48 reads device+11684, so that is the one
   // the draw actually uses, and comparing the two would only be testing our own

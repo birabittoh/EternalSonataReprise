@@ -1011,7 +1011,11 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
                                stride, plan, *call.declaration, stream_index);
 
           uint8_t* out = allocation.cpu + size_t(triple) * 6 * stride;
-          const uint32_t order[6] = {0, 1, 2, first, second, 3};
+          // Emit both halves with the same winding. The three source vertices
+          // arrive in arbitrary rectangle-list order, so first/second form the
+          // diagonal and opposite is mirrored to make vertex 3. Starting each
+          // triangle at opposite makes their winding agree for every diagonal.
+          const uint32_t order[6] = {opposite, first, 3, opposite, 3, second};
           for (uint32_t v = 0; v < 6; ++v)
             std::memcpy(out + size_t(v) * stride, scratch[order[v]], stride);
         }
