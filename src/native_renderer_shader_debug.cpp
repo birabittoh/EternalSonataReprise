@@ -41,6 +41,12 @@ std::atomic<bool> g_profiling{false};
 // current frame makes every row flicker.
 std::atomic<uint32_t> g_frame{1};
 
+// The pixel bit inside the identifier. It has to live below bit 32: the dialog
+// pushes an ImGui id with `PushID(static_cast<int>(hash))`, so anything above
+// that is truncated away, and a vertex and a pixel shader in the same table
+// slot would come out as two visible items with the same id.
+constexpr uint64_t kPixelBit = 0x100;
+
 ShaderState* Lookup(bool pixel, uint32_t slot) {
   if (slot >= kSlots)
     return nullptr;
@@ -162,7 +168,7 @@ ShaderText LoadText(bool pixel, uint32_t slot) {
 }  // namespace
 
 uint64_t GuestShaderDebugId(bool pixel, uint32_t slot) {
-  return (uint64_t(pixel ? 1u : 0u) << 32) | slot;
+  return (pixel ? kPixelBit : 0) | slot;
 }
 
 bool GuestShaderDrawDisabled(int vertex_slot, int pixel_slot) {
@@ -231,10 +237,13 @@ std::vector<rex::ui::ShaderDebuggerEntry> GuestShaderSnapshot() {
 
 rex::ui::ShaderDebuggerDetails GuestShaderDetails(uint64_t id) {
   rex::ui::ShaderDebuggerDetails out;
-  const bool pixel = (id >> 32) != 0;
-  const uint32_t slot = uint32_t(id & 0xFFFFFFFFu);
+  const bool pixel = (id & kPixelBit) != 0;
+  const uint32_t slot = uint32_t(id & (kPixelBit - 1));
   const GuestShader& shader = PackEntry(pixel, slot);
-  if (slot >= kSlots || !shader.valid())
+  // An identifier this renderer never issued decodes to a slot like any other,
+  // so the range check has to come before the decode is trusted. See
+  // SetGuestShaderDisabled.
+  if (id >= kPixelBit * 2 || !shader.valid())
     return out;
 
   out.found = true;
@@ -316,8 +325,9 @@ bool SetGuestShaderDisabled(uint64_t id, bool disabled) {
   // An identifier this renderer never issued is not an error: shaders.toml is
   // shared with the emulated-Xenos backend, whose identifiers are real microcode
   // hashes and mean nothing here.
-  ShaderState* state = (id >> 33) == 0 ? Lookup((id >> 32) != 0, uint32_t(id & 0xFFFFFFFFu))
-                                       : nullptr;
+  ShaderState* state = id < (kPixelBit * 2)
+                           ? Lookup((id & kPixelBit) != 0, uint32_t(id & (kPixelBit - 1)))
+                           : nullptr;
   if (state == nullptr)
     return false;
   state->disabled.store(disabled, std::memory_order_relaxed);
