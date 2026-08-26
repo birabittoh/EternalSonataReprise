@@ -29,6 +29,12 @@ if(NOT EXISTS "${ETERNALSONATA_PLUME_DIR}/plume_render_interface.h")
         "Plume submodule is missing. Run: git submodule update --init --recursive")
 endif()
 message(STATUS "eternalsonata - using Plume submodule at ${ETERNALSONATA_PLUME_DIR}")
+# ReXGlue owns this project's SDL window. Have Plume create its Vulkan surface
+# from that SDL_Window directly instead of asking the host to expose raw X11
+# handles, which are not represented by Window::GetNativeWindowHandle().
+if(UNIX AND NOT APPLE)
+    set(PLUME_SDL_VULKAN_ENABLED ON CACHE BOOL "Enable SDL Vulkan integration" FORCE)
+endif()
 add_subdirectory("${ETERNALSONATA_PLUME_DIR}" "${CMAKE_BINARY_DIR}/plume" EXCLUDE_FROM_ALL)
 
 # Plume's D3D12 backend returns D3D12_HEAP_TYPE_GPU_UPLOAD from its heap type

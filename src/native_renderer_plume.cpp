@@ -25,7 +25,11 @@ namespace plume {
 #ifdef _WIN32
 extern std::unique_ptr<RenderInterface> CreateD3D12Interface();
 #endif
+#if defined(PLUME_SDL_VULKAN_ENABLED)
+extern std::unique_ptr<RenderInterface> CreateVulkanInterface(RenderWindow sdlWindow);
+#else
 extern std::unique_ptr<RenderInterface> CreateVulkanInterface();
+#endif
 }  // namespace plume
 
 namespace eternalsonata {
@@ -163,6 +167,9 @@ bool InitPlumeBackend(void* window_handle) {
     g_backend.render_interface = CreateVulkanInterface();
     g_backend.api_name = "Vulkan";
   }
+#elif defined(PLUME_SDL_VULKAN_ENABLED)
+  g_backend.render_interface = CreateVulkanInterface(static_cast<RenderWindow>(window_handle));
+  g_backend.api_name = "Vulkan";
 #else
   g_backend.render_interface = CreateVulkanInterface();
   g_backend.api_name = "Vulkan";
@@ -184,9 +191,8 @@ bool InitPlumeBackend(void* window_handle) {
   g_backend.fence = g_backend.device->createCommandFence();
   g_backend.acquire_semaphore = g_backend.device->createCommandSemaphore();
 
-  g_backend.swap_chain = g_backend.queue->createSwapChain(
-      RenderSwapChainDesc(static_cast<RenderWindow>(window_handle), kSwapChainFormat,
-                          kSwapChainBuffers));
+  g_backend.swap_chain = g_backend.queue->createSwapChain(RenderSwapChainDesc(
+      static_cast<RenderWindow>(window_handle), kSwapChainFormat, kSwapChainBuffers));
   if (!g_backend.swap_chain) {
     REXLOG_ERROR("native_renderer: Plume could not create a swap chain on the game window");
     ShutdownPlumeBackend();
