@@ -36,6 +36,15 @@ uint32_t AlignUp(uint32_t value, uint32_t alignment) {
   return (value + alignment - 1) / alignment * alignment;
 }
 
+uint64_t AlignUp64(uint64_t value, uint64_t alignment) {
+  return (value + alignment - 1) / alignment * alignment;
+}
+
+// Where one batch's vertex and index data starts inside the frame's arena.
+// Generous enough to satisfy both backends' view alignment rules without having
+// to reason about them per format.
+constexpr uint64_t kGeometryAlignment = 256;
+
 // The four sampler combinations ui::ImmediateDrawer can ask for, as a flat
 // index so they can live in one array and one descriptor set layout.
 uint32_t SamplerIndex(rex::ui::ImmediateTextureFilter filter, bool repeated) {
@@ -86,10 +95,10 @@ class PlumeImmediateDrawer final : public rex::ui::ImmediateDrawer {
   // presenter" hook in this mode, so there is no other honest place for it.
   bool EnsureResources();
 
-  // Grow-only upload buffers. imgui's per-frame geometry settles at a stable
-  // size within a few frames, so this reallocates a handful of times at startup
-  // and then never again.
-  bool EnsureGeometryCapacity(uint64_t vertex_bytes, uint64_t index_bytes);
+  // Sub-allocate one batch out of the frame's upload buffers, copying its
+  // geometry in and pointing the two views at it. Returns false if the buffers
+  // could not be grown, which is the only failure.
+  bool UploadGeometry(const rex::ui::ImmediateDrawBatch& batch);
 
   RenderDevice* device_ = nullptr;
   bool initialized_ = false;
@@ -106,10 +115,25 @@ class PlumeImmediateDrawer final : public rex::ui::ImmediateDrawer {
   // branch and there is only one pipeline.
   std::unique_ptr<PlumeImmediateTexture> white_texture_;
 
+  // The frame's geometry arenas. A batch is appended rather than written at
+  // zero: the overlay records into the guest's command list, which does not
+  // execute until the present, so every batch of the frame has to still be
+  // there when it runs. Writing each one at offset zero left the whole frame
+  // reading the last batch's vertices, which is invisible while imgui emits one
+  // draw list and breaks the moment a second window (a combo popup, say) adds
+  // another.
   std::unique_ptr<RenderBuffer> vertex_buffer_;
   std::unique_ptr<RenderBuffer> index_buffer_;
   uint64_t vertex_capacity_ = 0;
   uint64_t index_capacity_ = 0;
+  uint64_t vertex_used_ = 0;
+  uint64_t index_used_ = 0;
+
+  // Buffers replaced by a larger one mid-frame. Earlier batches are already
+  // recorded against them, so they have to outlive the frame; they are dropped
+  // at the next Begin, by which point the present has fence waited on the
+  // command list that read them.
+  std::vector<std::unique_ptr<RenderBuffer>> retired_buffers_;
 
   RenderInputSlot input_slot_;
   RenderVertexBufferView vertex_buffer_view_;
@@ -321,25 +345,66 @@ std::unique_ptr<rex::ui::ImmediateTexture> PlumeImmediateDrawer::CreateTexture(
   return texture;
 }
 
-bool PlumeImmediateDrawer::EnsureGeometryCapacity(uint64_t vertex_bytes, uint64_t index_bytes) {
-  if (vertex_bytes > vertex_capacity_) {
+bool PlumeImmediateDrawer::UploadGeometry(const rex::ui::ImmediateDrawBatch& batch) {
+  const uint64_t vertex_bytes = uint64_t(batch.vertex_count) * sizeof(rex::ui::ImmediateVertex);
+  const uint64_t index_bytes = uint64_t(std::max(batch.index_count, 0)) * sizeof(uint16_t);
+
+  // A batch is bound by a view of its own, so the only alignment that matters
+  // is the one a view start needs. 256 covers both backends and is a multiple
+  // of the vertex stride's and the index width's requirements.
+  const uint64_t vertex_offset = AlignUp64(vertex_used_, kGeometryAlignment);
+  const uint64_t index_offset = AlignUp64(index_used_, kGeometryAlignment);
+
+  if (vertex_offset + vertex_bytes > vertex_capacity_) {
     // Round up generously so a frame that grows by one widget does not
     // reallocate; imgui's geometry size is stable after a few frames.
-    vertex_capacity_ = std::max<uint64_t>(vertex_bytes * 2, 64 * 1024);
-    vertex_buffer_ = device_->createBuffer(RenderBufferDesc::UploadBuffer(
-        vertex_capacity_, RenderBufferFlag::VERTEX));
-    if (!vertex_buffer_)
+    const uint64_t wanted =
+        std::max<uint64_t>(std::max<uint64_t>(vertex_capacity_ * 2, 64 * 1024),
+                           (vertex_offset + vertex_bytes) * 2);
+    auto grown = device_->createBuffer(RenderBufferDesc::UploadBuffer(wanted, RenderBufferFlag::VERTEX));
+    if (!grown)
       return false;
-    vertex_buffer_view_ = RenderVertexBufferView(vertex_buffer_->at(0), uint32_t(vertex_capacity_));
+    if (vertex_buffer_)
+      retired_buffers_.push_back(std::move(vertex_buffer_));
+    vertex_buffer_ = std::move(grown);
+    vertex_capacity_ = wanted;
+    vertex_used_ = 0;
+    return UploadGeometry(batch);  // Re-run against the new buffer, from zero.
   }
-  if (index_bytes > index_capacity_) {
-    index_capacity_ = std::max<uint64_t>(index_bytes * 2, 32 * 1024);
-    index_buffer_ =
-        device_->createBuffer(RenderBufferDesc::UploadBuffer(index_capacity_, RenderBufferFlag::INDEX));
-    if (!index_buffer_)
+  if (index_bytes != 0 && index_offset + index_bytes > index_capacity_) {
+    const uint64_t wanted = std::max<uint64_t>(
+        std::max<uint64_t>(index_capacity_ * 2, 32 * 1024), (index_offset + index_bytes) * 2);
+    auto grown = device_->createBuffer(RenderBufferDesc::UploadBuffer(wanted, RenderBufferFlag::INDEX));
+    if (!grown)
       return false;
-    index_buffer_view_ = RenderIndexBufferView(index_buffer_->at(0), uint32_t(index_capacity_),
-                                               RenderFormat::R16_UINT);
+    if (index_buffer_)
+      retired_buffers_.push_back(std::move(index_buffer_));
+    index_buffer_ = std::move(grown);
+    index_capacity_ = wanted;
+    index_used_ = 0;
+    return UploadGeometry(batch);
+  }
+
+  if (vertex_bytes != 0) {
+    auto* mapped = static_cast<uint8_t*>(vertex_buffer_->map());
+    if (mapped == nullptr)
+      return false;
+    std::memcpy(mapped + vertex_offset, batch.vertices, size_t(vertex_bytes));
+    vertex_buffer_->unmap();
+  }
+  vertex_used_ = vertex_offset + vertex_bytes;
+  vertex_buffer_view_ =
+      RenderVertexBufferView(vertex_buffer_->at(vertex_offset), uint32_t(vertex_bytes));
+
+  if (index_bytes != 0) {
+    auto* mapped = static_cast<uint8_t*>(index_buffer_->map());
+    if (mapped == nullptr)
+      return false;
+    std::memcpy(mapped + index_offset, batch.indices, size_t(index_bytes));
+    index_buffer_->unmap();
+    index_used_ = index_offset + index_bytes;
+    index_buffer_view_ = RenderIndexBufferView(index_buffer_->at(index_offset),
+                                               uint32_t(index_bytes), RenderFormat::R16_UINT);
   }
   return true;
 }
@@ -349,6 +414,13 @@ void PlumeImmediateDrawer::Begin(rex::ui::UIDrawContext& ui_draw_context,
   ImmediateDrawer::Begin(ui_draw_context, coordinate_space_width, coordinate_space_height);
   commands_ = nullptr;
   bound_pipeline_ = nullptr;
+
+  // The frame that recorded against these has presented, and the present fence
+  // waits, so anything replaced mid-frame is now unreferenced.
+  retired_buffers_.clear();
+  vertex_used_ = 0;
+  index_used_ = 0;
+
   if (!EnsureResources())
     return;
 
@@ -379,24 +451,15 @@ void PlumeImmediateDrawer::BeginDrawBatch(const rex::ui::ImmediateDrawBatch& bat
   if (commands_ == nullptr || batch.vertex_count <= 0)
     return;
 
-  const uint64_t vertex_bytes = uint64_t(batch.vertex_count) * sizeof(rex::ui::ImmediateVertex);
-  const uint64_t index_bytes = uint64_t(std::max(batch.index_count, 0)) * sizeof(uint16_t);
-  if (!EnsureGeometryCapacity(vertex_bytes, index_bytes)) {
+  if (!UploadGeometry(batch)) {
     commands_ = nullptr;
     return;
   }
 
-  if (void* mapped = vertex_buffer_->map()) {
-    std::memcpy(mapped, batch.vertices, size_t(vertex_bytes));
-    vertex_buffer_->unmap();
-  }
+  // Both bindings are baked into the command list as it records, so each batch
+  // keeps the views it was recorded with. That is what makes appending safe.
   commands_->setVertexBuffers(0, &vertex_buffer_view_, 1, &input_slot_);
-
   if (batch.indices != nullptr && batch.index_count > 0) {
-    if (void* mapped = index_buffer_->map()) {
-      std::memcpy(mapped, batch.indices, size_t(index_bytes));
-      index_buffer_->unmap();
-    }
     commands_->setIndexBuffer(&index_buffer_view_);
     batch_has_indices_ = true;
   }
