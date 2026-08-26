@@ -401,8 +401,8 @@ class KeySet {
 };
 
 KeySet<8192> g_program_pairs;    // (vs slot, ps slot)
-KeySet<8192> g_shader_variants;  // (vs slot, declaration serial)
-KeySet<2048> g_declarations;     // declaration serial
+KeySet<8192> g_shader_variants;  // (vs slot, declaration identity)
+KeySet<2048> g_declarations;     // declaration identity
 
 uint64_t g_draws_indexed = 0;
 uint64_t g_draws_vertices = 0;
@@ -434,8 +434,8 @@ uint32_t g_draw_examples_logged = 0;
 
 // Read the declaration the guest currently has bound and fold what it says
 // into the counters. Returns false when it does not decode; on success `decl`
-// carries it, and its serial is the variant cache key half that is not the
-// shader.
+// carries it, and its content hash is the variant cache key half that is not
+// the shader.
 bool RecordDeclaration(uint8_t* base, uint32_t address, VertexDeclaration& decl) {
   if (!DecodeVertexDeclaration(base, address, decl)) {
     ++g_decl_decode_bad;
@@ -458,7 +458,7 @@ bool RecordDeclaration(uint8_t* base, uint32_t address, VertexDeclaration& decl)
       ++g_usages_seen[decl.elements[i].usage];
   }
 
-  g_declarations.Insert(decl.serial);
+  g_declarations.Insert(decl.identity);
   return true;
 }
 
@@ -543,12 +543,12 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
   const uint32_t decl_address = REX_LOAD_U32(device + d3d::kVertexDeclaration);
   VertexDeclaration decl;
   const bool have_decl = decl_address != 0 && RecordDeclaration(base, decl_address, decl);
-  const uint32_t serial = have_decl ? decl.serial : 0;
+  const uint64_t identity = have_decl ? decl.identity : 0;
 
   if (vs >= 0 && ps >= 0)
     g_program_pairs.Insert((static_cast<uint64_t>(vs) << 32) | static_cast<uint32_t>(ps));
   if (vs >= 0)
-    g_shader_variants.Insert((static_cast<uint64_t>(vs) << 32) | serial);
+    g_shader_variants.Insert((static_cast<uint64_t>(vs) << 32) ^ identity);
 
   // Ask the pipeline cache for the host pipeline this draw would run with. The
   // draw is still not issued -- the vertex data has not been uploaded and the
@@ -658,9 +658,9 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
   if (g_draw_examples_logged < 8) {
     ++g_draw_examples_logged;
     REXLOG_INFO(
-        "native_renderer: draw prim={} verts={} vs={} ps={} decl=0x{:08X} serial={} "
+        "native_renderer: draw prim={} verts={} vs={} ps={} decl=0x{:08X} identity={:016X} "
         "stream0={{buf 0x{:08X} off {} stride {}}}",
-        prim_type, vertex_count, vs, ps, decl_address, serial, g_streams[0].buffer,
+        prim_type, vertex_count, vs, ps, decl_address, identity, g_streams[0].buffer,
         g_streams[0].offset, g_streams[0].stride);
   }
 }
@@ -848,6 +848,26 @@ bool DecodeVertexDeclaration(uint8_t* base, uint32_t address, VertexDeclaration&
     if (e.usage > 13)
       return false;
   }
+
+  // FNV-1a over the decoded elements, which is the declaration's identity for
+  // every purpose this renderer has. Built here rather than at the cache so the
+  // pipeline key and the counters cannot drift apart about what "the same
+  // declaration" means.
+  uint64_t hash = 0xCBF29CE484222325ull;
+  const auto mix = [&hash](uint32_t value) {
+    for (uint32_t byte = 0; byte < 4; ++byte) {
+      hash ^= (value >> (8 * byte)) & 0xFFu;
+      hash *= 0x100000001B3ull;
+    }
+  };
+  mix(count);
+  for (uint32_t i = 0; i < count; ++i) {
+    const VertexElement& e = out.elements[i];
+    mix(uint32_t(e.stream) | (uint32_t(e.offset) << 16));
+    mix(e.type);
+    mix(uint32_t(e.usage) | (uint32_t(e.usage_index) << 8));
+  }
+  out.identity = hash;
   return true;
 }
 

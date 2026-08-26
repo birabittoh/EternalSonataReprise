@@ -12,8 +12,12 @@
 // bakes into a PSO that the guest keeps in registers:
 //
 //   * the vertex and pixel shader table slots
-//   * the vertex declaration, by the serial number the guest assigns it -- this
-//     is exactly half of the variant cache key that 0x82267D08 probes with
+//   * the vertex declaration, by a hash of its decoded elements. The guest's own
+//     variant cache (0x82267D08) probes with the serial number at declaration
+//     +48, but that serial is assigned lazily and declarations created after
+//     boot were seen to keep it at 0 for their whole life, so it identifies
+//     nothing. The elements are what the host input layout is built from, which
+//     makes hashing them both stable and exactly as discriminating as needed.
 //   * the per-stream strides, because a host input slot carries its stride and
 //     the guest's does not: SetStreamSource writes it into the fetch constant,
 //     so the same declaration under two strides is two host pipelines
