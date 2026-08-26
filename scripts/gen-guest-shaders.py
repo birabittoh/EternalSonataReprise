@@ -51,9 +51,19 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import extract_shaders as X  # noqa: E402
 import xenos_hlsl as H  # noqa: E402
+import xenos_ucode as U  # noqa: E402
 
 PACK_MAGIC = b"ESGS"
 PACK_VERSION = 5
+
+# The sidecar the F2 shader debugger reads: per shader, the extractor's name,
+# the microcode disassembly and the emitted HLSL. Kept out of guest_shaders.bin
+# on purpose. It is roughly twice the size of the pack the renderer needs, and
+# none of it is touched unless the overlay is opened, so the runtime reads spans
+# out of it on demand rather than loading it. Missing, the overlay still lists,
+# names and toggles shaders; it just has no source to show.
+DEBUG_MAGIC = b"ESGD"
+DEBUG_VERSION = 1
 
 # Both guest tables are 256 entries; the pack holds vertex slots first, then
 # pixel slots, so an entry index is `kind_base + slot`.
@@ -113,6 +123,9 @@ class Translated:
         elif H.EXPORT_POINT_SIZE in emitted.exports:
             self.flags |= FLAG_POINT_SIZE
         self.blobs = {}  # format -> bytes
+        # For the debugger sidecar only; filled in by translate().
+        self.hlsl = b""
+        self.disassembly = b""
 
 
 def translate(xex, hlsl_dir):
@@ -148,6 +161,16 @@ def translate(xex, hlsl_dir):
         write_if_different(path, text)
         entry = Translated(shader.kind, shader.index, shader.name, emitted)
         entry.source = path
+        entry.hlsl = text
+        # For the debugger's disassembly pane only. A shader whose microcode
+        # will not disassemble still has to reach the pack: the renderer runs
+        # the compiled blob either way, and losing the whole build over a
+        # cosmetic pane would be the wrong trade.
+        try:
+            entry.disassembly = U.disassemble(shader.microcode).encode("utf-8")
+        except Exception as exc:  # noqa: BLE001
+            entry.disassembly = ("; %s does not disassemble: %s"
+                                 % (shader.name, exc)).encode("utf-8")
         out.append(entry)
     return out
 
@@ -275,6 +298,41 @@ def pack(entries, formats):
             + bytes(blob)), len(blob)
 
 
+def pack_debug(entries):
+    """Lay out the shader debugger's sidecar: header, entry table, then text.
+
+    Same slot indexing as the main pack, so the runtime can address it with the
+    (kind, slot) pair it already has. Spans are deduplicated, since the same
+    microcode compiled into two slots produces the same text twice.
+    """
+    text = bytearray()
+    seen = {}
+
+    def place(data):
+        if not data:
+            return (0, 0)
+        existing = seen.get(data)
+        if existing is not None:
+            return existing
+        where = (len(text), len(data))
+        text.extend(data)
+        seen[data] = where
+        return where
+
+    empty = struct.pack("<IIIIII", 0, 0, 0, 0, 0, 0)
+    table = [empty] * (SLOTS * 2)
+    for entry in entries:
+        index = (0 if entry.kind == "vs" else SLOTS) + entry.slot
+        name = place(entry.name.encode("utf-8"))
+        ucode = place(entry.disassembly)
+        hlsl = place(entry.hlsl)
+        table[index] = struct.pack("<IIIIII", name[0], name[1], ucode[0],
+                                   ucode[1], hlsl[0], hlsl[1])
+
+    header = struct.pack("<4sIII", DEBUG_MAGIC, DEBUG_VERSION, SLOTS, len(text))
+    return header + b"".join(table) + bytes(text)
+
+
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -283,6 +341,9 @@ def main():
                         help="working directory for the .hlsl and compiled blobs")
     parser.add_argument("--pack", help="pack file to write "
                                        "(default <out>/guest_shaders.bin)")
+    parser.add_argument("--debug-pack",
+                        help="shader debugger sidecar to write (default "
+                             "<out>/guest_shaders_debug.bin)")
     parser.add_argument("--dxc", required=True, help="dxc executable")
     parser.add_argument("--dxc-lib-dir",
                         help="directory holding libdxcompiler, if it is not "
@@ -317,11 +378,17 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(pack_path)), exist_ok=True)
     write_if_different(pack_path, data)
 
+    debug_path = args.debug_pack or os.path.join(args.out,
+                                                 "guest_shaders_debug.bin")
+    debug_data = pack_debug(entries)
+    os.makedirs(os.path.dirname(os.path.abspath(debug_path)), exist_ok=True)
+    write_if_different(debug_path, debug_data)
+
     vertex = sum(1 for e in entries if e.kind == "vs")
     print("guest shaders: %d vertex, %d pixel, formats %s, %d blob bytes, "
-          "pack %d bytes -> %s"
+          "pack %d bytes -> %s (debug sidecar %d bytes -> %s)"
           % (vertex, len(entries) - vertex, "+".join(formats), blob_bytes,
-             len(data), pack_path))
+             len(data), pack_path, len(debug_data), debug_path))
     return 0
 
 

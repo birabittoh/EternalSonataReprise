@@ -31,6 +31,7 @@
 #include "native_renderer.h"
 #include "native_renderer_overlay.h"
 #include "native_renderer_plume.h"
+#include "native_renderer_shader_debug.h"
 #include "party_system.h"
 #include "room_presence.h"
 #include "settings.h"
@@ -195,6 +196,8 @@ class EternalsonataApp : public rex::ReXApp {
     // Debug tool: per-frame override of the field leader's model handle,
     // driven by the same overlay's "Overworld Model" combo.
     eternalsonata::FieldPlayerModelOverride::Bind(runtime());
+
+    WireShaderDebugger();
   }
 
   // The host swap chain follows the window. Only records the request: this
@@ -222,6 +225,39 @@ class EternalsonataApp : public rex::ReXApp {
   }
 
  private:
+  // Points the SDK's F2 shader debugger at the native renderer instead of at
+  // the emulated command processor, which does not exist in this build. The
+  // overlay's whole data model is "a list of shaders, by hash"; this renderer's
+  // shaders are the closed set in guest_shaders.bin, addressed by guest table
+  // slot, so the override presents a slot where a hash would go. See
+  // src/native_renderer_shader_debug.h.
+  void WireShaderDebugger() {
+    ShaderDebuggerOverride override;
+    override.snapshot_provider = [] { return eternalsonata::GuestShaderSnapshot(); };
+    override.details_provider = [](uint64_t id) { return eternalsonata::GuestShaderDetails(id); };
+    override.disable_setter = [](uint64_t id, bool disabled) {
+      eternalsonata::SetGuestShaderDisabled(id, disabled);
+    };
+    // Replacing a compiled blob under a live pipeline is not offered: the
+    // pipeline cache hands out objects that the frame's command list only reads
+    // at execute time, so swapping one mid-frame would retroactively change
+    // draws already recorded against it. Leaving the callback unset makes the
+    // dialog's "Load binary..." fail loudly rather than corrupt a frame.
+    override.profiling_toggle = [](bool enabled) {
+      eternalsonata::SetGuestShaderProfiling(enabled);
+    };
+    override.profiling_resetter = [] { eternalsonata::ResetGuestShaderProfiling(); };
+    SetShaderDebuggerOverride(std::move(override));
+
+    // The dialog persists the disable flags, but only applies them as the user
+    // toggles a row. Reading the same file here means a shader switched off in
+    // a previous session is off from the first frame, without the overlay ever
+    // being opened.
+    eternalsonata::SetGuestShaderBlacklist(
+        rex::ui::ShaderDebuggerDialog::ReadShaderBlacklistFromToml(runtime()->ModDumpRoot() /
+                                                                  "shaders.toml"));
+  }
+
   std::filesystem::path user_settings_path() const { return user_data_root() / "settings.toml"; }
 
   // Guest frame present count, bumped by the per-swap callback (any thread).
