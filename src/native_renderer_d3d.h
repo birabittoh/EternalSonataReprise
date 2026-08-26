@@ -236,7 +236,20 @@ inline constexpr uint32_t kMaxVertexElements = 24;
 
 struct VertexDeclaration {
   uint32_t address = 0;
+
+  // The serial the guest assigned this object, or 0 if it has not assigned one.
+  // Kept for the log only. It is *not* a usable cache key: the guest assigns it
+  // lazily, and declarations created after boot (which is every one an area
+  // load brings in) were observed to sit at 0 forever, so keying on it refused
+  // every draw that used them and lost the area's terrain outright.
   uint32_t serial = 0;
+
+  // What identifies a declaration for caching: a hash over the decoded elements,
+  // which are exactly what the host input layout is built from. Two declarations
+  // that hash the same produce the same layout, so sharing a pipeline between
+  // them is correct rather than merely tolerable.
+  uint64_t identity = 0;
+
   uint32_t element_count = 0;
   bool truncated = false;
   VertexElement elements[kMaxVertexElements];

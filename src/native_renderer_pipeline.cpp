@@ -77,8 +77,32 @@ constexpr const char* kRefusalNames[kRefuseCount] = {
 uint64_t g_refusals[kRefuseCount] = {};
 bool g_refusal_reported[kRefuseCount] = {};
 
-void Refuse(RefusalReason reason, const char* detail) {
+// A refusal loses a draw outright, so the one thing worth knowing about it is
+// *which* draw. The counters say how many; this says which (vertex shader,
+// pixel shader) pairs, once per distinct triple and capped, so a refusal that
+// fires every frame costs one line for the run rather than one per draw.
+uint32_t g_refusal_pairs[32] = {};
+uint32_t g_refusal_pair_count = 0;
+
+void ReportRefusalPair(RefusalReason reason, int vertex_slot, int pixel_slot) {
+  if (vertex_slot < 0 || pixel_slot < 0)
+    return;
+  const uint32_t triple =
+      (uint32_t(reason) << 24) | (uint32_t(vertex_slot) << 12) | uint32_t(pixel_slot);
+  for (uint32_t i = 0; i < g_refusal_pair_count; ++i) {
+    if (g_refusal_pairs[i] == triple)
+      return;
+  }
+  if (g_refusal_pair_count >= std::size(g_refusal_pairs))
+    return;
+  g_refusal_pairs[g_refusal_pair_count++] = triple;
+  REXLOG_WARN("native_renderer: no pipeline for vs={} ps={}: {}", vertex_slot, pixel_slot,
+              kRefusalNames[reason]);
+}
+
+void Refuse(RefusalReason reason, const char* detail, int vertex_slot = -1, int pixel_slot = -1) {
   ++g_refusals[reason];
+  ReportRefusalPair(reason, vertex_slot, pixel_slot);
   if (g_refusal_reported[reason])
     return;
   g_refusal_reported[reason] = true;
@@ -355,7 +379,7 @@ struct PipelineKey {
   uint8_t pixel_slot = 0;
   uint8_t topology = 0;
   uint8_t targets = 0;  // bit 0 colour, bit 1 depth
-  uint32_t declaration_serial = 0;
+  uint64_t declaration_identity = 0;
   uint32_t strides[kMaxPipelineStreams] = {};
 
   // The guest's own register values, not a decode of them. Two states that
@@ -371,7 +395,7 @@ struct PipelineKey {
   bool operator==(const PipelineKey& other) const {
     if (vertex_slot != other.vertex_slot || pixel_slot != other.pixel_slot ||
         topology != other.topology || targets != other.targets ||
-        declaration_serial != other.declaration_serial ||
+        declaration_identity != other.declaration_identity ||
         depth_control != other.depth_control || blend_control != other.blend_control ||
         mode_cntl != other.mode_cntl || color_mask != other.color_mask) {
       return false;
@@ -589,14 +613,15 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
     Refuse(kRefuseUnresolvedSlot, "a bound shader object is not in the guest's own shader table");
     return nullptr;
   }
-  if (request.declaration == nullptr || request.declaration->serial == 0) {
-    Refuse(kRefuseNoDeclaration, "the draw has no decoded vertex declaration");
+  if (request.declaration == nullptr) {
+    Refuse(kRefuseNoDeclaration, "the draw has no decoded vertex declaration", request.vertex_slot,
+           request.pixel_slot);
     return nullptr;
   }
 
   const RenderPrimitiveTopology topology = MapTopology(request.primitive_type);
   if (topology == RenderPrimitiveTopology::UNKNOWN) {
-    Refuse(kRefuseTopology, "see the Xenos PrimitiveType histogram in the draw summary");
+    Refuse(kRefuseTopology, "see the Xenos PrimitiveType histogram in the draw summary", request.vertex_slot, request.pixel_slot);
     return nullptr;
   }
 
@@ -605,7 +630,7 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   key.pixel_slot = uint8_t(request.pixel_slot);
   key.topology = uint8_t(topology);
   key.targets = uint8_t((request.has_color_target ? 1u : 0u) | (request.has_depth_target ? 2u : 0u));
-  key.declaration_serial = request.declaration->serial;
+  key.declaration_identity = request.declaration->identity;
   if (request.state.valid) {
     key.depth_control = request.state.depth_control;
     key.blend_control = request.state.blend_control;
@@ -632,13 +657,13 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   }
 
   if (decl.truncated) {
-    Refuse(kRefuseTooManyElements, "raise kMaxVertexElements, or the declaration layout is wrong");
+    Refuse(kRefuseTooManyElements, "raise kMaxVertexElements, or the declaration layout is wrong", request.vertex_slot, request.pixel_slot);
     return nullptr;
   }
 
   RenderDevice* device = PlumeDevice();
   if (device == nullptr) {
-    Refuse(kRefuseDeviceDown, "the backend is not up yet");
+    Refuse(kRefuseDeviceDown, "the backend is not up yet", request.vertex_slot, request.pixel_slot);
     return nullptr;
   }
   RenderPipelineLayout* layout = EnsureLayout(device);
@@ -648,20 +673,20 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   const GuestShader& vertex = GuestVertexShader(uint32_t(request.vertex_slot));
   const GuestShader& pixel = GuestPixelShader(uint32_t(request.pixel_slot));
   if (!vertex.valid() || !pixel.valid()) {
-    Refuse(kRefuseNoBlob, "guest_shaders.bin is missing, stale, or was built without this format");
+    Refuse(kRefuseNoBlob, "guest_shaders.bin is missing, stale, or was built without this format", request.vertex_slot, request.pixel_slot);
     return nullptr;
   }
   if (!InterpolatorsSubset(vertex, pixel)) {
     Refuse(kRefuseInterpolatorMismatch,
            "the hardware would have synthesised a constant for the unmatched input; the host will "
-           "not link the pair");
+           "not link the pair", request.vertex_slot, request.pixel_slot);
     return nullptr;
   }
 
   RenderShader* vertex_shader = EnsureShader(device, vertex, g_vertex_shaders[request.vertex_slot]);
   RenderShader* pixel_shader = EnsureShader(device, pixel, g_pixel_shaders[request.pixel_slot]);
   if (vertex_shader == nullptr || pixel_shader == nullptr) {
-    Refuse(kRefuseNoBlob, "the pack carries no blob in the format this render interface wants");
+    Refuse(kRefuseNoBlob, "the pack carries no blob in the format this render interface wants", request.vertex_slot, request.pixel_slot);
     return nullptr;
   }
 
@@ -688,7 +713,7 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   for (uint32_t i = 0; i < vertex.input_count; ++i) {
     const GuestVertexInput& input = vertex.inputs[i];
     if (input.usage >= kUsageCount) {
-      Refuse(kRefuseVertexFormat, "a shader input signature carries a usage outside D3DDECLUSAGE");
+      Refuse(kRefuseVertexFormat, "a shader input signature carries a usage outside D3DDECLUSAGE", request.vertex_slot, request.pixel_slot);
       return nullptr;
     }
 
@@ -719,11 +744,11 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
 
     const RenderFormat format = MapVertexFormat(match->type);
     if (format == RenderFormat::UNKNOWN) {
-      Refuse(kRefuseVertexFormat, "see the format warning above for which one");
+      Refuse(kRefuseVertexFormat, "see the format warning above for which one", request.vertex_slot, request.pixel_slot);
       return nullptr;
     }
     if (match->stream >= kMaxPipelineStreams) {
-      Refuse(kRefuseVertexFormat, "a declaration element names a stream above the 16 the guest has");
+      Refuse(kRefuseVertexFormat, "a declaration element names a stream above the 16 the guest has", request.vertex_slot, request.pixel_slot);
       return nullptr;
     }
 
@@ -804,14 +829,14 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   if (!pipeline->pipeline) {
     Refuse(kRefuseCreateFailed,
            "the driver rejected the state object; the input layout or the shader signatures "
-           "disagree with what the blobs declare");
+           "disagree with what the blobs declare", request.vertex_slot, request.pixel_slot);
     return nullptr;
   }
 
   REXLOG_INFO(
-      "native_renderer: pipeline #{} vs={} ps={} decl serial {} topology {} over {} input "
+      "native_renderer: pipeline #{} vs={} ps={} decl {:016X} topology {} over {} input "
       "element(s), {} stream(s){}",
-      g_pipelines.size(), request.vertex_slot, request.pixel_slot, key.declaration_serial,
+      g_pipelines.size(), request.vertex_slot, request.pixel_slot, key.declaration_identity,
       request.primitive_type, elements.size(), pipeline->slot_count,
       pipeline->uses_null_slot ? ", one of them the missing-attribute stream" : "");
 
