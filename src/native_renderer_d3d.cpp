@@ -18,6 +18,7 @@
 #include "native_renderer_pipeline.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_profile.h"
+#include "native_renderer_shader_debug.h"
 
 REX_EXTERN(__imp__D3D__CreateDevice);
 REX_EXTERN(__imp__D3DDevice__SetVertexShaderConstantF);
@@ -1476,6 +1477,9 @@ REX_HOOK_RAW(D3DDevice__Swap) {
   // The frame boundary invalidates every cached binding, so the once-per-frame
   // content hash still happens. See TextureBindingGeneration.
   eternalsonata::BumpTextureBindingGeneration();
+  // Rolls the shader debugger's "active this frame" flags over, so its list
+  // shows what the game is drawing now rather than what it ever drew.
+  eternalsonata::GuestShaderDebugEndFrame();
 
   static uint64_t swaps = 0;
   if (++swaps % 300 == 0) {

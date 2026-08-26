@@ -106,6 +106,12 @@ def compute_codegen_hash(manifest, manifest_path):
 # scripts/gen-guest-shaders.py as part of the CMake build.
 GUEST_SHADER_PACK = "guest_shaders.bin"
 
+# The F2 shader debugger's sidecar (microcode disassembly + HLSL per shader).
+# Deployed next to the exe for local runs, but deliberately left out of the
+# packaged build: it is a debugging aid, and it is larger than the pack the
+# renderer actually needs. See src/native_renderer_shader_debug.h.
+GUEST_SHADER_DEBUG_PACK = "guest_shaders_debug.bin"
+
 
 def copy_runtime_libs(is_windows, sdk_dir, build_type):
     # The SDK ships all build variants of each shared lib side by side
@@ -279,10 +285,11 @@ def main():
     # The native renderer reads its ahead-of-time compiled shaders from a pack
     # next to the exe (see src/guest_shaders.h), so it follows the exe out of
     # the build directory.
-    pack = os.path.join("out", "build", preset, GUEST_SHADER_PACK)
-    if os.path.isfile(pack):
-        print(f"+ cp {pack} {GUEST_SHADER_PACK}")
-        shutil.copy2(pack, GUEST_SHADER_PACK)
+    for name in (GUEST_SHADER_PACK, GUEST_SHADER_DEBUG_PACK):
+        pack = os.path.join("out", "build", preset, name)
+        if os.path.isfile(pack):
+            print(f"+ cp {pack} {name}")
+            shutil.copy2(pack, name)
 
     copy_runtime_libs(is_windows, sdk_dir, build_type)
 
