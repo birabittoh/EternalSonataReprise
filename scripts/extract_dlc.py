@@ -150,14 +150,19 @@ def main():
         with open(xex_path, "rb") as f:
             magic = f.read(4)
             if magic == b"XEX2":
-                f.seek(0x10)
-                sec_off = struct.unpack(">I", f.read(4))[0]
-                f.seek(sec_off)
+                # XEX2 optional header table: count at 0x14, (key, value)
+                # entries from 0x18. (0x10 is the security info offset.)
+                f.seek(0x14)
                 hdr_count = struct.unpack(">I", f.read(4))[0]
                 for _ in range(hdr_count):
                     key, val = struct.unpack(">II", f.read(8))
                     if key == 0x40006:
-                        title_id = f"{val:08X}"
+                        # XEX_HEADER_EXECUTION_INFO. The key's low byte is
+                        # a dword count, not the flag 0x01 that marks an inline
+                        # value, so val is an offset to 6 dwords: media_id,
+                        # version, base_version, title_id at +0x0C.
+                        f.seek(val + 0x0C)
+                        title_id = f"{struct.unpack('>I', f.read(4))[0]:08X}"
                         break
 
     if not title_id:
