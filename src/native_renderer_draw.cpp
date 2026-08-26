@@ -4,7 +4,9 @@
 
 #include "native_renderer_draw.h"
 
+#include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <memory>
 #include <vector>
 
@@ -812,6 +814,92 @@ struct ConstantCacheEntry {
 };
 ConstantCacheEntry g_constant_cache[3];
 
+// Whether the pixel float bank the guest currently holds is entirely zero over
+// the registers the guest owns, c0..c251. The literal pool at 252..255 is
+// excluded because this renderer writes that itself, so including it would mask
+// exactly the case being looked for.
+//
+// A shader that modulates its texture by a constant reads black out of a zero
+// bank, which is indistinguishable in the picture from a black texture or a
+// failed light. Recomputed only when the bank is actually re-uploaded, which is
+// rare, and then charged to every draw that reads it.
+bool g_pixel_bank_zero = false;
+uint64_t g_zero_pixel_bank_draws = 0;
+uint32_t g_zero_pixel_bank_slots[16] = {};
+uint32_t g_zero_pixel_bank_slot_count = 0;
+
+// One-shot dump of everything a single pixel shader reads, selected by slot
+// through the ES_DUMP_PS environment variable (unset means off). RenderDoc
+// reports zeros for every constant here because the banks are bound as root
+// CBVs and it does not resolve them, so when a shader's output has to be
+// explained in terms of its constants, this is the instrument: it prints the
+// guest's own bytes, swapped exactly the way the upload swaps them.
+int PixelDumpSlot() {
+  static const int slot = [] {
+    const char* value = std::getenv("ES_DUMP_PS");
+    return value != nullptr ? std::atoi(value) : -1;
+  }();
+  return slot;
+}
+// Dumped repeatedly rather than once. The constants a shader reads are scene
+// state, so a single dump on the first matching draw of the run answers for
+// whatever scene happened to load first, which is not necessarily the one being
+// investigated. Spaced out in wall clock time and capped, so a run can be
+// walked into the situation of interest without the log filling up.
+constexpr uint32_t kPixelDumpLimit = 8;
+constexpr auto kPixelDumpInterval = std::chrono::seconds(10);
+uint32_t g_pixel_dumps = 0;
+std::chrono::steady_clock::time_point g_pixel_dump_last;
+
+float GuestFloat(const uint8_t* bank, uint32_t reg, uint32_t component) {
+  uint32_t raw;
+  std::memcpy(&raw, bank + reg * 16 + component * 4, 4);
+  raw = Swap32(raw);
+  float out;
+  std::memcpy(&out, &raw, 4);
+  return out;
+}
+
+uint32_t GuestDword(const uint8_t* bank, uint32_t index) {
+  uint32_t raw;
+  std::memcpy(&raw, bank + index * 4, 4);
+  return Swap32(raw);
+}
+
+void DumpConstantsForShader(const GuestDrawCall& call) {
+  if (g_pixel_dumps >= kPixelDumpLimit || PixelDumpSlot() < 0)
+    return;
+  int vertex_slot = -1, pixel_slot = -1;
+  GuestPipelineShaderSlots(call.pipeline, &vertex_slot, &pixel_slot);
+  if (pixel_slot != PixelDumpSlot())
+    return;
+  const auto now = std::chrono::steady_clock::now();
+  if (g_pixel_dumps != 0 && now - g_pixel_dump_last < kPixelDumpInterval)
+    return;
+  g_pixel_dump_last = now;
+  ++g_pixel_dumps;
+
+  const uint8_t* floats = call.device + d3d::kPixelConstantShadow;
+  REXLOG_WARN("native_renderer: constant dump #{} for vs={} ps={}", g_pixel_dumps, vertex_slot,
+              pixel_slot);
+  for (uint32_t reg = 0; reg < 32; ++reg) {
+    REXLOG_WARN("native_renderer:   ps c{} = {} {} {} {}", reg, GuestFloat(floats, reg, 0),
+                GuestFloat(floats, reg, 1), GuestFloat(floats, reg, 2), GuestFloat(floats, reg, 3));
+  }
+  REXLOG_WARN("native_renderer:   ps c255 = {} {} {} {}", GuestFloat(floats, 255, 0),
+              GuestFloat(floats, 255, 1), GuestFloat(floats, 255, 2), GuestFloat(floats, 255, 3));
+
+  // The bool and loop bank, as the shared cbuffer lays it out: eight bool dwords
+  // then thirty two loop dwords. A loop constant packs its trip count in bits
+  // 0..7, so a zero here is a body that never runs.
+  const uint8_t* bools = call.device + d3d::kBoolConstantShadow;
+  for (uint32_t i = 0; i < 8; ++i)
+    REXLOG_WARN("native_renderer:   bools[{}..{}] = 0x{:08X}", i * 32, i * 32 + 31,
+                GuestDword(bools, i));
+  for (uint32_t i = 0; i < 32; ++i)
+    REXLOG_WARN("native_renderer:   loop i{} = 0x{:08X}", i, GuestDword(bools, 8 + i));
+}
+
 // The alpha test constants, which are built rather than copied, so they are
 // cached on their two values instead of on the guest bytes behind them.
 struct AlphaTestCache {
@@ -835,12 +923,16 @@ AlphaTestCache g_alpha_cache;
 // sharing one are genuinely the same 64 bytes.
 bool UploadConstantBank(RenderDevice* device, const uint8_t* source, uint32_t bytes,
                         ConstantCacheEntry& cache, RenderBufferReference* out,
-                        const uint8_t* literals = nullptr) {
+                        const uint8_t* literals = nullptr, bool* uploaded = nullptr) {
+  if (uploaded)
+    *uploaded = false;
   if (cache.valid && cache.raw.size() == bytes && cache.literals == literals &&
       std::memcmp(cache.raw.data(), source, bytes) == 0) {
     *out = cache.ref;
     return true;
   }
+  if (uploaded)
+    *uploaded = true;
 
   const Allocation allocation = ArenaAllocate(device, bytes);
   if (!allocation)
@@ -1119,6 +1211,7 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   // is one register file with the vertex half first.
   RenderBufferReference vertex_floats, pixel_floats, bool_loops;
   bool constants_ok;
+  bool pixel_bank_uploaded = false;
   {
     ProfileZone constant_zone(kPhaseConstantUpload);
     constants_ok =
@@ -1127,7 +1220,7 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
                            GuestPipelineVertexLiterals(call.pipeline)) &&
         UploadConstantBank(device, call.device + d3d::kPixelConstantShadow,
                            d3d::kConstantRegisters * 16, g_constant_cache[1], &pixel_floats,
-                           GuestPipelinePixelLiterals(call.pipeline)) &&
+                           GuestPipelinePixelLiterals(call.pipeline), &pixel_bank_uploaded) &&
         UploadConstantBank(device, call.device + d3d::kBoolConstantShadow,
                            d3d::kBoolLoopConstantBytes, g_constant_cache[2], &bool_loops);
   }
@@ -1135,6 +1228,40 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
     Drop(kDropNoArena, "a constant bank could not be uploaded");
     return false;
   }
+
+  // See g_pixel_bank_zero. Only the four literal pool registers are skipped;
+  // everything below them is the guest's, and all of it being zero says the
+  // mirror is reading a shadow the guest does not write.
+  if (pixel_bank_uploaded) {
+    constexpr uint32_t kGuestOwnedBytes = (d3d::kConstantRegisters - 4) * 16;
+    const uint8_t* bank = call.device + d3d::kPixelConstantShadow;
+    g_pixel_bank_zero = true;
+    for (uint32_t i = 0; i < kGuestOwnedBytes; ++i) {
+      if (bank[i] != 0) {
+        g_pixel_bank_zero = false;
+        break;
+      }
+    }
+  }
+  if (g_pixel_bank_zero) {
+    ++g_zero_pixel_bank_draws;
+    int vertex_slot = -1, pixel_slot = -1;
+    GuestPipelineShaderSlots(call.pipeline, &vertex_slot, &pixel_slot);
+    if (pixel_slot >= 0) {
+      bool seen = false;
+      for (uint32_t i = 0; i < g_zero_pixel_bank_slot_count; ++i)
+        seen = seen || g_zero_pixel_bank_slots[i] == uint32_t(pixel_slot);
+      if (!seen && g_zero_pixel_bank_slot_count < std::size(g_zero_pixel_bank_slots)) {
+        g_zero_pixel_bank_slots[g_zero_pixel_bank_slot_count++] = uint32_t(pixel_slot);
+        REXLOG_WARN(
+            "native_renderer: vs={} ps={} draws with an all-zero pixel float bank; any constant "
+            "it modulates by reads 0",
+            vertex_slot, pixel_slot);
+      }
+    }
+  }
+
+  DumpConstantsForShader(call);
 
   // The alpha test. Not a guest bank: these are host-order values built from
   // RB_COLORCONTROL and RB_ALPHA_REF, so nothing here swaps. The disabled case
@@ -1352,6 +1479,11 @@ void LogGuestDrawSummary() {
 
   REXLOG_INFO("native_renderer:   binding cache: hits={} misses={}", g_binding_cache_hits,
               g_binding_cache_misses);
+
+  if (g_zero_pixel_bank_draws != 0) {
+    REXLOG_INFO("native_renderer:   {} draw(s) read an all-zero pixel float bank, over {} shader(s)",
+                g_zero_pixel_bank_draws, g_zero_pixel_bank_slot_count);
+  }
 }
 
 void LogProfileSummary() {

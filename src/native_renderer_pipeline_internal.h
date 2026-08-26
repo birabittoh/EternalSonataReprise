@@ -89,6 +89,10 @@ uint32_t GuestPipelineTextureMask(const GuestPipeline* pipeline);
 const uint8_t* GuestPipelineVertexLiterals(const GuestPipeline* pipeline);
 const uint8_t* GuestPipelinePixelLiterals(const GuestPipeline* pipeline);
 
+// The shader table slots this pipeline was built from, so a counter in the draw
+// path can name the shader it fired on rather than only how often.
+void GuestPipelineShaderSlots(const GuestPipeline* pipeline, int* vertex_slot, int* pixel_slot);
+
 // The guest stream each host slot reads from, parallel to the slot array. A
 // value of kNullInputSlot means the missing-attribute stream, which the draw
 // path binds a zero-filled buffer to rather than any guest memory.
