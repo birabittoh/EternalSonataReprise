@@ -5,6 +5,8 @@
 #include "native_renderer_plume.h"
 
 #include <atomic>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -160,12 +162,30 @@ bool InitPlumeBackend(void* window_handle) {
   // D3D12 on Windows, Vulkan elsewhere. Plume's Vulkan backend goes through
   // volk and loads the loader at runtime, so this does not add a link time
   // dependency on a Vulkan SDK.
+  //
+  // Plume always builds its Vulkan backend, including on Windows, so the
+  // Vulkan path can be forced here to reproduce a Linux-only defect on a
+  // Windows box: set ETERNALSONATA_RENDER_API=vulkan (or =d3d12 to be
+  // explicit). Anything else, or unset, keeps the per platform default.
 #ifdef _WIN32
-  g_backend.render_interface = CreateD3D12Interface();
-  g_backend.api_name = "D3D12";
-  if (!g_backend.render_interface) {
+  const char* api_override = std::getenv("ETERNALSONATA_RENDER_API");
+  const bool force_vulkan =
+      api_override != nullptr &&
+      (std::strcmp(api_override, "vulkan") == 0 || std::strcmp(api_override, "Vulkan") == 0 ||
+       std::strcmp(api_override, "vk") == 0);
+  if (force_vulkan) {
+    REXLOG_INFO("native_renderer: ETERNALSONATA_RENDER_API selects Vulkan over D3D12");
     g_backend.render_interface = CreateVulkanInterface();
     g_backend.api_name = "Vulkan";
+    if (!g_backend.render_interface)
+      REXLOG_ERROR("native_renderer: Vulkan was forced but no interface could be created");
+  } else {
+    g_backend.render_interface = CreateD3D12Interface();
+    g_backend.api_name = "D3D12";
+    if (!g_backend.render_interface) {
+      g_backend.render_interface = CreateVulkanInterface();
+      g_backend.api_name = "Vulkan";
+    }
   }
 #elif defined(PLUME_SDL_VULKAN_ENABLED)
   g_backend.render_interface = CreateVulkanInterface(static_cast<RenderWindow>(window_handle));

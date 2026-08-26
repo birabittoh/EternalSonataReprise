@@ -476,12 +476,16 @@ RenderPipelineLayout* EnsureLayout(RenderDevice* device) {
   // b2/b3 the pixel ones, and b4 is the alpha test, which is render state
   // rather than a guest constant bank: the console tests alpha in fixed
   // function hardware and the host has to do it in the shader.
+  //
+  // Register space 2, matching the generated HLSL: under Vulkan these become a
+  // push descriptor set at set index 2, and space 0 is already the textures'.
+  // See CB_SPACE in scripts/xenos_hlsl.py for why they cannot share a space.
   const RenderRootDescriptorDesc root_descriptors[] = {
-      RenderRootDescriptorDesc(0, 0, RenderRootDescriptorType::CONSTANT_BUFFER),
-      RenderRootDescriptorDesc(1, 0, RenderRootDescriptorType::CONSTANT_BUFFER),
-      RenderRootDescriptorDesc(2, 0, RenderRootDescriptorType::CONSTANT_BUFFER),
-      RenderRootDescriptorDesc(3, 0, RenderRootDescriptorType::CONSTANT_BUFFER),
-      RenderRootDescriptorDesc(4, 0, RenderRootDescriptorType::CONSTANT_BUFFER),
+      RenderRootDescriptorDesc(0, kConstantRegisterSpace, RenderRootDescriptorType::CONSTANT_BUFFER),
+      RenderRootDescriptorDesc(1, kConstantRegisterSpace, RenderRootDescriptorType::CONSTANT_BUFFER),
+      RenderRootDescriptorDesc(2, kConstantRegisterSpace, RenderRootDescriptorType::CONSTANT_BUFFER),
+      RenderRootDescriptorDesc(3, kConstantRegisterSpace, RenderRootDescriptorType::CONSTANT_BUFFER),
+      RenderRootDescriptorDesc(4, kConstantRegisterSpace, RenderRootDescriptorType::CONSTANT_BUFFER),
   };
 
   RenderPipelineLayoutDesc desc;
