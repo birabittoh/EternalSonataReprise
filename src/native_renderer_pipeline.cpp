@@ -47,6 +47,42 @@ enum : uint32_t {
   kVf_32_32_32_FLOAT = 57,
 };
 
+// A declaration element also carries the fetch's destination swizzle, in `type`
+// bits 10..21: four 3 bit selectors, low to high, where 0..3 pick a fetched
+// component, 4 and 5 are the constants 0 and 1, and 6 or 7 leave the
+// destination alone. `sub_82267218` shifts it straight into the vfetch word it
+// patches, and the emitter then applies it (`_fetch_destination` in
+// scripts/xenos_hlsl.py).
+//
+// That matters here because vertex fetch is lifted to the host input assembler:
+// the swizzle baked into the extracted microcode is the identity one, so a
+// declaration asking for a permutation gets none unless the input layout
+// supplies it. Picking a host format whose component order already matches is
+// the only permutation the input assembler can express, which covers the one
+// case this title uses, D3DCOLOR.
+constexpr uint32_t VertexSwizzle(uint32_t type) { return (type >> 10) & 0xFFFu; }
+
+// zyxw: how a D3DCOLOR element arrives, because the hardware's k_8_8_8_8 fetch
+// delivers the low byte in x while D3DCOLOR stores blue there.
+constexpr uint32_t kSwizzleBgraToRgba = 0x60Au;
+
+// Whether a swizzle actually moves a component, as opposed to only substituting
+// constants for the components the format does not carry. A float2 element
+// declares `xy01`, which is not the identity but asks for no permutation: the
+// input assembler already fills the components a two component format leaves
+// out. Only a selector naming a different component needs the layout's help,
+// which is what keeps the counter below from firing on every texture coordinate
+// in the title.
+constexpr bool VertexSwizzlePermutes(uint32_t type) {
+  const uint32_t swizzle = VertexSwizzle(type);
+  for (uint32_t i = 0; i < 4; ++i) {
+    const uint32_t selector = (swizzle >> (i * 3)) & 7u;
+    if (selector < 4 && selector != i)
+      return true;
+  }
+  return false;
+}
+
 // Every reason a request can be refused, each reported once rather than per
 // draw. A draw that cannot get a pipeline is geometry that will not appear, so
 // these counters are the first thing to read when the frame is missing
@@ -117,6 +153,16 @@ uint64_t g_integer_inputs = 0;
 bool g_integer_reported = false;
 bool g_packed_reported = false;
 
+// Elements whose declaration asks for a component permutation the input layout
+// cannot express, which is every permuting swizzle except the D3DCOLOR one
+// handled below. Those elements reach the shader with their components in the
+// wrong places, so this counter is what says whether substituting a host format
+// is enough for this title or whether the swizzle has to be reproduced properly
+// -- by repacking on upload, the way VertexFormatRepacksToSnorm8 already does,
+// rather than by putting the declaration into the shader key.
+uint64_t g_swizzle_unhandled = 0;
+bool g_swizzle_reported = false;
+
 // A declaration element's `type` is already the hardware fetch encoding, not a
 // D3DDECLTYPE: data format in bits 0..5, `format_comp_all` (signed) at bit 8 and
 // `num_format_all` (not normalised, i.e. integer) at bit 9. Those are the same
@@ -129,6 +175,22 @@ RenderFormat MapVertexFormat(uint32_t type) {
 
   if (format < 64)
     ++g_format_seen[format];
+
+  // The one permutation the switch below can serve, by picking a host format
+  // whose components are already in that order. Anything else is counted.
+  const bool swizzle_handled = format == kVf_8_8_8_8 && !is_signed && !is_integer &&
+                               VertexSwizzle(type) == kSwizzleBgraToRgba;
+  if (VertexSwizzlePermutes(type) && !swizzle_handled) {
+    ++g_swizzle_unhandled;
+    if (!g_swizzle_reported) {
+      g_swizzle_reported = true;
+      REXLOG_WARN(
+          "native_renderer: vertex format {} declares destination swizzle {:#05x}, which permutes "
+          "components. The host input assembler cannot express it, so the element reaches the "
+          "shader unswizzled and its components are in the wrong places.",
+          format, VertexSwizzle(type));
+    }
+  }
 
   // Widened into a stream of its own rather than declared as an integer format
   // the shader cannot read. See kWidenedInputSlot; the layout below routes the
@@ -168,6 +230,13 @@ RenderFormat MapVertexFormat(uint32_t type) {
     case kVf_8_8_8_8:
       if (is_integer)
         return is_signed ? RenderFormat::R8G8B8A8_SINT : RenderFormat::R8G8B8A8_UINT;
+      // A D3DCOLOR element: same four bytes at the same offset, read in the
+      // order the declaration's zyxw swizzle asks for. Without this the vertex
+      // colour reaches the shader with red and blue transposed, which is a
+      // light brown glyph drawn light blue. There is no signed spelling of the
+      // host format, so a signed one falls through to be counted instead.
+      if (!is_signed && VertexSwizzle(type) == kSwizzleBgraToRgba)
+        return RenderFormat::B8G8R8A8_UNORM;
       return is_signed ? RenderFormat::R8G8B8A8_SNORM : RenderFormat::R8G8B8A8_UNORM;
     case kVf_16_16:
       if (is_integer)
@@ -964,8 +1033,9 @@ void LogPipelineSummary() {
     refused += count;
 
   REXLOG_INFO(
-      "native_renderer: pipelines={} requests={} hits={} refused={} (integer vertex inputs {})",
-      g_pipelines.size(), g_requests, g_hits, refused, g_integer_inputs);
+      "native_renderer: pipelines={} requests={} hits={} refused={} (integer vertex inputs {}, "
+      "unhandled vertex swizzles {})",
+      g_pipelines.size(), g_requests, g_hits, refused, g_integer_inputs, g_swizzle_unhandled);
 
   for (uint32_t i = 0; i < kRefuseCount; ++i) {
     if (g_refusals[i] != 0)
