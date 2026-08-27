@@ -443,32 +443,44 @@ class Shader:
     def _raw(self, address, word):
         return self.dwords[address * 3 + word]
 
+    def _source_register(self, instr, address, index):
+        """The register an ALU source names, without swizzle or modifiers."""
+        source = instr["sources"][index - 1]
+        if source["is_temp"]:
+            return "r%d" % (source["reg"] & 0x3F)
+        w1 = self._raw(address, 1)
+        if self._const_is_addressed(instr, index, w1):
+            base = "a0" if bits(w1, 29, 1) else "aL"
+            return "c[xe_ci(%s + %d)]" % (base, source["reg"])
+        return "c[%d]" % source["reg"]
+
+    def _source_modifiers(self, instr, address, index, text):
+        """Wrap a source expression in its absolute-value and negate modifiers.
+
+        Temps carry absolute value in bit 0x80 of their own register field;
+        constants carry it in the instruction-wide `abs_constants`. Absolute
+        value binds tighter than the negate, so both together read -|x|.
+        """
+        source = instr["sources"][index - 1]
+        absolute = source["absolute"] or (
+            not source["is_temp"] and bits(self._raw(address, 0), 7, 1))
+        if absolute:
+            text = "abs(%s)" % text
+        if source["negate"]:
+            text = "-%s" % text
+        return text
+
     def _source(self, instr, address, index, component_count=4):
         """Build the HLSL expression for ALU source operand `index` (1..3)."""
-        source = instr["sources"][index - 1]
-        w1 = self._raw(address, 1)
-
-        if source["is_temp"]:
-            text = "r%d" % (source["reg"] & 0x3F)
-        elif self._const_is_addressed(instr, index, w1):
-            base = "a0" if bits(w1, 29, 1) else "aL"
-            text = "c[xe_ci(%s + %d)]" % (base, source["reg"])
-        else:
-            text = "c[%d]" % source["reg"]
-
-        swizzle = source["swizzle"]
+        swizzle = instr["sources"][index - 1]["swizzle"]
+        text = self._source_register(instr, address, index)
         if component_count == 1:
             text += "." + COMPONENTS[U.swizzled_component(swizzle, 3)]
         else:
             text += "." + "".join(
                 COMPONENTS[U.swizzled_component(swizzle, j)]
                 for j in range(component_count))
-
-        if not source["is_temp"] and bits(self._raw(address, 0), 7, 1):
-            text = "abs(%s)" % text
-        if source["negate"]:
-            text = "-%s" % text
-        return text
+        return self._source_modifiers(instr, address, index, text)
 
     @staticmethod
     def _const_is_addressed(instr, index, w1):
@@ -504,15 +516,9 @@ class Shader:
         # twice made every two-component op fold to a constant (`subs` to 0,
         # which then reached a `rcp` and produced an infinity).
         component = U.swizzled_component(swizzle, 3 if which == 0 else 0)
-        base = self._source(instr, address, 3, 4)
-        # `_source` already applied negate/abs around the full swizzle, so
-        # rebuild with the single component instead of indexing the result.
-        prefix, _, _ = base.partition(".")
-        negate = prefix.startswith("-")
-        text = "%s.%s" % (prefix.lstrip("-"), COMPONENTS[component])
-        if not source["is_temp"] and bits(self._raw(address, 0), 7, 1):
-            text = "abs(%s)" % text
-        return "-%s" % text if negate else text
+        text = "%s.%s" % (self._source_register(instr, address, 3),
+                          COMPONENTS[component])
+        return self._source_modifiers(instr, address, 3, text)
 
     def _scalar_expression(self, instr, address, scalar_name):
         template = SCALAR_EMITTERS[scalar_name]
