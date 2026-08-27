@@ -9,6 +9,10 @@
 #include <rex/logging.h>
 #include <rex/ui/window.h>
 
+#if defined(PLUME_SDL_VULKAN_ENABLED)
+#include <SDL3/SDL.h>
+#endif
+
 #include "guest_shaders.h"
 #include "native_renderer_plume.h"
 
@@ -29,9 +33,21 @@ void InitNativeRenderer(rex::ui::Window* window) {
   // talk to whichever platform backend SDL picked, X11 or Wayland). Plain
   // GetNativeWindowHandle() only ever returns a platform-native handle
   // (HWND on Windows); on Linux it's always null, since there's no single
-  // native handle to hand back.
+  // native handle to hand back, and the SDK exposes no accessor for the
+  // SDL_Window behind rex::ui::WindowSDL. Ask SDL instead: the app only ever
+  // opens the one window, so the first entry is ours.
 #if defined(PLUME_SDL_VULKAN_ENABLED)
-  void* handle = window ? window->GetSDLWindowHandle() : nullptr;
+  void* handle = nullptr;
+  if (window) {
+    int window_count = 0;
+    SDL_Window** windows = SDL_GetWindows(&window_count);
+    if (windows && window_count > 0) {
+      handle = windows[0];
+    }
+    // SDL hands back a fresh array; only the SDL_Window pointers inside it are
+    // owned by SDL and outlive it.
+    SDL_free(windows);
+  }
 #else
   void* handle = window ? window->GetNativeWindowHandle() : nullptr;
 #endif
