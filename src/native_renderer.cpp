@@ -19,7 +19,19 @@
 namespace eternalsonata {
 
 bool NativeRendererEnabled() {
-  return rex::cvar::GetFlagByName("gpu_plugin") == kNativeRendererPluginName;
+  // Latched on the first call, which is RegisterNativeRendererCvars from
+  // OnPreSetup: after the config files have been read and before anything else
+  // asks. Deliberately not a live read.
+  //
+  // Which renderer is running is decided once, at boot, by whether the SDK
+  // loaded a GPU plugin; changing gpu_plugin at runtime only records a
+  // preference for the next launch. A live read would flip every hook in
+  // native_renderer_d3d.cpp out from under a guest still running with no
+  // plugin behind it, and the next D3DDevice__BlockUntilFenceRetired would
+  // then spin forever on a retired-fence counter nothing writes.
+  static const bool enabled =
+      rex::cvar::GetFlagByName("gpu_plugin") == kNativeRendererPluginName;
+  return enabled;
 }
 
 namespace {
