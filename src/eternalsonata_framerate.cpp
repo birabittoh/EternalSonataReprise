@@ -51,10 +51,11 @@ REXCVAR_DECLARE(bool, frame_debug);
 //
 // NOTE on vsync: interval N means "present every Nth vblank", so a real
 // interval ties the frame rate to the SDK vblank pump, whose rate the `vsync`
-// cvar changes drastically. We therefore never use a real interval — see
-// ApplyFrameRate — and pace with a host limiter instead, which keeps the frame
-// rate independent of `vsync`. (The `vsync` cvar does not give host-side vsync
-// in any case: the D3D12 presenter always calls `Present(0, ...)`.)
+// cvar changes drastically: GraphicsSystem::SetupPresentation runs the pump at
+// the video mode's refresh rate (60 Hz) when `vsync` is on and at 1000 Hz when
+// it is off. We therefore never hand the guest a real interval while the pump
+// is at refresh rate; see ApplyFrameRate. Pacing is the host limiter's job,
+// which keeps the frame rate independent of `vsync`.
 namespace {
 
 REX_IMPORT(__imp__sub_8225A9F0, g_sub_8225A9F0, void(u32, u32));
@@ -359,6 +360,14 @@ u8 AdaptiveFrameRate(u8 requested, u8 stock, bool measure) {
 
 namespace {
 
+// True when the SDK's vblank pump is running at the display refresh rate rather
+// than free running at 1000 Hz; see the interval choice in ApplyFrameRate.
+// Neither renderer registers `vsync` in the executable (the Xenos plugin owns
+// the name on one path, RegisterNativeRendererCvars on the other), so an
+// unregistered read is empty and reads as "free running" — which is also the
+// state a build with no owner is in.
+bool PumpIsVsynced() { return rex::cvar::GetFlagByName("vsync") == "true"; }
+
 // Applies the fps value by doing exactly what sub_8210A6B8 does. Must be called
 // with a live guest context (it calls into guest code).
 //
@@ -377,11 +386,10 @@ void ApplyFrameRate(PPCContext& ctx, u8* base, u8 fps) {
   }
   rex::CallFrame frame{ctx};
   if (fps) {
-    // Use a real presentation interval whenever the rate can express one, and
-    // fall back to IMMEDIATE otherwise. The interval is NOT inert: sub_8225E818
-    // reads device[13444], maps it to 0/1/2/3, and packs it into the swap
-    // scheduler argument, where sub_8225E680 (vblank ISR, spinlocked on the
-    // kernel device object) adds it to the flip schedule:
+    // A real presentation interval is NOT inert: sub_8225E818 reads
+    // device[13444], maps it to 0/1/2/3, and packs it into the swap scheduler
+    // argument, where sub_8225E680 (vblank ISR, spinlocked on the kernel device
+    // object) adds it to the flip schedule:
     //
     //   v17 = last_flip_target + interval;
     //   if (v17 <= vblank_count) { v17 = vblank_count; ... }
@@ -390,10 +398,26 @@ void ApplyFrameRate(PPCContext& ctx, u8* base, u8 fps) {
     // With IMMEDIATE the interval term is 0, so every flip takes the "flip now"
     // branch and the pending-flip ring goes unused — a different front-buffer
     // publication pattern than stock, which matters because the title runs two
-    // front buffers (dword_82466100 / dword_82466104). Host pacing is the
-    // limiter's job either way; this only restores the guest's stock flip
-    // scheduling.
-    const u32 interval = (fps <= 60 && 60u % fps == 0) ? (60u / fps - 1u) : 3u;
+    // front buffers (dword_82466100 / dword_82466104). That is the only reason
+    // to want a real interval here, and it is worth having *only* while the
+    // vblank pump is free running.
+    //
+    // With `vsync` on the pump ticks at 60 Hz, and then the schedule above
+    // quantises: a frame whose work overruns a vblank cannot flip until the
+    // next one, so the achieved rate snaps to 60/30/20 (interval 1) or
+    // 30/20/15 (interval 2) with nothing in between. This engine is
+    // frame-clocked — the sim advances a fixed 300/declared units per present —
+    // so game speed is actual fps / declared fps, and a quantised present rate
+    // is not choppiness but literal slow motion. It showed up as the game
+    // dropping to half speed during battle attacks, i.e. exactly where a frame
+    // first overruns 16.7 ms, and it did so on both renderers because the
+    // quantisation lives in the guest's own flip scheduler rather than in
+    // either backend.
+    //
+    // With `vsync` off the pump ticks at 1000 Hz, the interval wait is
+    // satisfied immediately, and the stock flip scheduling costs nothing.
+    const u32 interval =
+        (!PumpIsVsynced() && fps <= 60 && 60u % fps == 0) ? (60u / fps - 1u) : 3u;
     g_sub_8225A9F0(frame, base, device, interval <= 2 ? (1u << interval) : 0x80000000u);
     REX_STORE_U8(0x82465F90, fps);
   } else {
@@ -408,6 +432,12 @@ void ApplyFrameRate(PPCContext& ctx, u8* base, u8 fps) {
 // Last fps value we pushed into the device, so the per-frame re-apply below
 // only touches D3D state when the cvar actually changed.
 u8 g_applied_fps = 0xFF;
+
+// The `vsync` reading that chose the interval currently in the device. The
+// setting is hot-reloadable, and the interval ApplyFrameRate picks depends on
+// it, so toggling vsync has to re-apply even though the fps did not change.
+// 0xFF is "nothing applied yet", so the first frame always writes.
+u8 g_applied_vsync = 0xFF;
 
 // Sleep for `d` without the ~15 ms granularity of a default Windows timer.
 // Nothing in the SDK raises the global timer resolution (no timeBeginPeriod
@@ -595,6 +625,7 @@ REX_HOOK_RAW(sub_8210A6B8) {
   const u8 fps = AdaptiveFrameRate(RequestedFrameRate(g_guest_rate), g_guest_rate, /*measure=*/false);
   ApplyFrameRate(ctx, base, fps);
   g_applied_fps = fps;
+  g_applied_vsync = PumpIsVsynced();
 }
 
 // The game only calls sub_8210A6B8 at init and on a few scene transitions, so
@@ -609,9 +640,11 @@ REX_HOOK_RAW(sub_8210AAD8) {
   // The original clobbers r3, so capture the render-pump object up front.
   const u32 a1 = ctx.r3.u32;
   const u8 fps = AdaptiveFrameRate(RequestedFrameRate(g_guest_rate), g_guest_rate, /*measure=*/true);
-  if (fps != g_applied_fps) {
+  const u8 vsynced = PumpIsVsynced();
+  if (fps != g_applied_fps || vsynced != g_applied_vsync) {
     ApplyFrameRate(ctx, base, fps);
     g_applied_fps = fps;
+    g_applied_vsync = vsynced;
   }
   __imp__sub_8210AAD8(ctx, base);
   // Debug tools queue guest calls that are only safe on this thread; see
