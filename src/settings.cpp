@@ -6,6 +6,7 @@
 #include "debug_area_overlay.h"
 #include "field_player_model_override.h"
 #include "host_timer_resolution.h"
+#include "native_renderer.h"
 
 #include <algorithm>
 #include <array>
@@ -936,7 +937,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // since the valid set depends on what's actually staged there, so this
   // combo is populated from rex::system::EnumerateGpuPlugins() instead of
   // going through the generic DrawCvarWidget (which would fall back to a
-  // plain text field for an unconstrained string cvar).
+  // plain text field for an unconstrained string cvar). The one entry that is
+  // not a staged DLL is "plume", appended in InitSettingsCaches().
   void DrawGpuPluginRow() {
     const auto* entry = rex::cvar::GetFlagInfo("gpu_plugin");
     if (!entry || gpu_plugin_names_.empty())
@@ -1099,6 +1101,10 @@ void InitSettingsCaches() {
   // BootUserLanguageIndex).
   BootUserLanguageIndex();
   g_gpu_plugin_names_cache = rex::system::EnumerateGpuPlugins();
+  // Not a staged DLL, so EnumerateGpuPlugins() never reports it: it selects
+  // this project's own renderer instead of any plugin. Offer it anyway, or the
+  // combo below has no way to reach it. See native_renderer.h.
+  g_gpu_plugin_names_cache.emplace_back(eternalsonata::kNativeRendererPluginName);
 #if REX_HAS_VULKAN
   g_vulkan_devices_cache = rex::ui::vulkan::EnumerateDevices();
 #endif
