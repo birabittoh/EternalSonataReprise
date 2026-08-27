@@ -11,9 +11,11 @@
 // scripts/extract_shaders.py).
 //
 // The two are mutually exclusive, and the ring buffer is the reason: it exists
-// only because Xenos is being emulated. Selecting the native renderer is
-// therefore nothing more than setting the `gpu_plugin` cvar to the empty
-// string (its default is "xenos", set in settings.cpp). With no plugin loaded
+// only because Xenos is being emulated. Select the native renderer by setting
+// the `gpu_plugin` cvar to "plume" (its default is "xenos", set in
+// settings.cpp). There is no rexgpu-plume DLL: the name is a sentinel this
+// project recognises in OnPreSetup, where it clears RuntimeConfig::gpu_plugin
+// so the SDK loads no plugin at all. With no plugin loaded
 // the SDK runs headless: it drives the guest's vblank interrupt from its own
 // timer thread, and there is no ring buffer, so every guest path that writes a
 // packet into one is dead code that must be intercepted or stubbed rather than
@@ -33,9 +35,13 @@ class Window;
 
 namespace eternalsonata {
 
-// True when no GPU plugin is loaded, i.e. the `gpu_plugin` cvar is empty, so
-// this project owns presentation. Reads the cvar, so it is only meaningful
-// once the config files have been loaded.
+// The `gpu_plugin` value that selects this renderer. Not a real plugin name;
+// nothing named rexgpu-plume is ever staged or loaded.
+inline constexpr const char* kNativeRendererPluginName = "plume";
+
+// True when the `gpu_plugin` cvar names this renderer, so no GPU plugin is
+// loaded and this project owns presentation. Reads the cvar, so it is only
+// meaningful once the config files have been loaded.
 bool NativeRendererEnabled();
 
 // Brings up the rendering backend. Call from OnPreLaunchModule, before the
