@@ -62,15 +62,23 @@ plume::RenderShaderFormat PlumeShaderFormat();
 // that presents.
 plume::RenderCommandList* PlumeGuestCommands();
 
-// Copy the guest's finished image into the swap chain image, appended to the
-// frame's own recording. False when there is nothing to show yet, which is the
-// case until the guest's first resolve; the caller then falls back to a clear so
-// that "no image" stays distinguishable from "black image" on sight.
+// Get the guest's finished image ready to be presented: transitions it for
+// sampling and points the blit's descriptor set at it. False when there is
+// nothing to show yet, which is the case until the guest's first resolve; the
+// caller then falls back to a clear so that "no image" stays distinguishable
+// from "black image" on sight.
 //
-// Leaves the backbuffer in COPY_DEST, since the caller has to transition it for
-// the overlay pass either way.
-bool FrameComposite(plume::RenderCommandList* commands, plume::RenderTexture* backbuffer,
-                    uint32_t width, uint32_t height);
+// Called before the framebuffer is bound, because the barrier it records would
+// otherwise end the render pass Plume's Vulkan backend has open.
+bool FramePreparePresent(plume::RenderCommandList* commands);
+
+// Draw that image into the bound framebuffer, scaled to the window. Stretched to
+// fill it, or fitted inside it preserving the guest's aspect ratio when the SDK's
+// `present_letterbox` cvar is on; the bars are whatever the caller cleared to.
+// Viewport and scissor are left covering the whole target for the overlay.
+//
+// Only meaningful after FramePreparePresent returned true; a no-op otherwise.
+void FramePresentGuestImage(plume::RenderCommandList* commands, uint32_t width, uint32_t height);
 
 // Bind the targets the guest currently has bound as the command list's
 // framebuffer, transitioning them if they are not already writable, and hand

@@ -305,10 +305,10 @@ void PlumePresentFrame() {
   const uint32_t width = g_backend.swap_chain->getWidth();
   const uint32_t height = g_backend.swap_chain->getHeight();
 
-  // The guest's image, if it has produced one. This is appended to the same
-  // list the guest's own clears and resolves recorded into, so the copy is
-  // ordered after them without needing anything else to synchronise the two.
-  const bool have_guest_image = FrameComposite(commands, backbuffer, width, height);
+  // The guest's image, if it has produced one. Its barrier is appended to the
+  // same list the guest's own clears and resolves recorded into, so the present
+  // is ordered after them without needing anything else to synchronise the two.
+  const bool have_guest_image = FramePreparePresent(commands);
 
   commands->barriers(RenderBarrierStage::GRAPHICS,
                      RenderTextureBarrier(backbuffer, RenderTextureLayout::COLOR_WRITE));
@@ -316,11 +316,18 @@ void PlumePresentFrame() {
   commands->setViewports(RenderViewport(0.0f, 0.0f, float(width), float(height)));
   commands->setScissors(RenderRect(0, 0, int32_t(width), int32_t(height)));
 
-  // Only when the guest has nothing to show. It is deliberately not black: a
-  // black clear is indistinguishable from the no-backend case, and being able
-  // to tell those apart on sight is worth keeping.
-  if (!have_guest_image)
+  // Unconditional, because the blit does not necessarily cover the window: a
+  // letterboxed present leaves bars, and clearing them every frame is what keeps
+  // whatever the previous frame put there from showing through. When the guest
+  // has nothing to show at all the clear is the frame, and it is deliberately
+  // not black: a black clear is indistinguishable from the no-backend case, and
+  // being able to tell those apart on sight is worth keeping.
+  if (have_guest_image)
+    commands->clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 1.0f));
+  else
     commands->clearColor(0, RenderColor(0.05f, 0.06f, 0.10f, 1.0f));
+
+  FramePresentGuestImage(commands, width, height);
 
   // The SDK's overlays record straight into this frame. There is no presenter
   // and no separate UI pass in detached mode: the drawer is handed the live

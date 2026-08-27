@@ -4,15 +4,24 @@
 
 #include "native_renderer_frame.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <rex/cvar.h>
 #include <rex/logging.h>
 
 #include "native_renderer_plume_internal.h"
+
+#ifdef _WIN32
+#include "shaders/blitVert.hlsl.dxil.h"
+#include "shaders/blitFrag.hlsl.dxil.h"
+#endif
+#include "shaders/blitVert.hlsl.spirv.h"
+#include "shaders/blitFrag.hlsl.spirv.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -170,7 +179,6 @@ uint64_t g_resolves_dropped = 0;
 uint64_t g_resolves_banded = 0;
 uint64_t g_composites = 0;
 uint64_t g_composites_skipped = 0;
-uint32_t g_size_mismatch_reported = 0;
 uint64_t g_attachment_mismatch = 0;
 uint32_t g_attachment_mismatch_reported = 0;
 uint32_t g_resolve_rect_reported = 0;
@@ -939,8 +947,112 @@ uint32_t g_present_probe_logged = 0;
 uint64_t g_present_probe_last_resolves = 0;
 uint64_t g_present_probe_last_clears = 0;
 
-bool FrameComposite(RenderCommandList* commands, RenderTexture* backbuffer, uint32_t width,
-                    uint32_t height) {
+// --- The present blit ---
+//
+// The guest renders at a fixed 1280x720 and the window is any size at all, so
+// the present is a textured draw rather than a copy: a copy cannot scale, and
+// what it did instead was present the overlapping corner of the two, which read
+// as the image sitting in the top left of a resized window.
+//
+// The scaling lives entirely in the viewport the draw is issued under, so
+// stretching and letterboxing differ only in that rectangle. `present_letterbox`
+// (the SDK's own cvar, default true) picks between them.
+struct BlitResources {
+  std::unique_ptr<RenderShader> vertex_shader;
+  std::unique_ptr<RenderShader> pixel_shader;
+  std::unique_ptr<RenderPipelineLayout> pipeline_layout;
+  std::unique_ptr<RenderPipeline> pipeline;
+  std::unique_ptr<RenderSampler> sampler;
+  std::unique_ptr<RenderDescriptorSet> descriptor_set;
+
+  // What the set currently points at. Rewriting a descriptor set that a
+  // recorded draw still reads is trap 2 in the handoff; it is safe here only
+  // because the present fence waits before the next frame records anything.
+  const RenderTexture* bound_texture = nullptr;
+
+  bool initialized = false;
+  bool failed = false;
+};
+
+BlitResources g_blit;
+
+bool EnsureBlitResources(RenderDevice* device) {
+  if (g_blit.initialized)
+    return true;
+  if (g_blit.failed || device == nullptr)
+    return false;
+
+  RenderDescriptorRange ranges[] = {
+      RenderDescriptorRange(RenderDescriptorRangeType::TEXTURE, 0, 1),
+      RenderDescriptorRange(RenderDescriptorRangeType::SAMPLER, 1, 1),
+  };
+  RenderDescriptorSetDesc descriptor_set_desc(ranges, 2);
+
+  RenderPipelineLayoutDesc layout_desc;
+  layout_desc.descriptorSetDescs = &descriptor_set_desc;
+  layout_desc.descriptorSetDescsCount = 1;
+  layout_desc.allowInputLayout = false;
+  g_blit.pipeline_layout = device->createPipelineLayout(layout_desc);
+
+  const RenderShaderFormat shader_format = PlumeShaderFormat();
+#ifdef _WIN32
+  if (shader_format == RenderShaderFormat::DXIL) {
+    g_blit.vertex_shader =
+        device->createShader(blitVertBlobDXIL, sizeof(blitVertBlobDXIL), "VSMain", shader_format);
+    g_blit.pixel_shader =
+        device->createShader(blitFragBlobDXIL, sizeof(blitFragBlobDXIL), "PSMain", shader_format);
+  } else
+#endif
+      if (shader_format == RenderShaderFormat::SPIRV) {
+    g_blit.vertex_shader =
+        device->createShader(blitVertBlobSPIRV, sizeof(blitVertBlobSPIRV), "VSMain", shader_format);
+    g_blit.pixel_shader =
+        device->createShader(blitFragBlobSPIRV, sizeof(blitFragBlobSPIRV), "PSMain", shader_format);
+  }
+
+  RenderSamplerDesc sampler_desc;
+  sampler_desc.minFilter = RenderFilter::LINEAR;
+  sampler_desc.magFilter = RenderFilter::LINEAR;
+  sampler_desc.mipmapMode = RenderMipmapMode::NEAREST;
+  sampler_desc.addressU = RenderTextureAddressMode::CLAMP;
+  sampler_desc.addressV = RenderTextureAddressMode::CLAMP;
+  sampler_desc.addressW = RenderTextureAddressMode::CLAMP;
+  g_blit.sampler = device->createSampler(sampler_desc);
+
+  if (g_blit.vertex_shader && g_blit.pixel_shader && g_blit.pipeline_layout) {
+    RenderGraphicsPipelineDesc pipeline_desc;
+    pipeline_desc.pipelineLayout = g_blit.pipeline_layout.get();
+    pipeline_desc.vertexShader = g_blit.vertex_shader.get();
+    pipeline_desc.pixelShader = g_blit.pixel_shader.get();
+    pipeline_desc.renderTargetFormat[0] = kColorFormat;
+    pipeline_desc.renderTargetCount = 1;
+    pipeline_desc.cullMode = RenderCullMode::NONE;
+    pipeline_desc.depthEnabled = false;
+    pipeline_desc.depthWriteEnabled = false;
+    pipeline_desc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
+    g_blit.pipeline = device->createGraphicsPipeline(pipeline_desc);
+  }
+
+  g_blit.descriptor_set = device->createDescriptorSet(descriptor_set_desc);
+
+  if (!g_blit.pipeline || !g_blit.sampler || !g_blit.descriptor_set) {
+    REXLOG_ERROR(
+        "native_renderer: could not create the present blit pipeline, so the guest's image "
+        "cannot be presented");
+    g_blit.failed = true;
+    return false;
+  }
+
+  g_blit.initialized = true;
+  return true;
+}
+
+// The SDK's presenter cvar, read every present so the setting takes effect
+// without a restart. Anything other than an explicit "false" letterboxes, which
+// is both the cvar's own default and the safer answer if it ever goes missing.
+bool PresentLetterbox() { return rex::cvar::GetFlagByName("present_letterbox") != "false"; }
+
+bool FramePreparePresent(RenderCommandList* commands) {
   ResolvedTexture* source = g_present_texture;
   PollCaptureKey();
   RippleProbeFlush();
@@ -961,37 +1073,62 @@ bool FrameComposite(RenderCommandList* commands, RenderTexture* backbuffer, uint
     return false;
   }
 
-  // Copy the overlapping region rather than requiring the two to agree. The
-  // title renders 1280x720 into a swap chain created at the same size, so they
-  // do agree today; a window resize is what breaks it, and a letterboxed copy
-  // keeps something on screen while the scaling blit that belongs here does not
-  // exist yet.
-  const uint32_t copy_width = source->width < width ? source->width : width;
-  const uint32_t copy_height = source->height < height ? source->height : height;
-  if (copy_width == 0 || copy_height == 0) {
+  if (source->width == 0 || source->height == 0) {
     ++g_composites_skipped;
     return false;
   }
-  if ((source->width != width || source->height != height) && g_size_mismatch_reported < 4) {
-    ++g_size_mismatch_reported;
-    REXLOG_WARN(
-        "native_renderer: the guest image is {}x{} and the swap chain is {}x{}; presenting the "
-        "overlap. A scaling blit belongs here.",
-        source->width, source->height, width, height);
+  if (!EnsureBlitResources(PlumeDevice())) {
+    ++g_composites_skipped;
+    return false;
   }
 
-  Transition(commands, source->texture.get(), source->layout, RenderBarrierStage::COPY,
-             RenderTextureLayout::COPY_SOURCE);
-  commands->barriers(RenderBarrierStage::COPY,
-                     RenderTextureBarrier(backbuffer, RenderTextureLayout::COPY_DEST));
+  // The draw reads it, so it is transitioned here rather than in the pass: the
+  // pass has the framebuffer bound, and Plume's Vulkan backend ends the render
+  // pass around a barrier issued inside one.
+  Transition(commands, source->texture.get(), source->layout, RenderBarrierStage::GRAPHICS,
+             RenderTextureLayout::SHADER_READ);
 
-  const RenderBox box(0, 0, int32_t(copy_width), int32_t(copy_height));
-  commands->copyTextureRegion(RenderTextureCopyLocation::Subresource(backbuffer),
-                              RenderTextureCopyLocation::Subresource(source->texture.get()), 0, 0,
-                              0, &box);
+  if (g_blit.bound_texture != source->texture.get()) {
+    g_blit.bound_texture = source->texture.get();
+    g_blit.descriptor_set->setTexture(0, source->texture.get(), RenderTextureLayout::SHADER_READ);
+    g_blit.descriptor_set->setSampler(1, g_blit.sampler.get());
+  }
+  return true;
+}
+
+void FramePresentGuestImage(RenderCommandList* commands, uint32_t width, uint32_t height) {
+  ResolvedTexture* source = g_present_texture;
+  if (source == nullptr || !source->texture || !g_blit.initialized || width == 0 || height == 0)
+    return;
+
+  // Where the guest's image lands in the window. Stretching is the whole target;
+  // letterboxing is the largest rectangle of the source's aspect ratio that fits
+  // inside it, centred, with the bars left to the caller's clear.
+  float x = 0.0f;
+  float y = 0.0f;
+  float w = float(width);
+  float h = float(height);
+  if (PresentLetterbox()) {
+    const float scale = std::min(w / float(source->width), h / float(source->height));
+    w = float(source->width) * scale;
+    h = float(source->height) * scale;
+    x = (float(width) - w) * 0.5f;
+    y = (float(height) - h) * 0.5f;
+  }
+
+  commands->setViewports(RenderViewport(x, y, w, h));
+  commands->setScissors(RenderRect(int32_t(x), int32_t(y), int32_t(x + w), int32_t(y + h)));
+  commands->setPipeline(g_blit.pipeline.get());
+  commands->setGraphicsPipelineLayout(g_blit.pipeline_layout.get());
+  commands->setGraphicsDescriptorSet(g_blit.descriptor_set.get(), 0);
+  commands->drawInstanced(3, 1, 0, 0);
+
+  // Whatever draws next (the overlay) expects the whole window, and this is the
+  // only place that narrows it.
+  commands->setViewports(RenderViewport(0.0f, 0.0f, float(width), float(height)));
+  commands->setScissors(RenderRect(0, 0, int32_t(width), int32_t(height)));
 
   ++g_composites;
-  return true;
 }
 
 RenderFormat FrameColorFormat() { return kColorFormat; }
