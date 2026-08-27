@@ -50,6 +50,7 @@ const char* const kPhaseNames[kPhaseCount] = {
     "      aperture walk",
     "  descriptor sets",
     "decl decode",
+    "readback publish",
 };
 
 // Phases that nest inside another phase. Their time is already inside their

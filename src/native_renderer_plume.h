@@ -46,6 +46,21 @@ void PlumeSetOverlayDrawer(rex::ui::UIDrawer* drawer);
 // anything to decouple.
 void PlumePresentFrame();
 
+// Submit whatever the frame has recorded so far and wait for it, without
+// presenting. The frame carries on recording into a fresh command list
+// afterwards.
+//
+// This exists for one caller: the readback path, when the guest reads a resolve
+// destination in the very frame it was resolved. The copy into the readback
+// buffer is recorded but has not run, and the only way to answer the guest with
+// this frame's pixels rather than the last frame's is to make the GPU catch up.
+// It is a full stall, which is why it is on demand and not a frame boundary;
+// the SDK's own `readback_resolve=full` is the same trade.
+//
+// Guest render thread only, since that is the thread that records the frame.
+// False when there was nothing recorded or the backend is not up.
+bool PlumeFlushGuestWork();
+
 // The window changed size; the swap chain has to follow. Called from the app's
 // pixel size hook, i.e. on the UI thread, so it only records the request and
 // the next present acts on it.

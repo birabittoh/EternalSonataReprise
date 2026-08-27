@@ -15,6 +15,7 @@
 #include <rex/logging.h>
 
 #include "native_renderer_plume_internal.h"
+#include "native_renderer_readback.h"
 
 #ifdef _WIN32
 #include "shaders/blitVert.hlsl.dxil.h"
@@ -94,6 +95,21 @@ struct ResolvedTexture {
   uint32_t height = 0;
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
+
+  // The guest's own copy of this image, for the guest's own CPU to read. See
+  // native_renderer_readback.h: the copy into this buffer is recorded into the
+  // frame's command list and is therefore a frame behind by the time anything
+  // can read it, which is the same delay the SDK's `readback_resolve=fast`
+  // runs with. Persistently mapped, because the alternative is a map/unmap per
+  // frame for a buffer whose contents are read from a fault handler.
+  std::unique_ptr<RenderBuffer> readback;
+  uint8_t* readback_mapped = nullptr;
+  uint32_t readback_row_bytes = 0;
+
+  // Whether a copy into it has been recorded in an earlier frame, i.e. whether
+  // what it holds is an image rather than whatever the allocation came with.
+  bool readback_written = false;
+  uint64_t published_frame = ~0ull;
 };
 
 // Binds of an address that is a known resolve destination but at an extent that
@@ -102,6 +118,12 @@ struct ResolvedTexture {
 // number would mean the rule is too strict rather than that the game is
 // recycling buffers.
 uint64_t g_resolve_extent_mismatch = 0;
+
+// Bumped once per frame, at the point the frame's command list is opened. Only
+// ever compared for equality; the readback path uses it to offer a destination
+// to the guest once a frame rather than once a resolve, since this title
+// resolves the screen a band at a time.
+uint64_t g_frame = 0;
 
 std::vector<std::unique_ptr<GuestTarget>> g_targets;
 std::vector<std::unique_ptr<ResolvedTexture>> g_resolved;
@@ -196,6 +218,70 @@ void Transition(RenderCommandList* commands, RenderTexture* texture,
     return;
   commands->barriers(stages, RenderTextureBarrier(texture, layout));
   current = layout;
+}
+
+uint32_t AlignUp(uint32_t value, uint32_t alignment) {
+  return (value + alignment - 1) / alignment * alignment;
+}
+
+// D3D12 wants a placed footprint's rows 256 byte aligned, and Plume takes the
+// row width in texels rather than bytes.
+constexpr uint32_t kReadbackRowAlignment = 256;
+
+// Keep the guest's own copy of a resolve destination up to date.
+//
+// Two things happen here, in this order and for that reason. First the buffer's
+// current contents -- which the GPU filled during a previous frame, since the
+// present waits on its fence -- are offered to the readback layer, which decides
+// whether the guest ever actually reads them and writes guest memory if so.
+// Then this frame's copy is recorded over them.
+//
+// `box` is the region of the destination image the resolve just wrote, so a
+// title that resolves the screen in bands accumulates the bands into one buffer
+// exactly as it accumulates them into one texture.
+void ReadbackRecordCopy(RenderCommandList* commands, ResolvedTexture* destination,
+                        const TextureFetch& dest_fetch, uint8_t* memory_base,
+                        const RenderBox& box) {
+  if (!ReadbackEnabled() || destination->width == 0 || destination->height == 0)
+    return;
+
+  if (!destination->readback) {
+    RenderDevice* device = PlumeDevice();
+    if (device == nullptr)
+      return;
+    destination->readback_row_bytes = AlignUp(destination->width * 4, kReadbackRowAlignment);
+    const uint64_t bytes = uint64_t(destination->readback_row_bytes) * destination->height;
+    destination->readback = device->createBuffer(RenderBufferDesc::ReadbackBuffer(bytes));
+    if (!destination->readback)
+      return;
+    destination->readback_mapped = static_cast<uint8_t*>(destination->readback->map());
+    if (destination->readback_mapped == nullptr) {
+      destination->readback.reset();
+      return;
+    }
+  }
+
+  // Published even on the very first resolve into this destination, when the
+  // buffer holds nothing yet. That case is the save screenshot: a destination
+  // resolved once and read by the guest in the same frame. Registering it here
+  // is what arms its pages, and `pixels_ready` false is what tells the readback
+  // layer that answering a read means making the GPU catch up first.
+  if (destination->published_frame != g_frame) {
+    destination->published_frame = g_frame;
+    ReadbackPublish(memory_base, dest_fetch, destination->readback_mapped,
+                    destination->readback_row_bytes, destination->height,
+                    destination->readback_written, g_frame);
+  }
+
+  Transition(commands, destination->texture.get(), destination->layout, RenderBarrierStage::COPY,
+             RenderTextureLayout::COPY_SOURCE);
+  commands->copyTextureRegion(
+      RenderTextureCopyLocation::PlacedFootprint(destination->readback.get(), kColorFormat,
+                                                 destination->width, destination->height, 1,
+                                                 destination->readback_row_bytes / 4),
+      RenderTextureCopyLocation::Subresource(destination->texture.get()), uint32_t(box.left),
+      uint32_t(box.top), 0, &box);
+  destination->readback_written = true;
 }
 
 GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
@@ -684,9 +770,13 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
   ++g_clears_applied;
 }
 
-void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
-                  uint32_t dest_height, int32_t src_x1, int32_t src_y1, int32_t src_x2,
-                  int32_t src_y2, int32_t dest_x, int32_t dest_y) {
+void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& dest_fetch,
+                  int32_t src_x1, int32_t src_y1, int32_t src_x2, int32_t src_y2, int32_t dest_x,
+                  int32_t dest_y) {
+  const uint32_t dest_address = dest_fetch.base_address;
+  const uint32_t dest_width = dest_fetch.width;
+  const uint32_t dest_height = dest_fetch.height;
+
   // 4 is the depth stencil. Resolving depth out is a real thing this title does,
   // but it is not what the screen shows and the host depth format does not copy
   // into a colour texture, so it is left alone for now.
@@ -829,11 +919,25 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
                               RenderTextureCopyLocation::Subresource(target->texture.get()),
                               uint32_t(place_x), uint32_t(place_y), 0, &box);
 
-  if (g_resolve_examples < 12) {
+  // And the same region again, out to a buffer the guest's own CPU can be given
+  // if it ever asks. The region is the one just written, in the destination
+  // image's coordinates rather than the source surface's.
+  const RenderBox readback_box(place_x, place_y, place_x + (x2 - x1), place_y + (y2 - y1));
+  ReadbackRecordCopy(commands, destination, dest_fetch, memory_base, readback_box);
+
+  // Small destinations are logged well past the general cap: those are the
+  // thumbnails and the off screen effect buffers, and they are what the readback
+  // path has to lay back out in guest memory byte for byte.
+  if (g_resolve_examples < 12 || (dest_width <= 512 && g_resolve_examples < 64)) {
     ++g_resolve_examples;
     REXLOG_INFO(
-        "native_renderer: resolved EDRAM tile {} ({},{})..({},{}) into 0x{:08X} at ({},{})",
-        target->base_tile, x1, y1, x2, y2, dest_address, place_x, place_y);
+        "native_renderer: resolved EDRAM tile {} ({},{})..({},{}) into 0x{:08X} at ({},{}) | "
+        "requested ({},{})..({},{}) to ({},{}) | destination {}x{} pitch {} {} endian {} | source "
+        "host {}x{}",
+        target->base_tile, x1, y1, x2, y2, dest_address, place_x, place_y, src_x1, src_y1, src_x2,
+        src_y2, dest_x, dest_y, dest_width, dest_height, dest_fetch.pitch,
+        dest_fetch.tiled ? "tiled" : "linear", dest_fetch.endianness, target->host_width,
+        target->host_height);
   }
 
   RippleNoteResolve(target, destination, destination_created);
@@ -867,6 +971,8 @@ void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t he
   RippleNoteBind(address, width, height, nullptr, false);
   return nullptr;
 }
+
+uint64_t FrameIndex() { return g_frame; }
 
 void LogFrameSummary() {
   REXLOG_INFO(
@@ -920,6 +1026,8 @@ const void* FrameCurrentColorTexture() {
   return color != nullptr ? static_cast<const void*>(color->texture.get()) : nullptr;
 }
 
+// Not the place to count frames: the readback path can flush the frame's work
+// mid frame, and the fresh command list that follows would look like a new one.
 void FrameNotifyCommandListBegun() { g_bound_framebuffer = nullptr; }
 
 // --- The present probe ---
@@ -1053,6 +1161,7 @@ bool EnsureBlitResources(RenderDevice* device) {
 bool PresentLetterbox() { return rex::cvar::GetFlagByName("present_letterbox") != "false"; }
 
 bool FramePreparePresent(RenderCommandList* commands) {
+  ++g_frame;
   ResolvedTexture* source = g_present_texture;
   PollCaptureKey();
   RippleProbeFlush();
@@ -1135,6 +1244,17 @@ RenderFormat FrameColorFormat() { return kColorFormat; }
 RenderFormat FrameDepthFormat() { return kDepthFormat; }
 
 void ShutdownFrameTargets() {
+  // Before the buffers go: the readback layer holds pointers into them and has
+  // guest pages protected on their behalf, and leaving those protected would
+  // fault the guest on memory nothing is watching any more.
+  ReadbackForgetAll();
+  for (auto& resolved : g_resolved) {
+    if (resolved->readback && resolved->readback_mapped != nullptr) {
+      resolved->readback->unmap();
+      resolved->readback_mapped = nullptr;
+    }
+  }
+
   g_bound_framebuffer = nullptr;
   g_framebuffers.clear();
   g_targets.clear();
