@@ -18,7 +18,9 @@
 
 namespace eternalsonata {
 
-bool NativeRendererEnabled() { return rex::cvar::GetFlagByName("gpu_plugin").empty(); }
+bool NativeRendererEnabled() {
+  return rex::cvar::GetFlagByName("gpu_plugin") == kNativeRendererPluginName;
+}
 
 void InitNativeRenderer(rex::ui::Window* window) {
   if (!NativeRendererEnabled())
