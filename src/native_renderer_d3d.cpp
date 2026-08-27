@@ -30,6 +30,8 @@ REX_EXTERN(__imp__D3DDevice__Swap);
 REX_EXTERN(__imp__D3DDevice__BlockUntilGpuIdle);
 REX_EXTERN(__imp__D3DDevice__BlockUntilFenceRetired);
 REX_EXTERN(__imp__D3DDevice__ThrottleWait_Poll);
+REX_EXTERN(__imp__D3DDevice__SetVertexShaderConstantI);
+REX_EXTERN(__imp__D3DDevice__SetPixelShaderConstantI);
 REX_EXTERN(__imp__D3DDevice__SetSamplerState_MinFilter);
 REX_EXTERN(__imp__D3DDevice__SetSamplerState_MagFilter);
 REX_EXTERN(__imp__D3DDevice__SetSamplerState_MipMapLodBias);
@@ -289,6 +291,61 @@ uint64_t g_vs_constant_calls = 0;
 uint64_t g_ps_constant_calls = 0;
 uint64_t g_texture_calls = 0;
 uint64_t g_shader_binds = 0;
+
+// Loop constant traffic, in the unified numbering the microcode uses: i0..i15
+// are the vertex half, i16..i31 the pixel half.
+//
+// A `loop` whose trip count is zero does not merely skip its lights, it leaves
+// whatever the shader seeded its accumulator with in place, and in this title
+// those seeds are comparisons (`sgt r8, -r0.xxxx, c255.zzzz`, and r0 is the
+// position interpolator). So a zero trip count puts a step on the sign of a
+// world coordinate into the frame. Reading the shadow at one draw cannot tell
+// whether that zero is the guest's own intent or a write we never saw, so
+// these count the writes themselves: `nonzero` is the slots that have ever
+// been given a trip count at all, over the whole run.
+constexpr uint32_t kLoopConstants = 32;
+uint64_t g_loop_constant_calls = 0;
+uint32_t g_loop_written = 0;  // bit per slot: written at all
+uint32_t g_loop_nonzero = 0;  // bit per slot: given a non-zero trip count
+uint8_t g_loop_max_count[kLoopConstants] = {};
+uint8_t g_loop_last_count[kLoopConstants] = {};
+
+// Both setters share this; `first` is the unified index the stage's register 0
+// maps to, which is 0 for the vertex half and 16 for the pixel half.
+//
+// This reads the shadow *back* after the setter has run rather than decoding
+// the source itself. Decoding the source needs an assumption about how the
+// entry is laid out, and the setter takes single bytes out of it (a3[3], a3[7],
+// a3[11]) where a byte-swapping load would report something else entirely. The
+// shadow is the value the draw will read, so reading it removes the guess.
+//
+// The two halves are contiguous: the pixel base device+10080 is device+10016
+// plus 16 registers, so one unified index addresses the whole bank.
+constexpr uint32_t kLoopConstantShadow = 10016;
+
+void RecordLoopConstants(uint8_t* base, uint32_t device, uint32_t first, uint32_t start,
+                         uint32_t source, uint32_t count) {
+  ++g_loop_constant_calls;
+  for (uint32_t i = 0; i < count; ++i) {
+    const uint32_t slot = first + start + i;
+    if (slot >= kLoopConstants)
+      break;
+    const uint32_t written = REX_LOAD_U32(device + kLoopConstantShadow + 4 * slot);
+    const uint8_t trip = uint8_t(written & 0xFFu);
+    g_loop_written |= 1u << slot;
+    if (trip != 0)
+      g_loop_nonzero |= 1u << slot;
+    if (trip > g_loop_max_count[slot])
+      g_loop_max_count[slot] = trip;
+    g_loop_last_count[slot] = trip;
+    if (written != 0) {
+      REXLOG_INFO(
+          "native_renderer: loop i{} <- 0x{:08X} (count={} start={} step={}) from source 0x{:08X}",
+          slot, written, trip, (written >> 8) & 0xFFu, int8_t((written >> 16) & 0xFFu),
+          source + 16 * i);
+    }
+  }
+}
 
 // The shadow offsets were derived by reading the setters' stores. Rather than
 // trust that, the first call of each kind re-derives the answer from the
@@ -967,6 +1024,18 @@ void LogD3DMirrorSummary() {
       g_sampler_sets, g_shader_binds, vs_distinct, ps_distinct, g_vs_unresolved,
       g_ps_unresolved, g_texture_count, g_texture_overflow ? "+ (capped)" : "",
       g_tiled_count, g_linear_count);
+
+  // A slot written but never with a non-zero trip count is the interesting
+  // case: the guest is maintaining the register and keeping the loop switched
+  // off, rather than never getting to it.
+  REXLOG_INFO("native_renderer: loop constants: {} call(s), written=0x{:08X} ever-nonzero=0x{:08X}",
+              g_loop_constant_calls, g_loop_written, g_loop_nonzero);
+  for (uint32_t slot = 0; slot < kLoopConstants; ++slot) {
+    if ((g_loop_written & (1u << slot)) == 0)
+      continue;
+    REXLOG_INFO("native_renderer:   i{} ({}): last trip count={} max={}", slot,
+                slot < 16 ? "vertex" : "pixel", g_loop_last_count[slot], g_loop_max_count[slot]);
+  }
 }
 
 void LogDrawMirrorSummary() {
@@ -1188,6 +1257,34 @@ REX_HOOK_RAW(D3DDevice__SetPixelShaderConstantF) {
               g_ps_shadow_checked);
   MirrorConstants(base, device + d3d::kPixelConstantShadow, start, count, g_ps_constants,
                   d3d::kConstantRegisters);
+}
+
+// (device, start, source, count) like the float setters, but `start` is stage
+// relative: the pixel setter's register 0 is unified loop register i16.
+REX_HOOK_RAW(D3DDevice__SetVertexShaderConstantI) {
+  const uint32_t device = ctx.r3.u32;
+  const uint32_t start = ctx.r4.u32;
+  const uint32_t source = ctx.r5.u32;
+  const uint32_t count = ctx.r6.u32;
+
+  __imp__D3DDevice__SetVertexShaderConstantI(ctx, base);
+
+  if (!eternalsonata::NativeRendererEnabled())
+    return;
+  eternalsonata::RecordLoopConstants(base, device, 0, start, source, count);
+}
+
+REX_HOOK_RAW(D3DDevice__SetPixelShaderConstantI) {
+  const uint32_t device = ctx.r3.u32;
+  const uint32_t start = ctx.r4.u32;
+  const uint32_t source = ctx.r5.u32;
+  const uint32_t count = ctx.r6.u32;
+
+  __imp__D3DDevice__SetPixelShaderConstantI(ctx, base);
+
+  if (!eternalsonata::NativeRendererEnabled())
+    return;
+  eternalsonata::RecordLoopConstants(base, device, 16, start, source, count);
 }
 
 REX_HOOK_RAW(D3DDevice__SetVertexShader) {
