@@ -43,7 +43,20 @@ using namespace plume;
 // chain supports natively; picking the other one costs a conversion on present
 // for no benefit here.
 constexpr RenderFormat kSwapChainFormat = RenderFormat::B8G8R8A8_UNORM;
-constexpr uint32_t kSwapChainBuffers = 2;
+// Three, not two. With two there is exactly one spare buffer, so a frame cannot
+// start until the previous one's flip has retired its buffer — which under vsync
+// means waiting for a vblank, and the frame rate quantises to 60/30/20 with
+// nothing in between. The third buffer is what lets a frame that overran by a
+// little cost a little rather than a whole vblank. See kMaxFrameLatency.
+constexpr uint32_t kSwapChainBuffers = 3;
+
+// How many presents may be outstanding before the frame loop blocks. Two gives
+// the third buffer above something to do; one would serialise again. This is
+// also the value Plume hands to SetMaximumFrameLatency, which it calls
+// unconditionally on D3D12 — the previous 0 (the RenderSwapChainDesc default)
+// is not a legal argument, so the swap chain was silently running on DXGI's
+// default of 1.
+constexpr uint32_t kMaxFrameLatency = 2;
 
 struct PlumeBackend {
   // Not named `interface`: windows.h defines that as a macro, and Plume drags
@@ -75,6 +88,10 @@ std::atomic<bool> g_resize_pending{false};
 // request; the next present applies it.
 std::atomic<bool> g_vsync_wanted{false};
 std::atomic<bool> g_vsync_applied{false};
+
+// Whether the swap chain was created with present wait, i.e. whether the
+// per-frame wait() below is legal to call. Set once during init.
+bool g_present_wait = false;
 
 bool ReadVsyncCvar() {
   return rex::cvar::GetFlagByName("vsync") == "true";
@@ -134,12 +151,24 @@ void CreateFramebuffers() {
   }
 }
 
+// Grows the per-image release semaphores to match the swap chain. Separate from
+// creation because the count is not fixed: Vulkan reports back however many
+// images the driver actually gave us, which can exceed what we asked for and can
+// change across a resize (a mailbox swap chain asks for a third image). The
+// semaphores are indexed by the acquired image index, so a vector that lagged
+// behind the texture count would be indexed out of bounds.
+void GrowReleaseSemaphores() {
+  while (g_backend.release_semaphores.size() < g_backend.swap_chain->getTextureCount())
+    g_backend.release_semaphores.push_back(g_backend.device->createCommandSemaphore());
+}
+
 void ApplyResize() {
   if (!g_backend.swap_chain->resize()) {
     REXLOG_WARN("native_renderer: Plume swap chain resize failed");
     return;
   }
   CreateFramebuffers();
+  GrowReleaseSemaphores();
 }
 
 }  // namespace
@@ -231,8 +260,25 @@ bool InitPlumeBackend(void* window_handle) {
   g_backend.fence = g_backend.device->createCommandFence();
   g_backend.acquire_semaphore = g_backend.device->createCommandSemaphore();
 
-  g_backend.swap_chain = g_backend.queue->createSwapChain(RenderSwapChainDesc(
-      static_cast<RenderWindow>(window_handle), kSwapChainFormat, kSwapChainBuffers));
+  // Present wait is what makes vsync usable on a frame-clocked engine. Without
+  // it Plume's D3D12 present issues `Present(1, 0)`, which blocks on the vblank
+  // and quantises the achieved rate to 60/30/20; the guest advances its sim a
+  // fixed 300/declared units per present, so a quantised rate is not choppiness
+  // but literal slow motion (game speed = actual fps / declared fps). It showed
+  // up as half speed during battle attacks, where a frame first overruns
+  // 16.7 ms. With present wait, Plume issues `Present(0, 0)` instead: no tearing
+  // (the flip still lands on a vblank, DXGI_PRESENT_ALLOW_TEARING is not set),
+  // but the call does not block, and pacing comes from the frame-latency
+  // waitable object plus the host limiter in eternalsonata_framerate.cpp.
+  //
+  // Gated on the capability because wait() and present() both assert on it.
+  // D3D12 always reports it; Vulkan needs VK_KHR_present_wait, and where that is
+  // missing this falls back to today's behaviour (FIFO, still quantised — fixing
+  // that needs MAILBOX, which is a Plume-side change).
+  g_present_wait = g_backend.device->getCapabilities().presentWait;
+  g_backend.swap_chain = g_backend.queue->createSwapChain(
+      RenderSwapChainDesc(static_cast<RenderWindow>(window_handle), kSwapChainFormat,
+                          kSwapChainBuffers, g_present_wait, kMaxFrameLatency));
   if (!g_backend.swap_chain) {
     REXLOG_ERROR("native_renderer: Plume could not create a swap chain on the game window");
     ShutdownPlumeBackend();
@@ -244,13 +290,13 @@ bool InitPlumeBackend(void* window_handle) {
   // Plume's swap chains come up with vsync *on*, so without this the setting
   // silently did not apply to the native renderer at all.
   //
-  // It is not just a tearing preference here. There are two swap chain buffers
-  // and the present waits on its fence, so a frame that misses the vblank
-  // cannot start the next one until the one after: the frame rate quantises to
-  // 60, 30, 20 with nothing in between, and anything over 16.7 ms of real work
-  // reads as exactly 30 fps regardless of how much over it is. Measured on the
-  // heavy scenes: 28.7 ms/frame with vsync on became a flat 16.67 ms cap hit
-  // with it off.
+  // It used to be more than a tearing preference here: with two buffers and a
+  // blocking `Present(1, 0)`, a frame that missed the vblank could not start the
+  // next one until the one after, so the rate quantised to 60/30/20 and anything
+  // over 16.7 ms of work read as exactly 30 fps regardless of how far over it
+  // was. Measured on the heavy scenes: 28.7 ms/frame with vsync on became a flat
+  // 16.67 ms cap with it off. The third buffer and present wait above remove
+  // that quantisation, so this is back to being just a tearing preference.
   // The cvar itself is registered by RegisterNativeRendererCvars(), because the
   // one the SDK defines lives in the Xenos plugin and no plugin is loaded here.
   // It is hot-reloadable there, so it is hot-reloadable here too: the callback
@@ -273,16 +319,15 @@ bool InitPlumeBackend(void* window_handle) {
   g_backend.swap_chain->resize();
   CreateFramebuffers();
 
-  while (g_backend.release_semaphores.size() < g_backend.swap_chain->getTextureCount())
-    g_backend.release_semaphores.push_back(g_backend.device->createCommandSemaphore());
+  GrowReleaseSemaphores();
 
   const RenderDeviceDescription& description = g_backend.device->getDescription();
   REXLOG_INFO(
-      "native_renderer: Plume up on {} using \"{}\", swap chain {}x{} with {} buffers, vsync {}. "
-      "The window is now ours to draw into.",
+      "native_renderer: Plume up on {} using \"{}\", swap chain {}x{} with {} buffers, vsync {}, "
+      "present wait {}. The window is now ours to draw into.",
       g_backend.api_name, description.name, g_backend.swap_chain->getWidth(),
       g_backend.swap_chain->getHeight(), g_backend.swap_chain->getTextureCount(),
-      vsync ? "on" : "off");
+      vsync ? "on" : "off", g_present_wait ? "on" : "off (vsync will quantise the frame rate)");
 
   g_ready.store(true, std::memory_order_release);
   return true;
@@ -319,6 +364,16 @@ void PlumePresentFrame() {
   if (g_backend.swap_chain->isEmpty() || g_backend.framebuffers.empty()) {
     FlushWithoutPresent();
     return;
+  }
+
+  // Bounds how far ahead of the display the frame loop may run. `Present(0, 0)`
+  // does not block, so without this the queue would fill to the buffer count and
+  // every frame would carry that much added input lag. Blocking here instead of
+  // inside present is the whole point: it yields when there is genuinely nothing
+  // to do rather than snapping the frame rate to a divisor of the refresh rate.
+  if (g_present_wait) {
+    ProfileZone wait_zone(kPhasePresent);
+    g_backend.swap_chain->wait();
   }
 
   uint32_t image = 0;
