@@ -231,6 +231,7 @@ set(ETERNALSONATA_SOURCES
     src/native_renderer_draw.cpp
     src/native_renderer_frame.cpp
     src/native_renderer_pipeline.cpp
+    src/native_renderer_readback.cpp
     src/native_renderer_plume.cpp
     src/native_renderer_overlay.cpp
     src/native_renderer_shader_debug.cpp

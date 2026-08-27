@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <vector>
 
 #include <rex/hook.h>
 #include <rex/logging.h>
@@ -18,6 +19,7 @@
 #include "native_renderer_pipeline.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_profile.h"
+#include "native_renderer_readback.h"
 #include "native_renderer_shader_debug.h"
 
 REX_EXTERN(__imp__D3D__CreateDevice);
@@ -1542,8 +1544,7 @@ REX_HOOK_RAW(D3DDevice__Resolve) {
     dest_y = int32_t(REX_LOAD_U32(point + 4));
   }
 
-  FrameResolve(source, fetch.base_address, fetch.width, fetch.height, x1, y1, x2, y2, dest_x,
-               dest_y);
+  FrameResolve(source, base, fetch, x1, y1, x2, y2, dest_x, dest_y);
 
   // A resolve can replace the host image behind an address the guest never
   // rebinds, so a cached binding over it has to be invalidated here too.
@@ -1585,6 +1586,7 @@ REX_HOOK_RAW(D3DDevice__Swap) {
     eternalsonata::LogDrawMirrorSummary();
     eternalsonata::LogSurfaceMirrorSummary();
     eternalsonata::LogFrameSummary();
+    eternalsonata::LogReadbackSummary();
     eternalsonata::LogPipelineSummary();
     eternalsonata::LogGuestDrawSummary();
     eternalsonata::LogTextureMirrorSummary();
