@@ -265,6 +265,26 @@ def decode_alu(w0, w1, w2):
     vec_name, vec_operands = VECTOR_OPS[vector_opc]
     sca_name, sca_operands = SCALAR_OPS[scalar_opc]
 
+    # Temp source register fields are a packed structure, not a plain index:
+    # bits 0..5 are the register, 0x40 is "aL relative" and 0x80 is "take the
+    # absolute value" (ucode.h `src_temp_reg`, `is_src_temp_relative`,
+    # `is_src_temp_value_absolute`). Constants use the whole byte as the index
+    # and carry their absolute-value modifier in `abs_constants` instead.
+    #
+    # mulsc/addsc/subsc are the exception: their src3 is not a source operand
+    # at all but a packed constant/temp pair, where `reg` is the constant index
+    # and `sel` is a bit of the temp index. Reading it as a temp says every one
+    # of the title's 72 such sites is aL relative, because constants 252..255
+    # are 0xFC..0xFF and carry both bits inside the number.
+    def is_temp_source(i):
+        return sel[i] == 1 and not (i == 3 and sca_operands == 2)
+
+    def temp_absolute(i):
+        return is_temp_source(i) and bool(reg[i] & 0x80)
+
+    def temp_relative(i):
+        return is_temp_source(i) and bool(reg[i] & 0x40)
+
     def operand(i, component_count=4):
         is_temp = sel[i] == 1
         text = ("r%d" if is_temp else "c%d") % (reg[i] & (0x3F if is_temp else 0xFF))
@@ -278,10 +298,13 @@ def decode_alu(w0, w1, w2):
             comps = "".join(COMPONENTS[swizzled_component(swiz[i], j)]
                             for j in range(component_count))
         text += "." + comps
+        # Absolute value binds tighter than the negate, so a source carrying
+        # both reads -|x|, never |-x|. That distinction is the whole reason the
+        # title's `sgt <dst>, -|r0.xxxx|, c<252..255>` idiom is a constant zero.
+        if temp_absolute(i) or (not is_temp and abs_constants):
+            text = "|%s|" % text
         if negate[i]:
             text = "-" + text
-        if not is_temp and abs_constants:
-            text = "|%s|" % text
         return text
 
     lines = []
@@ -340,7 +363,9 @@ def decode_alu(w0, w1, w2):
         "vector_dest_rel": bool(vector_dest_rel),
         "scalar_dest_rel": bool(scalar_dest_rel),
         "sources": [{"reg": reg[i], "is_temp": bool(sel[i]),
-                     "swizzle": swiz[i], "negate": bool(negate[i])}
+                     "swizzle": swiz[i], "negate": bool(negate[i]),
+                     "absolute": temp_absolute(i),
+                     "relative": temp_relative(i)}
                     for i in (1, 2, 3)],
         "text": "; ".join(lines),
     }
