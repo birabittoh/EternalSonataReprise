@@ -256,6 +256,15 @@ longjmp_address = 0x822D0620
 "0x82265AA0" = { name = "D3DDevice__SetVertexShaderConstantF", evidence = "verified: copies count vec4s from the source pointer into the vertex shader constant shadow at device+1792+16*start with lvlx/lvrx unaligned vector loads, then ORs the caller supplied dirty mask into the device+0 mask; start and stride confirmed against the direct write path in the game's constant cache flush 0x8212CDE0" }
 "0x82265BA8" = { name = "D3DDevice__SetPixelShaderConstantF", evidence = "verified: identical to 0x82265AA0 but the shadow is device+16*(start+368), that is device+5888+16*start, and it ORs into the device+8 mask" }
 "0x8225E348" = { name = "D3DDevice__SetTexture", evidence = "verified: (dev, sampler, texture, flags) writes the six texture fetch constant dwords for the sampler slot; called from the constant flush 0x8212CDE0" }
+
+# The integer (loop) and boolean constant setters, the rest of the family called
+# from 0x8212CDE0. All four take (device, start, source, count); `start` is
+# stage relative, which the flush confirms by calling both loop setters with 0
+# and a count of 16 on its bulk path.
+"0x82265D70" = { name = "D3DDevice__SetVertexShaderConstantI", evidence = "verified: writes device+4*(start+2504), that is device+10016+4*start, the vertex half of the loop constant bank. Packs each 16 byte source entry as (low byte of int2)<<16 | (low byte of int1)<<8 | (low byte of int0), which is the hardware loop register: trip count in bits 0..7, initial aL in 8..15, signed step in 16..23. Reached from the flush's scalar path for indices 512..527" }
+"0x82265DC8" = { name = "D3DDevice__SetPixelShaderConstantI", evidence = "verified: identical to 0x82265D70 but the base is device+4*(start+2520), that is device+10080+4*start, so pixel loop constant 0 is unified loop register i16. Reached from the flush's scalar path for indices 528..543" }
+"0x82265CB0" = { name = "D3DDevice__SetVertexShaderConstantB", evidence = "verified: sets one bit per source entry (int0 & 1) at device+4*((start>>5)+2496), that is device+9984, the vertex half of the boolean bank. Reached from the flush's scalar path for indices 544..671" }
+"0x82265D10" = { name = "D3DDevice__SetPixelShaderConstantB", evidence = "verified: identical to 0x82265CB0 but the base is device+4*((start>>5)+2500), that is device+10000, so pixel bool 0 is unified boolean register b128. Reached from the flush's scalar path for indices 672..799" }
 "0x822662A8" = { name = "D3DDevice__SetVertexDeclaration", evidence = "verified: stores the argument at device+11684 and dirties bit 0x80000 of the device+16 mask; the draw time shader flush 0x82267E48 reads device+11684 and hands it to 0x82267218, which treats it as a declaration object: element count at +24, elements from +52 with a 12 byte stride, usage at element+9 and usage index at element+10, matched against the vertex fetch patch table in the shader container" }
 
 # Draw time vertex fetch patching. The bound vertex shader's microcode is not
@@ -383,15 +392,8 @@ longjmp_address = 0x822D0620
 # Worklist. Located but not individually identified, so they are not emitted.
 # Restore one only after decompiling it and adding an `evidence` field.
 #
-# The rest of the constant setter family, all called from the game's constant
-# cache flush 0x8212CDE0 next to the two named above, with the same
-# (device, start, source, count) shape. The flush calls them in a fixed order
-# and the index ranges in its scalar path (256, 512, 528, 544, 672, 800) say
-# which is which, but none has been decompiled yet:
-# "0x82265D70"  source flt_824BE6F0, indices 512..527
-# "0x82265DC8"  source dword_824BE7F0, indices 528..543
-# "0x82265CB0"  source dword_824BE8F0, indices 544..671
-# "0x82265D10"  source dword_824BEAF0, indices 672..799
+# (The four remaining constant setters that used to sit here, 0x82265D70,
+# 0x82265DC8, 0x82265CB0 and 0x82265D10, have been decompiled and named above.)
 # ----------------------------------------------------------------------------
 
 # ============================================================================
