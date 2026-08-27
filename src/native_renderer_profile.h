@@ -45,6 +45,7 @@ enum ProfilePhase : uint32_t {
   kPhaseGuestPointer,    // the VirtualQuery aperture walk behind a source read
   kPhaseDescriptorSet,   // binding set lookup and creation
   kPhaseDeclDecode,      // vertex declaration decode on the hook thread
+  kPhaseReadbackPublish,  // arming a resolve destination for the guest to read
   kPhaseCount,
 };
 
