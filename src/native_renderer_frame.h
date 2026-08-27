@@ -61,6 +61,13 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
 // keep being served in its place.
 void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t height);
 
+// The host texture currently bound as colour target 0, for the read-write
+// hazard check in the draw layer: a resolve destination handed back by
+// FrameResolveTextureByAddress is the render target itself rather than a copy
+// of it, so a shader that samples the scene behind itself can end up reading
+// the very image it is writing.
+const void* FrameCurrentColorTexture();
+
 void LogFrameSummary();
 
 }  // namespace eternalsonata

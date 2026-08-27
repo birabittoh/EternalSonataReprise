@@ -4,12 +4,21 @@
 
 #include "native_renderer_frame.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <rex/logging.h>
 
 #include "native_renderer_plume_internal.h"
+
+#ifdef _WIN32
+#include <windows.h>
+
+#include <renderdoc_app.h>
+#endif
 
 namespace eternalsonata {
 namespace {
@@ -107,6 +116,10 @@ Surface g_bound_depth_surface;
 bool g_bound_depth_valid = false;
 
 GuestTarget* AcquireTarget(const Surface& surface, bool depth);
+
+// See "The ripple probe" at the end of this namespace. Declared here because
+// the first thing it watches is a target being created.
+void RippleNoteTargetCreated(const GuestTarget* target);
 
 GuestTarget* BoundColorTarget(uint32_t index) {
   if (index >= d3d::kColorSurfaceCount || !g_bound_color_valid[index])
@@ -239,6 +252,7 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
       surface.height, surface.msaa, surface.format);
 
   g_targets.push_back(std::move(target));
+  RippleNoteTargetCreated(g_targets.back().get());
   return g_targets.back().get();
 }
 
@@ -350,6 +364,228 @@ bool ClearTargets(RenderCommandList* commands, GuestTarget* color, GuestTarget* 
   return true;
 }
 
+// --- The ripple probe ---
+//
+// The water's height field is a 64x64 ping-pong pair that the guest clears,
+// renders into and resolves every frame, and the flicker is that field
+// inverting with period 2. A frame capture found five host 64x64 images where
+// there should be three, with the guest's clears landing on two that nothing
+// ever samples, so the question this answers is whether one guest address keeps
+// one host image: whether the clear, the draw target, the resolve destination
+// and the later bind are the same image, and whether that image is the same one
+// from frame to frame.
+//
+// Every event on a surface of exactly ES_RIPPLE_SIZE (default 64) square is
+// recorded in the order it happens, and one line per frame is logged. Host
+// textures get small ids on first sight, because what matters is whether an id
+// alternates rather than what the pointer is; the pointer is logged once, when
+// the id is handed out.
+//
+// Off unless ES_RIPPLE_PROBE is set; its value is how many frames to log
+// (default 120), following the ES_DUMP_PS convention.
+uint32_t RippleProbeFrames() {
+  static const uint32_t frames = [] {
+    const char* value = std::getenv("ES_RIPPLE_PROBE");
+    if (value == nullptr)
+      return 0u;
+    const int parsed = std::atoi(value);
+    return parsed > 0 ? uint32_t(parsed) : 120u;
+  }();
+  return frames;
+}
+
+uint32_t RippleProbeExtent() {
+  static const uint32_t extent = [] {
+    const char* value = std::getenv("ES_RIPPLE_SIZE");
+    const int parsed = value != nullptr ? std::atoi(value) : 0;
+    return parsed > 0 ? uint32_t(parsed) : 64u;
+  }();
+  return extent;
+}
+
+uint32_t g_ripple_frames_logged = 0;
+std::string g_ripple_line;
+uint32_t g_ripple_events = 0;
+const GuestTarget* g_ripple_last_target = nullptr;
+std::vector<const void*> g_ripple_texture_ids;
+
+// A frame's worth of events. High enough that the ripple traffic never reaches
+// it, low enough that a mistake in the filter cannot fill the log.
+constexpr uint32_t kMaxRippleEvents = 64;
+
+bool RippleProbeActive() { return g_ripple_frames_logged < RippleProbeFrames(); }
+
+bool RippleProbeWatches(uint32_t width, uint32_t height) {
+  const uint32_t extent = RippleProbeExtent();
+  return width == extent && height == extent;
+}
+
+int RippleTextureId(const void* texture) {
+  if (texture == nullptr)
+    return -1;
+  for (size_t i = 0; i < g_ripple_texture_ids.size(); ++i) {
+    if (g_ripple_texture_ids[i] == texture)
+      return int(i);
+  }
+  g_ripple_texture_ids.push_back(texture);
+  const int id = int(g_ripple_texture_ids.size()) - 1;
+  REXLOG_WARN("native_renderer: ripple probe host texture T{} is {:016X}", id, uintptr_t(texture));
+  return id;
+}
+
+void RippleAppend(const char* text) {
+  if (g_ripple_events >= kMaxRippleEvents)
+    return;
+  ++g_ripple_events;
+  g_ripple_line += " | ";
+  g_ripple_line += text;
+}
+
+void RippleNoteTargetCreated(const GuestTarget* target) {
+  if (!RippleProbeActive() || target == nullptr)
+    return;
+  if (!RippleProbeWatches(target->host_width, target->host_height))
+    return;
+  char text[192];
+  std::snprintf(text, sizeof(text), "new-%s-target tile=%u T%d %ux%u msaa=%u fmt=0x%X",
+                target->depth ? "depth" : "colour", target->base_tile,
+                RippleTextureId(target->texture.get()), target->width, target->height,
+                target->msaa, target->guest_format);
+  RippleAppend(text);
+}
+
+void RippleNoteClear(const GuestTarget* target, bool aliased, uint32_t argb) {
+  if (!RippleProbeActive() || target == nullptr)
+    return;
+  if (!RippleProbeWatches(target->host_width, target->host_height))
+    return;
+  char text[192];
+  std::snprintf(text, sizeof(text), "%s tile=%u T%d argb=%08X", aliased ? "alias-clear" : "clear",
+                target->base_tile, RippleTextureId(target->texture.get()), argb);
+  RippleAppend(text);
+}
+
+// Noted only when it changes, because this runs per draw.
+void RippleNoteDrawTarget(const GuestTarget* target) {
+  if (!RippleProbeActive() || target == nullptr || target == g_ripple_last_target)
+    return;
+  g_ripple_last_target = target;
+  if (!RippleProbeWatches(target->host_width, target->host_height))
+    return;
+  char text[192];
+  std::snprintf(text, sizeof(text), "draw-into tile=%u T%d", target->base_tile,
+                RippleTextureId(target->texture.get()));
+  RippleAppend(text);
+}
+
+void RippleNoteResolve(const GuestTarget* source, const ResolvedTexture* destination,
+                       bool created) {
+  if (!RippleProbeActive() || source == nullptr || destination == nullptr)
+    return;
+  if (!RippleProbeWatches(destination->width, destination->height))
+    return;
+  char text[192];
+  std::snprintf(text, sizeof(text), "resolve tile=%u T%d -> 0x%08X T%d%s", source->base_tile,
+                RippleTextureId(source->texture.get()), destination->address,
+                RippleTextureId(destination->texture.get()), created ? " (new)" : "");
+  RippleAppend(text);
+}
+
+// `destination` is null for a bind that found nothing, which is the interesting
+// case: the address falls through to the texture mirror and is decoded out of
+// guest memory as if it were an asset.
+void RippleNoteBind(uint32_t address, uint32_t width, uint32_t height,
+                    const ResolvedTexture* destination, bool extent_mismatch) {
+  if (!RippleProbeActive())
+    return;
+  if (!RippleProbeWatches(width, height))
+    return;
+  char text[192];
+  if (destination != nullptr) {
+    std::snprintf(text, sizeof(text), "bind 0x%08X -> T%d", address,
+                  RippleTextureId(destination->texture.get()));
+  } else {
+    std::snprintf(text, sizeof(text), "bind 0x%08X -> %s", address,
+                  extent_mismatch ? "EXTENT MISMATCH" : "MISS");
+  }
+  RippleAppend(text);
+}
+
+// F11: capture two consecutive frames.
+//
+// RenderDoc's own F12 takes one frame per press, which cannot show an
+// alternation: the ripple simulation's defect is a period 2 flip, so a single
+// frame looks like a still image of noise and says nothing about what changes
+// between frames. TriggerMultiFrameCapture writes N consecutive frames as N
+// separate .rdc files with no input timing involved.
+//
+// The obvious call for this is TriggerMultiFrameCapture, which writes N
+// consecutive frames as N separate files. It needs API 1.1.0 and the SDK ships
+// a renderdoc_app.h that stops at 1.0.1, so this brackets the two frames with
+// StartFrameCapture/EndFrameCapture instead: both are in 1.0.0, and the result
+// is one .rdc holding two frames rather than two files. That suits a diff.
+//
+// This runs at the present, so the capture opens on the frame *after* the one
+// the key was pressed during, and closes two presents later.
+//
+// RenderDoc injects renderdoc.dll into the process before it starts, so
+// GetModuleHandle is enough and this never loads anything: outside RenderDoc
+// the handle is null and the key does nothing.
+void PollCaptureKey() {
+#ifdef _WIN32
+  static RENDERDOC_API_1_0_0* api = [] () -> RENDERDOC_API_1_0_0* {
+    HMODULE module = GetModuleHandleA("renderdoc.dll");
+    if (module == nullptr)
+      return nullptr;
+    auto get_api = reinterpret_cast<pRENDERDOC_GetAPI>(GetProcAddress(module, "RENDERDOC_GetAPI"));
+    if (get_api == nullptr)
+      return nullptr;
+    RENDERDOC_API_1_0_0* found = nullptr;
+    if (get_api(eRENDERDOC_API_Version_1_0_0, reinterpret_cast<void**>(&found)) != 1)
+      return nullptr;
+    REXLOG_INFO("native_renderer: RenderDoc in-application API ready, F11 captures two frames");
+    return found;
+  }();
+  if (api == nullptr)
+    return;
+
+  // Counts presents left in an open capture; 0 means no capture is running.
+  static int frames_remaining = 0;
+  if (frames_remaining > 0) {
+    if (--frames_remaining == 0) {
+      const uint32_t ok = api->EndFrameCapture(nullptr, nullptr);
+      REXLOG_WARN("native_renderer: F11 capture closed ({})", ok ? "written" : "FAILED");
+    }
+    return;
+  }
+
+  // Edge triggered. GetAsyncKeyState's low bit is unreliable when something
+  // else polls the same key, so the previous state is tracked here instead;
+  // without this a single press would retrigger on every frame it is held.
+  const bool down = (GetAsyncKeyState(VK_F11) & 0x8000) != 0;
+  static bool was_down = false;
+  const bool pressed = down && !was_down;
+  was_down = down;
+  if (!pressed)
+    return;
+
+  api->StartFrameCapture(nullptr, nullptr);
+  frames_remaining = 2;
+  REXLOG_WARN("native_renderer: F11 pressed, capturing the next 2 frames");
+#endif
+}
+
+void RippleProbeFlush() {
+  if (!RippleProbeActive())
+    return;
+  ++g_ripple_frames_logged;
+  REXLOG_WARN("native_renderer: ripple probe frame {}{}", g_ripple_frames_logged,
+              g_ripple_line.empty() ? std::string(" | no 64x64 traffic") : g_ripple_line);
+  g_ripple_line.clear();
+  g_ripple_events = 0;
+  g_ripple_last_target = nullptr;
+}
+
 }  // namespace
 
 void FrameSetColorSurface(uint32_t index, const Surface* surface) {
@@ -392,6 +628,7 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
     ++g_clears_dropped;
     return;
   }
+  RippleNoteClear(color, false, argb);
 
   // And again for every other host image standing over the same EDRAM.
   //
@@ -420,6 +657,7 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
     if (ClearTargets(commands, alias_color ? other : nullptr, alias_depth ? other : nullptr, argb,
                      clear_depth, clear_stencil, z, stencil, nullptr, nullptr)) {
       ++g_clears_aliased;
+      RippleNoteClear(alias_color ? other : nullptr, true, argb);
     }
   }
 
@@ -530,6 +768,7 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
   }
 
   ResolvedTexture* destination = nullptr;
+  bool destination_created = false;
   for (auto& candidate : g_resolved) {
     if (candidate->address == dest_address) {
       destination = candidate.get();
@@ -553,6 +792,7 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
                   dest_width, dest_height);
       g_resolved.push_back(std::move(created));
       destination = g_resolved.back().get();
+      destination_created = true;
     }
   }
   if (destination == nullptr) {
@@ -588,6 +828,8 @@ void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
         target->base_tile, x1, y1, x2, y2, dest_address, place_x, place_y);
   }
 
+  RippleNoteResolve(target, destination, destination_created);
+
   ++g_resolves_copied;
   g_present_texture = destination;
 }
@@ -608,10 +850,13 @@ void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t he
     // decoding it as an asset, which is what it now is.
     if (candidate->width != width || candidate->height != height) {
       ++g_resolve_extent_mismatch;
+      RippleNoteBind(address, width, height, nullptr, true);
       return nullptr;
     }
+    RippleNoteBind(address, width, height, candidate.get(), false);
     return candidate->texture.get();
   }
+  RippleNoteBind(address, width, height, nullptr, false);
   return nullptr;
 }
 
@@ -654,6 +899,7 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
     return nullptr;
 
   BindFramebuffer(commands, framebuffer);
+  RippleNoteDrawTarget(color);
   if (width)
     *width = framebuffer->getWidth();
   if (height)
@@ -661,11 +907,55 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   return framebuffer;
 }
 
+const void* FrameCurrentColorTexture() {
+  GuestTarget* color = BoundColorTarget(0);
+  return color != nullptr ? static_cast<const void*>(color->texture.get()) : nullptr;
+}
+
 void FrameNotifyCommandListBegun() { g_bound_framebuffer = nullptr; }
+
+// --- The present probe ---
+//
+// A full-screen flicker that persists on a still main menu is not a material
+// bug: it is the frame as a whole differing between one present and the next.
+// The per-swap summary samples this far too rarely to see an alternation, so
+// this logs the identity of the presented image every frame, plus how much work
+// went into the frame that produced it. What to look for is any column that
+// ping-pongs between exactly two values while the scene is static.
+//
+// Off unless `ES_PRESENT_PROBE` is set; its value is how many frames to log
+// (default 120), following the ES_DUMP_PS convention.
+uint32_t PresentProbeFrames() {
+  static const uint32_t frames = [] {
+    const char* value = std::getenv("ES_PRESENT_PROBE");
+    if (value == nullptr)
+      return 0u;
+    const int parsed = std::atoi(value);
+    return parsed > 0 ? uint32_t(parsed) : 120u;
+  }();
+  return frames;
+}
+uint32_t g_present_probe_logged = 0;
+uint64_t g_present_probe_last_resolves = 0;
+uint64_t g_present_probe_last_clears = 0;
 
 bool FrameComposite(RenderCommandList* commands, RenderTexture* backbuffer, uint32_t width,
                     uint32_t height) {
   ResolvedTexture* source = g_present_texture;
+  PollCaptureKey();
+  RippleProbeFlush();
+  if (g_present_probe_logged < PresentProbeFrames()) {
+    ++g_present_probe_logged;
+    REXLOG_WARN(
+        "native_renderer: present probe frame {} source=0x{:08X} texture={:016X} {}x{} | this "
+        "frame: resolves={} clears={} | targets={} resolved={}",
+        g_present_probe_logged, source ? source->address : 0,
+        source ? uintptr_t(source->texture.get()) : 0, source ? source->width : 0,
+        source ? source->height : 0, g_resolves_copied - g_present_probe_last_resolves,
+        g_clears_applied - g_present_probe_last_clears, g_targets.size(), g_resolved.size());
+    g_present_probe_last_resolves = g_resolves_copied;
+    g_present_probe_last_clears = g_clears_applied;
+  }
   if (source == nullptr || !source->texture) {
     ++g_composites_skipped;
     return false;
@@ -716,6 +1006,10 @@ void ShutdownFrameTargets() {
     bound = false;
   g_bound_depth_valid = false;
   g_present_texture = nullptr;
+  // The probe's ids are raw pointers into what was just destroyed, so a new
+  // texture could land on an old address and inherit its id.
+  g_ripple_texture_ids.clear();
+  g_ripple_last_target = nullptr;
 }
 
 }  // namespace eternalsonata
