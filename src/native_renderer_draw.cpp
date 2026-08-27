@@ -5,10 +5,12 @@
 #include "native_renderer_draw.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <rex/logging.h>
@@ -816,7 +818,14 @@ struct ConstantCacheEntry {
   RenderBufferReference ref;
   bool valid = false;
 };
-ConstantCacheEntry g_constant_cache[3];
+// [0] vertex floats, [1] pixel floats, [2] bool/loop, [3] the water pair's
+// patched bool/loop bank. The last one is separate so that alternating between
+// a water draw and any other draw does not evict the entry each holds.
+// [0] vertex floats, [1] pixel floats, [2] bool/loop, [3] the water pair's
+// patched bool/loop bank, [4] its patched vertex floats. The patched banks get
+// their own entries so that alternating between a water draw and any other draw
+// does not evict the entry each holds.
+ConstantCacheEntry g_constant_cache[5];
 
 // Whether the pixel float bank the guest currently holds is entirely zero over
 // the registers the guest owns, c0..c251. The literal pool at 252..255 is
@@ -904,6 +913,589 @@ void DumpConstantsForShader(const GuestDrawCall& call) {
     REXLOG_WARN("native_renderer:   loop i{} = 0x{:08X}", i, GuestDword(bools, 8 + i));
 }
 
+// --- The water probe ---
+//
+// What this is for, and what it already ruled out. The first theory about the
+// water was that it animated too fast, which would have put the motion in the
+// UV matrix vs_040 builds from vertex constants c24/c25 (`dp3 r6.y, c24.xyzz,
+// r6.xzww`, under bool b2). It does not: over a thirty second run those two
+// constants held the identity matrix on every single draw. Whatever the water
+// does frame to frame, it is not a scrolling texture matrix, so do not go back
+// there.
+//
+// The symptom as it actually presents is flicker: the strength of the effect
+// changing between one frame and the next. That is a frame-to-frame difference,
+// so a probe that samples every few seconds cannot see it. This one logs one
+// line per frame for a bounded run of frames, carrying the three things that
+// could differ between two consecutive frames of the same static scene:
+//
+//   * how many draws of the pair there were. Alternating between one and two,
+//     or one and none, is itself the flicker.
+//   * the bool bank over b128..b159. ps_058 is almost entirely branches on
+//     those: b128 picks between a computed tangent frame and a normal map fetch,
+//     b134 the screen-space refraction through tf13, b138/b140/b142/b143 which
+//     maps get sampled at all. A bool flipping per frame changes which shader
+//     effectively runs.
+//   * what is bound in each texture slot. A slot alternating between a real
+//     texture and the white placeholder is the single most likely cause here:
+//     ps_058 samples tf11 and tf13 at projected/screen-space coordinates, which
+//     is how a title samples the scene behind the water, and those come from
+//     resolve destinations rather than from asset memory. A resolve that is not
+//     ready every frame reads back as the placeholder on the frames it misses.
+//
+// Off unless `ES_WATER_PROBE` is set, following the ES_DUMP_PS convention; its
+// value is how many frames to log (default 120). `ES_WATER_VS` and
+// `ES_WATER_PS` move the pair off 40/58.
+struct WaterProbeKnobs {
+  bool enabled = false;
+  uint32_t frames = 120;
+  int vertex_slot = 40;
+  // -1 matches any pixel shader. That is the default because the pair is not
+  // known: disabling vs_040 hides the puddle and disabling ps_058 does not, so
+  // the puddle is this vertex shader with some other pixel shader, and the
+  // point of the probe is now to find out which.
+  int pixel_slot = -1;
+};
+
+const WaterProbeKnobs& WaterProbe() {
+  static const WaterProbeKnobs knobs = [] {
+    WaterProbeKnobs k;
+    const char* frames = std::getenv("ES_WATER_PROBE");
+    k.enabled = frames != nullptr;
+    if (frames != nullptr && std::atoi(frames) > 0)
+      k.frames = uint32_t(std::atoi(frames));
+    if (const char* v = std::getenv("ES_WATER_VS"))
+      k.vertex_slot = std::atoi(v);
+    if (const char* v = std::getenv("ES_WATER_PS"))
+      k.pixel_slot = std::atoi(v);
+    return k;
+  }();
+  return knobs;
+}
+
+// How many of the pair's draws in a frame get their constants kept separately.
+// Two here; the headroom is so a scene with more water surfaces does not
+// silently fold them together, which is the bug this indexing replaced.
+constexpr uint32_t kMaxWaterProbeSurfaces = 4;
+
+// One frame's worth of observation, accumulated across the frame's draws and
+// flushed at the frame boundary.
+struct WaterProbeFrame {
+  uint32_t draws = 0;
+  int vertex_slot = -1;
+  int pixel_slot = -1;
+  // All of these are **per draw within the frame**, for the same reason the
+  // constant banks are: the pair draws more than one surface and they do not
+  // share state. Kept as one set for the whole frame, they held whatever the
+  // last draw bound, and every conclusion drawn from them described that
+  // surface alone. The bool bank especially: "b128 is set, so tf12 is bound but
+  // never sampled" was read off the last draw's bank, and tf12 is the one input
+  // to this pair that changes every single frame.
+  // The render state each surface draws under. Everything examined so far has
+  // been an *input* to the shader; how its output is combined with what is
+  // already in the target has never been looked at, and the two surfaces do not
+  // have to share it. Blend, depth and alpha test are all per draw, and the
+  // summary already reports that stencil is enabled on 51 pipelines and is not
+  // applied at all, so there is a known gap here.
+  // A fingerprint of the guest vertex bytes this surface drew from. See where
+  // it is accumulated, in the vertex stream loop.
+  uint64_t vertex_hash[kMaxWaterProbeSurfaces] = {};
+
+  uint32_t depth_control[kMaxWaterProbeSurfaces] = {};
+  uint32_t blend_control[kMaxWaterProbeSurfaces] = {};
+  uint32_t mode_cntl[kMaxWaterProbeSurfaces] = {};
+  uint32_t color_mask[kMaxWaterProbeSurfaces] = {};
+
+  uint32_t bools[kMaxWaterProbeSurfaces][2] = {};  // b128..b159, what ps_058 branches on
+  uint32_t texture_mask[kMaxWaterProbeSurfaces] = {};
+  const void* textures[kMaxWaterProbeSurfaces][kTextureSlots] = {};
+  bool placeholder[kMaxWaterProbeSurfaces][kTextureSlots] = {};
+  uint32_t address[kMaxWaterProbeSurfaces][kTextureSlots] = {};
+  // The guest format code and extent of each slot's fetch. A slot that reads
+  // PLACEHOLDER says the mirror produced nothing but not why; the format is
+  // what distinguishes "the mirror has no mapping for this" from a source that
+  // would not read. See the mirror's per-format refusal counter.
+  uint32_t format[kMaxWaterProbeSurfaces][kTextureSlots] = {};
+  uint32_t width[kMaxWaterProbeSurfaces][kTextureSlots] = {};
+  uint32_t height[kMaxWaterProbeSurfaces][kTextureSlots] = {};
+  bool from_resolve[kMaxWaterProbeSurfaces][kTextureSlots] = {};
+  bool is_render_target[kMaxWaterProbeSurfaces][kTextureSlots] = {};
+  // The float banks, **per draw within the frame** rather than one set for the
+  // whole frame. ps_058 scales its output through c10.x, c16.w, c8.x and c4/c7,
+  // so a constant oscillating is what "the intensity flickers" looks like from
+  // here.
+  //
+  // Keyed by draw index because the pair draws more than one surface per frame
+  // and they do not share constants. An earlier version kept a single set and
+  // overwrote it on every draw, so it held the *last* draw's banks and the
+  // frame-to-frame diff only ever described that one surface. With
+  // ES_WATER_ONLY_SURFACE having since shown that draw 0 flickers and draw 1
+  // does not, that meant the diff was describing the surface that behaves.
+  // Diffing each surface against itself is the whole point.
+  float pixel[kMaxWaterProbeSurfaces][d3d::kConstantRegisters * 4] = {};
+  float vertex[kMaxWaterProbeSurfaces][d3d::kConstantRegisters * 4] = {};
+  bool banks_valid[kMaxWaterProbeSurfaces] = {};
+};
+WaterProbeFrame g_water_frame;
+uint32_t g_water_frames_logged = 0;
+
+// Accumulated by the vertex stream loop, which runs before the draw is noted,
+// and claimed by the surface when it is. Cleared as it is claimed.
+uint64_t g_water_pending_vertex_hash = 0;
+
+// True when this draw uses the shader pair under investigation, regardless of
+// whether the probe is on or has budget left. The interventions key off this;
+// only the logging keys off IsWaterProbeDraw below.
+bool IsWaterPairDraw(const GuestDrawCall& call) {
+  const WaterProbeKnobs& knobs = WaterProbe();
+  int vertex_slot = -1, pixel_slot = -1;
+  GuestPipelineShaderSlots(call.pipeline, &vertex_slot, &pixel_slot);
+  if (vertex_slot != knobs.vertex_slot)
+    return false;
+  return knobs.pixel_slot < 0 || pixel_slot == knobs.pixel_slot;
+}
+
+// True when this draw is the pair being probed *and* the probe still wants to
+// record it, which both the constant side and the texture-binding side ask.
+bool IsWaterProbeDraw(const GuestDrawCall& call) {
+  const WaterProbeKnobs& knobs = WaterProbe();
+  if (!knobs.enabled || g_water_frames_logged >= knobs.frames)
+    return false;
+  int vertex_slot = -1, pixel_slot = -1;
+  GuestPipelineShaderSlots(call.pipeline, &vertex_slot, &pixel_slot);
+  if (vertex_slot != knobs.vertex_slot)
+    return false;
+  return knobs.pixel_slot < 0 || pixel_slot == knobs.pixel_slot;
+}
+
+// Every pixel shader seen paired with the probed vertex shader, with a draw
+// count each. Printed once at the end of the probe's frame budget, so a single
+// run names the puddle's pixel shader instead of another round of guessing.
+struct WaterPairing {
+  int pixel_slot = -1;
+  uint64_t draws = 0;
+};
+WaterPairing g_water_pairs[32];
+
+void WaterProbeNotePair(int pixel_slot) {
+  for (WaterPairing& pair : g_water_pairs) {
+    if (pair.pixel_slot == pixel_slot) {
+      ++pair.draws;
+      return;
+    }
+    if (pair.pixel_slot < 0) {
+      pair.pixel_slot = pixel_slot;
+      pair.draws = 1;
+      return;
+    }
+  }
+}
+
+void WaterProbeLogPairs() {
+  std::string list;
+  for (const WaterPairing& pair : g_water_pairs) {
+    if (pair.pixel_slot < 0)
+      break;
+    list += fmt::format(" ps_{:03d}={} draws", pair.pixel_slot, pair.draws);
+  }
+  REXLOG_WARN("native_renderer: water probe pixel shaders paired with vs_{:03d}:{}",
+              WaterProbe().vertex_slot, list.empty() ? std::string(" none") : list);
+}
+
+// The constant half, called once the banks are known to be readable.
+void WaterProbeNoteConstants(const GuestDrawCall& call) {
+  if (!IsWaterProbeDraw(call))
+    return;
+  ++g_water_frame.draws;
+  GuestPipelineShaderSlots(call.pipeline, &g_water_frame.vertex_slot, &g_water_frame.pixel_slot);
+  WaterProbeNotePair(g_water_frame.pixel_slot);
+
+  // Draw index within the frame, which is what identifies the surface. Past the
+  // table the state is simply not kept, rather than folded onto another
+  // surface's slot.
+  const uint32_t surface = g_water_frame.draws - 1;
+  if (surface >= kMaxWaterProbeSurfaces)
+    return;
+
+  const uint8_t* bools = call.device + d3d::kBoolConstantShadow;
+  g_water_frame.bools[surface][0] = GuestDword(bools, 4);  // b128..b159
+  g_water_frame.bools[surface][1] = GuestDword(bools, 5);
+
+  g_water_frame.vertex_hash[surface] = g_water_pending_vertex_hash;
+  g_water_pending_vertex_hash = 0;
+
+  GuestPipelineRenderRegisters(call.pipeline, &g_water_frame.depth_control[surface],
+                               &g_water_frame.blend_control[surface],
+                               &g_water_frame.mode_cntl[surface],
+                               &g_water_frame.color_mask[surface]);
+
+  const uint8_t* pixel = call.device + d3d::kPixelConstantShadow;
+  const uint8_t* vertex = call.device + d3d::kVertexConstantShadow;
+  for (uint32_t i = 0; i < d3d::kConstantRegisters * 4; ++i) {
+    g_water_frame.pixel[surface][i] = GuestFloat(pixel, i / 4, i % 4);
+    g_water_frame.vertex[surface][i] = GuestFloat(vertex, i / 4, i % 4);
+  }
+  g_water_frame.banks_valid[surface] = true;
+}
+
+// The registers that differ from the previous frame, as "ps c10.x 1.5 -> 0.2".
+// Capped, because a moving camera legitimately rewrites every view matrix and
+// the point is to see the short list when standing still.
+std::string WaterProbeBankDiff(const char* label, const float* now, const float* before) {
+  constexpr uint32_t kMaxReported = 10;
+  std::string out;
+  uint32_t reported = 0, changed = 0;
+  for (uint32_t i = 0; i < d3d::kConstantRegisters * 4; ++i) {
+    if (now[i] == before[i])
+      continue;
+    ++changed;
+    if (reported++ < kMaxReported)
+      out += fmt::format(" {} c{}.{} {} -> {}", label, i / 4, "xyzw"[i % 4], before[i], now[i]);
+  }
+  if (changed > kMaxReported)
+    out += fmt::format(" (+{} more {})", changed - kMaxReported, label);
+  return out;
+}
+
+// The texture half, called with the bindings this draw resolved to. `white` is
+// the placeholder, so a slot equal to it is a texture that could not be
+// produced this frame.
+void WaterProbeNoteTextures(const GuestDrawCall& call, uint32_t texture_mask,
+                            const BindingKey& textures, const void* white,
+                            const TextureFetch fetches[kTextureSlots],
+                            const bool have_fetch[kTextureSlots]) {
+  if (!IsWaterProbeDraw(call))
+    return;
+  // Same draw as the constants above, which ran first, so the same index.
+  if (g_water_frame.draws == 0 || g_water_frame.draws - 1 >= kMaxWaterProbeSurfaces)
+    return;
+  const uint32_t surface = g_water_frame.draws - 1;
+
+  g_water_frame.texture_mask[surface] = texture_mask;
+  for (uint32_t stage = 0; stage < kTextureSlots; ++stage) {
+    g_water_frame.textures[surface][stage] = textures.slots[stage];
+    g_water_frame.placeholder[surface][stage] = textures.slots[stage] == white;
+    g_water_frame.address[surface][stage] = have_fetch[stage] ? fetches[stage].base_address : 0;
+    g_water_frame.format[surface][stage] = have_fetch[stage] ? fetches[stage].format : 0;
+    g_water_frame.width[surface][stage] = have_fetch[stage] ? fetches[stage].width : 0;
+    g_water_frame.height[surface][stage] = have_fetch[stage] ? fetches[stage].height : 0;
+    // Which of the mirror's two sources this slot came from. A resolve
+    // destination is something the guest rendered and resolved this frame, so
+    // its contents are live; anything else was decoded out of guest memory and
+    // is only re-read when the content hash notices a change.
+    g_water_frame.from_resolve[surface][stage] =
+        have_fetch[stage] && FrameResolveTextureByAddress(fetches[stage].base_address,
+                                                          fetches[stage].width,
+                                                          fetches[stage].height) != nullptr;
+    // The hazard: this slot is the image the draw is writing to.
+    g_water_frame.is_render_target[surface][stage] =
+        textures.slots[stage] != nullptr && textures.slots[stage] == FrameCurrentColorTexture();
+  }
+}
+
+// --- The water rotation, slowed down ---
+//
+// vs_040's world matrix lives in vertex constants c0..c3, and for this material
+// the guest rewrites four of its components every frame in the pattern
+//
+//     c0.x =  s*cos(t)   c0.z = s*sin(t)
+//     c2.x = -s*sin(t)   c2.z = s*cos(t)
+//
+// which is a rotation about Y at scale s (0.15 as measured). The angle advances
+// a fixed 0.01745 rad -- exactly one degree -- per rendered frame, so the water
+// spins at the frame rate rather than in real time: at 60 fps it turns twice as
+// fast as it did on a console locked to 30. That is both halves of the reported
+// symptom, because one degree per frame against a high frequency normal map
+// also aliases temporally, which is what reads as flicker. The refraction under
+// b134 is only the term that aliases hardest, not the cause.
+//
+// The angle is recovered rather than the components scaled, because scaling
+// cos and sin independently would stop the matrix being a rotation and shear
+// the mesh. The guest's own angle is differenced frame to frame, that delta is
+// re-integrated at `ES_WATER_SCALE`, and the matrix is rebuilt from the result
+// at the guest's own scale. A frame where the guest did not move the angle
+// contributes nothing, so this tracks exactly whenever the water is still.
+//
+// `ES_WATER_SCALE=0.5` restores the console's speed at 60 fps. Unset means off.
+float WaterRotationScale() {
+  static const float scale = [] {
+    const char* value = std::getenv("ES_WATER_SCALE");
+    return value != nullptr ? float(std::atof(value)) : 1.0f;
+  }();
+  return scale;
+}
+
+// Per surface, not global. This shader pair draws more than one water surface
+// per frame -- two here, one at magnitude 0.15 and rotating, one at magnitude
+// 0.5 and static -- and a single accumulator shared between them differences
+// each draw's angle against the other draw's, which produces nonsense and
+// snaps instead of slowing. Keyed by the draw's index within the frame, which
+// is stable because the guest issues them in the same order every frame.
+struct WaterRotationState {
+  bool valid = false;
+  float previous = 0.0f;  // the guest's angle last frame
+  float slowed = 0.0f;    // the angle actually uploaded
+};
+constexpr uint32_t kMaxWaterSurfaces = 8;
+WaterRotationState g_water_rotation[kMaxWaterSurfaces];
+uint32_t g_water_surface = 0;  // reset at the frame boundary
+uint8_t g_water_vertex_bank[d3d::kConstantRegisters * 16];
+
+// --- One water surface at a time ---
+//
+// The probed pair draws two surfaces per frame, and every input to them is now
+// byte-identical frame to frame except the world matrix rotation: same bools,
+// same texture bindings, same host texture pointers, same float banks. An
+// oscillation cannot come out of inputs that do not oscillate, so the remaining
+// candidate is the two surfaces interacting with each other rather than either
+// one being wrong. Two coplanar-ish surfaces covering the same pixels is
+// z-fighting, which shimmers, is driven by geometry rather than by time, and
+// therefore does not change rate with the frame rate -- the one property of the
+// symptom nothing else has explained.
+//
+// `ES_WATER_ONLY_SURFACE=0` keeps only the first of the pair, `=1` only the
+// second. If either alone is steady, the surfaces are fighting and neither
+// shader is at fault. If one alone still flickers, that surface owns the defect
+// and the other is a bystander. Unset means off; -1 also means off.
+int WaterOnlySurface() {
+  static const int only = [] {
+    const char* value = std::getenv("ES_WATER_ONLY_SURFACE");
+    return value != nullptr ? std::atoi(value) : -1;
+  }();
+  return only;
+}
+
+// Counts the probed pair's draws within the frame, independently of the
+// rotation slowdown's own counter, which only advances when that knob is on.
+uint32_t g_water_draw_index = 0;
+
+// --- Pinning the ping-pong buffer ---
+//
+// Surface 0 has b128 *clear* (0x8D0) where surface 1 has it set (0xC71), so
+// surface 0 takes the branch that samples tf12 -- the opposite of what the
+// frame-level bool bank suggested when it was really only ever surface 1's.
+// And tf12's fetch address alternates every frame between two 64x64 resolve
+// destinations, 0x0AF6C000 and 0x0AF70000. A surface sampling a texture that
+// swaps every frame is a flicker whose rate is set by the swap rather than by
+// elapsed time, which is the property nothing else has explained.
+//
+// Both destinations are resolved, so neither is missing; the open question is
+// whether their *contents* agree. `ES_WATER_PIN_T12=0AF70000` (hex, no prefix)
+// forces every tf12 fetch on the probed pair to one of them. If the flicker
+// stops, the two buffers hold different images and the bug is in how one of
+// them is produced. If it continues, the alternation is innocent.
+uint32_t WaterPinT12() {
+  static const uint32_t address = [] {
+    const char* value = std::getenv("ES_WATER_PIN_T12");
+    return value != nullptr ? uint32_t(std::strtoul(value, nullptr, 16)) : 0u;
+  }();
+  return address;
+}
+
+void PutGuestFloat(uint8_t* bank, uint32_t reg, uint32_t component, float value) {
+  uint32_t raw;
+  std::memcpy(&raw, &value, 4);
+  raw = Swap32(raw);
+  std::memcpy(bank + reg * 16 + component * 4, &raw, 4);
+}
+
+const uint8_t* WaterSlowVertexBank(const GuestDrawCall& call, bool* patched) {
+  *patched = false;
+  const uint8_t* bank = call.device + d3d::kVertexConstantShadow;
+  const float scale = WaterRotationScale();
+  if (scale == 1.0f)
+    return bank;
+  const WaterProbeKnobs& knobs = WaterProbe();
+  int vertex_slot = -1, pixel_slot = -1;
+  GuestPipelineShaderSlots(call.pipeline, &vertex_slot, &pixel_slot);
+  if (vertex_slot != knobs.vertex_slot || pixel_slot != knobs.pixel_slot)
+    return bank;
+
+  const float cos_term = GuestFloat(bank, 0, 0);  // c0.x = s*cos
+  const float sin_term = GuestFloat(bank, 0, 2);  // c0.z = s*sin
+  const float magnitude = std::sqrt(cos_term * cos_term + sin_term * sin_term);
+  // Not the rotation this is written for. Leave it alone rather than rebuild
+  // something that was never a rotation in the first place.
+  if (magnitude < 1e-6f)
+    return bank;
+  const float angle = std::atan2(sin_term, cos_term);
+
+  // Past the table, leave the draw alone rather than fold it into another
+  // surface's accumulator, which is the bug this indexing exists to avoid.
+  if (g_water_surface >= kMaxWaterSurfaces)
+    return bank;
+  WaterRotationState& state = g_water_rotation[g_water_surface++];
+
+  if (!state.valid) {
+    state.previous = angle;
+    state.slowed = angle;
+    state.valid = true;
+  } else {
+    // Shortest way round, so the wrap through +/-pi is a small step rather than
+    // a full turn backwards.
+    float delta = angle - state.previous;
+    while (delta > 3.14159265f)
+      delta -= 6.28318531f;
+    while (delta < -3.14159265f)
+      delta += 6.28318531f;
+    state.previous = angle;
+    state.slowed += delta * scale;
+    while (state.slowed > 3.14159265f)
+      state.slowed -= 6.28318531f;
+    while (state.slowed < -3.14159265f)
+      state.slowed += 6.28318531f;
+  }
+
+  // Self reporting, because "nothing changed on screen" has two very different
+  // causes: the patch not reaching the draw, and the draw not being what moves.
+  // Throttled, and it prints the guest's angle next to the one being uploaded,
+  // so a divergence that grows is proof the substitution is live.
+  static uint32_t reports = 0;
+  static std::chrono::steady_clock::time_point last;
+  const auto now = std::chrono::steady_clock::now();
+  if (reports < 16 && (reports < 4 || now - last >= std::chrono::seconds(2))) {
+    last = now;
+    ++reports;
+    REXLOG_WARN(
+        "native_renderer: water rotation #{} surface {} scale={} guest angle={} -> uploading {} "
+        "(magnitude {})",
+        reports, g_water_surface - 1, scale, state.previous, state.slowed, magnitude);
+  }
+
+  const float c = magnitude * std::cos(state.slowed);
+  const float s = magnitude * std::sin(state.slowed);
+  std::memcpy(g_water_vertex_bank, bank, sizeof(g_water_vertex_bank));
+  PutGuestFloat(g_water_vertex_bank, 0, 0, c);   // c0.x
+  PutGuestFloat(g_water_vertex_bank, 0, 2, s);   // c0.z
+  PutGuestFloat(g_water_vertex_bank, 2, 0, -s);  // c2.x
+  PutGuestFloat(g_water_vertex_bank, 2, 2, c);   // c2.z
+  *patched = true;
+  return g_water_vertex_bank;
+}
+
+// --- The refraction cut, an experiment rather than a fix ---
+//
+// ps_058 samples the scene behind the water in screen space through tf13, under
+// bool b134. The capture shows the guest re-copying the scene into that texture
+// immediately before each water draw, so every water surface refracts an image
+// that already contains the water drawn before it, and the next frame refracts
+// a scene containing this frame's water. That is a feedback path across frames,
+// and feedback is what oscillates instead of settling.
+//
+// Clearing b134 for this shader pair removes the refraction and nothing else.
+// If the flicker stops, the feedback is the cause and the fix is to give the
+// refraction a copy of the scene taken before any water is drawn. If it
+// continues, the feedback is innocent and this rules out the last branch that
+// depends on frame history.
+//
+// The water will look wrong while this is on. It is a diagnostic switch:
+// `ES_WATER_NO_REFRACT=1`.
+bool WaterCutRefraction() {
+  static const bool cut = [] {
+    const char* value = std::getenv("ES_WATER_NO_REFRACT");
+    return value != nullptr && std::atoi(value) != 0;
+  }();
+  return cut;
+}
+
+uint8_t g_water_bool_bank[d3d::kBoolLoopConstantBytes];
+
+// The bool/loop bank this draw should upload. b134 lives in bit 6 of the fifth
+// dword, which covers b128..b159. Patched in guest byte order so the upload's
+// own swap still applies uniformly.
+const uint8_t* WaterCutBoolBank(const GuestDrawCall& call, bool* patched) {
+  *patched = false;
+  const uint8_t* bank = call.device + d3d::kBoolConstantShadow;
+  if (!WaterCutRefraction())
+    return bank;
+  const WaterProbeKnobs& knobs = WaterProbe();
+  int vertex_slot = -1, pixel_slot = -1;
+  GuestPipelineShaderSlots(call.pipeline, &vertex_slot, &pixel_slot);
+  if (vertex_slot != knobs.vertex_slot || pixel_slot != knobs.pixel_slot)
+    return bank;
+
+  std::memcpy(g_water_bool_bank, bank, sizeof(g_water_bool_bank));
+  uint32_t dword = GuestDword(bank, 4);
+  dword &= ~(1u << 6);  // b134, the screen-space refraction
+  const uint32_t swapped = Swap32(dword);
+  std::memcpy(g_water_bool_bank + 4 * 4, &swapped, 4);
+  *patched = true;
+  return g_water_bool_bank;
+}
+
+// Flushed at the frame boundary rather than per draw, so consecutive lines are
+// consecutive frames and a value that alternates is visible as an alternation.
+void WaterProbeEndFrame() {
+  const WaterProbeKnobs& knobs = WaterProbe();
+  if (!knobs.enabled || g_water_frames_logged >= knobs.frames)
+    return;
+  if (g_water_frame.draws == 0 && g_water_frames_logged == 0)
+    return;  // the scene has not been reached yet; do not spend the budget
+  ++g_water_frames_logged;
+
+  // One line per surface. Each surface has its own bool bank and its own
+  // bindings, and reading either off "the frame" is what hid the difference
+  // between the surface that flickers and the one that does not.
+  const uint32_t surfaces = g_water_frame.draws < kMaxWaterProbeSurfaces
+                                ? g_water_frame.draws
+                                : kMaxWaterProbeSurfaces;
+  for (uint32_t surface = 0; surface < surfaces; ++surface) {
+    std::string slots;
+    for (uint32_t stage = 0; stage < kTextureSlots; ++stage) {
+      if ((g_water_frame.texture_mask[surface] & (1u << stage)) == 0)
+        continue;
+      slots += fmt::format(
+          " t{}={}@{:08X}/f{}/{}x{}{}", stage,
+          g_water_frame.placeholder[surface][stage]
+              ? std::string("PLACEHOLDER")
+              : fmt::format("{:016X}", uintptr_t(g_water_frame.textures[surface][stage])),
+          g_water_frame.address[surface][stage], g_water_frame.format[surface][stage],
+          g_water_frame.width[surface][stage], g_water_frame.height[surface][stage],
+          g_water_frame.from_resolve[surface][stage]
+              ? (g_water_frame.is_render_target[surface][stage] ? "(resolve,IS_RENDER_TARGET)"
+                                                                : "(resolve)")
+              : (g_water_frame.is_render_target[surface][stage] ? "(IS_RENDER_TARGET)" : ""));
+    }
+    REXLOG_WARN(
+        "native_renderer: water probe frame {} surface {}/{} vs={} ps={} b128..159=0x{:08X} "
+        "0x{:08X} vhash=0x{:016X} depth=0x{:08X} blend=0x{:08X} mode=0x{:08X} mask=0x{:08X}{}",
+        g_water_frames_logged, surface, g_water_frame.draws, g_water_frame.vertex_slot,
+        g_water_frame.pixel_slot, g_water_frame.bools[surface][0],
+        g_water_frame.bools[surface][1], g_water_frame.vertex_hash[surface],
+        g_water_frame.depth_control[surface],
+        g_water_frame.blend_control[surface], g_water_frame.mode_cntl[surface],
+        g_water_frame.color_mask[surface], slots);
+  }
+
+  // One line per surface, each diffed against the same surface's previous
+  // frame. ES_WATER_ONLY_SURFACE has shown that surface 0 flickers and surface
+  // 1 does not, so the two lines are the comparison that matters: whatever
+  // oscillates on 0 and not on 1 is the defect.
+  static WaterProbeFrame previous;
+  for (uint32_t surface = 0; surface < kMaxWaterProbeSurfaces; ++surface) {
+    if (!g_water_frame.banks_valid[surface] || !previous.banks_valid[surface])
+      continue;
+    const std::string diff =
+        WaterProbeBankDiff("ps", g_water_frame.pixel[surface], previous.pixel[surface]) +
+        WaterProbeBankDiff("vs", g_water_frame.vertex[surface], previous.vertex[surface]);
+    REXLOG_WARN("native_renderer:   surface {} constants changed since last frame:{}", surface,
+                diff.empty() ? std::string(" none") : diff);
+  }
+  for (uint32_t surface = 0; surface < kMaxWaterProbeSurfaces; ++surface) {
+    if (!g_water_frame.banks_valid[surface])
+      continue;
+    std::memcpy(previous.pixel[surface], g_water_frame.pixel[surface],
+                sizeof(previous.pixel[surface]));
+    std::memcpy(previous.vertex[surface], g_water_frame.vertex[surface],
+                sizeof(previous.vertex[surface]));
+    previous.banks_valid[surface] = true;
+  }
+  if (g_water_frames_logged == knobs.frames)
+    WaterProbeLogPairs();
+
+  g_water_frame = WaterProbeFrame();
+}
+
 // The alpha test constants, which are built rather than copied, so they are
 // cached on their two values instead of on the guest bytes behind them.
 struct AlphaTestCache {
@@ -913,6 +1505,84 @@ struct AlphaTestCache {
   bool valid = false;
 };
 AlphaTestCache g_alpha_cache;
+
+// A one-shot probe for the world-locked "colour filter" boundary. The terrain
+// pixel shader branches on a projected mask in texture slot 11, sampled at
+// coordinates a matrix in vertex constants c36..c39 builds out of world space.
+// A frame capture cannot say which of the two is wrong: RenderDoc reports no
+// sampler address mode for this renderer, and reads root CBVs as zero (see the
+// note about get_cbuffer_contents in the handoff). So latch both off the first
+// draw each frame that declares the slot and print them next to each other.
+//
+// What the two answers mean. The mask is a 2x2 atlas whose two diagonal cells
+// are unused white, and the projected coordinates run well outside [0,1], so
+// a repeat mode sweeps the terrain across all four cells and the two empty ones
+// become the regions with no filter. Either the address mode should be a clamp,
+// or the matrix is scaled too large for the mesh to stay inside one cell.
+constexpr uint32_t kProbeSlot = 11;
+constexpr uint32_t kProbeConstant = 36;
+constexpr uint32_t kProbeConstantCount = 4;
+// c10, which scales the light accumulator in `mad r2.xyz, r6.yzww, c10.xxxx`.
+constexpr uint32_t kProbeLightScale = 10;
+
+constexpr const char* kClampNames[8] = {
+    "repeat",        "mirrored-repeat",       "clamp-to-edge",   "mirror-clamp-to-edge",
+    "clamp-halfway", "mirror-clamp-halfway",  "clamp-to-border", "mirror-clamp-to-border"};
+
+struct ProjectionProbe {
+  bool captured = false;  // already latched this frame
+  bool valid = false;     // ever latched
+  GuestSamplerState sampler;
+  TextureFetch fetch;
+  float matrix[kProbeConstantCount][4] = {};
+  // The light loop's trip count and the constant its accumulator is scaled by,
+  // read on this same draw. The guest toggles the count between 3 and 0 per
+  // batch, so a count sampled at any other draw says nothing about this one.
+  uint32_t loop = 0;
+  float light_scale[4] = {};
+};
+ProjectionProbe g_projection_probe;
+
+// The shadow holds guest order dwords, so the swap here is the same one
+// UploadConstantBank does. Reading it any other way would report a number the
+// shader never sees, which is the whole failure mode this is meant to rule out.
+void CaptureProjectionProbe(const GuestDrawCall& call, uint32_t texture_mask) {
+  if (g_projection_probe.captured || (texture_mask & (1u << kProbeSlot)) == 0)
+    return;
+
+  TextureFetch fetch;
+  GuestSamplerState sampler;
+  if (!GetBoundTextureFetch(call.memory_base, kProbeSlot, fetch, &sampler))
+    return;
+
+  const uint8_t* bank = call.device + d3d::kVertexConstantShadow + kProbeConstant * 16;
+  for (uint32_t row = 0; row < kProbeConstantCount; ++row) {
+    for (uint32_t col = 0; col < 4; ++col) {
+      uint32_t word;
+      std::memcpy(&word, bank + row * 16 + col * 4, 4);
+      word = Swap32(word);
+      std::memcpy(&g_projection_probe.matrix[row][col], &word, 4);
+    }
+  }
+  // Unified loop register 16, the pixel half's first. The bank is contiguous
+  // from device+10016, so the index addresses both halves.
+  const uint8_t* loops = call.device + d3d::kBoolConstantShadow + 32;
+  std::memcpy(&g_projection_probe.loop, loops + 4 * 16, 4);
+  g_projection_probe.loop = Swap32(g_projection_probe.loop);
+
+  const uint8_t* pixel = call.device + d3d::kPixelConstantShadow + kProbeLightScale * 16;
+  for (uint32_t c = 0; c < 4; ++c) {
+    uint32_t word;
+    std::memcpy(&word, pixel + c * 4, 4);
+    word = Swap32(word);
+    std::memcpy(&g_projection_probe.light_scale[c], &word, 4);
+  }
+
+  g_projection_probe.sampler = sampler;
+  g_projection_probe.fetch = fetch;
+  g_projection_probe.captured = true;
+  g_projection_probe.valid = true;
+}
 
 // Copy a constant bank out of the device, swapping, and reuse the previous
 // upload when the guest bytes have not changed. The comparison is against the
@@ -1002,6 +1672,17 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   if (GuestShaderDrawDisabled(vertex_slot, pixel_slot)) {
     Drop(kDropShaderDisabled, "toggled off in the F2 shader debugger");
     return false;
+  }
+
+  // See WaterOnlySurface. Counted before the test so that the surface a draw is
+  // given keeps its identity whichever one is being kept.
+  if (const int only = WaterOnlySurface(); only >= 0) {
+    const WaterProbeKnobs& knobs = WaterProbe();
+    if (vertex_slot == knobs.vertex_slot &&
+        (knobs.pixel_slot < 0 || pixel_slot == knobs.pixel_slot)) {
+      if (int(g_water_draw_index++) != only)
+        return false;
+    }
   }
 
   const bool profiling = GuestShaderProfilingEnabled();
@@ -1106,6 +1787,25 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     const uint64_t out_bytes = uint64_t(out_vertices) * stream.stride;
     if (out_bytes == 0)
       continue;
+
+    // The last input to this draw that has never been measured. Every constant,
+    // bool, binding and register on the flickering surface is identical frame to
+    // frame, so if anything about it varies it is the geometry -- and the guest
+    // animating a water mesh in place is exactly the shape that would not show
+    // up anywhere else. Hashed from the guest bytes before the swap, so this is
+    // what the guest wrote rather than what was uploaded.
+    //
+    // Note the stream cache below keys on the source *pointer*, not on its
+    // contents, which is safe only because the cache is cleared every frame.
+    if (IsWaterPairDraw(call)) {
+      const uint64_t bytes = uint64_t(source_vertices) * stream.stride;
+      uint64_t hash = 1469598103934665603ull;
+      for (uint64_t i = 0; i < bytes; ++i) {
+        hash ^= stream.data[i];
+        hash *= 1099511628211ull;
+      }
+      g_water_pending_vertex_hash ^= hash;
+    }
 
     // Reuse the upload when the same bytes were already uploaded this frame.
     // A run of draws out of one mesh buffer is the common shape here, and the
@@ -1257,15 +1957,19 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   bool pixel_bank_uploaded = false;
   {
     ProfileZone constant_zone(kPhaseConstantUpload);
+    bool bool_patched = false;
+    const uint8_t* bool_bank = WaterCutBoolBank(call, &bool_patched);
+    bool vertex_patched = false;
+    const uint8_t* vertex_bank = WaterSlowVertexBank(call, &vertex_patched);
     constants_ok =
-        UploadConstantBank(device, call.device + d3d::kVertexConstantShadow,
-                           d3d::kConstantRegisters * 16, g_constant_cache[0], &vertex_floats,
+        UploadConstantBank(device, vertex_bank, d3d::kConstantRegisters * 16,
+                           g_constant_cache[vertex_patched ? 4 : 0], &vertex_floats,
                            GuestPipelineVertexLiterals(call.pipeline)) &&
         UploadConstantBank(device, call.device + d3d::kPixelConstantShadow,
                            d3d::kConstantRegisters * 16, g_constant_cache[1], &pixel_floats,
                            GuestPipelinePixelLiterals(call.pipeline), &pixel_bank_uploaded) &&
-        UploadConstantBank(device, call.device + d3d::kBoolConstantShadow,
-                           d3d::kBoolLoopConstantBytes, g_constant_cache[2], &bool_loops);
+        UploadConstantBank(device, bool_bank, d3d::kBoolLoopConstantBytes,
+                           g_constant_cache[bool_patched ? 3 : 2], &bool_loops);
   }
   if (!constants_ok) {
     Drop(kDropNoArena, "a constant bank could not be uploaded");
@@ -1305,6 +2009,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   }
 
   DumpConstantsForShader(call);
+  WaterProbeNoteConstants(call);
 
   // The alpha test. Not a guest bank: these are host-order values built from
   // RB_COLORCONTROL and RB_ALPHA_REF, so nothing here swaps. The disabled case
@@ -1357,7 +2062,41 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     width = float(target_width);
     height = float(target_height);
   }
-  commands->setViewports(RenderViewport(x, y, width, height, g_viewport.min_z, g_viewport.max_z));
+  // Shifted half a pixel down and right, because the two APIs disagree about
+  // where a pixel's centre is. D3D9 and the Xenos put it on the integer
+  // coordinate; D3D12 puts it at the half. Interpolants are evaluated at that
+  // centre, so the same geometry sampled through the same UVs lands half a
+  // pixel further along here than it did on the console.
+  //
+  // The sign is worth deriving rather than recalling, and the obvious rule of
+  // thumb ("port D3D9 to D3D11 by offsetting vertices -0.5") gets it backwards
+  // here. Measured: a quad whose left edge is at 0 interpolates t =
+  // (i+0.5)/64 at host pixel i, and the guest's baked half texel takes that to
+  // (i+1)/64. The console, sampling at integer centres, gets t = i/64 and so
+  // lands on (i+0.5)/64, the centre of texel i. Reproducing that needs the
+  // edge at +0.5, not -0.5.
+  //
+  // Note that -0.5 is not merely useless but invisible: it takes the UV to
+  // (i+1.5)/64, which point sampling floors to the same texel i+1 as the
+  // unfixed path. A capture cannot tell the two apart, so do not read "the
+  // capture is unchanged" as "the viewport is not the lever".
+  //
+  // Titles compensate for the console's convention by baking half a texel into
+  // their screen-space UVs, and this one does. Left alone the two biases add:
+  // the ripple simulation's five tap stencil asks for texel i and gets exactly
+  // the boundary between i and i+1, which point sampling resolves to i+1. That
+  // reads the whole stencil, prev-prev tap included, one texel diagonally away
+  // from the texel being written. Measured over eight texels of a capture, and
+  // it is fatal rather than blurry: at the axis-aligned Nyquist modes the
+  // amplification polynomial becomes l^2 + 1.9289l - 1, whose root at -2.354
+  // grows 2.35x per frame while flipping sign. That is the water flicker, and
+  // the saturation and the frame-rate independence both follow from it.
+  //
+  // Moving the viewport rather than the vertices puts it before the rasteriser
+  // for every draw, which is what makes it correct for the passes that never
+  // touch a screen-space UV as well.
+  commands->setViewports(
+      RenderViewport(x + 0.5f, y + 0.5f, width, height, g_viewport.min_z, g_viewport.max_z));
   commands->setScissors(
       RenderRect(int32_t(x), int32_t(y), int32_t(x + width), int32_t(y + height)));
 
@@ -1404,6 +2143,11 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   const uint32_t texture_mask = GuestPipelineTextureMask(call.pipeline);
   const uint64_t binding_generation = TextureBindingGeneration();
 
+  // Deliberately outside the binding cache below: the first draw of a frame to
+  // declare the probe slot may well be a cache hit, and then the loop that
+  // decodes fetch constants never runs. One extra decode per frame.
+  CaptureProjectionProbe(call, texture_mask);
+
   RenderDescriptorSet* texture_set;
   RenderDescriptorSet* sampler_set;
   if (g_binding_cache.valid && g_binding_cache.generation == binding_generation &&
@@ -1416,6 +2160,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     BindingKey samplers;
     {
       ProfileZone texture_zone(kPhaseTextureBind);
+      TextureFetch probe_fetches[kTextureSlots];
+      bool probe_have_fetch[kTextureSlots] = {};
       for (uint32_t stage = 0; stage < kTextureSlots; ++stage) {
         RenderTexture* texture = nullptr;
         RenderSampler* sampler = g_sampler.get();
@@ -1425,6 +2171,14 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
         if ((texture_mask & (1u << stage)) != 0) {
           ProfileZone fetch_zone(kPhaseFetchDecode);
           have_fetch = GetBoundTextureFetch(call.memory_base, stage, fetch, &sampler_state);
+        }
+        // See WaterPinT12. Rewritten before the mirror lookup so the pinned
+        // buffer is what is decoded as well as what is bound.
+        if (have_fetch && stage == 12) {
+          if (const uint32_t pinned = WaterPinT12();
+              pinned != 0 && IsWaterPairDraw(call) && fetch.base_address != pinned) {
+            fetch.base_address = pinned;
+          }
         }
         if (have_fetch) {
           {
@@ -1436,7 +2190,11 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
         }
         textures.slots[stage] = texture != nullptr ? texture : g_white_texture.get();
         samplers.slots[stage] = sampler;
+        probe_fetches[stage] = fetch;
+        probe_have_fetch[stage] = have_fetch;
       }
+      WaterProbeNoteTextures(call, texture_mask, textures, g_white_texture.get(), probe_fetches,
+                             probe_have_fetch);
     }
 
     // Sets matching these bindings, not a rewrite of shared ones. See the note
@@ -1495,6 +2253,14 @@ void ResetGuestDrawArena() {
   // boundary bumps the binding generation too, which would invalidate this on
   // its own; this is here so the lifetime does not depend on that ordering.
   g_binding_cache.valid = false;
+
+  // Latch again next frame, so the probe follows the camera rather than
+  // reporting whatever the first frame of the run happened to bind.
+  g_projection_probe.captured = false;
+
+  g_water_surface = 0;
+  g_water_draw_index = 0;
+  WaterProbeEndFrame();
 }
 
 void LogGuestDrawSummary() {
@@ -1528,6 +2294,25 @@ void LogGuestDrawSummary() {
   if (g_zero_pixel_bank_draws != 0) {
     REXLOG_INFO("native_renderer:   {} draw(s) read an all-zero pixel float bank, over {} shader(s)",
                 g_zero_pixel_bank_draws, g_zero_pixel_bank_slot_count);
+  }
+
+  if (g_projection_probe.valid) {
+    const ProjectionProbe& probe = g_projection_probe;
+    REXLOG_INFO(
+        "native_renderer:   projection probe, slot {}: address u={} v={} w={} | mask 0x{:08X} "
+        "{}x{} format {}",
+        kProbeSlot, kClampNames[probe.sampler.clamp_x & 7u],
+        kClampNames[probe.sampler.clamp_y & 7u], kClampNames[probe.sampler.clamp_z & 7u],
+        probe.fetch.base_address, probe.fetch.width, probe.fetch.height, probe.fetch.format);
+    REXLOG_INFO(
+        "native_renderer:     light loop i16 = 0x{:08X} (count={}) | c{} = {} {} {} {}",
+        probe.loop, probe.loop & 0xFFu, kProbeLightScale, probe.light_scale[0],
+        probe.light_scale[1], probe.light_scale[2], probe.light_scale[3]);
+    for (uint32_t row = 0; row < kProbeConstantCount; ++row) {
+      REXLOG_INFO("native_renderer:     c{} = {: .6f} {: .6f} {: .6f} {: .6f}",
+                  kProbeConstant + row, probe.matrix[row][0], probe.matrix[row][1],
+                  probe.matrix[row][2], probe.matrix[row][3]);
+    }
   }
 }
 
