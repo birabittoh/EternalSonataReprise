@@ -157,6 +157,19 @@ bool MapTextureFormat(uint32_t format, FormatInfo& out) {
     case 6:
       out = {RenderFormat::B8G8R8A8_UNORM, 4, 1};
       return true;
+    // k_8_8, a two channel 8 bit texture. Only two guest formats are ever
+    // refused across a whole run, this one and 22 (k_24_8, a depth format), so
+    // every non-depth texture the mirror has been unable to produce is this.
+    // Two channels of eight bits is what a title stores a tangent space normal
+    // or a DuDv offset map in, which is why the water's normal map slot reads
+    // as the 1x1 white placeholder.
+    //
+    // Nothing else has to change for it: the untiler, the endian swap and the
+    // upload are all written in terms of block_bytes, and a 16 bit addressable
+    // unit is one the Xenos tiler already handles.
+    case 10:
+      out = {RenderFormat::R8G8_UNORM, 2, 1};
+      return true;
     case 18:  // k_DXT1
       out = {RenderFormat::BC1_UNORM, 8, 4};
       return true;
