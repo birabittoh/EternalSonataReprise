@@ -300,6 +300,34 @@ longjmp_address = 0x822D0620
 "0x82262C90" = { name = "D3DResource__Release", evidence = "verified: interlocked decrement of the refcount at +4, recurses into the child at +24 for type 4 resources, then calls the destroy path 0x822626F0" }
 "0x822626F0" = { name = "D3DResource__Destroy", evidence = "verified: sole target of the zero refcount branch in 0x82262C90" }
 
+# Texture loading. Two paths reach a bound texture, and they differ in where the
+# pixel data lives, which is why both are named here rather than just the one.
+#
+# The 52 byte D3DTexture header carries the six dword GPU fetch constant at
+# +0x1C, so the base address is +0x20 and the mip address is +0x30. Both address
+# fields hold a page number in bits 12..31 with resource flags in the low 12.
+"0x8225D820" = { name = "XGSetTextureHeader", evidence = "verified: sole callee of 0x8225DFE0 before it allocates, taking (header, w, h, levels, usage, ?, format, 2) and returning the base and mip allocation sizes through two stack out params; fills the whole 52 byte header including the fetch constant at +0x1C" }
+"0x822A3378" = { name = "XGOffsetResourceAddress", evidence = "verified: adds a1 to the page number already in the base address field at +0x20, then does the same to the mip address field at +0x30 with a2, but only when the level count from 0x8225DD88 exceeds 1. That guard is why a single level texture keeps an unpatched mip field; the baked values it adds to are relative offsets, so this is the offline-header fixup, not a setter" }
+"0x8225DD88" = { name = "D3DBaseTexture__GetLevelCount", evidence = "verified: the level count 0x822A3378 branches on before patching the mip address" }
+"0x8225DD98" = { name = "D3DTexture__GetLevelDesc", evidence = "verified: fills a 20 dword descriptor whose [0] is the format and whose [6]/[7] are width and height, which 0x8212E1A0 copies to its object at +16/+8/+12" }
+"0x8225DDA0" = { name = "D3DTexture__GetSurfaceLevel", evidence = "verified: (texture, level) inside the per level load loop of 0x82275B58, its result handed to 0x82274278 and then released with 0x82262C90" }
+
+# The game's own texture loader and its two paths.
+"0x8212E1A0" = { name = "TEXTURE__Load", evidence = "verified: dispatches on five container magics at the source's first dword, 'NTEX' (0x4E544558), 'NTX2' (0x4E545832), '.BMP', '.TGA' and '.PNG'. NTX2 must wrap an 'XPR2' (0x58505232) chunk and is loaded in place: it memcpys the baked 52 byte header out of the package with 0x822CF5B0, requires the data section base to be 4 KB aligned, and fixes the header up with 0x822A3378 so the fetch constant points into the package itself. Every other magic goes to the D3DX path through 0x8212DEC0" }
+"0x8212DEC0" = { name = "TEXTURE_CACHE__Acquire", evidence = "verified: formats the source pointer as \"0x%08X\" and looks it up in the map at unk_824C0090; on a miss it takes a free slot from the 1024 entry table at unk_824C4248 (three dwords each: texture object, source pointer, refcount), decodes through 0x82276388, inserts, and bumps the refcount at +8 on every acquire" }
+
+# D3DX9, statically linked. Named from their structure rather than from symbols,
+# but the shapes are unambiguous and each was decompiled.
+"0x82276388" = { name = "D3DXCreateTextureFromFileInMemory", evidence = "verified: a thin forwarder to 0x82275B58 that inserts a 1 for the argument the fuller entry point takes as a filter/level flag" }
+"0x82275B58" = { name = "D3DXCreateTextureFromFileInMemoryEx", evidence = "verified: parses the source header with 0x82279EC8, rounds each requested dimension up to a power of two when the caller passes 0 or -1, adjusts through 0x822750B0, creates the texture with 0x8225DFE0, then per level and per face calls 0x8225DDA0/0x8225DE70/0x8225DF30 for the surface and 0x82274278/0x82274908 to decode the source into it, finishing with the mip filter 0x82275728. Note the per level format switch handles only cases 3, 17 and 18 and has no default arm" }
+"0x822750B0" = { name = "D3DXCheckTextureRequirements", evidence = "verified: takes the device and in/out pointers to width, height, depth, level count and format, and rewrites them in place immediately before 0x82275B58 calls CreateTexture with the adjusted values" }
+"0x82274278" = { name = "D3DXLoadSurfaceFromMemory", evidence = "verified: the decode step of 0x82275B58's per level loop, called with the surface from 0x8225DDA0 and the source description fields; its negative return aborts the loop and leaves the created texture unfilled" }
+"0x82275728" = { name = "D3DXFilterTexture", evidence = "verified: called once after the level loop of 0x82275B58, with the level count minus one and the filter word the caller defaulted to 5, to generate the remaining mips" }
+"0x822741B8" = { name = "D3DXGetImageInfoFromFileInMemory", evidence = "verified: (source, size, out) filling a descriptor whose [0] and [1] are width and height and whose [4] is a format id; called by both game side loaders, 0x8212E1A0 for its non NTX2 path and 0x8212DEC0 to size the texture before decoding it" }
+# Named for what it does, not from a symbol: it is the decoding half of the D3DX
+# load, and "image loader" is as far as the evidence goes.
+"0x82279EC8" = { name = "D3DX__LoadImageFromMemory", evidence = "verified: 0x82275B58's first call, returning an HRESULT and filling the width, height and depth locals it then adjusts, plus two linked list heads it walks to count mip levels and cube faces. This is the function the setjmp/longjmp note at the top of this file is about: it probes formats and the JPEG error handler longjmps out of it on a mismatch so the next format can be tried" }
+
 # Command buffer plumbing.
 "0x82264980" = { name = "D3DDevice__ReserveCommandBufferSpace", evidence = "verified: called from every packet writer when the write pointer at device+48 passes the limit at device+56, and returns the new write pointer" }
 "0x82264330" = { name = "D3DDevice__BlockUntilFenceRetired", evidence = "verified: takes a fence value, compares it against the submitted counter at device+10780 and the retired counter the GPU writes at **(device+10768) (the block handed to VdSetSystemCommandBufferGpuIdentifierAddress), and spins on 0x82263328 inside a 0x82263178/0x822631A8 ThrottleWait bracket until the retired counter passes it; the wait underneath both Swap's frame throttle and BlockUntilGpuIdle" }
