@@ -285,3 +285,10 @@ plume_compile_vertex_shader(eternalsonata
     "${CMAKE_SOURCE_DIR}/src/shaders/imgui.vert.hlsl" "imguiVert" "VSMain")
 plume_compile_pixel_shader(eternalsonata
     "${CMAKE_SOURCE_DIR}/src/shaders/imgui.frag.hlsl" "imguiFrag" "PSMain")
+
+# The present blit, which scales the guest's image into whatever size the window
+# is. Same reasoning as the overlay's: too small to be worth a pack.
+plume_compile_vertex_shader(eternalsonata
+    "${CMAKE_SOURCE_DIR}/src/shaders/blit.vert.hlsl" "blitVert" "VSMain")
+plume_compile_pixel_shader(eternalsonata
+    "${CMAKE_SOURCE_DIR}/src/shaders/blit.frag.hlsl" "blitFrag" "PSMain")
