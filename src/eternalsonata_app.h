@@ -103,9 +103,17 @@ class EternalsonataApp : public rex::ReXApp {
 
     // One-shot toast shown top-left as the game starts
     config.startup_hint = "Press F4 to open settings.";
+
+    // "plume" is not a plugin the SDK can load; it selects this project's own
+    // renderer. Clearing the name here (the last point before ReXApp decides
+    // whether to call LoadGpuPlugin) is what leaves the SDK headless.
+    // NativeRendererEnabled() keeps reading the cvar, which still says
+    // "plume". See native_renderer.h.
+    if (config.gpu_plugin == eternalsonata::kNativeRendererPluginName)
+      config.gpu_plugin.clear();
   }
 
-  // With gpu_plugin set to "" the SDK loads no graphics backend, and this
+  // With gpu_plugin set to "plume" the SDK loads no graphics backend, and this
   // project renders the guest itself at the Direct3D level rather than
   // emulating Xenos. Runs before the guest starts, so no D3D call can arrive
   // ahead of it. See native_renderer.h.
