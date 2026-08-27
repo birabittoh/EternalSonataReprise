@@ -1579,6 +1579,17 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
               row_count, list);
 }
 
+// Puts every one of `page`'s bars back on its row's current value, instantly.
+// Used both at resolve time and whenever the page becomes active again after a
+// page turn parked its bars off-screen.
+void PlacePageBars(u8* base, int page) {
+  const PageState& st = g_page[page];
+  const std::vector<OptionRow>& all = Rows();
+  for (u32 r = 0; r < st.rows.size(); ++r) {
+    MoveOptionBar(base, page, r, all[st.rows[r]].get_index(), /*move=*/false);
+  }
+}
+
 // Finds each of our rows' highlight bars among the screen's objects and puts it
 // on the row's current value, from the first per-frame menu update after the
 // screen was built.
@@ -1648,10 +1659,7 @@ void ResolveBars(u8* base, int page) {
 
   // Placed the way the screen init places the stock ones: instantly. No settling
   // delay - sub_82178A88 is not an animation.
-  const std::vector<OptionRow>& all = Rows();
-  for (u32 r = 0; r < rows; ++r) {
-    MoveOptionBar(base, page, r, all[st.rows[r]].get_index(), /*move=*/false);
-  }
+  PlacePageBars(base, page);
 }
 
 }  // namespace
@@ -2170,6 +2178,16 @@ REX_HOOK_RAW(sub_821F62B8) {
     }
     return;
   }
+  // A page turn parks the outgoing page's bars off-screen, either through the
+  // branch above (LB/RB passes through a frame that is neither page) or here.
+  // Nothing re-runs the incoming page's setup - LB from page 2 just pops the
+  // menu depth - so the bars have to be put back on their rows explicitly, or
+  // they stay parked until the next value change slides one back in from
+  // off-screen.
+  const bool page_changed = page != s_last_active_page;
+  if (page_changed && s_last_active_page >= 0) {
+    HideAllPageBars(base, s_last_active_page);
+  }
   s_last_active_page = page;
   g_options_last_seen = std::chrono::steady_clock::now();
   PageState& st = g_page[page];
@@ -2189,6 +2207,17 @@ REX_HOOK_RAW(sub_821F62B8) {
     if (REXCVAR_GET(menu_scan)) {
       DumpHighlightBars(base, page);
     }
+  }
+  // Re-placed for a few frames rather than once: a page turn is animated, and
+  // a position written before the incoming screen has settled does not always
+  // stick (the same reason ResolveBars cannot run at list-walk time).
+  static int s_replace_frames = 0;
+  if (page_changed) {
+    s_replace_frames = 8;
+  }
+  if (s_replace_frames > 0) {
+    --s_replace_frames;
+    PlacePageBars(base, page);
   }
   const u32 menu = REX_LOAD_U32(0x824400E8u);
   if (menu < 0x82000000u || menu >= 0xFB000000u) {
