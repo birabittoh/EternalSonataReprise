@@ -113,6 +113,11 @@ class EternalsonataApp : public rex::ReXApp {
     // "plume". See native_renderer.h.
     if (config.gpu_plugin == eternalsonata::kNativeRendererPluginName)
       config.gpu_plugin.clear();
+
+    // Whatever the unloaded plugin would have registered, this renderer has to
+    // register itself. Runs after the clear only for reading order; it looks at
+    // the cvar, not at config.gpu_plugin.
+    eternalsonata::RegisterNativeRendererCvars();
   }
 
   // With gpu_plugin set to "plume" the SDK loads no graphics backend, and this

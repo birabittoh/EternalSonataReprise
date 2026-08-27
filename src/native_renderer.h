@@ -44,6 +44,15 @@ inline constexpr const char* kNativeRendererPluginName = "plume";
 // meaningful once the config files have been loaded.
 bool NativeRendererEnabled();
 
+// Registers the cvars a GPU plugin would have registered, so selecting this
+// renderer does not silently lose them. Currently just `vsync`, which lives in
+// the Xenos plugin's command processor and therefore never registers when no
+// plugin is loaded. Call from OnPreSetup: after the config file has been read
+// (so a saved value is still waiting to be applied to it) and before the SDK
+// decides whether to load a plugin (so the plugin, if one is loaded instead,
+// keeps sole ownership of the name). No-op unless NativeRendererEnabled().
+void RegisterNativeRendererCvars();
+
 // Brings up the rendering backend. Call from OnPreLaunchModule, before the
 // guest starts executing and so before any guest D3D call can arrive.
 // No-op unless NativeRendererEnabled(); there is no backend behind it yet.
