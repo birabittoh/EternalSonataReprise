@@ -147,12 +147,17 @@ constexpr std::array kGameDefaults = {
     // resolves out of the wrong surface as zeros, which is the black cross-fade
     // source on camera transitions and the black half of the save screenshot.
     DefaultValue{"no_edram_wrap_claim", "true"},
-    // The SDK's vblank pump ties the presentation-interval wait to vsync, so
-    // with vsync on the host limiter's "60" declared rate only ever achieves
-    // the display's vblank-gated actual rate; on a 60 Hz-capped/throttled path
-    // that reads as a real fps half of what's declared, which the frame-clocked
-    // sim turns directly into half-speed motion (game speed = actual/declared).
-    DefaultValue{"vsync", "false"},
+    // Tearing off by default, on both renderers. The old default was false,
+    // because the SDK's vblank pump ties the presentation-interval wait to
+    // vsync and a real presentation interval then made the frame-clocked sim
+    // run at half speed (game speed = actual fps / declared fps). The frame
+    // limiter no longer asks for a real interval at all -- it declares the rate
+    // and paces in the host, which is independent of vsync; see the NOTE in
+    // eternalsonata_framerate.cpp. On the native renderer this is the swap
+    // chain's own vsync (native_renderer_plume.cpp), where the cost of leaving
+    // it on is quantisation: two buffers plus the present's fence wait means a
+    // frame over 16.7 ms lands on 30 rather than somewhere between.
+    DefaultValue{"vsync", "true"},
     DefaultValue{"swap_post_effect", "fxaa"},
     DefaultValue{"mnk_capture_mouse", "false"},
     DefaultValue{"mnk_mode", "true"},
@@ -179,10 +184,16 @@ constexpr std::array kGameDefaults = {
 // generic loops no-op on a name that is not registered, and keeping the list
 // platform-independent means a settings.toml written on Windows round-trips
 // unharmed through a Linux build.
-constexpr std::array<const char*, 12> kBasicCvarNames = {
+// vsync is listed here even though neither renderer registers it in the
+// executable: the Xenos plugin defines it in its command processor and the
+// native renderer registers it itself (see RegisterNativeRendererCvars), so
+// exactly one of the two owns the name by the time this UI draws. The generic
+// loops no-op on a name that is not registered, same as vulkan_device.
+constexpr std::array<const char*, 13> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
-    "audio_mute", "audio_volume", "field_leader_model", "host_timer_resolution_ms"};
+    "audio_mute", "audio_volume", "field_leader_model", "host_timer_resolution_ms",
+    "vsync"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -457,6 +468,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     DrawResolutionRow();
     DrawRenderScaleRow();
     DrawFrameRateRow();
+    DrawVsyncRow();
     DrawAudioMuteRow();
     DrawAudioVolumeRow();
 #if defined(_WIN32)
@@ -625,6 +637,23 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::TextUnformatted("Fullscreen");
     ImGui::SameLine(180.0f);
     ImGui::PushID("fullscreen");
+    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
+      SaveBasic();
+    }
+    ImGui::PopID();
+  }
+
+  // Takes effect immediately on both renderers: the Xenos plugin reads the
+  // cvar per vblank, and the native renderer applies it to the swap chain on
+  // the next present. Absent from the UI entirely if whatever is rendering
+  // never registered it.
+  void DrawVsyncRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("vsync");
+    if (!entry)
+      return;
+    ImGui::TextUnformatted("VSync");
+    ImGui::SameLine(180.0f);
+    ImGui::PushID("vsync");
     if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
       SaveBasic();
     }
