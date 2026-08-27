@@ -130,6 +130,12 @@ RenderFormat MapVertexFormat(uint32_t type) {
   if (format < 64)
     ++g_format_seen[format];
 
+  // Widened into a stream of its own rather than declared as an integer format
+  // the shader cannot read. See kWidenedInputSlot; the layout below routes the
+  // element to that slot, and this is only the format it is read back as.
+  if (VertexFormatWidensToHalf4(type))
+    return RenderFormat::R16G16B16A16_FLOAT;
+
   // The emitted HLSL declares every vertex input as float4, because the shader
   // is compiled without knowing which declaration it will be paired with. A
   // *_UINT or *_SINT input layout format feeding a float register is a type
@@ -417,6 +423,14 @@ bool VertexFormatRepacksToSnorm8(uint32_t type) {
   return (type & 0x3Fu) == kVf_2_10_10_10 && ((type >> 8) & 1u) != 0 && ((type >> 9) & 1u) == 0;
 }
 
+// The other half of the same decision, for the elements that are widened into a
+// stream of their own instead. Bit 9 is `num_format_all`, which reads "not
+// normalised", i.e. the fetch delivers the stored integer rather than a
+// fraction of its range.
+bool VertexFormatWidensToHalf4(uint32_t type) {
+  return (type & 0x3Fu) == kVf_8_8_8_8 && ((type >> 9) & 1u) != 0;
+}
+
 // Deliberately outside the anonymous namespace: the type is named in the public
 // header, so it has to be the same type there and here.
 struct GuestPipeline {
@@ -429,10 +443,19 @@ struct GuestPipeline {
   // stream 0 and the missing-attribute stream would need seventeen views to
   // describe two buffers. `slot_streams` is the mapping back, one guest stream
   // per host slot, with kNullInputSlot meaning the zero-filled buffer.
-  RenderInputSlot slots[kMaxPipelineStreams + 1];
-  uint32_t slot_streams[kMaxPipelineStreams + 1] = {};
+  RenderInputSlot slots[kMaxPipelineStreams + 2];
+  uint32_t slot_streams[kMaxPipelineStreams + 2] = {};
   uint32_t slot_count = 0;
   bool uses_null_slot = false;
+
+  // The elements rebuilt into the widened stream, and the guest stream they are
+  // read out of. All of them come from one guest stream: a declaration that
+  // spread them over two would need one widened stream each, and nothing in
+  // this title does. See kWidenedInputSlot.
+  GuestWidenedElement widened[kMaxVertexElements];
+  uint32_t widened_count = 0;
+  uint32_t widened_stream = 0;
+  uint32_t widened_stride = 0;
 
   // Which texture/sampler slots the bound pixel shader declares, straight out
   // of the pack. The other stages hold whatever fetch constant was last written
@@ -626,6 +649,27 @@ const uint32_t* GuestPipelineSlotStreams(const GuestPipeline* pipeline, uint32_t
   return pipeline->slot_streams;
 }
 
+const GuestWidenedElement* GuestPipelineWidenedElements(const GuestPipeline* pipeline,
+                                                        uint32_t* count, uint32_t* stream,
+                                                        uint32_t* stride) {
+  if (pipeline == nullptr || pipeline->widened_count == 0) {
+    if (count)
+      *count = 0;
+    if (stream)
+      *stream = 0;
+    if (stride)
+      *stride = 0;
+    return nullptr;
+  }
+  if (count)
+    *count = pipeline->widened_count;
+  if (stream)
+    *stream = pipeline->widened_stream;
+  if (stride)
+    *stride = pipeline->widened_stride;
+  return pipeline->widened;
+}
+
 const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   ++g_requests;
 
@@ -729,6 +773,7 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   for (int32_t& slot : host_slot)
     slot = -1;
   int32_t null_host_slot = -1;
+  int32_t widened_host_slot = -1;
 
   for (uint32_t i = 0; i < vertex.input_count; ++i) {
     const GuestVertexInput& input = vertex.inputs[i];
@@ -772,6 +817,47 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
       return nullptr;
     }
 
+    // An unnormalised integer element does not read from the guest's stream at
+    // all: the upload rebuilds it, widened, into a stream of its own. Two
+    // shader inputs matching the same declaration element share one widened
+    // element, which is why this looks for the guest offset first.
+    if (VertexFormatWidensToHalf4(match->type)) {
+      if (widened_host_slot < 0) {
+        widened_host_slot = int32_t(pipeline->slot_count);
+        pipeline->widened_stream = match->stream;
+        pipeline->slot_streams[pipeline->slot_count] = kWidenedInputSlot;
+        pipeline->slots[pipeline->slot_count++] = RenderInputSlot(uint32_t(widened_host_slot), 0);
+      } else if (pipeline->widened_stream != match->stream) {
+        Refuse(kRefuseVertexFormat,
+               "a declaration widens integer elements out of two different streams, and only one "
+               "widened stream is built", request.vertex_slot, request.pixel_slot);
+        return nullptr;
+      }
+
+      uint32_t host_offset = 0;
+      bool found = false;
+      for (uint32_t w = 0; w < pipeline->widened_count && !found; ++w) {
+        if (pipeline->widened[w].guest_offset == match->offset) {
+          host_offset = pipeline->widened[w].host_offset;
+          found = true;
+        }
+      }
+      if (!found) {
+        if (pipeline->widened_count == kMaxVertexElements) {
+          Refuse(kRefuseVertexFormat, "more widened elements than a declaration can hold",
+                 request.vertex_slot, request.pixel_slot);
+          return nullptr;
+        }
+        host_offset = pipeline->widened_count * kWidenedElementBytes;
+        pipeline->widened[pipeline->widened_count++] =
+            GuestWidenedElement{match->offset, host_offset, match->type};
+        pipeline->widened_stride = pipeline->widened_count * kWidenedElementBytes;
+      }
+      elements.emplace_back(kUsageSemantics[input.usage], input.usage_index, i, format,
+                            uint32_t(widened_host_slot), host_offset);
+      continue;
+    }
+
     if (host_slot[match->stream] < 0) {
       host_slot[match->stream] = int32_t(pipeline->slot_count);
       pipeline->slot_streams[pipeline->slot_count] = match->stream;
@@ -780,6 +866,14 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
     }
     elements.emplace_back(kUsageSemantics[input.usage], input.usage_index, i, format,
                           uint32_t(host_slot[match->stream]), match->offset);
+  }
+
+  // The widened slot's stride is only known once every element that lands in it
+  // has been seen, so it is filled in here rather than where the slot was
+  // claimed.
+  if (widened_host_slot >= 0) {
+    pipeline->slots[widened_host_slot] =
+        RenderInputSlot(uint32_t(widened_host_slot), pipeline->widened_stride);
   }
 
   RenderGraphicsPipelineDesc desc;

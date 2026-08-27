@@ -684,6 +684,32 @@ uint32_t RepackSnorm8(uint32_t packed) {
          (component(int32_t((packed >> 30) & 0x3u), 2) << 24);
 }
 
+// float -> IEEE half, for the widened attribute stream. Everything that goes
+// through it is a small integer out of an 8 bit field, which a half represents
+// exactly up to 2048, so the rounding below never fires on the traffic this
+// title has; it is written out in full anyway, because a silently approximated
+// bone index would look exactly like a wrong one.
+uint16_t FloatToHalf(float value) {
+  uint32_t bits;
+  std::memcpy(&bits, &value, 4);
+  const uint32_t sign = (bits >> 16) & 0x8000u;
+  const int32_t exponent = int32_t((bits >> 23) & 0xFFu) - 127 + 15;
+  uint32_t mantissa = bits & 0x7FFFFFu;
+
+  if (exponent >= 0x1F)
+    return uint16_t(sign | 0x7C00u);  // infinities and anything that overflows
+  if (exponent <= 0) {
+    if (exponent < -10)
+      return uint16_t(sign);  // underflows to zero rather than to a subnormal
+    mantissa |= 0x800000u;
+    const uint32_t shift = uint32_t(14 - exponent);
+    return uint16_t(sign | ((mantissa + (1u << (shift - 1))) >> shift));
+  }
+  // The round-to-nearest carry is allowed to run into the exponent field, which
+  // is what makes a mantissa that rounds up to 1.0 land on the next exponent.
+  return uint16_t(sign | (uint32_t(exponent) << 10) | ((mantissa + 0x1000u) >> 13));
+}
+
 void SwapVertex(uint8_t* vertex, const SwapPlan& plan) {
   for (uint32_t f = 0; f < plan.count; ++f) {
     const SwapField& field = plan.fields[f];
@@ -1744,14 +1770,109 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   const RenderInputSlot* slots = GuestPipelineInputSlots(call.pipeline, &slot_count);
   const uint32_t* slot_streams = GuestPipelineSlotStreams(call.pipeline, nullptr);
 
-  RenderVertexBufferView views[kMaxPipelineStreams + 1];
+  RenderVertexBufferView views[kMaxPipelineStreams + 2];
   uint32_t draw_count = call.count;
   bool expanded = false;
+
+  // The unnormalised integer elements, if this pipeline has any. They are read
+  // out of one of the guest's streams and written into a host stream of their
+  // own; see kWidenedInputSlot.
+  uint32_t widened_count = 0, widened_stream_index = 0, widened_stride = 0;
+  const GuestWidenedElement* widened = GuestPipelineWidenedElements(
+      call.pipeline, &widened_count, &widened_stream_index, &widened_stride);
+
+  // Marks a widened upload in the per-frame stream cache. Distinct from the two
+  // values the ordinary path uses (0, and 8 for a rectangle expansion), because
+  // the two uploads share a source pointer and are not interchangeable.
+  constexpr uint32_t kWidenedCacheKind = 0x10u;
 
   for (uint32_t slot = 0; slot < slot_count; ++slot) {
     const uint32_t stream_index = slot_streams[slot];
     if (stream_index == kNullInputSlot) {
       views[slot] = RenderVertexBufferView(g_null_stream->at(0), kUploadAlignment);
+      continue;
+    }
+
+    if (stream_index == kWidenedInputSlot) {
+      const GuestDrawStream& source = call.streams[widened_stream_index];
+      if (source.data == nullptr || source.stride == 0) {
+        Drop(kDropStreamMissing, "the pipeline widens out of a stream SetStreamSource never bound");
+        return false;
+      }
+      if (source.size > kMaxStreamBytes) {
+        Drop(kDropStreamTooBig, "the resource size field at +28 is not what it is believed to be");
+        return false;
+      }
+      for (uint32_t w = 0; w < widened_count; ++w) {
+        if (widened[w].guest_offset + 4 > source.stride) {
+          Drop(kDropVertexFormat, "a widened element lies past the end of the stream's vertex");
+          return false;
+        }
+      }
+
+      uint32_t vertices = call.indexed ? source.size / source.stride : call.count;
+      if (!call.indexed && vertices * source.stride > source.size)
+        vertices = source.size / source.stride;
+      if (vertices == 0)
+        continue;
+      const uint64_t bytes = uint64_t(vertices) * widened_stride;
+
+      StreamCacheEntry* widened_cached = nullptr;
+      for (auto& entry : g_stream_cache) {
+        if (entry.source == source.data && entry.bytes == uint32_t(bytes) &&
+            entry.stride == widened_stride && entry.primitive == kWidenedCacheKind) {
+          widened_cached = &entry;
+          break;
+        }
+      }
+      if (widened_cached != nullptr) {
+        ++g_stream_cache_hits;
+        views[slot] = RenderVertexBufferView(widened_cached->ref, widened_cached->size);
+        continue;
+      }
+
+      ProfileZone upload_zone(kPhaseVertexUpload);
+      const Allocation allocation = ArenaAllocate(device, bytes);
+      if (!allocation) {
+        Drop(kDropNoArena, "the widened attribute stream could not be uploaded");
+        return false;
+      }
+
+      // Built in ordinary memory and written out once, for the same reason the
+      // ordinary stream copy below is: the arena is write-combined, and reading
+      // back out of it costs two orders of magnitude more than a read from RAM.
+      g_swap_scratch.resize(size_t(bytes));
+      for (uint32_t v = 0; v < vertices; ++v) {
+        const uint8_t* vertex = source.data + size_t(v) * source.stride;
+        uint8_t* out = g_swap_scratch.data() + size_t(v) * widened_stride;
+        for (uint32_t w = 0; w < widened_count; ++w) {
+          // k_8_8_8_8 is one packed word, so it swaps as a dword and x is the
+          // low byte afterwards, the same convention k_2_10_10_10 follows.
+          uint32_t packed;
+          std::memcpy(&packed, vertex + widened[w].guest_offset, 4);
+          packed = Swap32(packed);
+          const bool is_signed = ((widened[w].type >> 8) & 1u) != 0;
+          uint8_t* dest = out + widened[w].host_offset;
+          for (uint32_t c = 0; c < 4; ++c) {
+            const uint8_t raw = uint8_t((packed >> (8u * c)) & 0xFFu);
+            const uint16_t half = FloatToHalf(is_signed ? float(int8_t(raw)) : float(raw));
+            std::memcpy(dest + 2 * c, &half, 2);
+          }
+        }
+      }
+      std::memcpy(allocation.cpu, g_swap_scratch.data(), size_t(bytes));
+
+      g_vertex_bytes += bytes;
+      views[slot] = RenderVertexBufferView(allocation.ref, uint32_t(bytes));
+
+      StreamCacheEntry entry;
+      entry.source = source.data;
+      entry.bytes = uint32_t(bytes);
+      entry.stride = widened_stride;
+      entry.primitive = kWidenedCacheKind;
+      entry.ref = allocation.ref;
+      entry.size = uint32_t(bytes);
+      g_stream_cache.push_back(entry);
       continue;
     }
 

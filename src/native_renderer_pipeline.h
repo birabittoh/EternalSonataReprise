@@ -63,6 +63,46 @@ inline constexpr uint32_t kMaxPipelineStreams = 16;
 // constant fill does.
 inline constexpr uint32_t kNullInputSlot = kMaxPipelineStreams;
 
+// The input slot the widened attributes read from.
+//
+// A declaration element in an unnormalised integer format has no usable host
+// input layout format at all. The *_UINT spelling carries the right data, but
+// the emitted HLSL declares every vertex input as float4 and no host will feed
+// an integer typed input layout format into a float register: what arrives is
+// the raw bits, so a bone index of 3 reads as 4.2e-45, every skinned vertex
+// truncates to matrix 0, and the mesh stays in its bind pose while anything
+// transformed by an ordinary constant matrix keeps moving. This title uses
+// k_8_8_8_8 unnormalised for BLENDINDICES on every character, which is exactly
+// that failure.
+//
+// Rather than putting the declaration into the shader's key so those inputs
+// could be declared uint4, the elements are rebuilt into a stream of their own
+// on upload, four halves each, and read as R16G16B16A16_FLOAT. A half holds
+// every integer up to 2048 exactly, so an 8 bit index survives untouched, and
+// the guest's own stream keeps its stride and all of its other offsets. This is
+// the widening conversion the note on VertexFormatRepacksToSnorm8 below
+// describes as the way out if precision ever showed; it is cheaper here because
+// the elements that need it are few and narrow.
+inline constexpr uint32_t kWidenedInputSlot = kMaxPipelineStreams + 1;
+
+// Bytes one widened element occupies in that stream: four halves.
+inline constexpr uint32_t kWidenedElementBytes = 8;
+
+// One element rebuilt into the widened stream: where the upload reads it out of
+// the guest's vertex, and where the input layout expects it in the host one.
+struct GuestWidenedElement {
+  uint32_t guest_offset = 0;
+  uint32_t host_offset = 0;
+  uint32_t type = 0;
+};
+
+// The pipeline cache and the upload path have to agree about exactly which
+// elements this applies to, so both ask here. Only k_8_8_8_8 is widened: it is
+// the one this title declares, and it is also the one a half represents without
+// loss. A wider integer format would need a float stream instead, and is still
+// counted rather than silently mishandled.
+bool VertexFormatWidensToHalf4(uint32_t type);
+
 // Signed k_2_10_10_10 has no host input layout format in any of the three
 // backends: DXGI carries only the UNORM and UINT spellings, and Plume's own
 // R10G10B10A2_UNORM (added for the unsigned case) is the whole of what is

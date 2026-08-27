@@ -105,4 +105,12 @@ void GuestPipelineRenderRegisters(const GuestPipeline* pipeline, uint32_t* depth
 // path binds a zero-filled buffer to rather than any guest memory.
 const uint32_t* GuestPipelineSlotStreams(const GuestPipeline* pipeline, uint32_t* count);
 
+// The elements the upload path has to rebuild into the widened stream, which is
+// the host slot whose `slot_streams` entry is kWidenedInputSlot. `stream` is the
+// guest stream they are read out of and `stride` the host vertex size. Null when
+// the pipeline has none, which is every pipeline but the skinned ones.
+const GuestWidenedElement* GuestPipelineWidenedElements(const GuestPipeline* pipeline,
+                                                        uint32_t* count, uint32_t* stream,
+                                                        uint32_t* stride);
+
 }  // namespace eternalsonata
