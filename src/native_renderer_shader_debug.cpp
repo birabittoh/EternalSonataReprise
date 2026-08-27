@@ -229,6 +229,17 @@ std::vector<rex::ui::ShaderDebuggerEntry> GuestShaderSnapshot() {
       entry.active = active != 0 && frame - active <= 1;
       entry.profile_total_ns = state.profile_ns.load(std::memory_order_relaxed);
       entry.profile_draw_count = state.profile_draws.load(std::memory_order_relaxed);
+      // The other end of the same question: what identifier the dialog is being
+      // shown for the pair under investigation, so the number on screen can be
+      // compared against the number that comes back.
+      if ((slot == 40 && !pixel) || (slot == 58 && pixel)) {
+        static uint32_t published = 0;
+        if (published < 4) {
+          ++published;
+          REXLOG_WARN("native_renderer: shader debugger published {}_{:03d} as id 0x{:016X}",
+                      pixel ? "ps" : "vs", slot, entry.ucode_hash);
+        }
+      }
       out.push_back(entry);
     }
   }
@@ -322,6 +333,16 @@ rex::ui::ShaderDebuggerDetails GuestShaderDetails(uint64_t id) {
 }
 
 bool SetGuestShaderDisabled(uint64_t id, bool disabled) {
+  // Logged unconditionally: this is a human clicking a checkbox, so it is rare,
+  // and a silent rejection here looks exactly like the game ignoring the toggle.
+  // Disabling vs_040 hides the puddle while disabling ps_058 does not, on draws
+  // known to use both, which is only possible if the pixel id never reaches a
+  // slot. Print what actually arrived.
+  REXLOG_WARN(
+      "native_renderer: shader debugger asked to set disabled={} for id 0x{:016X} (decodes as {} "
+      "slot {}, in range {})",
+      disabled, id, (id & kPixelBit) != 0 ? "pixel" : "vertex",
+      uint32_t(id & (kPixelBit - 1)), id < (kPixelBit * 2));
   // An identifier this renderer never issued is not an error: shaders.toml is
   // shared with the emulated-Xenos backend, whose identifiers are real microcode
   // hashes and mean nothing here.

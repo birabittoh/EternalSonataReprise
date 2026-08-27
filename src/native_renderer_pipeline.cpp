@@ -602,6 +602,19 @@ void GuestPipelineShaderSlots(const GuestPipeline* pipeline, int* vertex_slot, i
     *pixel_slot = pipeline != nullptr ? int(pipeline->key.pixel_slot) : -1;
 }
 
+void GuestPipelineRenderRegisters(const GuestPipeline* pipeline, uint32_t* depth_control,
+                                  uint32_t* blend_control, uint32_t* mode_cntl,
+                                  uint32_t* color_mask) {
+  if (depth_control)
+    *depth_control = pipeline != nullptr ? pipeline->key.depth_control : 0;
+  if (blend_control)
+    *blend_control = pipeline != nullptr ? pipeline->key.blend_control : 0;
+  if (mode_cntl)
+    *mode_cntl = pipeline != nullptr ? pipeline->key.mode_cntl : 0;
+  if (color_mask)
+    *color_mask = pipeline != nullptr ? pipeline->key.color_mask : 0;
+}
+
 const uint32_t* GuestPipelineSlotStreams(const GuestPipeline* pipeline, uint32_t* count) {
   if (pipeline == nullptr) {
     if (count)
