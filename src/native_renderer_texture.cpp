@@ -4,8 +4,10 @@
 
 #include "native_renderer_texture.h"
 
+#include <cstdio>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -17,6 +19,7 @@
 #endif
 
 #include "native_renderer_frame.h"
+#include "native_renderer_readback.h"
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_profile.h"
 
@@ -142,14 +145,42 @@ const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t raw_base_addr
 // `block` is the edge of one addressable unit in texels, which is 1 for an
 // uncompressed format and 4 for the DXT ones. Tiling works in these units, not
 // in texels, which is the whole reason it is carried here.
+//
+// `expand` is how a guest unit that has no host format of its own is widened on
+// the way to the GPU. Plume's RenderFormat list has no 16 bit colour format at
+// all, so the packed 5:6:5 and 1:5:5:5 the game takes its photos in are read out
+// of guest memory as the two byte units they are -- which is what tiling and the
+// endian swap need -- and then unpacked into B8G8R8A8 before the upload.
+enum class Expand {
+  kNone,
+  k5_6_5,
+  k1_5_5_5,
+};
+
 struct FormatInfo {
   RenderFormat host = RenderFormat::UNKNOWN;
   uint32_t block_bytes = 0;
   uint32_t block = 1;
+  Expand expand = Expand::kNone;
 };
+
+// Bytes one addressable unit costs on the host, which is the guest's own size
+// unless the unit is being widened on the way up.
+uint32_t HostBlockBytes(const FormatInfo& info) {
+  return info.expand == Expand::kNone ? info.block_bytes : 4;
+}
 
 bool MapTextureFormat(uint32_t format, FormatInfo& out) {
   switch (format) {
+    // k_1_5_5_5 and k_5_6_5. The in-game photo feature renders into one of
+    // these, and a refused format is drawn with the 1x1 white placeholder, which
+    // is exactly what a photo that comes out completely white looks like.
+    case 3:
+      out = {RenderFormat::B8G8R8A8_UNORM, 2, 1, Expand::k1_5_5_5};
+      return true;
+    case 4:
+      out = {RenderFormat::B8G8R8A8_UNORM, 2, 1, Expand::k5_6_5};
+      return true;
     // k_8_8_8_8. Taken as BGRA rather than RGBA to match the frame layer's own
     // colour targets, which are B8G8R8A8_UNORM: a resolve destination and an
     // asset both arrive here as format 6, and they cannot disagree about
@@ -506,6 +537,48 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
   return true;
 }
 
+// Unpack a 16 bit guest colour into the B8G8R8A8 the host format is in.
+//
+// `in` is already untiled and byte swapped, so a plain uint16 load reads the
+// value the PowerPC wrote. The channel order is the one the Xenos names the
+// format for, with the widest channel in the middle for 5:6:5 and the alpha bit
+// at the top for 1:5:5:5; the low bits are replicated upward rather than zero
+// filled so that an all-ones channel comes out as 255 rather than 248.
+void ExpandRows(const std::vector<uint8_t>& in, uint32_t in_row_bytes, uint32_t width,
+                uint32_t height, Expand expand, uint32_t out_row_bytes,
+                std::vector<uint8_t>& out) {
+  out.assign(size_t(out_row_bytes) * height, 0);
+  for (uint32_t y = 0; y < height; ++y) {
+    const uint8_t* source = in.data() + size_t(y) * in_row_bytes;
+    uint8_t* dest = out.data() + size_t(y) * out_row_bytes;
+    for (uint32_t x = 0; x < width; ++x) {
+      uint16_t value = 0;
+      std::memcpy(&value, source + size_t(x) * 2, 2);
+      uint8_t r = 0, g = 0, b = 0, a = 255;
+      if (expand == Expand::k5_6_5) {
+        const uint32_t r5 = (value >> 11) & 0x1F;
+        const uint32_t g6 = (value >> 5) & 0x3F;
+        const uint32_t b5 = value & 0x1F;
+        r = uint8_t((r5 << 3) | (r5 >> 2));
+        g = uint8_t((g6 << 2) | (g6 >> 4));
+        b = uint8_t((b5 << 3) | (b5 >> 2));
+      } else {
+        const uint32_t r5 = (value >> 10) & 0x1F;
+        const uint32_t g5 = (value >> 5) & 0x1F;
+        const uint32_t b5 = value & 0x1F;
+        r = uint8_t((r5 << 3) | (r5 >> 2));
+        g = uint8_t((g5 << 3) | (g5 >> 2));
+        b = uint8_t((b5 << 3) | (b5 >> 2));
+        a = (value & 0x8000) != 0 ? 255 : 0;
+      }
+      dest[x * 4 + 0] = b;
+      dest[x * 4 + 1] = g;
+      dest[x * 4 + 2] = r;
+      dest[x * 4 + 3] = a;
+    }
+  }
+}
+
 // Decode and upload. `existing` is null on a cache miss, in which case a texture
 // is created; on a refresh it is the texture already in the cache and the texels
 // are copied over it in place. Reusing the object is what makes a refresh safe:
@@ -516,6 +589,13 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
 std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const TextureFetch& fetch,
                                                const FormatInfo& info, RenderTexture* existing) {
   ProfileZone zone(kPhaseTextureUpload);
+
+  // If this address is a resolve destination, guest memory holds nothing the
+  // host ever wrote and the decode below would read whatever the allocation
+  // came with. Reaching here at all means the frame layer's own lookup missed,
+  // so the readback is the only thing that can put an image there. It is also
+  // what unprotects pages the readback path may have armed.
+  ReadbackFillForRead(fetch);
   RenderDevice* device = PlumeDevice();
   RenderCommandQueue* queue = PlumeQueue();
   if (device == nullptr || queue == nullptr)
@@ -527,16 +607,24 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
   // Plume takes a placed footprint's row width in *texels* and derives the row
   // pitch as ceil(rowWidth / block) * block_bytes, so the alignment has to be
   // chosen in blocks and handed back as texels.
-  const uint32_t row_bytes = width_blocks * info.block_bytes;
+  const uint32_t host_block_bytes = HostBlockBytes(info);
+  const uint32_t row_bytes = width_blocks * host_block_bytes;
   const uint32_t upload_row_bytes = AlignUp(row_bytes, kUploadRowAlignment);
-  const uint32_t upload_row_blocks = upload_row_bytes / info.block_bytes;
+  const uint32_t upload_row_blocks = upload_row_bytes / host_block_bytes;
   const uint32_t upload_row_texels = upload_row_blocks * info.block;
+
+  // A widened format is read at its own packed guest pitch and unpacked into the
+  // upload pitch afterwards; everything else is read straight into the layout the
+  // upload wants.
+  const bool expanding = info.expand != Expand::kNone;
+  const uint32_t read_row_bytes =
+      expanding ? width_blocks * info.block_bytes : upload_row_bytes;
 
   std::vector<uint8_t> texels;
   if (!ReadTexels(GuestPhysicalPointer(memory_base, fetch.raw_base_address,
                                        SourceExtentBytes(fetch, info)),
                   fetch, info,
-                  upload_row_bytes, texels)) {
+                  read_row_bytes, texels)) {
     // ReadTexels has already counted why, so this does not count it again.
     // Only on the first attempt at an address: a retry that fails again is the
     // expected case for a slot holding a stale fetch constant, and logging it
@@ -556,6 +644,44 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
           GuestRangeReadableBytes(memory_base + (0x80000000u | offset), wanted));
     }
     return nullptr;
+  }
+
+  if (expanding) {
+    // What the 16 bit units actually look like, once, per format.
+    //
+    // Brownish, low contrast output has two possible causes that argue the same
+    // way and are only separable from the bytes: a unit that was never byte
+    // swapped, so the channels straddle the wrong bit fields, or the right value
+    // with red and blue the wrong way round. Both raw and swapped are printed
+    // with what each would decode to, so the log says which reading is a picture
+    // and which is noise.
+    static bool reported[2] = {false, false};
+    const size_t which = info.expand == Expand::k5_6_5 ? 0 : 1;
+    if (!reported[which] && texels.size() >= 16) {
+      reported[which] = true;
+      std::string raw;
+      std::string swapped;
+      for (uint32_t i = 0; i < 8; ++i) {
+        uint16_t value = 0;
+        std::memcpy(&value, texels.data() + size_t(i) * 2, 2);
+        const uint16_t other = uint16_t((value >> 8) | (value << 8));
+        raw += fmt::format(" {:04X}(r{} g{} b{})", value, (value >> 11) & 0x1F, (value >> 5) & 0x3F,
+                           value & 0x1F);
+        swapped += fmt::format(" {:04X}(r{} g{} b{})", other, (other >> 11) & 0x1F,
+                               (other >> 5) & 0x3F, other & 0x1F);
+      }
+      REXLOG_WARN(
+          "native_renderer: expand fmt {} {}x{} {} pitch {} endian {} at 0x{:08X}\n"
+          "  as read: {}\n"
+          "  swapped:{}",
+          fetch.format, fetch.width, fetch.height, fetch.tiled ? "tiled" : "linear", fetch.pitch,
+          fetch.endianness, fetch.base_address, raw, swapped);
+    }
+
+    std::vector<uint8_t> widened;
+    ExpandRows(texels, read_row_bytes, width_blocks, height_blocks, info.expand, upload_row_bytes,
+               widened);
+    texels.swap(widened);
   }
 
   std::unique_ptr<RenderTexture> created;
@@ -705,6 +831,11 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     // bound hundreds of times before the frame ends.
     if (candidate->hashed_frame != g_frame) {
       candidate->hashed_frame = g_frame;
+      // Before the hash rather than before the decode the hash may trigger: the
+      // hash is what decides whether the contents changed, so hashing memory the
+      // readback has not filled in yet would conclude that a render target that
+      // changes every frame never changes at all.
+      ReadbackFillForRead(fetch);
       const uint64_t hash = HashSource(EntrySourcePointer(candidate, memory_base, fetch),
                                        candidate->source_bytes);
       if (hash != candidate->content_hash) {

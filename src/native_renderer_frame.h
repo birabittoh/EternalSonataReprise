@@ -46,9 +46,15 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil);
 // title renders 720p through EDRAM in horizontal bands and resolves each band
 // to its own row range of the same destination texture, so a resolve that
 // ignored the offset would show one band stretched over the whole screen.
-void FrameResolve(uint32_t source, uint32_t dest_address, uint32_t dest_width,
-                  uint32_t dest_height, int32_t src_x1, int32_t src_y1, int32_t src_x2,
-                  int32_t src_y2, int32_t dest_x, int32_t dest_y);
+//
+// `dest_fetch` is the destination resource's own fetch constant rather than
+// just its address and extent, because the readback path has to lay the image
+// back out the way the guest expects to read it: format, tiling, pitch and
+// endianness all come from there. `memory_base` is the guest memory base the
+// same path writes through.
+void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& dest_fetch,
+                  int32_t src_x1, int32_t src_y1, int32_t src_x2, int32_t src_y2, int32_t dest_x,
+                  int32_t dest_y);
 
 // Counters for the swap-time summary.
 // Look up a resolved texture by guest base address. Returns nullptr if the
@@ -67,6 +73,12 @@ void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t he
 // of it, so a shader that samples the scene behind itself can end up reading
 // the very image it is writing.
 const void* FrameCurrentColorTexture();
+
+// The host frame currently being recorded, counted at the present. The readback
+// path needs it to know whether a copy it recorded has actually run yet: a
+// resolve in an earlier frame has completed by definition, because the present
+// waits on its fence.
+uint64_t FrameIndex();
 
 void LogFrameSummary();
 

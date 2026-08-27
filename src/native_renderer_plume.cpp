@@ -256,6 +256,13 @@ bool InitPlumeBackend(void* window_handle) {
 
 bool PlumeBackendReady() { return g_ready.load(std::memory_order_acquire); }
 
+bool PlumeFlushGuestWork() {
+  if (!g_ready.load(std::memory_order_acquire) || !g_recording)
+    return false;
+  FlushWithoutPresent();
+  return true;
+}
+
 void PlumePresentFrame() {
   if (!g_ready.load(std::memory_order_acquire))
     return;
