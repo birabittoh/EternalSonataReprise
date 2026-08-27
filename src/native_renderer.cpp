@@ -22,6 +22,48 @@ bool NativeRendererEnabled() {
   return rex::cvar::GetFlagByName("gpu_plugin") == kNativeRendererPluginName;
 }
 
+namespace {
+
+// Storage behind the `vsync` cvar registered below. Deliberately a mirror of
+// what REXCVAR_DEFINE_BOOL would have produced, down to the setter accepting
+// anything and treating everything but true/1/yes as false, so the cvar reads
+// and writes exactly like the Xenos plugin's own.
+bool g_vsync = true;
+
+}  // namespace
+
+void RegisterNativeRendererCvars() {
+  if (!NativeRendererEnabled())
+    return;
+
+  // Same name, type, category, description and default as
+  // REXCVAR_DEFINE_BOOL(vsync, true, "GPU", ...) in the SDK's
+  // command_processor.cpp, which is compiled into rexgpu-xenos and so only
+  // exists when that plugin is loaded. Registering it here rather than
+  // statically is what keeps the two from colliding: a static definition would
+  // win the registry slot before the plugin ever loaded, leaving the plugin's
+  // own storage frozen at whatever it read at registration time.
+  //
+  // Anything the config file, command line or environment set for `vsync` is
+  // still pending at this point and gets applied by RegisterFlag, as is the
+  // game's own default for it (kGameDefaults in settings.cpp), which is what
+  // makes this default the same under either renderer.
+  rex::cvar::FlagEntry entry;
+  entry.name = "vsync";
+  entry.type = rex::cvar::FlagType::Boolean;
+  entry.category = "GPU";
+  entry.description = "Enable vertical sync";
+  entry.setter = [](std::string_view value) {
+    g_vsync = value == "true" || value == "1" || value == "yes";
+    return true;
+  };
+  entry.getter = []() { return std::string(g_vsync ? "true" : "false"); };
+  entry.command_callback = [](std::string_view) {};
+  entry.lifecycle = rex::cvar::Lifecycle::kHotReload;
+  entry.default_value = "true";
+  rex::cvar::RegisterFlag(std::move(entry));
+}
+
 void InitNativeRenderer(rex::ui::Window* window) {
   if (!NativeRendererEnabled())
     return;

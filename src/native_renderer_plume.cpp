@@ -69,6 +69,26 @@ std::atomic<bool> g_ready{false};
 // arrives.
 std::atomic<bool> g_resize_pending{false};
 
+// Same shape as the resize, and for the same reason: the `vsync` cvar can be
+// changed from the settings overlay at any time, but the swap chain is only
+// safe to touch from the thread that presents. The change callback records the
+// request; the next present applies it.
+std::atomic<bool> g_vsync_wanted{false};
+std::atomic<bool> g_vsync_applied{false};
+
+bool ReadVsyncCvar() {
+  return rex::cvar::GetFlagByName("vsync") == "true";
+}
+
+void ApplyVsyncIfChanged() {
+  const bool wanted = g_vsync_wanted.load(std::memory_order_acquire);
+  if (wanted == g_vsync_applied.load(std::memory_order_relaxed))
+    return;
+  g_backend.swap_chain->setVsyncEnabled(wanted);
+  g_vsync_applied.store(wanted, std::memory_order_relaxed);
+  REXLOG_INFO("native_renderer: vsync {}", wanted ? "on" : "off");
+}
+
 // The SDK's ImGui drawer, once the app hands it over. Null until then, and
 // null forever if the overlay drawer could not be created, in which case the
 // frame is just the clear.
@@ -231,8 +251,22 @@ bool InitPlumeBackend(void* window_handle) {
   // reads as exactly 30 fps regardless of how much over it is. Measured on the
   // heavy scenes: 28.7 ms/frame with vsync on became a flat 16.67 ms cap hit
   // with it off.
-  const bool vsync = rex::cvar::GetFlagByName("vsync") == "true";
+  // The cvar itself is registered by RegisterNativeRendererCvars(), because the
+  // one the SDK defines lives in the Xenos plugin and no plugin is loaded here.
+  // It is hot-reloadable there, so it is hot-reloadable here too: the callback
+  // only records the request, and the next present applies it (Vulkan reports
+  // needsResize() until the present mode actually matches, which the present's
+  // existing resize check then honours).
+  const bool vsync = ReadVsyncCvar();
   g_backend.swap_chain->setVsyncEnabled(vsync);
+  g_vsync_wanted.store(vsync, std::memory_order_release);
+  g_vsync_applied.store(vsync, std::memory_order_relaxed);
+  // Read back through the registry rather than parsing the callback's value
+  // string: the setter has already run by then, and it is the one place that
+  // knows "1" and "yes" mean true as well.
+  rex::cvar::RegisterChangeCallback("vsync", [](std::string_view, std::string_view) {
+    g_vsync_wanted.store(ReadVsyncCvar(), std::memory_order_release);
+  });
 
   // The swap chain has no textures until the first resize, so this is required
   // rather than defensive; the example does the same.
@@ -267,6 +301,10 @@ void PlumePresentFrame() {
   if (!g_ready.load(std::memory_order_acquire))
     return;
   ProfileZone present_zone(kPhasePresent);
+
+  // Before the resize check, because on Vulkan a present mode change is exactly
+  // what needsResize() reports.
+  ApplyVsyncIfChanged();
 
   // Both the queued resize and the swap chain's own "I need one" answer, since
   // a minimise or a DPI change can invalidate it without an event we hooked.
