@@ -970,6 +970,16 @@ TextureFetch DecodeTextureFetch(const uint32_t words[6]) {
   // size_2d: 13 bits each, stored with one subtracted.
   out.width = (words[2] & 0x1FFFu) + 1u;
   out.height = ((words[2] >> 13) & 0x1FFFu) + 1u;
+
+  // dword_4/dword_5, per xe_gpu_texture_fetch_t. Needed because this title
+  // allocates a texture's mip chain as a *separate* heap block from its base
+  // (0x8225DFE0 calls the allocator twice and writes the two addresses to
+  // header +0x20 and +0x30), and skips the second allocation entirely when the
+  // mip size is zero, leaving the mip address field reading 0.
+  out.mip_min_level = (words[4] >> 2) & 0xFu;
+  out.mip_max_level = (words[4] >> 6) & 0xFu;
+  out.packed_mips = ((words[5] >> 11) & 1u) != 0;
+  out.mip_address = ((words[5] >> 12) & 0xFFFFFu) << 12;
   return out;
 }
 
