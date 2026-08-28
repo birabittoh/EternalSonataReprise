@@ -1275,9 +1275,10 @@ void SetUserLanguageSetting(int index) {
 
 void SetResolutionSetting(const char* value) {
   auto* res_entry = rex::cvar::GetFlagInfo("resolution");
+  // resolution_scale is defined by the Xenos GPU plugin, so it does not exist
+  // at all when another plugin (plume) is loaded
   auto* scale_entry = rex::cvar::GetFlagInfo("resolution_scale");
-  if (!res_entry || !res_entry->setter || !scale_entry || !scale_entry->setter ||
-      res_entry->getter() == value) {
+  if (!res_entry || !res_entry->setter || res_entry->getter() == value) {
     return;
   }
   // resolution and resolution_scale are both kRequiresRestart -- go through
@@ -1288,8 +1289,10 @@ void SetResolutionSetting(const char* value) {
   // banner -- notice a resolution change made from the native Options row,
   // not just from this file's own DrawResolutionRow.
   rex::cvar::SetFlagByName("resolution", value, /*persist=*/true);
-  rex::cvar::SetFlagByName("resolution_scale", std::to_string(ResolutionScaleFor(value)),
-                           /*persist=*/true);
+  if (scale_entry && scale_entry->setter) {
+    rex::cvar::SetFlagByName("resolution_scale", std::to_string(ResolutionScaleFor(value)),
+                             /*persist=*/true);
+  }
   SaveUserSettings();
 }
 

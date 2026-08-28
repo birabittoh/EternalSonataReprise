@@ -1205,7 +1205,11 @@ int ResolutionGetIndex() {
 
 void ResolutionSetIndex(u8* base, int idx) {
   eternalsonata::SetResolutionSetting(kResolutionIds[idx]);
-  REXLOG_INFO("[options] resolution -> {}", kResolutionIds[idx]);
+  // Logged from the cvar rather than from the argument: the row reads its
+  // selection back out of the cvar every frame, so a set that did not take is
+  // a row that appears stuck, and this is what tells the two apart.
+  REXLOG_INFO("[options] resolution -> {} (cvar now {})", kResolutionIds[idx],
+              rex::cvar::GetFlagByName("resolution"));
 }
 
 // Text language. The guest reads its language once at boot, so this only
