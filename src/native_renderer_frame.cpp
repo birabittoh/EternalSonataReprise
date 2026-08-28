@@ -777,12 +777,11 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   const uint32_t dest_width = dest_fetch.width;
   const uint32_t dest_height = dest_fetch.height;
 
-  // 4 is the depth stencil. Resolving depth out is a real thing this title does,
-  // but it is not what the screen shows and the host depth format does not copy
-  // into a colour texture, so it is left alone for now.
-  if (source >= d3d::kColorSurfaceCount)
+  // 4 is the depth stencil.
+  const bool is_depth = source == d3d::kColorSurfaceCount;
+  if (source > d3d::kColorSurfaceCount)
     return;
-  GuestTarget* target = BoundColorTarget(source);
+  GuestTarget* target = is_depth ? BoundDepthTarget() : BoundColorTarget(source);
   if (target == nullptr || dest_address == 0 || dest_width == 0 || dest_height == 0) {
     ++g_resolves_dropped;
     return;
@@ -882,9 +881,14 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     created->height = dest_height;
     // A colour target rather than a plain texture: the copy needs it as a copy
     // destination now, and a later draw needs to sample it, but the guest also
-    // resolves into textures it goes on to render into.
+    // resolves into textures it goes on to render into. Depth has no such case
+    // -- nothing renders into a resolved depth mask -- so a plain texture is
+    // enough, in the R32_FLOAT view of the same bits D32_FLOAT holds.
     created->texture =
-        device->createTexture(RenderTextureDesc::ColorTarget(dest_width, dest_height, kColorFormat));
+        is_depth ? device->createTexture(
+                       RenderTextureDesc::Texture2D(dest_width, dest_height, 1, RenderFormat::R32_FLOAT))
+                 : device->createTexture(
+                       RenderTextureDesc::ColorTarget(dest_width, dest_height, kColorFormat));
     if (created->texture) {
       REXLOG_INFO("native_renderer: resolve destination 0x{:08X} is {}x{}", dest_address,
                   dest_width, dest_height);
@@ -921,9 +925,12 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
 
   // And the same region again, out to a buffer the guest's own CPU can be given
   // if it ever asks. The region is the one just written, in the destination
-  // image's coordinates rather than the source surface's.
-  const RenderBox readback_box(place_x, place_y, place_x + (x2 - x1), place_y + (y2 - y1));
-  ReadbackRecordCopy(commands, destination, dest_fetch, memory_base, readback_box);
+  // image's coordinates rather than the source surface's. Not for depth: see
+  // the comment above on why a depth resolve never sets this up.
+  if (!is_depth) {
+    const RenderBox readback_box(place_x, place_y, place_x + (x2 - x1), place_y + (y2 - y1));
+    ReadbackRecordCopy(commands, destination, dest_fetch, memory_base, readback_box);
+  }
 
   // Leave the destination in the layout a draw will sample it in.
   //
@@ -960,7 +967,10 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   RippleNoteResolve(target, destination, destination_created);
 
   ++g_resolves_copied;
-  g_present_texture = destination;
+  // The present blit always wants the last colour resolve; a depth resolve
+  // must not steal that slot from it.
+  if (!is_depth)
+    g_present_texture = destination;
 }
 
 void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t height) {
