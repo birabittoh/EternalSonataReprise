@@ -172,6 +172,14 @@ struct TextureFetch {
   uint32_t pitch = 0;         // in pixels, stored >> 5, corrected here
   bool tiled = false;
   bool stacked = false;
+
+  // The mip half of dword_4/dword_5. Only `mip_address == 0` with a non-zero
+  // `mip_max_level` is acted on, and only to locate level 0; nothing here
+  // uploads a mip chain. See Level0ByteOffset in the texture mirror.
+  uint32_t mip_address = 0;      // already shifted up by 12, raw (unfixed)
+  uint32_t mip_min_level = 0;
+  uint32_t mip_max_level = 0;
+  bool packed_mips = false;
 };
 
 // Decode sampler `stage`'s fetch constant out of the guest device.
