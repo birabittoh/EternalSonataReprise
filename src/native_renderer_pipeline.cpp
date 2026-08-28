@@ -136,6 +136,25 @@ void ReportRefusalPair(RefusalReason reason, int vertex_slot, int pixel_slot) {
               kRefusalNames[reason]);
 }
 
+// A topology refusal is the one case where the reason alone says nothing: what
+// is needed is the type number, so it joins the pair key and gets its own line.
+uint32_t g_refused_topologies[16] = {};
+uint32_t g_refused_topology_count = 0;
+
+void ReportRefusedTopology(uint32_t primitive_type, int vertex_slot, int pixel_slot) {
+  const uint32_t key =
+      (primitive_type << 24) | (uint32_t(vertex_slot & 0xFFF) << 12) | uint32_t(pixel_slot & 0xFFF);
+  for (uint32_t i = 0; i < g_refused_topology_count; ++i) {
+    if (g_refused_topologies[i] == key)
+      return;
+  }
+  if (g_refused_topology_count >= std::size(g_refused_topologies))
+    return;
+  g_refused_topologies[g_refused_topology_count++] = key;
+  REXLOG_WARN("native_renderer: no host topology for Xenos primitive type {} (vs={} ps={})",
+              primitive_type, vertex_slot, pixel_slot);
+}
+
 void Refuse(RefusalReason reason, const char* detail, int vertex_slot = -1, int pixel_slot = -1) {
   ++g_refusals[reason];
   ReportRefusalPair(reason, vertex_slot, pixel_slot);
@@ -325,6 +344,14 @@ RenderPrimitiveTopology MapTopology(uint32_t primitive_type) {
     // the pipeline it needs is an ordinary triangle list. The expansion is the
     // vertex path's job; this only has to agree with it.
     case 8:
+      return RenderPrimitiveTopology::TRIANGLE_LIST;
+
+    // QUAD_LIST is four corners in winding order per quad, and like
+    // RECTANGLE_LIST it has no host topology. It is the easier of the two: all
+    // four vertices are supplied, so the expansion is a reorder rather than a
+    // synthesis. The vertex path splits each quad into two triangles, so what
+    // this has to agree with is again an ordinary triangle list.
+    case 13:
       return RenderPrimitiveTopology::TRIANGLE_LIST;
 
     default:
@@ -754,7 +781,11 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
 
   const RenderPrimitiveTopology topology = MapTopology(request.primitive_type);
   if (topology == RenderPrimitiveTopology::UNKNOWN) {
-    Refuse(kRefuseTopology, "see the Xenos PrimitiveType histogram in the draw summary", request.vertex_slot, request.pixel_slot);
+    // The primitive type is the whole content of this refusal, so report it
+    // rather than pointing at a histogram that was never written. Distinct
+    // types get distinct lines because the pair key carries the type.
+    ReportRefusedTopology(request.primitive_type, request.vertex_slot, request.pixel_slot);
+    Refuse(kRefuseTopology, "the type is named per (vs, ps) pair above");
     return nullptr;
   }
 
