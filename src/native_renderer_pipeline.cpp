@@ -1005,6 +1005,15 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
     desc.cullMode = RenderCullMode::NONE;
   }
 
+  // Clip against the near and far planes rather than clamping to them. Plume
+  // defaults this off, which is D3D12's DepthClipEnable=FALSE, and the console
+  // clips unless PA_CL_CLIP_CNTL says otherwise. Without it a draw the guest
+  // has deliberately pushed outside the frustum is not discarded: its vertices
+  // are merely clamped, and one with a near zero or negative w smears across
+  // the whole target. That is what covered the in-game photo's render pass in
+  // flat brown while the identical draw was harmless on screen.
+  desc.depthClipEnabled = true;
+
   if (request.has_color_target && state.valid)
     desc.renderTargetBlend[0] = MapBlend(state);
 
