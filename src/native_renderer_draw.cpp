@@ -142,6 +142,12 @@ uint64_t g_stream_cache_hits = 0;
 uint64_t g_rect_draws = 0;
 uint64_t g_rect_fallbacks = 0;
 
+// QUAD_LIST draws, split by which expansion they took. Both are correct; the
+// split is here because only one of the two had a way to be seen on screen
+// when it was written, and a zero in either column says the other is untested.
+uint64_t g_quad_draws = 0;
+uint64_t g_quad_indexed_draws = 0;
+
 // Draws that arrive with the fixed function alpha test on, which the pixel
 // shader has to do instead. Zero would mean this title never uses it.
 uint64_t g_alpha_test_draws = 0;
@@ -1763,6 +1769,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   }
 
   const bool rect_list = call.primitive_type == 8;
+  const bool quad_list = call.primitive_type == 13;
 
   // The vertex streams. Each host slot is filled from the guest stream the
   // pipeline recorded for it, or from the zero buffer for the missing-attribute
@@ -1897,7 +1904,10 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     // is what has to be there; a non-indexed one reads exactly what it draws.
     // The rectangle expansion turns each triple into two triangles, which is
     // where the vertex count changes.
+    // An indexed quad list expands its *indices* instead, below, so only the
+    // non-indexed case duplicates vertices here.
     const bool expand = rect_list && !call.indexed && slot_count == 1 && call.count >= 3;
+    const bool expand_quads = quad_list && !call.indexed && slot_count == 1 && call.count >= 4;
     uint32_t source_vertices = call.indexed ? stream.size / stream.stride : call.count;
     if (source_vertices == 0)
       continue;
@@ -1905,7 +1915,13 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
       source_vertices = stream.size / stream.stride;
 
     const uint32_t triples = expand ? source_vertices / 3 : 0;
-    const uint32_t out_vertices = expand ? triples * 6 : source_vertices;
+    const uint32_t quads = expand_quads ? source_vertices / 4 : 0;
+    const uint32_t out_vertices =
+        expand ? triples * 6 : expand_quads ? quads * 6 : source_vertices;
+
+    // Which expansion produced the upload, so the per-frame stream cache never
+    // hands a rectangle expansion to a quad draw off the same source pointer.
+    const uint32_t cache_kind = expand ? 8u : expand_quads ? 13u : 0u;
     const uint64_t out_bytes = uint64_t(out_vertices) * stream.stride;
     if (out_bytes == 0)
       continue;
@@ -1935,7 +1951,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     StreamCacheEntry* cached = nullptr;
     for (auto& entry : g_stream_cache) {
       if (entry.source == stream.data && entry.bytes == uint32_t(out_bytes) &&
-          entry.stride == stream.stride && entry.primitive == (expand ? 8u : 0u)) {
+          entry.stride == stream.stride && entry.primitive == cache_kind) {
         cached = &entry;
         break;
       }
@@ -1988,6 +2004,27 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
             SwapVertex(g_swap_scratch.data() + size_t(v) * stride, plan);
           std::memcpy(allocation.cpu, g_swap_scratch.data(), bytes);
         }
+      } else if (expand_quads) {
+        // A quad list supplies all four corners in winding order, so unlike a
+        // rectangle list nothing has to be synthesised and no diagonal has to
+        // be worked out: each quad becomes the two triangles (0,1,2) and
+        // (0,2,3), which share the 0-2 diagonal and therefore wind the same
+        // way. Swapped in cached memory and written to the arena once, for the
+        // write-combined reason spelled out in the ordinary path below.
+        const uint32_t stride = stream.stride;
+        const size_t source_bytes = size_t(quads) * 4 * stride;
+        g_swap_scratch.resize(source_bytes);
+        std::memcpy(g_swap_scratch.data(), stream.data, source_bytes);
+        for (uint32_t v = 0; v < quads * 4; ++v)
+          SwapVertex(g_swap_scratch.data() + size_t(v) * stride, plan);
+
+        static constexpr uint32_t kQuadOrder[6] = {0, 1, 2, 0, 2, 3};
+        for (uint32_t quad = 0; quad < quads; ++quad) {
+          const uint8_t* source = g_swap_scratch.data() + size_t(quad) * 4 * stride;
+          uint8_t* out = allocation.cpu + size_t(quad) * 6 * stride;
+          for (uint32_t v = 0; v < 6; ++v)
+            std::memcpy(out + size_t(v) * stride, source + size_t(kQuadOrder[v]) * stride, stride);
+        }
       } else {
         // Swapped in ordinary memory and written out once, rather than swapped
         // in place in the arena.
@@ -2014,16 +2051,22 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
       entry.source = stream.data;
       entry.bytes = uint32_t(out_bytes);
       entry.stride = stream.stride;
-      entry.primitive = expand ? 8u : 0u;
+      entry.primitive = cache_kind;
       entry.ref = allocation.ref;
       entry.size = uint32_t(out_bytes);
       g_stream_cache.push_back(entry);
     }
 
-    if (expand) {
+    if (expand || expand_quads) {
       draw_count = out_vertices;
       expanded = true;
     }
+  }
+
+  if (quad_list) {
+    ++g_quad_draws;
+    if (call.indexed)
+      ++g_quad_indexed_draws;
   }
 
   if (rect_list) {
@@ -2038,29 +2081,47 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 
   // Indices.
   RenderIndexBufferView index_view;
+  uint32_t index_count = call.count;
   if (call.indexed) {
     ProfileZone index_zone(kPhaseIndexUpload);
     if (call.indices == nullptr) {
       Drop(kDropIndicesMissing, "SetIndices was never called, or its buffer decodes as null");
       return false;
     }
-    const uint32_t index_bytes = call.count * (call.index_32bit ? 4u : 2u);
+    // An indexed quad list expands here rather than in the vertex path: the
+    // four corners are already distinct entries in the index buffer, so each
+    // quad becomes six indices in the same (0,1,2)(0,2,3) order the
+    // non-indexed expansion uses, and the vertex buffer is left alone.
+    const uint32_t quads = quad_list ? call.count / 4 : 0;
+    index_count = quad_list ? quads * 6 : call.count;
+    const uint32_t index_stride = call.index_32bit ? 4u : 2u;
+    const uint32_t index_bytes = index_count * index_stride;
     const Allocation allocation = ArenaAllocate(device, index_bytes);
     if (!allocation) {
       Drop(kDropNoArena, "an index upload could not be allocated");
       return false;
     }
+
+    // Where output index i reads from in the guest's buffer. Identity for
+    // everything except a quad list.
+    const auto source_index = [&](uint32_t i) -> uint32_t {
+      if (!quad_list)
+        return i;
+      static constexpr uint32_t kQuadOrder[6] = {0, 1, 2, 0, 2, 3};
+      return (i / 6) * 4 + kQuadOrder[i % 6];
+    };
+
     if (call.index_32bit) {
-      for (uint32_t i = 0; i < call.count; ++i) {
+      for (uint32_t i = 0; i < index_count; ++i) {
         uint32_t value;
-        std::memcpy(&value, call.indices + 4 * i, 4);
+        std::memcpy(&value, call.indices + 4 * source_index(i), 4);
         value = Swap32(value);
         std::memcpy(allocation.cpu + 4 * i, &value, 4);
       }
     } else {
-      for (uint32_t i = 0; i < call.count; ++i) {
+      for (uint32_t i = 0; i < index_count; ++i) {
         uint16_t value;
-        std::memcpy(&value, call.indices + 2 * i, 2);
+        std::memcpy(&value, call.indices + 2 * source_index(i), 2);
         value = Swap16(value);
         std::memcpy(allocation.cpu + 2 * i, &value, 2);
       }
@@ -2347,7 +2408,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 
   if (call.indexed) {
     commands->setIndexBuffer(&index_view);
-    commands->drawIndexedInstanced(call.count, 1, 0, call.base_vertex, 0);
+    commands->drawIndexedInstanced(index_count, 1, 0, call.base_vertex, 0);
   } else {
     commands->drawInstanced(draw_count, 1, 0, 0);
   }
@@ -2393,10 +2454,10 @@ void LogGuestDrawSummary() {
   REXLOG_INFO(
       "native_renderer: draws issued={} requested={} dropped={} | uploaded {} KiB vertices, {} "
       "KiB indices, {} KiB constants | stream cache hits={} | arena {} block(s) | rect lists={} "
-      "(unexpanded {})",
+      "(unexpanded {}) | quad lists={} (indexed {})",
       g_draws_issued, g_draws_requested, dropped, g_vertex_bytes / 1024, g_index_bytes / 1024,
-      g_constant_bytes / 1024, g_stream_cache_hits, g_arena.size(), g_rect_draws,
-      g_rect_fallbacks);
+      g_constant_bytes / 1024, g_stream_cache_hits, g_arena.size(), g_rect_draws, g_rect_fallbacks,
+      g_quad_draws, g_quad_indexed_draws);
 
   for (uint32_t i = 0; i < kDropCount; ++i) {
     if (g_drops[i] != 0)
