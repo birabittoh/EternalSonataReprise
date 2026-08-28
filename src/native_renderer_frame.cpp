@@ -925,6 +925,23 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   const RenderBox readback_box(place_x, place_y, place_x + (x2 - x1), place_y + (y2 - y1));
   ReadbackRecordCopy(commands, destination, dest_fetch, memory_base, readback_box);
 
+  // Leave the destination in the layout a draw will sample it in.
+  //
+  // A resolve destination exists to be sampled: that is what
+  // FrameResolveTextureByAddress hands it out for. The resolve itself needs it
+  // as COPY_DEST and the readback copy then needs it as COPY_SOURCE, so without
+  // this it is still in a copy layout when the next draw reads it. The
+  // descriptor set does say SHADER_READ, but a descriptor declares what a
+  // shader expects; only a barrier changes the resource state, and nothing
+  // between here and the draw emits one.
+  //
+  // The symptom is asymmetric in a way worth recording, because it is what made
+  // it hard to see: the present blit transitions its own source explicitly, so
+  // the image on screen was always correct, while anything sampled back out of
+  // a resolve in the same frame was read in the wrong state.
+  Transition(commands, destination->texture.get(), destination->layout,
+             RenderBarrierStage::GRAPHICS, RenderTextureLayout::SHADER_READ);
+
   // Small destinations are logged well past the general cap: those are the
   // thumbnails and the off screen effect buffers, and they are what the readback
   // path has to lay back out in guest memory byte for byte.
