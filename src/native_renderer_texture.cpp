@@ -4,7 +4,6 @@
 
 #include "native_renderer_texture.h"
 
-#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -301,6 +300,13 @@ struct MirroredTexture {
   uint64_t content_hash = 0;
   uint64_t source_bytes = 0;
 
+  // Offset from the fetch constant's base to level 0; see Level0ByteOffset.
+  // Carried on the entry because the hash and the aperture walk both work from
+  // the entry alone, without the FormatInfo needed to recompute it, and they
+  // must cover the same bytes the upload reads or the cache would fingerprint
+  // the mip tail and never notice level 0 changing.
+  uint32_t level0_offset = 0;
+
   // The aperture-resolved host pointer to this texture's source, and the frame
   // the choice was last validated in.
   //
@@ -404,6 +410,33 @@ uint64_t SourceExtentBytes(const TextureFetch& fetch, const FormatInfo& info) {
     return uint64_t(pitch_macro_tiles) * macro_rows * 32 * 32 * info.block_bytes;
   }
   return uint64_t(pitch_blocks) * info.block_bytes * height_blocks;
+}
+
+// Where level 0 actually starts, as an offset from the fetch constant's base.
+//
+// Normally zero: the base address points at level 0 and the mip chain lives in
+// its own allocation named by `mip_address`. This title's D3D block does
+// exactly that (0x8225DFE0 calls the allocator twice, once for the base and
+// once for the mip chain, and stores the two addresses at header +0x20 and
+// +0x30), but it skips the second allocation when the computed mip size is
+// zero, leaving the mip address field reading 0. In that case the single
+// allocation holds the packed mip tail first and level 0 after it.
+//
+// So this fires only on `mip_address == 0` with a non-zero `mip_max_level`,
+// which no working texture in this title matches; the health bar's own 256x32
+// sibling has a real mip address and is untouched.
+//
+// Measured rather than derived, and worth keeping the evidence with the code:
+// the battle health bar's 512x16 BC3 fill mask renders as noise because reading
+// level 0 at the base address yields the mip chain instead. Its level 1 is
+// 256x8, which is the mask at half size, and it lands in the bottom left
+// quadrant of what we upload, confirmed at 99.8% agreement against the same
+// texture captured from the Xenos backend, where the bar is correct. The mask's
+// real 8192 bytes were then found byte exact one level-0 extent further on.
+uint64_t Level0ByteOffset(const TextureFetch& fetch, const FormatInfo& info) {
+  if (fetch.mip_address != 0 || fetch.mip_max_level == 0)
+    return 0;
+  return SourceExtentBytes(fetch, info);
 }
 
 // A fingerprint of the guest bytes, used to notice that the game has replaced
@@ -621,7 +654,9 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
       expanding ? width_blocks * info.block_bytes : upload_row_bytes;
 
   std::vector<uint8_t> texels;
-  if (!ReadTexels(GuestPhysicalPointer(memory_base, fetch.raw_base_address,
+  if (!ReadTexels(GuestPhysicalPointer(memory_base,
+                                       fetch.raw_base_address +
+                                           uint32_t(Level0ByteOffset(fetch, info)),
                                        SourceExtentBytes(fetch, info)),
                   fetch, info,
                   read_row_bytes, texels)) {
@@ -752,8 +787,8 @@ const uint8_t* EntrySourcePointer(MirroredTexture* entry, uint8_t* memory_base,
                      g_frame - entry->source_pointer_frame >= kApertureRevalidateFrames;
   if (stale) {
     ++g_aperture_walks;
-    entry->source_pointer =
-        GuestPhysicalPointer(memory_base, fetch.raw_base_address, entry->source_bytes);
+    entry->source_pointer = GuestPhysicalPointer(
+        memory_base, fetch.raw_base_address + entry->level0_offset, entry->source_bytes);
     entry->source_pointer_frame = g_frame;
   } else {
     ++g_aperture_reuses;
@@ -853,6 +888,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   entry->width = fetch.width;
   entry->height = fetch.height;
   entry->source_bytes = SourceExtentBytes(fetch, info);
+  entry->level0_offset = uint32_t(Level0ByteOffset(fetch, info));
   entry->texture = DecodeAndUpload(memory_base, fetch, info, nullptr);
 
   // Hashed after the upload rather than before, so a source that changed
