@@ -44,6 +44,15 @@ jobs:
             runner: ubuntu-24.04-arm
             sdk_dir: linux-arm64
             artifact_suffix: linux-arm64
+
+          - platform: android-arm64
+            runner: ubuntu-latest
+            # Host SDK for codegen (runs natively on x86_64 Linux)
+            sdk_dir: linux-amd64
+            # Target SDK for cross-compile (Android ARM64 libraries)
+            target_sdk_dir: android-arm64
+            artifact_suffix: android-arm64
+            ndk_version: "27.0.12077973"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,9 +65,25 @@ jobs:
           wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 20
           sudo apt-get install -y ninja-build libgtk-3-dev libx11-xcb-dev libsdl2-dev
 
+      - name: Install dependencies (Android)
+        if: matrix.platform == 'android-arm64'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 20
+          sudo apt-get install -y ninja-build
+
       - name: Install LLVM, CMake, Ninja (Windows)
         if: matrix.platform == 'windows'
         run: choco install llvm cmake ninja -y
+
+      - name: Set up Android NDK
+        if: matrix.platform == 'android-arm64'
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        if: matrix.platform == 'android-arm64'
+        run: |
+          sdkmanager --install "ndk;${{ matrix.ndk_version }}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ matrix.ndk_version }}" >> "$GITHUB_ENV"
 
       - name: Set up sccache
         uses: hendrikmuhs/ccache-action@v1.2.22
@@ -69,6 +94,11 @@ jobs:
       - name: Download ReXGlue SDK
         shell: bash
         run: python scripts/download-sdk.py sdk/${{ matrix.sdk_dir }} --pinned
+
+      - name: Download ReXGlue SDK (Android target)
+        if: matrix.target_sdk_dir
+        shell: bash
+        run: python scripts/download-sdk.py sdk/${{ matrix.target_sdk_dir }} --pinned --platform ${{ matrix.target_sdk_dir }}
 
       - name: Install Python build dependencies
         shell: bash
@@ -95,16 +125,41 @@ jobs:
           echo "Fetched ${{ env.ASSET_PATH }} ($size bytes)"
           [ "$size" -ge 1048576 ] || { echo "Asset too small — fetch likely failed"; exit 1; }
 
-      - name: Build
+      - name: Build (desktop)
+        if: matrix.platform != 'android-arm64'
         shell: bash
         run: python scripts/build.py --release --sdk-dir sdk/${{ matrix.sdk_dir }}
+
+      # Android: codegen runs on the host SDK, then cross-compile with NDK
+      # against the Android target SDK.
+      - name: Run codegen (Android)
+        if: matrix.platform == 'android-arm64'
+        shell: bash
+        run: |
+          sdk/${{ matrix.sdk_dir }}/bin/rexglue codegen eternalsonata_manifest.toml
+          sed -i 's/^sdk_version = .*/sdk_version = ""/' eternalsonata_manifest.toml
+
+      - name: CMake configure (Android)
+        if: matrix.platform == 'android-arm64'
+        shell: bash
+        run: |
+          cmake --preset android-arm64-release \
+            -DCMAKE_ANDROID_NDK="$ANDROID_NDK_HOME" \
+            -DCMAKE_PREFIX_PATH=sdk/${{ matrix.target_sdk_dir }} \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+      - name: CMake build (Android)
+        if: matrix.platform == 'android-arm64'
+        shell: bash
+        run: cmake --build --preset android-arm64-release --parallel $(nproc)
 
       - name: sccache stats
         if: always()
         shell: bash
         run: sccache --show-stats || true
 
-      - name: Package
+      - name: Package (desktop)
+        if: matrix.platform != 'android-arm64'
         shell: bash
         run: |
           if [ "${{ inputs.publish_mode }}" = "artifact" ]; then
@@ -113,6 +168,22 @@ jobs:
             out="eternalsonata-${{ inputs.tag }}-${{ matrix.artifact_suffix }}"
           fi
           python scripts/build.py --package "${out}"
+
+      - name: Package (Android)
+        if: matrix.platform == 'android-arm64'
+        shell: bash
+        run: |
+          if [ "${{ inputs.publish_mode }}" = "artifact" ]; then
+            name="${{ inputs.artifact_name }}-${{ matrix.artifact_suffix }}"
+          else
+            name="eternalsonata-${{ inputs.tag }}-${{ matrix.artifact_suffix }}"
+          fi
+          mkdir -p pkg
+          find out/build/android-arm64-release -name '*.so' -exec cp {} pkg/ \;
+          cp out/build/android-arm64-release/guest_shaders.bin pkg/ 2>/dev/null || true
+          tar -czf "${name}.tar.gz" -C pkg .
+          echo "ARTIFACT_PATH=${name}.tar.gz" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=${name}" >> "$GITHUB_ENV"
 
       - name: Upload CI artifact
         if: inputs.publish_mode == 'artifact'
