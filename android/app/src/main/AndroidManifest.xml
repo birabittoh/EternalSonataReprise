@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Game assets live on shared storage until we have a proper asset-import flow -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+                     android:maxSdkVersion="32" />
+
+    <!-- Vulkan is required by the native renderer (Plume) -->
+    <uses-feature android:name="android.hardware.vulkan.level" android:version="0" android:required="true" />
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x00401000" android:required="true" />
+
+    <!-- Landscape-only: the game renders at a fixed 16:9 -->
+    <uses-feature android:name="android.hardware.screen.landscape" android:required="false" />
+
+    <!-- Touch screen is not strictly required (gamepad works) -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!-- Gamepad / controller support -->
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+
+    <application
+        android:label="Eternal Sonata: Reprise"
+        android:icon="@mipmap/ic_launcher"
+        android:hasCode="true">
+
+        <!--
+            EternalSonataActivity extends SDLActivity and overrides getLibraries()
+            to load librexruntime.so (which contains SDL3) + libeternalsonata.so.
+        -->
+        <activity
+            android:name="com.birabittoh.eternalsonata.EternalSonataActivity"
+            android:label="Eternal Sonata: Reprise"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode"
+            android:screenOrientation="sensorLandscape"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- SDL3 metadata: tells the SDL Android glue which library has SDL_main -->
+            <meta-data android:name="SDL_MAIN_ENTRY_FUNCTION" android:value="SDL_main" />
+        </activity>
+
+    </application>
+
+</manifest>
