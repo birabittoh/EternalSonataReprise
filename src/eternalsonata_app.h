@@ -234,8 +234,11 @@ class EternalsonataApp : public rex::ReXApp {
     // Tear the host renderer down before the window goes away.
     eternalsonata::ShutdownPlumeBackend();
 
-    // Stop the Discord presence worker and clear the presence on exit.
+    // Stop the Discord presence worker and clear the presence on exit. The
+    // SDK only ships the RPC implementation for Windows and GNU Linux.
+#if REX_PLATFORM_WIN32 || REX_PLATFORM_GNU_LINUX
     rex::discord_rpc::Stop();
+#endif
 
     // Hand the process-wide timer tick back to the host.
     eternalsonata::ReleaseHostTimerResolution();
