@@ -20,7 +20,9 @@ namespace {
 
 // Discord Application ID (discord.com/developers/applications, "Eternal
 // Sonata: Reprise").
+#if REX_PLATFORM_WIN32 || REX_PLATFORM_GNU_LINUX
 constexpr char kDiscordClientId[] = "1420820611953066076";
+#endif
 
 // Guest virtual address of the "menu/event cfdata id" string
 // (byte_8244B500): the id the game's generic cfdata loader (sub_820FCC80)
@@ -124,16 +126,27 @@ std::string NormalizeAreaId(std::string id) {
 void RoomPresence::Bind(rex::system::KernelState* kernel_state, rex::Runtime* runtime) {
   kernel_state_ = kernel_state;
 
+  // The SDK only builds the Discord RPC implementation for Windows and GNU
+  // Linux (linux/CMakeLists gated on those two); on other platforms the
+  // header still declares the API but nothing links, so skip it.
+#if REX_PLATFORM_WIN32 || REX_PLATFORM_GNU_LINUX
   rex::discord_rpc::Presence initial;
   initial.details_ = "Playing Eternal Sonata";
   initial.large_image_key_ = "icon";
   initial.large_image_text_ = "Eternal Sonata: Reprise";
   rex::discord_rpc::Start(kDiscordClientId, initial);
+#endif
 
   runtime->mod_registry()->RegisterTick([this] { Tick(); });
 }
 
 void RoomPresence::Tick() {
+#if !REX_PLATFORM_WIN32 && !REX_PLATFORM_GNU_LINUX
+  // No Discord RPC implementation on this platform; nothing to keep in sync
+  // (rex::discord_rpc is header-only declared, never linked).
+  return;
+#endif
+
   if (!kernel_state_ || !kernel_state_->memory()) {
     return;
   }
