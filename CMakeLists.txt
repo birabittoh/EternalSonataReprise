@@ -32,7 +32,8 @@ message(STATUS "eternalsonata - using Plume submodule at ${ETERNALSONATA_PLUME_D
 # ReXGlue owns this project's SDL window. Have Plume create its Vulkan surface
 # from that SDL_Window directly instead of asking the host to expose raw X11
 # handles, which are not represented by Window::GetNativeWindowHandle().
-if(UNIX AND NOT APPLE)
+# Android does not need this — Plume has native VK_KHR_android_surface support.
+if(UNIX AND NOT APPLE AND NOT ANDROID)
     set(PLUME_SDL_VULKAN_ENABLED ON CACHE BOOL "Enable SDL Vulkan integration" FORCE)
 endif()
 add_subdirectory("${ETERNALSONATA_PLUME_DIR}" "${CMAKE_BINARY_DIR}/plume" EXCLUDE_FROM_ALL)
