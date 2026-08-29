@@ -21,10 +21,10 @@ src/main.cpp.bak
 # Runtime artifacts — binary, logs, and bundled shared libraries
 /sdk/
 /logs/
-eternalsonata
-eternalsonata.exe
-eternalsonata.pdb
-eternalsonata.toml
+/eternalsonata
+/eternalsonata.exe
+/eternalsonata.pdb
+/eternalsonata.toml
 # The native renderer's shader pack, rebuilt from assets/default.xex by
 # scripts/gen-guest-shaders.py (see src/guest_shaders.h)
 guest_shaders.bin
@@ -92,3 +92,17 @@ __pycache__/
 *.id2
 *.nam
 *.til
+
+# Android build artifacts (Gradle output, staged JNI libs, staged assets)
+/android/.gradle/
+/android/app/build/
+/android/app/jniLibs/
+/android/app/assets/
+/android/build/
+/android/local.properties
+# Generated launcher icons (rebuilt from assets/default.xex by scripts/gen-android-icon.py)
+/android/app/src/main/res/mipmap-mdpi/
+/android/app/src/main/res/mipmap-hdpi/
+/android/app/src/main/res/mipmap-xhdpi/
+/android/app/src/main/res/mipmap-xxhdpi/
+/android/app/src/main/res/mipmap-xxxhdpi/

@@ -85,6 +85,19 @@ jobs:
           sdkmanager --install "ndk;${{ matrix.ndk_version }}"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ matrix.ndk_version }}" >> "$GITHUB_ENV"
 
+      - name: Set up JDK 17 (Android)
+        if: matrix.platform == 'android-arm64'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (Android)
+        if: matrix.platform == 'android-arm64'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
       - name: Set up sccache
         uses: hendrikmuhs/ccache-action@v1.2.22
         with:
@@ -170,6 +183,11 @@ jobs:
           fi
           python scripts/build.py --package "${out}"
 
+      - name: Generate Android launcher icon
+        if: matrix.platform == 'android-arm64'
+        shell: bash
+        run: python -m pip install --disable-pip-version-check Pillow && python scripts/gen-android-icon.py
+
       - name: Package (Android)
         if: matrix.platform == 'android-arm64'
         shell: bash
@@ -179,11 +197,47 @@ jobs:
           else
             name="eternalsonata-${{ inputs.tag }}-${{ matrix.artifact_suffix }}"
           fi
-          mkdir -p pkg
-          find out/build/android-arm64-release -name '*.so' -exec cp {} pkg/ \;
-          cp out/build/android-arm64-release/guest_shaders.bin pkg/ 2>/dev/null || true
-          tar -czf "${name}.tar.gz" -C pkg .
-          echo "ARTIFACT_PATH=${name}.tar.gz" >> "$GITHUB_ENV"
+
+          BUILD_DIR="$PWD/out/build/android-arm64-release"
+          JNI_DIR="$PWD/android/app/jniLibs/arm64-v8a"
+          ASSETS_DIR="$PWD/android/app/assets"
+          mkdir -p "$JNI_DIR" "$ASSETS_DIR"
+
+          # Stage the project's own shared library.
+          cp -v "$BUILD_DIR/libeternalsonata.so" "$JNI_DIR/"
+
+          # Stage SDK runtime libraries (release variants only).
+          for lib in sdk/${{ matrix.target_sdk_dir }}/lib/*.so; do
+            base=$(basename "$lib")
+            # Skip debug ("d") and relwithdebinfo ("rd") variants.
+            case "$base" in
+              *rd.so) continue ;;
+              *d.so)  continue ;;
+            esac
+            # Skip DXC — build-time shader compiler, not a runtime dependency.
+            case "$base" in
+              libdxcompiler*|libdxil*) continue ;;
+            esac
+            cp -v "$lib" "$JNI_DIR/"
+          done
+
+          # Stage the guest shader pack as an Android asset.
+          cp -v "$BUILD_DIR/guest_shaders.bin" "$ASSETS_DIR/" 2>/dev/null || true
+
+          echo "=== Staged jniLibs ==="
+          ls -lh "$JNI_DIR/"
+          echo "=== Staged assets ==="
+          ls -lh "$ASSETS_DIR/" 2>/dev/null || echo "(none)"
+
+          # Run Gradle to produce a debug-signed release APK.
+          cd android
+          gradle assembleRelease --no-daemon
+
+          # Locate the built APK and stage it for upload.
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          mkdir -p ../pkg
+          cp "$APK" "../pkg/${name}.apk"
+          echo "ARTIFACT_PATH=pkg/${name}.apk" >> "$GITHUB_ENV"
           echo "ARTIFACT_NAME=${name}" >> "$GITHUB_ENV"
 
       - name: Upload CI artifact
