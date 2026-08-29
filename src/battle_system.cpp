@@ -240,6 +240,18 @@ void KillAllEnemies() {
   }
 }
 
+uint32_t FsmState() { return ReadGuest<uint32_t>(battle::kManager + battle::kFsmStateOffset); }
+
+// True when the current turn can be skipped: the FSM is in state 12
+// (gameplay) and someone is acting.
+bool CanSkipTurn() {
+  if (FsmState() != battle::kFsmStateTurn) {
+    return false;
+  }
+  const Actor actor = CurrentActor();
+  return actor.kind != ETERNALSONATA_BATTLE_ACTOR_NONE;
+}
+
 void WinBattleOnGuestThread(int frames_waited) {
   // The battle may have ended on its own while the request was pending.
   if (!Available()) {
@@ -247,14 +259,17 @@ void WinBattleOnGuestThread(int frames_waited) {
   }
   if (!CanWinNow()) {
     if (frames_waited < kMaxDeferredFrames) {
+      // If an enemy holds the turn, skip it so we get to a party turn faster
+      // rather than waiting for the enemy to finish naturally.
+      if (CanSkipTurn() && CurrentActor().kind == ETERNALSONATA_BATTLE_ACTOR_ENEMY) {
+        WriteGuest32(battle::kManager + battle::kFsmStateOffset, battle::kFsmStateTurnEnd);
+      }
       PostToGuestMainThread([frames_waited] { WinBattleOnGuestThread(frames_waited + 1); });
     }
     return;
   }
   KillAllEnemies();
 }
-
-uint32_t FsmState() { return ReadGuest<uint32_t>(battle::kManager + battle::kFsmStateOffset); }
 
 // The current actor's action-timer object, or 0 between turns / before one
 // has ever been set up. See battle_layout.h "Turn timers".
@@ -626,4 +641,20 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetBattleEnemyHp(int slot, int
     return ETERNALSONATA_BATTLE_ERR_UNAVAILABLE;
   }
   return SetEnemyHp(slot, hp) ? ETERNALSONATA_BATTLE_OK : ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSkipBattleTurn(void) {
+  if (!Available()) {
+    return ETERNALSONATA_BATTLE_ERR_UNAVAILABLE;
+  }
+  if (!CanSkipTurn()) {
+    return ETERNALSONATA_BATTLE_ERR_NOT_IN_TURN;
+  }
+  // Advance the FSM from state 12 (playing) directly to state 13 (end of
+  // turn). State 13 holds until sub_821AA730 agrees the action has finished
+  // resolving, then runs the end-of-turn passes and goes back to state 7
+  // (turn start) for the next actor. This is safe even if an action is
+  // mid-resolution: state 13 waits it out on its own.
+  WriteGuest32(battle::kManager + battle::kFsmStateOffset, battle::kFsmStateTurnEnd);
+  return ETERNALSONATA_BATTLE_OK;
 }

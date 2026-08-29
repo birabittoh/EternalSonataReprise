@@ -58,6 +58,9 @@ enum {
   // The battle is not in its intro, so there is nothing to skip. Check
   // fsm_state against ETERNALSONATA_BATTLE_FSM_INTRO before offering the UI.
   ETERNALSONATA_BATTLE_ERR_NOT_IN_INTRO = -3,
+  // The battle is not in a state where the current turn can be skipped: the
+  // FSM is not in state 12, or nobody is acting.
+  ETERNALSONATA_BATTLE_ERR_NOT_IN_TURN = -4,
   ETERNALSONATA_BATTLE_ERR_INVALID_ARGUMENT = -10
 };
 
@@ -91,6 +94,7 @@ enum {
 // two of them are skipped unless the encounter earns a party level, and the
 // write-back lasts a frame or two. Nothing can be forced from there.
 #define ETERNALSONATA_BATTLE_FSM_INTRO 5
+#define ETERNALSONATA_BATTLE_FSM_COMMAND_WAIT 11
 #define ETERNALSONATA_BATTLE_FSM_TURN 12
 #define ETERNALSONATA_BATTLE_FSM_TURN_END 13
 // Where the three endings are told apart: the game reaches OUTCOME once and
@@ -318,6 +322,21 @@ typedef int (*EternalSonataSetBattlePartyHpFn)(int slot, int32_t hp);
 // EternalSonataWinBattle was written to avoid. Prefer EternalSonataWinBattle
 // over calling this in a loop to end a battle.
 typedef int (*EternalSonataSetBattleEnemyHpFn)(int slot, int32_t hp);
+
+// Ends the current turn immediately, by advancing the FSM from state 12
+// (playing) directly to state 13 (end of turn). State 13 waits for any
+// mid-resolution action to finish on its own, then runs the game's normal
+// end-of-turn passes (status effects, repositioning) and hands off to the
+// next actor. Works on both party and enemy turns, even if an action is
+// mid-resolution.
+//
+// Only valid while the FSM is in state 12 and someone is acting. Returns
+// ETERNALSONATA_BATTLE_ERR_NOT_IN_TURN otherwise, so a UI can grey the button
+// out when the preconditions are not met.
+//
+// This is a plain memory write (one dword into the FSM state field) and takes
+// effect on the next guest frame.
+typedef int (*EternalSonataSkipBattleTurnFn)(void);
 
 #ifdef __cplusplus
 }  // extern "C"
