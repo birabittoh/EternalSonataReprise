@@ -572,7 +572,11 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
     // A previous session already downloaded and staged an update (whether or
     // not this one ever calls CheckAsync/InstallAsync again); offer the
-    // restart regardless of auto_updater_'s own in-memory state.
+    // restart regardless of auto_updater_'s own in-memory state. The SDK only
+    // builds AutoUpdater::ApplyAndRestart for Windows and GNU Linux (the
+    // detached swap helper is a platform script); anywhere else there is no
+    // self-update path at all, so nothing is offered.
+#if REX_PLATFORM_WIN32 || REX_PLATFORM_GNU_LINUX
     if (rex::system::AutoUpdater::HasPendingSelfUpdate(rex::filesystem::GetExecutableFolder())) {
       ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.85f, 0.55f, 1.0f));
       ImGui::TextWrapped("An update has been downloaded.");
@@ -592,6 +596,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       ImGui::Separator();
       return;
     }
+#endif
 
     auto install = auto_updater_.InstallSnapshot();
     if (install.in_progress) {
