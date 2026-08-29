@@ -249,6 +249,18 @@ set(ETERNALSONATA_SOURCES
 
 if(WIN32)
     add_executable(eternalsonata WIN32 ${ETERNALSONATA_SOURCES} ${ETERNALSONATA_ICON_RC})
+elseif(ANDROID)
+    # Android: build as a shared library so NativeActivity / SDL can dlopen it.
+    # Gradle's externalNativeBuild (or a manual jniLibs copy) packages the
+    # resulting libeternalsonata.so into the APK.
+    add_library(eternalsonata SHARED ${ETERNALSONATA_SOURCES})
+    # Plume sets CMAKE_CXX_VISIBILITY_PRESET to hidden globally, which hides
+    # SDL_main from the dynamic symbol table. SDLActivity needs to dlsym it,
+    # so restore default visibility for this target.
+    set_target_properties(eternalsonata PROPERTIES
+        CXX_VISIBILITY_PRESET default
+        C_VISIBILITY_PRESET default
+    )
 else()
     add_executable(eternalsonata ${ETERNALSONATA_SOURCES})
     set_target_properties(eternalsonata PROPERTIES
