@@ -146,6 +146,7 @@ jobs:
           cmake --preset android-arm64-release \
             -DCMAKE_ANDROID_NDK="$ANDROID_NDK_HOME" \
             -DCMAKE_PREFIX_PATH=sdk/${{ matrix.target_sdk_dir }} \
+            -DCMAKE_FIND_ROOT_PATH="$PWD/sdk/${{ matrix.target_sdk_dir }}" \
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: CMake build (Android)
