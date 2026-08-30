@@ -14,6 +14,7 @@
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
+#include <rex/memory/utils.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -360,9 +361,37 @@ bool RangeWritable(const uint8_t* start, uint64_t bytes) {
   }
   return true;
 #else
-  (void)start;
-  (void)bytes;
-  return false;
+  // Off Windows the same question goes through the SDK's portable page query.
+  // This used to be a bare `return false`, which made every destination look
+  // unmapped: no aperture was ever picked, `destination->guest` stayed null and
+  // nothing was ever written back. On Android that is not a cosmetic loss. The
+  // game resolves a 64x64 surface at startup and then polls the guest memory
+  // behind it for the result, so a readback that never lands is an infinite
+  // spin before the first frame, which is the boot hang.
+  const uint8_t* cursor = start;
+  const uint8_t* end = start + bytes;
+  const uintptr_t page_bytes = uintptr_t(rex::memory::page_size());
+  if (page_bytes == 0)
+    return false;
+  while (cursor < end) {
+    size_t region_bytes = 0;
+    rex::memory::PageAccess access = rex::memory::PageAccess::kNoAccess;
+    if (!rex::memory::QueryProtect(const_cast<uint8_t*>(cursor), region_bytes, access))
+      return false;
+    if (access != rex::memory::PageAccess::kReadWrite &&
+        access != rex::memory::PageAccess::kExecuteReadWrite) {
+      return false;
+    }
+    // The reported run is measured from the first byte of the page the query
+    // landed in, not from the query address, so advance from the page base.
+    const uint8_t* page = reinterpret_cast<const uint8_t*>(
+        reinterpret_cast<uintptr_t>(cursor) & ~(page_bytes - 1));
+    const uint8_t* next = page + region_bytes;
+    if (next <= cursor)  // No forward progress; refuse rather than spin here.
+      return false;
+    cursor = next;
+  }
+  return true;
 #endif
 }
 
