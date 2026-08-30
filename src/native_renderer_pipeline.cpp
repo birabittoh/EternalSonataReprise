@@ -602,12 +602,28 @@ RenderPipelineLayout* EnsureLayout(RenderDevice* device) {
   // The whole range is reserved in each whatever a given pixel shader declares.
   // The pack carries a texture slot mask per shader, so a narrower layout per
   // shader is possible; it would buy nothing but more layouts to manage.
-  const RenderDescriptorRange texture_ranges[] = {
-      RenderDescriptorRange(RenderDescriptorRangeType::TEXTURE, 0, kTextureSlots),
-  };
-  const RenderDescriptorRange sampler_ranges[] = {
-      RenderDescriptorRange(RenderDescriptorRangeType::SAMPLER, 0, kTextureSlots),
-  };
+  //
+  // One range per slot, not a single range sixteen descriptors wide. The two
+  // spell the same thing to D3D12, where a table range at t0 of sixteen
+  // descriptors is t0..t15 either way, but not to Vulkan. Plume turns each range
+  // into one VkDescriptorSetLayoutBinding whose descriptorCount is the range's
+  // count, so a single range of sixteen declares *one* binding, number zero,
+  // that is a sixteen element array. The emitted HLSL declares sixteen separate
+  // objects at t0..t15, which DXC compiles to sixteen separate bindings, 0..15.
+  // Bindings one upwards then do not exist in the layout at all, and a driver
+  // that actually checks rejects the pipeline. Adreno fails to link with "Bind
+  // group info mismatches the shader source for symbol xe_texture12" for the
+  // first shader that samples any slot other than zero, which is most of them.
+  // Desktop drivers happen not to complain, which is why this survived.
+  //
+  // See the overlay's layout in native_renderer_overlay.cpp for the same shape
+  // written out by hand: one range per binding.
+  RenderDescriptorRange texture_ranges[kTextureSlots];
+  RenderDescriptorRange sampler_ranges[kTextureSlots];
+  for (uint32_t slot = 0; slot < kTextureSlots; ++slot) {
+    texture_ranges[slot] = RenderDescriptorRange(RenderDescriptorRangeType::TEXTURE, slot, 1);
+    sampler_ranges[slot] = RenderDescriptorRange(RenderDescriptorRangeType::SAMPLER, slot, 1);
+  }
   const RenderDescriptorSetDesc set_descs[] = {
       RenderDescriptorSetDesc(texture_ranges, uint32_t(std::size(texture_ranges))),
       RenderDescriptorSetDesc(sampler_ranges, uint32_t(std::size(sampler_ranges))),
