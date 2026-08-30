@@ -50,6 +50,12 @@ plume::RenderCommandQueue* PlumeQueue();
 // that was selected rather than by the adapter behind it.
 plume::RenderShaderFormat PlumeShaderFormat();
 
+// The format the swap chain was created with. Anything that draws into the
+// presented image has to build its pipeline for this and not for
+// FrameColorFormat(): the two differ on Android, where the surface does not
+// support the guest targets' B8G8R8A8. See kSwapChainFormat.
+plume::RenderFormat PlumeSwapChainFormat();
+
 // The command list the guest's rendering records into, begun on demand.
 //
 // The guest does not produce a frame between two calls we control: it clears,

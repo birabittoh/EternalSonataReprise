@@ -42,7 +42,27 @@ using namespace plume;
 // B8G8R8A8 rather than R8G8B8A8 because it is the format every Windows swap
 // chain supports natively; picking the other one costs a conversion on present
 // for no benefit here.
+//
+// Android is the exception, and it is not a preference there but a requirement.
+// Adreno's surfaces do not list B8G8R8A8_UNORM at all, and Plume reacts to a
+// format the surface does not support by giving up on picking one, reporting it
+// with fprintf(stderr) (which goes nowhere on Android) and then creating the
+// swap chain with VK_FORMAT_UNDEFINED regardless. The driver accepts that, so
+// there is no error anywhere: presents succeed, buffers reach SurfaceFlinger,
+// and everything drawn into those images is discarded. That was the black
+// screen, and validation is the only thing that says so:
+//
+//   VUID-VkSwapchainCreateInfoKHR-imageFormat-01273
+//   vkCreateSwapchainKHR(): pCreateInfo->imageFormat is VK_FORMAT_UNDEFINED.
+//
+// Nothing else has to change with the channel order: a format describes memory
+// layout, not which shader output feeds which channel, so the blit still writes
+// colour 0 and the surface still reads it correctly.
+#if REX_PLATFORM_ANDROID
+constexpr RenderFormat kSwapChainFormat = RenderFormat::R8G8B8A8_UNORM;
+#else
 constexpr RenderFormat kSwapChainFormat = RenderFormat::B8G8R8A8_UNORM;
+#endif
 // Three, not two. With two there is exactly one spare buffer, so a frame cannot
 // start until the previous one's flip has retired its buffer — which under vsync
 // means waiting for a vblank, and the frame rate quantises to 60/30/20 with
@@ -186,6 +206,8 @@ RenderShaderFormat PlumeShaderFormat() {
              ? g_backend.render_interface->getCapabilities().shaderFormat
              : RenderShaderFormat::UNKNOWN;
 }
+
+RenderFormat PlumeSwapChainFormat() { return kSwapChainFormat; }
 
 void PlumeSetOverlayDrawer(rex::ui::UIDrawer* drawer) { g_overlay = drawer; }
 
