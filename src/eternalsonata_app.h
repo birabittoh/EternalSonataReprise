@@ -36,6 +36,82 @@
 #include "room_presence.h"
 #include "settings.h"
 
+#if REX_PLATFORM_ANDROID
+#include <dlfcn.h>
+#include <rex/filesystem.h>
+
+#include <filesystem>
+#include <string>
+
+namespace eternalsonata {
+
+// Make a GPU plugin reachable at the path the SDK's loader checks.
+//
+// LoadGpuPlugin resolves rexgpu-<name> against rex::filesystem::
+// GetExecutableFolder(), which on Android is the app's files directory. There
+// is no executable directory to stage into there: the plugin ships inside the
+// APK and Android extracts it, alongside libeternalsonata.so itself, into the
+// read-only native library directory. Without this the loader reports
+// "GPU plugin 'xenos' not found at /data/.../files/librexgpu-xenos.so" and the
+// app exits before the window ever appears.
+//
+// A symlink rather than a copy, for two reasons: it avoids duplicating four
+// megabytes into the app's data on every launch, and it leaves dlopen opening a
+// file the app cannot write, which is what an app targeting API 35 needs. The
+// native library directory is found from this library's own path rather than
+// through JNI, since the plugin sits next to it.
+inline void StageAndroidGpuPlugin(const std::string& plugin_name) {
+  if (plugin_name.empty())
+    return;
+
+  Dl_info info = {};
+  if (dladdr(reinterpret_cast<const void*>(&StageAndroidGpuPlugin), &info) == 0 ||
+      info.dli_fname == nullptr) {
+    REXLOG_WARN(
+        "android: could not locate this library, so GPU plugin '{}' cannot be staged where the "
+        "loader looks for it",
+        plugin_name);
+    return;
+  }
+
+  const std::string file_name = "librexgpu-" + plugin_name + ".so";
+  const std::filesystem::path source =
+      std::filesystem::path(info.dli_fname).parent_path() / file_name;
+  const std::filesystem::path link = rex::filesystem::GetExecutableFolder() / file_name;
+
+  std::error_code ec;
+  if (!std::filesystem::exists(source, ec)) {
+    REXLOG_WARN("android: GPU plugin '{}' is not in the APK's library directory ({})", plugin_name,
+                source.string());
+    return;
+  }
+
+  // Replace whatever is there: the library directory path contains an
+  // install-specific token, so a link left by a previous install is stale.
+  if (std::filesystem::exists(std::filesystem::symlink_status(link, ec))) {
+    if (std::filesystem::read_symlink(link, ec) == source && !ec)
+      return;
+    std::filesystem::remove(link, ec);
+  }
+
+  std::filesystem::create_symlink(source, link, ec);
+  if (ec) {
+    REXLOG_WARN("android: could not link GPU plugin '{}' into {} ({}), copying instead",
+                plugin_name, link.string(), ec.message());
+    std::filesystem::copy_file(source, link,
+                               std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+      REXLOG_ERROR("android: could not stage GPU plugin '{}': {}", plugin_name, ec.message());
+      return;
+    }
+  }
+  REXLOG_INFO("android: GPU plugin '{}' staged at {} -> {}", plugin_name, link.string(),
+              source.string());
+}
+
+}  // namespace eternalsonata
+#endif
+
 class EternalsonataApp : public rex::ReXApp {
  public:
   using rex::ReXApp::ReXApp;
@@ -111,6 +187,13 @@ class EternalsonataApp : public rex::ReXApp {
     // "plume". See native_renderer.h.
     if (config.gpu_plugin == eternalsonata::kNativeRendererPluginName)
       config.gpu_plugin.clear();
+
+#if REX_PLATFORM_ANDROID
+    // Anything still named here is a real plugin the SDK is about to load, and
+    // on Android it has to be linked into place first. See
+    // StageAndroidGpuPlugin.
+    eternalsonata::StageAndroidGpuPlugin(config.gpu_plugin);
+#endif
 
     // Whatever the unloaded plugin would have registered, this renderer has to
     // register itself. Runs after the clear only for reading order; it looks at
