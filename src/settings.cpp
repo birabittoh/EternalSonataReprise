@@ -126,8 +126,26 @@ struct DefaultValue {
   const char* value;
 };
 
+// Which renderer the game comes up with.
+//
+// Desktop ships this project's own renderer ("plume"), which is not a plugin
+// the SDK loads but a selector for the D3D level renderer in
+// native_renderer.cpp. On Android that path brings the guest all the way up,
+// runs at the same draw counts as the desktop build and presents every frame,
+// but nothing lands on screen: the composite and the present both succeed and
+// the surface receives buffers, yet the content is black. Until that is found,
+// Android ships the SDK's own Xenos plugin, which has its own Vulkan backend.
+//
+// librexgpu-xenos.so is staged into the APK's jniLibs by the Android packaging
+// step, alongside librexruntime.so.
+#if REX_PLATFORM_ANDROID
+constexpr const char* kDefaultGpuPlugin = "xenos";
+#else
+constexpr const char* kDefaultGpuPlugin = kNativeRendererPluginName;
+#endif
+
 constexpr std::array kGameDefaults = {
-    DefaultValue{"gpu_plugin", "plume"},
+    DefaultValue{"gpu_plugin", kDefaultGpuPlugin},
     DefaultValue{"game_data_root", "assets"},
     DefaultValue{"gpu_allow_invalid_fetch_constants", "true"},
     // "fast" always copies the resolve readback to CPU memory every submission
