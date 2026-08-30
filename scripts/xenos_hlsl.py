@@ -1004,13 +1004,20 @@ class PixelShader(Shader):
         # 65536. The title binds a few hundred distinct texture combinations and
         # only a handful of distinct sampler ones, so splitting them puts each in
         # a heap it fits in. See AcquireTextureSet in native_renderer_draw.cpp.
-        for slot in sorted(self.textures):
+        # Adreno's Vulkan compiler rejects pipelines when the descriptor set
+        # layout declares bindings that the SPIR-V does not reference. DXC
+        # strips unused bindings from the SPIR-V, so a shader that only samples
+        # texture 12 ends up with just binding 12, while the layout has 0-15.
+        # Work around this by declaring all 16 texture and sampler slots in
+        # every pixel shader. Unused ones are bound to the white placeholder at
+        # draw time anyway, so this costs nothing.
+        for slot in range(16):
+            kind = self.textures.get(slot, "Texture2D")
             out.append("%s xe_texture%d : register(t%d, space0);"
-                       % (self.textures[slot], slot, slot))
+                       % (kind, slot, slot))
             out.append("SamplerState xe_sampler%d : register(s%d, space1);"
                        % (slot, slot))
-        if self.textures:
-            out.append("")
+        out.append("")
 
         out.append("struct PSInput {")
         # Declared, never read. The vertex side's SV_Position takes register 0,
@@ -1026,6 +1033,21 @@ class PixelShader(Shader):
         out.append("float4 main(PSInput input) : SV_Target0 {")
         self._declare_registers(out)
         out.append("    float4 out_color = 0.0f.xxxx;")
+        out.append("")
+        # Force DXC to keep every texture/sampler binding in the SPIR-V.
+        # Without this, DXC strips declarations that no instruction reads, and
+        # the Adreno Vulkan compiler rejects the pipeline because the layout
+        # declares bindings 0-15 but the shader only references a subset.
+        # The branch is always false at runtime (SV_Position.x >= 0 for any
+        # rasterised fragment) but opaque enough that DXC cannot prove it.
+        out.append("    [branch] if (input.in_position.x < -1e10) {")
+        for slot in range(16):
+            kind = self.textures.get(slot, "Texture2D")
+            if kind == "TextureCube":
+                out.append("        out_color += xe_texture%d.Sample(xe_sampler%d, float3(0,0,0));" % (slot, slot))
+            else:
+                out.append("        out_color += xe_texture%d.Sample(xe_sampler%d, float2(0,0));" % (slot, slot))
+        out.append("    }")
         out.append("")
         # Interpolators arrive in the registers their signature names, which is
         # always the entry's own position in the table.
