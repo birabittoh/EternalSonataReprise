@@ -9,7 +9,7 @@
 #include <rex/logging.h>
 #include <rex/ui/window.h>
 
-#if defined(PLUME_SDL_VULKAN_ENABLED)
+#if defined(PLUME_SDL_VULKAN_ENABLED) || defined(__ANDROID__)
 #include <SDL3/SDL.h>
 #endif
 
@@ -102,6 +102,20 @@ void InitNativeRenderer(rex::ui::Window* window) {
     }
     // SDL hands back a fresh array; only the SDL_Window pointers inside it are
     // owned by SDL and outlive it.
+    SDL_free(windows);
+  }
+#elif defined(__ANDROID__)
+  // Plume's Android backend expects an ANativeWindow*. SDL exposes this as a
+  // window property; GetNativeWindowHandle() returns null on non-Win32.
+  void* handle = nullptr;
+  if (window) {
+    int window_count = 0;
+    SDL_Window** windows = SDL_GetWindows(&window_count);
+    if (windows && window_count > 0) {
+      handle = SDL_GetPointerProperty(
+          SDL_GetWindowProperties(windows[0]),
+          SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+    }
     SDL_free(windows);
   }
 #else
