@@ -25,8 +25,12 @@ namespace {
 using namespace plume;
 
 // The overlay renders into the swap chain image directly, so this has to agree
-// with the backend's swap chain format or pipeline creation is rejected.
-constexpr RenderFormat kRenderTargetFormat = RenderFormat::B8G8R8A8_UNORM;
+// with the backend's swap chain format or pipeline creation is rejected. Asked
+// rather than repeated, because the two disagreed on Android and validation
+// caught it as an incompatible render pass on every overlay draw:
+//
+//   VUID-vkCmdDrawIndexed-renderPass-02684: pAttachments[0].format
+//   (VK_FORMAT_R8G8B8A8_UNORM) != pAttachments[0].format (VK_FORMAT_B8G8R8A8_UNORM)
 
 // D3D12 requires texture upload rows to be 256 byte aligned. Vulkan does not
 // care, so aligning unconditionally is simply the safe common denominator.
@@ -221,7 +225,7 @@ bool PlumeImmediateDrawer::EnsureResources() {
   pipeline_desc.inputSlotsCount = 1;
   pipeline_desc.inputElements = kElements;
   pipeline_desc.inputElementsCount = uint32_t(std::size(kElements));
-  pipeline_desc.renderTargetFormat[0] = kRenderTargetFormat;
+  pipeline_desc.renderTargetFormat[0] = PlumeSwapChainFormat();
   pipeline_desc.renderTargetCount = 1;
   pipeline_desc.cullMode = RenderCullMode::NONE;
   pipeline_desc.depthEnabled = false;
