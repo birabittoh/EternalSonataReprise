@@ -1159,7 +1159,9 @@ bool EnsureBlitResources(RenderDevice* device) {
     pipeline_desc.pipelineLayout = g_blit.pipeline_layout.get();
     pipeline_desc.vertexShader = g_blit.vertex_shader.get();
     pipeline_desc.pixelShader = g_blit.pixel_shader.get();
-    pipeline_desc.renderTargetFormat[0] = kColorFormat;
+    // The presented image's format, not the guest targets' one. They are the
+    // same everywhere except Android; see PlumeSwapChainFormat.
+    pipeline_desc.renderTargetFormat[0] = PlumeSwapChainFormat();
     pipeline_desc.renderTargetCount = 1;
     pipeline_desc.cullMode = RenderCullMode::NONE;
     pipeline_desc.depthEnabled = false;
