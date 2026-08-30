@@ -417,11 +417,14 @@ RenderDescriptorSet* AcquireBindingSet(RenderDevice* device, std::vector<Binding
   ++*misses;
 
   // The same shape the pipeline layout declares for this set, because it has to
-  // be the same shape.
-  const RenderDescriptorRange range(
-      samplers ? RenderDescriptorRangeType::SAMPLER : RenderDescriptorRangeType::TEXTURE, 0,
-      kTextureSlots);
-  auto set = device->createDescriptorSet(RenderDescriptorSetDesc(&range, 1));
+  // be the same shape: one range per slot, so Vulkan gets sixteen bindings
+  // rather than one sixteen element array. See EnsureLayout.
+  RenderDescriptorRange ranges[kTextureSlots];
+  for (uint32_t slot = 0; slot < kTextureSlots; ++slot) {
+    ranges[slot] = RenderDescriptorRange(
+        samplers ? RenderDescriptorRangeType::SAMPLER : RenderDescriptorRangeType::TEXTURE, slot, 1);
+  }
+  auto set = device->createDescriptorSet(RenderDescriptorSetDesc(ranges, kTextureSlots));
   if (!set) {
     // The heap is full. Plume returns null for this now rather than a set that
     // writes through an invalid offset, so it is a dropped draw instead of a
