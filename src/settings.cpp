@@ -127,7 +127,7 @@ struct DefaultValue {
 };
 
 constexpr std::array kGameDefaults = {
-    DefaultValue{"gpu_plugin", "xenos"},
+    DefaultValue{"gpu_plugin", "plume"},
     DefaultValue{"game_data_root", "assets"},
     DefaultValue{"gpu_allow_invalid_fetch_constants", "true"},
     // "fast" always copies the resolve readback to CPU memory every submission
