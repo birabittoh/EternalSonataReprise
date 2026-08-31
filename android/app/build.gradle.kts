@@ -31,6 +31,50 @@ android {
         }
     }
 
+    /*
+     * Stable sideload signing key.
+     *
+     * Signing with the machine's debug keystore makes every build a different
+     * signer, so installing over an existing copy fails with
+     * INSTALL_FAILED_UPDATE_INCOMPATIBLE and the app has to be uninstalled
+     * first, taking its saves and extracted game data with it.
+     *
+     * The keystore is deliberately not in the repository (see .gitignore).
+     * Create one once with:
+     *
+     *   keytool -genkeypair -keystore android/keystore/sideload.jks \
+     *     -storetype PKCS12 -storepass eternalsonata -keypass eternalsonata \
+     *     -alias eternalsonata -keyalg RSA -keysize 2048 -validity 10950 \
+     *     -dname "CN=Eternal Sonata Reprise Sideload"
+     *
+     * Path, alias and passwords are overridable through gradle properties
+     * (-PsideloadKeystore=...) or ES_KEYSTORE / ES_KEYSTORE_PASSWORD /
+     * ES_KEY_ALIAS / ES_KEY_PASSWORD in the environment, so CI can inject one
+     * from a secret. When no keystore is found the build falls back to debug
+     * signing, which is what CI does today.
+     */
+    // Resolved against the android/ directory, not app/, so the keystore sits
+    // next to the Gradle build rather than inside the module.
+    val sideloadKeystore = rootProject.file(
+        (project.findProperty("sideloadKeystore") as String?)
+            ?: System.getenv("ES_KEYSTORE")
+            ?: "keystore/sideload.jks"
+    )
+
+    signingConfigs {
+        if (sideloadKeystore.isFile) {
+            create("sideload") {
+                storeFile = sideloadKeystore
+                storePassword = (project.findProperty("sideloadKeystorePassword") as String?)
+                    ?: System.getenv("ES_KEYSTORE_PASSWORD") ?: "eternalsonata"
+                keyAlias = (project.findProperty("sideloadKeyAlias") as String?)
+                    ?: System.getenv("ES_KEY_ALIAS") ?: "eternalsonata"
+                keyPassword = (project.findProperty("sideloadKeyPassword") as String?)
+                    ?: System.getenv("ES_KEY_PASSWORD") ?: "eternalsonata"
+            }
+        }
+    }
+
     // Prebuilt native libraries, staged by CI into jniLibs/arm64-v8a/.
     sourceSets["main"].jniLibs.srcDirs(
         layout.projectDirectory.dir("jniLibs")
@@ -44,7 +88,10 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")   // debug-sign for now
+            // Sideload key when one is present, otherwise debug-signed as before
+            // so a fresh clone (and CI, which has no keystore) still builds.
+            signingConfig = signingConfigs.findByName("sideload")
+                ?: signingConfigs.getByName("debug")
         }
     }
 
