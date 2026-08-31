@@ -37,6 +37,7 @@
 #include "room_presence.h"
 #include "save_system.h"
 #include "settings.h"
+#include "touch_layout.h"
 
 #if REX_PLATFORM_ANDROID
 #include <dlfcn.h>
@@ -304,6 +305,16 @@ class EternalsonataApp : public rex::ReXApp {
     eternalsonata::FieldPlayerModelOverride::Bind(runtime());
 
     WireShaderDebugger();
+
+    // On-screen pad. The SDK's touch driver reports no device until a layout
+    // is installed, so this is what turns the touch controls on for this game;
+    // the touch_controls cvar (on by default only on Android) still decides
+    // whether they are shown. See src/touch_layout.h.
+    if (auto* input_sys = static_cast<rex::input::InputSystem*>(runtime()->input_system())) {
+      if (auto* touch = input_sys->GetDriver<rex::input::touch::TouchInputDriver>()) {
+        touch->SetLayoutProvider(&eternalsonata::BuildTouchLayout);
+      }
+    }
   }
 
   // The host swap chain follows the window. Only records the request: this

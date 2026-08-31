@@ -38,6 +38,8 @@ import android.view.Surface;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
@@ -922,12 +924,14 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                             window.getDecorView().setSystemUiVisibility(flags);
                             window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
                             window.clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+                            SDLActivity.setSystemBarsHidden(window, true);
                             SDLActivity.mFullscreenModeActive = true;
                         } else {
                             int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_VISIBLE;
                             window.getDecorView().setSystemUiVisibility(flags);
                             window.addFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
                             window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                            SDLActivity.setSystemBarsHidden(window, false);
                             SDLActivity.mFullscreenModeActive = false;
                         }
                         if (Build.VERSION.SDK_INT >= 30 /* Android 11 (R) */) {
@@ -1758,6 +1762,42 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         dialog.show();
     }
 
+    /**
+     * Hides or shows the status and navigation bars using the API that is
+     * actually honoured on the running platform version.
+     *
+     * The setSystemUiVisibility() flags this class uses elsewhere were
+     * deprecated in API 30 and are ignored outright from API 35 (Android 15),
+     * which forces every app that targets it edge-to-edge. On those versions
+     * the bars stay drawn over the game unless WindowInsetsController is asked
+     * to hide them, so this runs alongside the legacy flags rather than
+     * replacing them: the old path still covers API 28/29.
+     *
+     * Called from the SDL window-style command, so it follows SDL's fullscreen
+     * state (and therefore the fullscreen cvar) rather than forcing immersive
+     * mode on unconditionally.
+     */
+    static void setSystemBarsHidden(Window window, boolean hidden) {
+        if (Build.VERSION.SDK_INT < 30 /* Android 11 (R) */) {
+            return;
+        }
+        window.setDecorFitsSystemWindows(!hidden);
+        WindowInsetsController controller = window.getInsetsController();
+        if (controller == null) {
+            return;
+        }
+        if (hidden) {
+            // Transient-by-swipe keeps a swipe from the edge from permanently
+            // restoring the bars, which is what the legacy IMMERSIVE_STICKY
+            // flag above did.
+            controller.setSystemBarsBehavior(
+                WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            controller.hide(WindowInsets.Type.systemBars());
+        } else {
+            controller.show(WindowInsets.Type.systemBars());
+        }
+    }
+
     private final Runnable rehideSystemUi = new Runnable() {
         @Override
         public void run() {
@@ -1769,6 +1809,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.INVISIBLE;
 
             SDLActivity.this.getWindow().getDecorView().setSystemUiVisibility(flags);
+            SDLActivity.setSystemBarsHidden(SDLActivity.this.getWindow(), true);
         }
     };
 
