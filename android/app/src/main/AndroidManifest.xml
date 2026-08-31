@@ -18,10 +18,17 @@
     <!-- Gamepad / controller support -->
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 
+    <!--
+        appCategory tells the launcher, Digital Wellbeing and the Game Mode /
+        Game Dashboard framework what this app is; isGame is the pre-API-26
+        spelling of the same thing, still read by some launchers.
+    -->
     <application
         android:label="Eternal Sonata: Reprise"
         android:icon="@mipmap/ic_launcher"
-        android:hasCode="true">
+        android:hasCode="true"
+        android:appCategory="game"
+        android:isGame="true">
 
         <!--
             EternalSonataActivity extends SDLActivity and overrides getLibraries()
