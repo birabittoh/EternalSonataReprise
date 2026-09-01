@@ -44,6 +44,15 @@ enum ProfilePhase : uint32_t {
   kPhaseTextureUpload,   // decode, untile and upload of a texture that changed
   kPhaseGuestPointer,    // the VirtualQuery aperture walk behind a source read
   kPhaseDescriptorSet,   // binding set lookup and creation
+  // The five below account for the rest of IssueGuestDraw. Without them the
+  // summary charged roughly 3 us per draw to `draw` itself with no breakdown,
+  // which at a couple of thousand draws a frame was the largest single term.
+  kPhaseBindTargets,     // FrameBindDrawTargets, per draw
+  kPhaseProjectionProbe, // CaptureProjectionProbe, per draw, debug only
+  kPhaseStreamSetup,     // the whole vertex stream and view loop, per draw
+  kPhaseSwapPlan,        // BuildSwapPlan alone, per stream slot
+  kPhaseWaterHash,       // the water probe's per draw vertex hash, debug only
+  kPhaseSubmit,          // the command list calls that actually record the draw
   kPhaseDeclDecode,      // vertex declaration decode on the hook thread
   kPhaseReadbackPublish,  // arming a resolve destination for the guest to read
   kPhaseCount,
