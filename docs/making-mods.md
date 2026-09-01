@@ -609,6 +609,58 @@ Things worth knowing before you use it:
 `docs/party-system.md` documents the guest-side structures the API sits on, if
 you need to know what a call actually does.
 
+## Watching saves
+
+A mod can ask whether the game would let the player save right now, list what
+is in each save slot, and be told when a save starts, finishes, or fails. Copy
+`src/eternalsonata_save_api.h` from this repo into your mod for the signatures
+and the full contract; the entry points resolve out of the host executable the
+same way as the Options and party APIs.
+
+The three points of a save are published on the shared mod registry bus
+instead of through exported callbacks, so subscribing needs neither the header
+nor a linked symbol:
+
+```cpp
+runtime->mod_registry()->Subscribe(
+    "eternalsonata.save.completed",
+    [](const rex::system::ModRegistry::EventPayload& payload) {
+      REXLOG_INFO("saved to slot {}", payload.u64);
+    });
+```
+
+The names are `eternalsonata.save.started`, `.completed` and `.failed`. In all
+three the payload's `u64` is the slot (0..9); `.failed` also puts the reason in
+`f64`, either `ETERNALSONATA_SAVE_FAIL_NOT_STARTED` (the game never got the
+write off the ground) or `ETERNALSONATA_SAVE_FAIL_WRITE` (the write ran and
+reported failure). Exactly one of `.completed`/`.failed` follows each
+`.started`.
+
+Things worth knowing before you use it:
+
+- **The events do not come from the frame tick or the UI thread.** They are
+  published from whichever guest thread reached that point of the save:
+  `.started` from the thread driving the save menu, `.completed`/`.failed`
+  from the content worker thread the game spawns for the write. A subscriber
+  must be thread-safe, must not touch ImGui, and should hand anything
+  expensive to its own `RegisterTick`.
+- **`EternalSonataCanSave()` reports the game's gate, not storage.** It is 1
+  when the pause menu's Save entry is selectable, i.e. the party is at a save
+  point (or a mod is forcing that flag). A save can still fail afterwards,
+  which is what `.failed` is for.
+- **`EternalSonataListSaves()` does filesystem I/O.** It walks the current
+  profile's save containers, so call it on demand, not every frame. Passing
+  `NULL`/`0` returns the count without writing anything, so a caller can size
+  its own array first.
+- **`EternalSonataSetSaveAlwaysAllowed(1)` forces that gate**, making Save
+  selectable away from a save point. This is a host call because the gate is a
+  guest flag the field scripts rewrite on their own schedule: the host sets it
+  immediately before the menu build reads it, which a mod writing guest memory
+  from a per-frame tick cannot do reliably. Patching the branch is not an
+  option either, since a recompilation translates the guest code at build time.
+- **There is no save/load call.** Apart from that toggle the API is read-only
+  plus events; making the game save or load a slot on demand is not exposed.
+
 ## Patching static game text/data
 
 Item/enemy names, descriptions, and similar flavor text aren't loaded from
