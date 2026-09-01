@@ -18,6 +18,7 @@
 
 #include "native_renderer_frame.h"
 #include "native_renderer_pipeline_internal.h"
+#include "native_renderer_plume.h"
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_profile.h"
 #include "native_renderer_shader_debug.h"
@@ -29,6 +30,8 @@ namespace eternalsonata {
 // enters most of its zones. See native_renderer_profile.h.
 uint64_t g_profile_ns[kPhaseCount] = {};
 uint64_t g_profile_hits[kPhaseCount] = {};
+uint64_t g_gpu_frame_ns = 0;
+uint64_t g_gpu_frame_count = 0;
 std::chrono::steady_clock::time_point g_profile_window_start = std::chrono::steady_clock::now();
 
 namespace {
@@ -68,6 +71,12 @@ bool PhaseIsNested(uint32_t phase) {
     case kPhasePresent:
     case kPhaseDraw:
     case kPhaseDeclDecode:
+    // Top level since frames went in flight: the wait moved off the end of the
+    // present and onto the front of the next frame's first draw, where it is
+    // waiting for the frame kFramesInFlight back rather than for the one just
+    // submitted. It is no longer inside any other phase, so leaving it nested
+    // would charge its time to `other`.
+    case kPhaseFenceWait:
       return false;
     default:
       return true;
@@ -163,10 +172,14 @@ bool g_rect_fallback_reported = false;
 // ---------------------------------------------------------------------------
 // The upload arena.
 //
-// Single buffered on purpose, and safe only because the backend waits on its
-// fence after every present: by the time the arena is reset, the frame that
-// read those bytes has retired. This is the first thing that has to change when
-// there are frames in flight.
+// One arena per frame slot, which is what makes frames in flight possible: the
+// GPU reads a draw's vertices, indices and constants straight out of these
+// blocks, so a frame's bytes cannot be handed out again until that frame has
+// retired. With one arena per slot the wait is for the frame kFramesInFlight
+// back, which by then is long done, instead of for the frame just submitted.
+//
+// `Arena()` is the current slot's blocks for the whole of a frame's recording;
+// BeginGuestDrawFrame moves it.
 
 struct ArenaBlock {
   std::unique_ptr<RenderBuffer> buffer;
@@ -175,8 +188,18 @@ struct ArenaBlock {
   uint64_t used = 0;
 };
 
-std::vector<ArenaBlock> g_arena;
+struct FrameArena {
+  std::vector<ArenaBlock> blocks;
+  // Sets created because a cache was full. They were handed to draws in this
+  // slot's command list, so they live exactly as long as it does.
+  std::vector<std::unique_ptr<RenderDescriptorSet>> transient_sets;
+};
+
+FrameArena g_arenas[kFramesInFlight];
+uint32_t g_arena_slot = 0;
 uint32_t g_arena_block = 0;
+
+std::vector<ArenaBlock>& Arena() { return g_arenas[g_arena_slot].blocks; }
 
 // The last draw's texture and sampler descriptor sets, held against the shader
 // slot mask, the content epoch and a hash of the fetch constants they were
@@ -209,8 +232,9 @@ struct Allocation {
 Allocation ArenaAllocate(RenderDevice* device, uint64_t bytes) {
   const uint64_t aligned = (bytes + kUploadAlignment - 1) / kUploadAlignment * kUploadAlignment;
 
-  for (; g_arena_block < g_arena.size(); ++g_arena_block) {
-    ArenaBlock& block = g_arena[g_arena_block];
+  std::vector<ArenaBlock>& arena = Arena();
+  for (; g_arena_block < arena.size(); ++g_arena_block) {
+    ArenaBlock& block = arena[g_arena_block];
     if (block.used + aligned <= block.capacity) {
       Allocation allocation;
       allocation.ref = block.buffer->at(block.used);
@@ -235,10 +259,10 @@ Allocation ArenaAllocate(RenderDevice* device, uint64_t bytes) {
   if (block.mapped == nullptr)
     return {};
 
-  g_arena.push_back(std::move(block));
-  g_arena_block = uint32_t(g_arena.size()) - 1;
+  arena.push_back(std::move(block));
+  g_arena_block = uint32_t(arena.size()) - 1;
 
-  ArenaBlock& created = g_arena.back();
+  ArenaBlock& created = arena.back();
   Allocation allocation;
   allocation.ref = created.buffer->at(0);
   allocation.cpu = created.mapped;
@@ -397,12 +421,6 @@ struct BindingSetEntry {
 std::vector<BindingSetEntry> g_texture_sets;
 std::vector<BindingSetEntry> g_sampler_sets;
 
-// Sets created because a cache was full, thrown away at the end of the frame.
-// This is the safety valve: it is correct but allocates per draw, so a non-zero
-// count in the summary means the cap wants raising rather than that anything is
-// wrong.
-std::vector<std::unique_ptr<RenderDescriptorSet>> g_transient_sets;
-
 // What each heap can actually hold, in sets of sixteen, less a margin for the
 // overlay and the transient sets. These are not arbitrary: they are the heap
 // sizes Plume creates divided by the descriptors a set uses.
@@ -449,10 +467,15 @@ RenderDescriptorSet* AcquireBindingSet(RenderDevice* device, std::vector<Binding
                       RenderTextureLayout::SHADER_READ);
   }
 
+  // The safety valve: correct but allocating per draw, so a non-zero count in
+  // the summary means the cap wants raising rather than that anything is wrong.
+  // Held on the frame slot, because a draw in this slot's command list is what
+  // reads it.
   if (cache.size() >= cap) {
     ++g_texture_set_transient;
-    g_transient_sets.push_back(std::move(set));
-    return g_transient_sets.back().get();
+    auto& transient = g_arenas[g_arena_slot].transient_sets;
+    transient.push_back(std::move(set));
+    return transient.back().get();
   }
 
   BindingSetEntry entry;
@@ -2470,18 +2493,24 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 
 }  // namespace
 
-void ResetGuestDrawArena() {
-  for (ArenaBlock& block : g_arena)
+void BeginGuestDrawFrame(uint32_t slot) {
+  g_arena_slot = slot < kFramesInFlight ? slot : 0;
+  for (ArenaBlock& block : Arena())
     block.used = 0;
   g_arena_block = 0;
+
+  // These three hold references into the arena that was just recycled, so they
+  // have to go with it. They are per recording rather than per slot: only one
+  // frame is being recorded at a time, so there is never a second frame's worth
+  // of them to keep.
   g_stream_cache.clear();
   for (ConstantCacheEntry& cache : g_constant_cache)
     cache.valid = false;
   g_alpha_cache.valid = false;
 
-  // Safe here and only here: this runs from the present, after the fence wait,
-  // so the frame that recorded draws against these sets is done with them.
-  g_transient_sets.clear();
+  // Safe here and only here: the caller has waited on this slot's fence, so the
+  // frame that recorded draws against these sets is done with them.
+  g_arenas[g_arena_slot].transient_sets.clear();
 
   // A cached set may be one of those, so it cannot outlive them. The frame
   // boundary bumps the content epoch too, which would invalidate this on
@@ -2507,7 +2536,7 @@ void LogGuestDrawSummary() {
       "KiB indices, {} KiB constants | stream cache hits={} | arena {} block(s) | rect lists={} "
       "(unexpanded {}) | quad lists={} (indexed {})",
       g_draws_issued, g_draws_requested, dropped, g_vertex_bytes / 1024, g_index_bytes / 1024,
-      g_constant_bytes / 1024, g_stream_cache_hits, g_arena.size(), g_rect_draws, g_rect_fallbacks,
+      g_constant_bytes / 1024, g_stream_cache_hits, Arena().size(), g_rect_draws, g_rect_fallbacks,
       g_quad_draws, g_quad_indexed_draws);
 
   for (uint32_t i = 0; i < kDropCount; ++i) {
@@ -2579,6 +2608,19 @@ void LogProfileSummary() {
               "other", double(wall_ns - accounted) / 1e6 / 300.0,
               100.0 * double(wall_ns - accounted) / double(wall_ns));
 
+  // Not part of the accounting above, and deliberately printed after `other`:
+  // this is the same wall clock measured on the other processor, so it overlaps
+  // every CPU phase rather than adding to them.
+  if (g_gpu_frame_count != 0) {
+    REXLOG_INFO("native_renderer:   {:<18} {:7.2f} ms/frame {:5.1f}% of wall clock, over {} timed frame(s)",
+                "gpu", double(g_gpu_frame_ns) / 1e6 / double(g_gpu_frame_count),
+                100.0 * double(g_gpu_frame_ns) * 300.0 /
+                    (double(g_gpu_frame_count) * double(wall_ns)),
+                g_gpu_frame_count);
+  }
+  g_gpu_frame_ns = 0;
+  g_gpu_frame_count = 0;
+
   for (uint32_t i = 0; i < kPhaseCount; ++i) {
     g_profile_ns[i] = 0;
     g_profile_hits[i] = 0;
@@ -2587,11 +2629,14 @@ void LogProfileSummary() {
 }
 
 void ShutdownGuestDraws() {
-  for (ArenaBlock& block : g_arena) {
-    if (block.mapped != nullptr)
-      block.buffer->unmap();
+  for (FrameArena& arena : g_arenas) {
+    for (ArenaBlock& block : arena.blocks) {
+      if (block.mapped != nullptr)
+        block.buffer->unmap();
+    }
+    arena.blocks.clear();
+    arena.transient_sets.clear();
   }
-  g_arena.clear();
   g_arena_block = 0;
   g_stream_cache.clear();
   for (ConstantCacheEntry& cache : g_constant_cache) {
@@ -2601,7 +2646,6 @@ void ShutdownGuestDraws() {
   g_alpha_cache.valid = false;
   g_texture_sets.clear();
   g_sampler_sets.clear();
-  g_transient_sets.clear();
   for (SamplerCacheEntry& entry : g_samplers) {
     entry.sampler.reset();
     entry.key = 0;

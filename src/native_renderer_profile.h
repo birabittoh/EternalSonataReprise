@@ -63,6 +63,17 @@ enum ProfilePhase : uint32_t {
 extern uint64_t g_profile_ns[kPhaseCount];
 extern uint64_t g_profile_hits[kPhaseCount];
 
+// GPU time, which none of the zones above can see: they all measure CPU. Two
+// timestamps bracket the frame's single command list, so this is the wall time
+// the queue spent between the first and the last thing the frame recorded,
+// including any bubble inside it. Accumulated over the window in
+// native_renderer_plume.cpp and printed by the summary next to the CPU phases.
+//
+// This is the number that says whether the frame is CPU bound or GPU bound: if
+// it is close to the frame time, cutting CPU work moves nothing.
+extern uint64_t g_gpu_frame_ns;
+extern uint64_t g_gpu_frame_count;
+
 // Wall time the window covers, so every phase can be printed as a percentage of
 // something real rather than of the sum of the phases. Started at the first
 // swap and restarted by the summary.
