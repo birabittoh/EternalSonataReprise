@@ -223,6 +223,7 @@ set(ETERNALSONATA_SOURCES
     src/save_system.cpp
     src/photo_system.cpp
     src/guest_main_thread.cpp
+    src/guest_profiler.cpp
     src/host_timer_resolution.cpp
     src/force_load_area.cpp
     src/field_player_model_override.cpp
@@ -276,6 +277,10 @@ target_link_libraries(eternalsonata PRIVATE plume)
 if(WIN32)
     # timeBeginPeriod / timeGetDevCaps, for src/host_timer_resolution.cpp.
     target_link_libraries(eternalsonata PRIVATE winmm)
+
+    # SymFromAddr, for the guest profiler's symbolisation of sampled stacks.
+    # The unwinding itself is Rtl* and needs nothing. See src/guest_profiler.h.
+    target_link_libraries(eternalsonata PRIVATE dbghelp)
 
     # Plume's CMake does not link the D3D12 import library itself, leaving
     # D3D12CreateDevice and D3D12SerializeRootSignature to the consumer.
