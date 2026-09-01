@@ -43,6 +43,14 @@ uint32_t AlignUp(uint32_t value, uint32_t alignment) {
   return (value + alignment - 1) / alignment * alignment;
 }
 
+// Smallest n with (1 << n) >= value. Zero for 0 and 1.
+uint32_t Log2Ceil(uint32_t value) {
+  uint32_t n = 0;
+  while ((1u << n) < value)
+    ++n;
+  return n;
+}
+
 // Is the whole of [start, start + bytes) actually readable?
 //
 // This is not defensive coding, it is required. A fetch constant is guest state
@@ -412,30 +420,27 @@ uint64_t SourceExtentBytes(const TextureFetch& fetch, const FormatInfo& info) {
   return uint64_t(pitch_blocks) * info.block_bytes * height_blocks;
 }
 
-// Where level 0 actually starts, as an offset from the fetch constant's base.
+// Where level 0 starts, as an offset from the fetch constant's base.
 //
-// Normally zero: the base address points at level 0 and the mip chain lives in
-// its own allocation named by `mip_address`. This title's D3D block does
-// exactly that (0x8225DFE0 calls the allocator twice, once for the base and
-// once for the mip chain, and stores the two addresses at header +0x20 and
-// +0x30), but it skips the second allocation when the computed mip size is
-// zero, leaving the mip address field reading 0. In that case the single
-// allocation holds the packed mip tail first and level 0 after it.
+// Zero unless `mip_address` is 0 with a non-zero `mip_max_level`, which covers
+// two layouts:
 //
-// So this fires only on `mip_address == 0` with a non-zero `mip_max_level`,
-// which no working texture in this title matches; the health bar's own 256x32
-// sibling has a real mip address and is untouched.
+// Smallest dimension below 16: the whole chain is packed into one tile and
+// level 0 sits at 16 >> (4 - log2_size) blocks into it. The SDK's
+// texture_util GetPackedMipOffset describes the same tile but clamps
+// `packed_mip_base` at zero, so it reports 16 blocks for every base below 16.
 //
-// Measured rather than derived, and worth keeping the evidence with the code:
-// the battle health bar's 512x16 BC3 fill mask renders as noise because reading
-// level 0 at the base address yields the mip chain instead. Its level 1 is
-// 256x8, which is the mask at half size, and it lands in the bottom left
-// quadrant of what we upload, confirmed at 99.8% agreement against the same
-// texture captured from the Xenos backend, where the bar is correct. The mask's
-// real 8192 bytes were then found byte exact one level-0 extent further on.
+// Otherwise: the mip chain comes first and level 0 follows one extent in.
 uint64_t Level0ByteOffset(const TextureFetch& fetch, const FormatInfo& info) {
   if (fetch.mip_address != 0 || fetch.mip_max_level == 0)
     return 0;
+
+  const uint32_t log2_size =
+      Log2Ceil(fetch.width < fetch.height ? fetch.width : fetch.height);
+  if (log2_size < 4) {
+    const uint32_t offset_blocks = 16u >> (4 - log2_size);
+    return uint64_t(offset_blocks) * info.block_bytes;
+  }
   return SourceExtentBytes(fetch, info);
 }
 
