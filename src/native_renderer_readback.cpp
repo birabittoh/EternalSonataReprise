@@ -554,9 +554,15 @@ bool Fill(Destination& destination) {
 bool Fresh(const Destination& destination) { return !destination.guest_owns; }
 
 // Has the copy recorded for this destination actually run?
+//
+// This used to be "we are in a later frame than the one that recorded it",
+// which was true only because the present waited on its own fence: being in the
+// next frame meant the previous one had finished. With frames in flight it does
+// not, so the question is asked of the ring directly. Getting this wrong would
+// hand the guest a buffer the GPU is still writing.
 bool DataReady(const Destination& destination) {
   return destination.flushed ||
-         (destination.copy_frame != ~0ull && FrameIndex() > destination.copy_frame);
+         (destination.copy_frame != ~0ull && PlumeFrameRetired(destination.copy_frame));
 }
 
 // One line per event, capped, because the ordering is the thing that cannot be

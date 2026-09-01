@@ -18,6 +18,7 @@
 #include <rex/ui/ui_drawer.h>
 
 #include "native_renderer_draw.h"
+#include "native_renderer_frame.h"
 #include "native_renderer_texture.h"
 #include "native_renderer_pipeline.h"
 #include "native_renderer_plume_internal.h"
@@ -84,14 +85,51 @@ struct PlumeBackend {
   std::unique_ptr<RenderInterface> render_interface;
   std::unique_ptr<RenderDevice> device;
   std::unique_ptr<RenderCommandQueue> queue;
-  std::unique_ptr<RenderCommandList> command_list;
-  std::unique_ptr<RenderCommandFence> fence;
   std::unique_ptr<RenderSwapChain> swap_chain;
-  std::unique_ptr<RenderCommandSemaphore> acquire_semaphore;
   std::vector<std::unique_ptr<RenderCommandSemaphore>> release_semaphores;
   std::vector<std::unique_ptr<RenderFramebuffer>> framebuffers;
   std::string api_name;
 };
+
+// Everything a frame owns for as long as the GPU is still reading it. One per
+// slot, which is the whole of what frames in flight costs here; see
+// kFramesInFlight for why the number is two.
+//
+// The upload arena and the readback buffers are per slot too, but they live
+// with the code that uses them (native_renderer_draw.cpp and
+// native_renderer_frame.cpp) and are recycled through BeginGuestDrawFrame.
+struct FrameSlot {
+  std::unique_ptr<RenderCommandList> command_list;
+  std::unique_ptr<RenderCommandFence> fence;
+  // Per slot rather than shared: the next frame acquires its image before the
+  // previous frame's wait on this has necessarily executed.
+  std::unique_ptr<RenderCommandSemaphore> acquire_semaphore;
+  // Two timestamps, written at the start and the end of this slot's command
+  // list. See g_gpu_frame_ns in the profile header for why: every other
+  // instrument in this renderer measures CPU, and the fence wait alone cannot
+  // tell a busy GPU from a present that is pacing us.
+  std::unique_ptr<RenderQueryPool> gpu_timer;
+  // Whether `fence` has work outstanding on it, and which guest frame that work
+  // belongs to. Both are needed: a slot that has never been submitted must not
+  // be waited on, and a slot that has retires a specific frame index.
+  bool submitted = false;
+  uint64_t frame_index = 0;
+  // Whether this slot's opening timestamp has been written and is still going
+  // to be paired with a closing one.
+  bool timer_open = false;
+  // Whether a list has been opened since this slot was claimed. A frame can
+  // open several, because a mid-frame flush closes one and the next guest
+  // render call opens another; only the first is timed.
+  bool list_opened = false;
+};
+
+FrameSlot g_slots[kFramesInFlight];
+uint32_t g_slot = 0;
+
+// The highest guest frame index whose GPU work has completed; see
+// PlumeFrameRetired. Frame indices start at zero, so "nothing has retired yet"
+// needs a sentinel rather than a lower value.
+uint64_t g_retired_frame = ~0ull;
 
 PlumeBackend g_backend;
 std::atomic<bool> g_ready{false};
@@ -140,20 +178,73 @@ bool g_acquire_failure_reported = false;
 // PlumeGuestCommands.
 bool g_recording = false;
 
+// Everything submitted to this queue runs in the order it was submitted, so
+// waiting on any one fence retires every frame submitted at or before it. That
+// is what lets the flush path below retire the whole ring by waiting on one.
+void RetireThrough(uint64_t frame) {
+  if (g_retired_frame == ~0ull || frame > g_retired_frame)
+    g_retired_frame = frame;
+}
+
+// Block until this slot's outstanding work has run, and collect what it
+// measured. A slot with nothing outstanding returns immediately.
+void WaitForSlot(FrameSlot& slot) {
+  if (!slot.submitted)
+    return;
+  {
+    ProfileZone fence_zone(kPhaseFenceWait);
+    g_backend.queue->waitForCommandFence(slot.fence.get());
+  }
+  slot.submitted = false;
+  RetireThrough(slot.frame_index);
+
+  // Only now are the timestamps this slot wrote guaranteed to have landed. Both
+  // are in nanoseconds on the GPU's clock; a frame where the second is not
+  // ahead of the first is a wrap or a dropped resolve, and is dropped rather
+  // than clamped so the average stays honest.
+  if (slot.timer_open) {
+    slot.timer_open = false;
+    slot.gpu_timer->queryResults();
+    const uint64_t* stamps = slot.gpu_timer->getResults();
+    if (stamps != nullptr && stamps[1] > stamps[0]) {
+      g_gpu_frame_ns += stamps[1] - stamps[0];
+      ++g_gpu_frame_count;
+    }
+  }
+}
+
+// Drain the whole ring. For the two things that need the queue genuinely idle:
+// a swap chain resize, and shutdown.
+void WaitForAllSlots() {
+  for (FrameSlot& slot : g_slots)
+    WaitForSlot(slot);
+}
+
 // Submit and wait on whatever the frame recorded, without presenting it. Used
 // when the frame cannot be shown (a minimised window, a failed acquire) but has
-// already recorded guest work: the list has to be closed and drained either
-// way, or the next frame reopens a list that is still queued.
+// already recorded guest work, and by the readback path when the guest reads a
+// destination in the frame that resolved it.
+//
+// Unlike the present, this waits on the frame it just submitted, because the
+// caller is asking for exactly that: a full stall until this frame's GPU work
+// has run. It stays on the same slot, so the frame carries on recording into a
+// fresh list over a recycled arena.
 void FlushWithoutPresent() {
   if (!g_recording)
     return;
+  FrameSlot& slot = g_slots[g_slot];
   g_recording = false;
-  g_backend.command_list->end();
+  // No closing timestamp is written here, so this frame is dropped from the GPU
+  // average rather than read back half written. Flushes are rare by design.
+  slot.timer_open = false;
+  slot.command_list->end();
 
-  const RenderCommandList* submit = g_backend.command_list.get();
-  g_backend.queue->executeCommandLists(&submit, 1, nullptr, 0, nullptr, 0, g_backend.fence.get());
-  g_backend.queue->waitForCommandFence(g_backend.fence.get());
-  ResetGuestDrawArena();
+  const RenderCommandList* submit = slot.command_list.get();
+  g_backend.queue->executeCommandLists(&submit, 1, nullptr, 0, nullptr, 0, slot.fence.get());
+  slot.submitted = true;
+  slot.frame_index = FrameIndex();
+  WaitForSlot(slot);
+  BeginGuestDrawFrame(g_slot);
 }
 
 // One framebuffer per swap chain image. Rebuilt whenever the swap chain is,
@@ -214,12 +305,31 @@ void PlumeSetOverlayDrawer(rex::ui::UIDrawer* drawer) { g_overlay = drawer; }
 RenderCommandList* PlumeGuestCommands() {
   if (!g_ready.load(std::memory_order_acquire))
     return nullptr;
+  FrameSlot& slot = g_slots[g_slot];
   if (!g_recording) {
-    g_backend.command_list->begin();
+    slot.command_list->begin();
+    // Only the frame's first list is timed. A list opened after a mid-frame
+    // flush would pair its opening stamp with the closing one at present and
+    // report the tail of the frame as the whole of it.
+    const bool first_list_of_frame = !slot.list_opened;
+    slot.list_opened = true;
+    if (slot.gpu_timer && first_list_of_frame) {
+      // Outside any render pass, which is where Vulkan requires the reset; on
+      // D3D12 it is a no-op and only the writes matter.
+      slot.command_list->resetQueryPool(slot.gpu_timer.get(), 0, 2);
+      slot.command_list->writeTimestamp(slot.gpu_timer.get(), 0);
+      slot.timer_open = true;
+    }
     g_recording = true;
     FrameNotifyCommandListBegun();
   }
-  return g_backend.command_list.get();
+  return slot.command_list.get();
+}
+
+uint32_t PlumeFrameSlot() { return g_slot; }
+
+bool PlumeFrameRetired(uint64_t frame) {
+  return g_retired_frame != ~0ull && frame <= g_retired_frame;
 }
 
 bool InitPlumeBackend(void* window_handle) {
@@ -278,9 +388,14 @@ bool InitPlumeBackend(void* window_handle) {
   }
 
   g_backend.queue = g_backend.device->createCommandQueue(RenderCommandListType::DIRECT);
-  g_backend.command_list = g_backend.queue->createCommandList();
-  g_backend.fence = g_backend.device->createCommandFence();
-  g_backend.acquire_semaphore = g_backend.device->createCommandSemaphore();
+  for (FrameSlot& slot : g_slots) {
+    slot.command_list = g_backend.queue->createCommandList();
+    slot.fence = g_backend.device->createCommandFence();
+    slot.acquire_semaphore = g_backend.device->createCommandSemaphore();
+    slot.gpu_timer = g_backend.device->createQueryPool(2);
+  }
+  g_slot = 0;
+  g_retired_frame = ~0ull;
 
   // Present wait is what makes vsync usable on a frame-clocked engine. Without
   // it Plume's D3D12 present issues `Present(1, 0)`, which blocks on the vblank
@@ -377,6 +492,10 @@ void PlumePresentFrame() {
   // a minimise or a DPI change can invalidate it without an event we hooked.
   if (g_resize_pending.exchange(false, std::memory_order_acq_rel) ||
       g_backend.swap_chain->needsResize()) {
+    // A resize replaces the swap chain's textures, and a frame still in flight
+    // is rendering into one of them. Nothing else in the ring needs the queue
+    // idle; this does, so it drains it rather than assuming it.
+    WaitForAllSlots();
     ApplyResize();
   }
 
@@ -398,8 +517,13 @@ void PlumePresentFrame() {
     g_backend.swap_chain->wait();
   }
 
+  // The frame being recorded, captured before FramePreparePresent below counts
+  // the frame boundary: what is about to be submitted is this frame's work, and
+  // that is the index the readback path asks about.
+  const uint64_t recording_frame = FrameIndex();
+
   uint32_t image = 0;
-  if (!g_backend.swap_chain->acquireTexture(g_backend.acquire_semaphore.get(), &image)) {
+  if (!g_backend.swap_chain->acquireTexture(g_slots[g_slot].acquire_semaphore.get(), &image)) {
     // Usually means the swap chain went out of date between the check above and
     // here; the next frame's resize picks it up. Counted rather than logged per
     // occurrence so a resize storm cannot flood the log.
@@ -462,27 +586,37 @@ void PlumePresentFrame() {
 
   commands->barriers(RenderBarrierStage::NONE,
                      RenderTextureBarrier(backbuffer, RenderTextureLayout::PRESENT));
+  FrameSlot& submitting = g_slots[g_slot];
+  if (submitting.timer_open)
+    commands->writeTimestamp(submitting.gpu_timer.get(), 1);
   commands->end();
   g_recording = false;
 
   const RenderCommandList* submit = commands;
-  RenderCommandSemaphore* wait = g_backend.acquire_semaphore.get();
+  RenderCommandSemaphore* wait = submitting.acquire_semaphore.get();
   RenderCommandSemaphore* signal = g_backend.release_semaphores[image].get();
-  g_backend.queue->executeCommandLists(&submit, 1, &wait, 1, &signal, 1, g_backend.fence.get());
+  g_backend.queue->executeCommandLists(&submit, 1, &wait, 1, &signal, 1, submitting.fence.get());
+  submitting.submitted = true;
+  submitting.frame_index = recording_frame;
   g_backend.swap_chain->present(image, &signal, 1);
 
-  // One command list and one fence, so the next frame cannot start recording
-  // until this one is done with them. Fine at this size; it becomes a real
-  // frames-in-flight ring once there is actual work per frame.
-  {
-    ProfileZone fence_zone(kPhaseFenceWait);
-    g_backend.queue->waitForCommandFence(g_backend.fence.get());
-  }
+  // And then do *not* wait for it. This is the whole of frames in flight: the
+  // frame just submitted runs on the GPU while the CPU records the next one,
+  // and the only thing waited on here is the frame kFramesInFlight back, which
+  // by now has had a full frame of CPU time to finish.
+  //
+  // Measured in the first overworld map before this change, the fence wait was
+  // 6.21 ms against 6.18 ms of GPU time: the CPU sat idle for the exact
+  // duration of the GPU's work, every frame, and the frame cost the sum of the
+  // two rather than the larger of them.
+  g_slot = (g_slot + 1) % kFramesInFlight;
+  FrameSlot& next = g_slots[g_slot];
+  WaitForSlot(next);
+  next.list_opened = false;
 
-  // Safe only because of the wait above: the frame that owned those bytes has
-  // retired, so the next one can hand them out again. This is the assumption to
-  // revisit first when there are frames in flight.
-  ResetGuestDrawArena();
+  // Safe only because of that wait: the frame that owned this slot's arena has
+  // retired, so the next one can hand those bytes out again.
+  BeginGuestDrawFrame(g_slot);
 
   if (++g_frames_presented % 600 == 0) {
     REXLOG_INFO("native_renderer: Plume presented {} frames ({} acquire failures)",
@@ -501,6 +635,10 @@ void ShutdownPlumeBackend() {
 
   // Order matters: the queue has to be idle before anything it referenced is
   // destroyed, and the swap chain has to go before the queue that made it.
+  // Draining the ring is what makes the queue idle now that a submitted frame
+  // is no longer waited on where it was submitted.
+  if (g_backend.queue)
+    WaitForAllSlots();
   if (g_backend.swap_chain)
     g_backend.swap_chain->wait();
 
@@ -510,10 +648,16 @@ void ShutdownPlumeBackend() {
   ShutdownFrameTargets();
   g_backend.framebuffers.clear();
   g_backend.release_semaphores.clear();
-  g_backend.acquire_semaphore.reset();
   g_backend.swap_chain.reset();
-  g_backend.fence.reset();
-  g_backend.command_list.reset();
+  for (FrameSlot& slot : g_slots) {
+    slot.gpu_timer.reset();
+    slot.acquire_semaphore.reset();
+    slot.fence.reset();
+    slot.command_list.reset();
+    slot.submitted = false;
+    slot.timer_open = false;
+    slot.list_opened = false;
+  }
   g_backend.queue.reset();
   g_backend.device.reset();
   g_backend.render_interface.reset();

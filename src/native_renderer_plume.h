@@ -61,6 +61,37 @@ void PlumePresentFrame();
 // False when there was nothing recorded or the backend is not up.
 bool PlumeFlushGuestWork();
 
+// How many frames may be recorded and submitted before the CPU blocks on the
+// oldest one's fence.
+//
+// One would be the old behaviour: record a frame, submit it, wait for it, start
+// the next. That made the frame cost CPU + GPU end to end, with the CPU idle
+// for the whole GPU half and the GPU idle for the whole CPU half. Measured in
+// the first overworld map, that was 16.1 ms of CPU and 6.2 ms of GPU making a
+// 22.2 ms frame; the fence wait matched the GPU time to within 0.03 ms, which
+// is what a total absence of overlap looks like.
+//
+// Two lets frame N's GPU work run while the CPU records frame N+1, so the frame
+// is max(CPU, GPU) rather than their sum. Everything the GPU reads out of a
+// frame's own resources therefore has to exist once per slot: the command list,
+// the fence, the acquire semaphore, the timestamp pool, the upload arena and
+// the readback buffers. More than two would buy nothing here (the CPU half is
+// more than twice the GPU half, so the ring is never the constraint) and would
+// cost another arena and another set of readback buffers.
+inline constexpr uint32_t kFramesInFlight = 2;
+
+// Which slot the frame currently being recorded owns, in [0, kFramesInFlight).
+uint32_t PlumeFrameSlot();
+
+// Whether the GPU work recorded during guest frame `frame` is known to have
+// completed.
+//
+// This is the honest version of "the previous frame is done", which is what the
+// readback path used to assume and what frames in flight took away. Ask this
+// rather than comparing against FrameIndex() - 1 before reading anything the
+// GPU wrote. Frames are counted by the frame layer's FrameIndex().
+bool PlumeFrameRetired(uint64_t frame);
+
 // The window changed size; the swap chain has to follow. Called from the app's
 // pixel size hook, i.e. on the UI thread, so it only records the request and
 // the next present acts on it.

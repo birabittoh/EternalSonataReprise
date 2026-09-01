@@ -94,10 +94,16 @@ bool IssueGuestDraw(const GuestDrawCall& call);
 void DrawSetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height, float min_z,
                      float max_z);
 
-// Per-frame reset of the upload arena. Called from the present, after the fence
-// wait, which is what makes single buffering safe here: the frame that used
-// those bytes is done with them.
-void ResetGuestDrawArena();
+// Hand the draw layer the frame slot it is about to record into, recycling that
+// slot's upload arena and the descriptor sets it handed out.
+//
+// Called once per frame from the Plume layer, and only after that slot's fence
+// has been waited on: the arena is what the GPU reads its vertices, indices and
+// constants out of, so the frame that last used this slot has to have retired
+// before its bytes are handed out again. There is one arena per slot precisely
+// so that wait is for a frame `kFramesInFlight` back rather than for the one
+// just submitted; see PlumeFramesInFlight.
+void BeginGuestDrawFrame(uint32_t slot);
 
 // Counters for the swap-time summary: draws issued, what was uploaded, and
 // every reason a draw was dropped.

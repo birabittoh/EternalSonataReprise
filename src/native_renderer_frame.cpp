@@ -14,6 +14,7 @@
 #include <rex/cvar.h>
 #include <rex/logging.h>
 
+#include "native_renderer_plume.h"
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_readback.h"
 
@@ -102,6 +103,15 @@ struct ResolvedTexture {
   // can read it, which is the same delay the SDK's `readback_resolve=fast`
   // runs with. Persistently mapped, because the alternative is a map/unmap per
   // frame for a buffer whose contents are read from a fault handler.
+  //
+  // One buffer, not one per frame slot, even with frames in flight. What keeps
+  // the guest off a copy the GPU is still running is the readiness test in the
+  // readback layer (see DataReady), which asks the ring whether that frame has
+  // retired and stalls if it has not; a second buffer would not make an
+  // unfinished copy readable. Per-slot buffers were tried and are a real
+  // regression: the published pointer would alternate every frame, so the
+  // arming cache never recognised it and re-protected the destination's pages
+  // every frame, which cost 1.7 ms/frame for nothing.
   std::unique_ptr<RenderBuffer> readback;
   uint8_t* readback_mapped = nullptr;
   uint32_t readback_row_bytes = 0;
