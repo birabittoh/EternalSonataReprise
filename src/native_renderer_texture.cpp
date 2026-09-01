@@ -4,6 +4,7 @@
 
 #include "native_renderer_texture.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -158,11 +159,44 @@ const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t raw_base_addr
 // all, so the packed 5:6:5 and 1:5:5:5 the game takes its photos in are read out
 // of guest memory as the two byte units they are -- which is what tiling and the
 // endian swap need -- and then unpacked into B8G8R8A8 before the upload.
+//
+// The BC entries are the same mechanism for a different reason: the host format
+// exists but the device may not support it. Vulkan guarantees one compressed
+// family of BC, ETC2 or ASTC, and mobile GPUs implement the latter two, so the
+// DXT formats are decoded to B8G8R8A8 there instead. See g_bc_supported.
 enum class Expand {
   kNone,
   k5_6_5,
   k1_5_5_5,
+  kBC1,
+  kBC2,
+  kBC3,
 };
+
+bool IsBlockExpand(Expand expand) {
+  return expand == Expand::kBC1 || expand == Expand::kBC2 || expand == Expand::kBC3;
+}
+
+// Whether the device can sample BC directly. Queried once at first use rather
+// than at startup, because the texture mirror has no init hook that runs after
+// the Plume device exists.
+int g_bc_supported = -1;
+
+bool DeviceSupportsBC() {
+  if (g_bc_supported < 0) {
+    RenderDevice* device = PlumeDevice();
+    if (device == nullptr)
+      return true;
+    g_bc_supported = device->getCapabilities().textureCompressionBC ? 1 : 0;
+    // Forces the decode path on a device that does support BC, which is the
+    // only way to exercise it where a frame debugger is available.
+    if (std::getenv("ETERNALSONATA_NO_BC") != nullptr)
+      g_bc_supported = 0;
+    REXLOG_INFO("native_renderer: device texture compression BC={}",
+                g_bc_supported != 0 ? "yes" : "no, DXT will be decoded to B8G8R8A8");
+  }
+  return g_bc_supported != 0;
+}
 
 struct FormatInfo {
   RenderFormat host = RenderFormat::UNKNOWN;
@@ -208,14 +242,26 @@ bool MapTextureFormat(uint32_t format, FormatInfo& out) {
     case 10:
       out = {RenderFormat::R8G8_UNORM, 2, 1};
       return true;
+    // The guest unit stays 8 or 16 bytes over a 4x4 block either way: that is
+    // what the untiler and the endian swap address in, and it is what guest
+    // memory holds. Only the host format and the step before the upload change.
     case 18:  // k_DXT1
-      out = {RenderFormat::BC1_UNORM, 8, 4};
+      if (DeviceSupportsBC())
+        out = {RenderFormat::BC1_UNORM, 8, 4};
+      else
+        out = {RenderFormat::B8G8R8A8_UNORM, 8, 4, Expand::kBC1};
       return true;
     case 19:  // k_DXT2_3
-      out = {RenderFormat::BC2_UNORM, 16, 4};
+      if (DeviceSupportsBC())
+        out = {RenderFormat::BC2_UNORM, 16, 4};
+      else
+        out = {RenderFormat::B8G8R8A8_UNORM, 16, 4, Expand::kBC2};
       return true;
     case 20:  // k_DXT4_5
-      out = {RenderFormat::BC3_UNORM, 16, 4};
+      if (DeviceSupportsBC())
+        out = {RenderFormat::BC3_UNORM, 16, 4};
+      else
+        out = {RenderFormat::B8G8R8A8_UNORM, 16, 4, Expand::kBC3};
       return true;
     default:
       return false;
@@ -617,6 +663,114 @@ void ExpandRows(const std::vector<uint8_t>& in, uint32_t in_row_bytes, uint32_t 
   }
 }
 
+// Decode BC1/BC2/BC3 blocks into B8G8R8A8 rows, for devices with no BC support.
+//
+// The block bytes arrive in the standard little endian DXT layout: the endian
+// swap ahead of this runs uniformly over the whole 8 or 16 byte unit, which is
+// what the fetch constant asks for and what leaves the block readable here.
+//
+// `height` is in blocks, so the output carries height * 4 rows. Edge blocks are
+// written whole; the row is padded out to the upload pitch and the extra texels
+// are outside the copied extent.
+void DecodeBlockRows(const std::vector<uint8_t>& in, uint32_t in_row_bytes, uint32_t width,
+                     uint32_t height, Expand expand, uint32_t out_row_bytes,
+                     std::vector<uint8_t>& out) {
+  const uint32_t block_bytes = expand == Expand::kBC1 ? 8 : 16;
+  out.assign(size_t(out_row_bytes) * height * 4, 0);
+
+  for (uint32_t by = 0; by < height; ++by) {
+    const uint8_t* source = in.data() + size_t(by) * in_row_bytes;
+    for (uint32_t bx = 0; bx < width; ++bx) {
+      const uint8_t* block = source + size_t(bx) * block_bytes;
+      const uint8_t* colour = expand == Expand::kBC1 ? block : block + 8;
+
+      uint16_t c0 = uint16_t(colour[0] | (colour[1] << 8));
+      uint16_t c1 = uint16_t(colour[2] | (colour[3] << 8));
+      uint32_t bits = uint32_t(colour[4]) | (uint32_t(colour[5]) << 8) |
+                      (uint32_t(colour[6]) << 16) | (uint32_t(colour[7]) << 24);
+
+      uint8_t red[4], green[4], blue[4], alpha[4];
+      const uint16_t endpoints[2] = {c0, c1};
+      for (uint32_t i = 0; i < 2; ++i) {
+        const uint32_t r5 = (endpoints[i] >> 11) & 0x1F;
+        const uint32_t g6 = (endpoints[i] >> 5) & 0x3F;
+        const uint32_t b5 = endpoints[i] & 0x1F;
+        red[i] = uint8_t((r5 << 3) | (r5 >> 2));
+        green[i] = uint8_t((g6 << 2) | (g6 >> 4));
+        blue[i] = uint8_t((b5 << 3) | (b5 >> 2));
+        alpha[i] = 255;
+      }
+
+      // The one bit punchthrough mode exists only in BC1. BC2 and BC3 carry
+      // their alpha separately and always take the four colour interpolation.
+      const bool punchthrough = expand == Expand::kBC1 && c0 <= c1;
+      if (punchthrough) {
+        red[2] = uint8_t((red[0] + red[1]) / 2);
+        green[2] = uint8_t((green[0] + green[1]) / 2);
+        blue[2] = uint8_t((blue[0] + blue[1]) / 2);
+        alpha[2] = 255;
+        red[3] = green[3] = blue[3] = 0;
+        alpha[3] = 0;
+      } else {
+        red[2] = uint8_t((2 * red[0] + red[1]) / 3);
+        green[2] = uint8_t((2 * green[0] + green[1]) / 3);
+        blue[2] = uint8_t((2 * blue[0] + blue[1]) / 3);
+        alpha[2] = 255;
+        red[3] = uint8_t((red[0] + 2 * red[1]) / 3);
+        green[3] = uint8_t((green[0] + 2 * green[1]) / 3);
+        blue[3] = uint8_t((blue[0] + 2 * blue[1]) / 3);
+        alpha[3] = 255;
+      }
+
+      // BC3's alpha palette: two endpoints and either six or four interpolated
+      // values, the shorter run reserving two slots for 0 and 255.
+      uint8_t alpha_palette[8] = {};
+      if (expand == Expand::kBC3) {
+        alpha_palette[0] = block[0];
+        alpha_palette[1] = block[1];
+        if (alpha_palette[0] > alpha_palette[1]) {
+          for (uint32_t i = 1; i < 7; ++i) {
+            alpha_palette[i + 1] =
+                uint8_t(((7 - i) * alpha_palette[0] + i * alpha_palette[1]) / 7);
+          }
+        } else {
+          for (uint32_t i = 1; i < 5; ++i) {
+            alpha_palette[i + 1] =
+                uint8_t(((5 - i) * alpha_palette[0] + i * alpha_palette[1]) / 5);
+          }
+          alpha_palette[6] = 0;
+          alpha_palette[7] = 255;
+        }
+      }
+      uint64_t alpha_bits = 0;
+      if (expand == Expand::kBC3) {
+        for (uint32_t i = 0; i < 6; ++i)
+          alpha_bits |= uint64_t(block[2 + i]) << (8 * i);
+      }
+
+      for (uint32_t y = 0; y < 4; ++y) {
+        uint8_t* dest = out.data() + size_t(by * 4 + y) * out_row_bytes +
+                        size_t(bx) * 4 * 4;
+        for (uint32_t x = 0; x < 4; ++x) {
+          const uint32_t texel = y * 4 + x;
+          const uint32_t index = (bits >> (2 * texel)) & 0x3;
+          uint8_t a = alpha[index];
+          if (expand == Expand::kBC2) {
+            const uint8_t nibble = uint8_t((block[texel / 2] >> ((texel & 1) * 4)) & 0xF);
+            a = uint8_t((nibble << 4) | nibble);
+          } else if (expand == Expand::kBC3) {
+            a = alpha_palette[(alpha_bits >> (3 * texel)) & 0x7];
+          }
+          dest[x * 4 + 0] = blue[index];
+          dest[x * 4 + 1] = green[index];
+          dest[x * 4 + 2] = red[index];
+          dest[x * 4 + 3] = a;
+        }
+      }
+    }
+  }
+}
+
 // Decode and upload. `existing` is null on a cache miss, in which case a texture
 // is created; on a refresh it is the texture already in the cache and the texels
 // are copied over it in place. Reusing the object is what makes a refresh safe:
@@ -646,10 +800,15 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
   // pitch as ceil(rowWidth / block) * block_bytes, so the alignment has to be
   // chosen in blocks and handed back as texels.
   const uint32_t host_block_bytes = HostBlockBytes(info);
-  const uint32_t row_bytes = width_blocks * host_block_bytes;
+  // A decoded block is no longer one host unit but info.block of them across,
+  // so its row is counted in texels rather than in blocks.
+  const uint32_t host_row_units =
+      IsBlockExpand(info.expand) ? width_blocks * info.block : width_blocks;
+  const uint32_t row_bytes = host_row_units * host_block_bytes;
   const uint32_t upload_row_bytes = AlignUp(row_bytes, kUploadRowAlignment);
-  const uint32_t upload_row_blocks = upload_row_bytes / host_block_bytes;
-  const uint32_t upload_row_texels = upload_row_blocks * info.block;
+  const uint32_t upload_row_units = upload_row_bytes / host_block_bytes;
+  const uint32_t upload_row_texels =
+      IsBlockExpand(info.expand) ? upload_row_units : upload_row_units * info.block;
 
   // A widened format is read at its own packed guest pitch and unpacked into the
   // upload pitch afterwards; everything else is read straight into the layout the
@@ -686,7 +845,12 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
     return nullptr;
   }
 
-  if (expanding) {
+  if (IsBlockExpand(info.expand)) {
+    std::vector<uint8_t> decoded;
+    DecodeBlockRows(texels, read_row_bytes, width_blocks, height_blocks, info.expand,
+                    upload_row_bytes, decoded);
+    texels.swap(decoded);
+  } else if (expanding) {
     // What the 16 bit units actually look like, once, per format.
     //
     // Brownish, low contrast output has two possible causes that argue the same
