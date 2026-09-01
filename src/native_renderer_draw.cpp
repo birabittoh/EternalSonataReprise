@@ -11,6 +11,7 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <rex/logging.h>
@@ -49,6 +50,12 @@ const char* const kPhaseNames[kPhaseCount] = {
     "      texture upload",
     "      aperture walk",
     "  descriptor sets",
+    "  bind targets",
+    "  projection probe",
+    "  stream setup",
+    "    swap plan",
+    "    water hash",
+    "  submit",
     "decl decode",
     "readback publish",
 };
@@ -835,15 +842,43 @@ void RectDiagonal(const uint8_t* vertices, uint32_t stride, const SwapPlan& plan
 // because the same buffer is bound across a run of draws and the constant banks
 // change far less often than they are read.
 
-struct StreamCacheEntry {
+// What makes two requests for the same upload the same request. The primitive
+// field is the expansion kind, so a rectangle expansion is never handed to a
+// quad draw off the same source pointer; see kWidenedCacheKind.
+struct StreamCacheKey {
   const uint8_t* source = nullptr;
   uint32_t bytes = 0;
   uint32_t stride = 0;
   uint32_t primitive = 0;
+
+  bool operator==(const StreamCacheKey& other) const {
+    return source == other.source && bytes == other.bytes && stride == other.stride &&
+           primitive == other.primitive;
+  }
+};
+
+struct StreamCacheKeyHash {
+  size_t operator()(const StreamCacheKey& key) const {
+    uint64_t hash = uint64_t(reinterpret_cast<uintptr_t>(key.source));
+    hash ^= (uint64_t(key.stride) << 32) ^ uint64_t(key.bytes);
+    hash ^= uint64_t(key.primitive) * 0x9E3779B97F4A7C15ull;
+    hash *= 0xFF51AFD7ED558CCDull;
+    hash ^= hash >> 33;
+    return size_t(hash);
+  }
+};
+
+struct StreamCacheEntry {
   RenderBufferReference ref;
   uint32_t size = 0;
 };
-std::vector<StreamCacheEntry> g_stream_cache;
+
+// Hashed rather than scanned. The cache is cleared every frame and gains an
+// entry per upload, reaching a couple of thousand entries in a heavy area, and
+// the lookup runs once per stream slot per draw. A linear scan over it is
+// quadratic in draws per frame. clear() keeps the buckets, so the per-frame
+// reset does not rehash.
+std::unordered_map<StreamCacheKey, StreamCacheEntry, StreamCacheKeyHash> g_stream_cache;
 
 struct ConstantCacheEntry {
   std::vector<uint8_t> raw;  // the guest bytes, unswapped, as last uploaded
@@ -1766,7 +1801,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 
   uint32_t target_width = 0;
   uint32_t target_height = 0;
-  if (FrameBindDrawTargets(commands, &target_width, &target_height) == nullptr) {
+  bool have_targets;
+  {
+    ProfileZone targets_zone(kPhaseBindTargets);
+    have_targets = FrameBindDrawTargets(commands, &target_width, &target_height) != nullptr;
+  }
+  if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
     return false;
   }
@@ -1797,6 +1837,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // the two uploads share a source pointer and are not interchangeable.
   constexpr uint32_t kWidenedCacheKind = 0x10u;
 
+  {
+  ProfileZone stream_zone(kPhaseStreamSetup);
   for (uint32_t slot = 0; slot < slot_count; ++slot) {
     const uint32_t stream_index = slot_streams[slot];
     if (stream_index == kNullInputSlot) {
@@ -1828,17 +1870,11 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
         continue;
       const uint64_t bytes = uint64_t(vertices) * widened_stride;
 
-      StreamCacheEntry* widened_cached = nullptr;
-      for (auto& entry : g_stream_cache) {
-        if (entry.source == source.data && entry.bytes == uint32_t(bytes) &&
-            entry.stride == widened_stride && entry.primitive == kWidenedCacheKind) {
-          widened_cached = &entry;
-          break;
-        }
-      }
-      if (widened_cached != nullptr) {
+      const StreamCacheKey widened_key{source.data, uint32_t(bytes), widened_stride,
+                                       kWidenedCacheKind};
+      if (const auto found = g_stream_cache.find(widened_key); found != g_stream_cache.end()) {
         ++g_stream_cache_hits;
-        views[slot] = RenderVertexBufferView(widened_cached->ref, widened_cached->size);
+        views[slot] = RenderVertexBufferView(found->second.ref, found->second.size);
         continue;
       }
 
@@ -1876,14 +1912,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
       g_vertex_bytes += bytes;
       views[slot] = RenderVertexBufferView(allocation.ref, uint32_t(bytes));
 
-      StreamCacheEntry entry;
-      entry.source = source.data;
-      entry.bytes = uint32_t(bytes);
-      entry.stride = widened_stride;
-      entry.primitive = kWidenedCacheKind;
-      entry.ref = allocation.ref;
-      entry.size = uint32_t(bytes);
-      g_stream_cache.push_back(entry);
+      g_stream_cache.emplace(widened_key, StreamCacheEntry{allocation.ref, uint32_t(bytes)});
       continue;
     }
 
@@ -1898,9 +1927,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     }
 
     SwapPlan plan;
-    if (!BuildSwapPlan(*call.declaration, stream_index, &plan)) {
-      Drop(kDropVertexFormat, "the pipeline accepted a format the swap table does not know");
-      return false;
+    {
+      ProfileZone plan_zone(kPhaseSwapPlan);
+      if (!BuildSwapPlan(*call.declaration, stream_index, &plan)) {
+        Drop(kDropVertexFormat, "the pipeline accepted a format the swap table does not know");
+        return false;
+      }
     }
 
     // An indexed draw indexes the whole bound buffer, so the whole bound buffer
@@ -1938,7 +1970,13 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     //
     // Note the stream cache below keys on the source *pointer*, not on its
     // contents, which is safe only because the cache is cleared every frame.
-    if (IsWaterPairDraw(call)) {
+    // IsWaterProbeDraw, not IsWaterPairDraw. This hash is read back only as the
+    // vhash= field of the probe's per frame line, so it is logging, and the
+    // rule stated above IsWaterPairDraw is that only logging keys off the probe
+    // being on. Keyed off the pair alone it ran whenever the scene used that
+    // vertex shader, probe or not, hashing the whole stream a byte at a time.
+    if (IsWaterProbeDraw(call)) {
+      ProfileZone water_zone(kPhaseWaterHash);
       const uint64_t bytes = uint64_t(source_vertices) * stream.stride;
       uint64_t hash = 1469598103934665603ull;
       for (uint64_t i = 0; i < bytes; ++i) {
@@ -1951,18 +1989,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     // Reuse the upload when the same bytes were already uploaded this frame.
     // A run of draws out of one mesh buffer is the common shape here, and the
     // swap is the expensive part.
-    StreamCacheEntry* cached = nullptr;
-    for (auto& entry : g_stream_cache) {
-      if (entry.source == stream.data && entry.bytes == uint32_t(out_bytes) &&
-          entry.stride == stream.stride && entry.primitive == cache_kind) {
-        cached = &entry;
-        break;
-      }
-    }
+    const StreamCacheKey stream_key{stream.data, uint32_t(out_bytes), stream.stride, cache_kind};
+    const auto cached = g_stream_cache.find(stream_key);
 
-    if (cached != nullptr) {
+    if (cached != g_stream_cache.end()) {
       ++g_stream_cache_hits;
-      views[slot] = RenderVertexBufferView(cached->ref, cached->size);
+      views[slot] = RenderVertexBufferView(cached->second.ref, cached->second.size);
     } else {
       ProfileZone upload_zone(kPhaseVertexUpload);
       const Allocation allocation = ArenaAllocate(device, out_bytes);
@@ -2050,20 +2082,14 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
       g_vertex_bytes += out_bytes;
       views[slot] = RenderVertexBufferView(allocation.ref, uint32_t(out_bytes));
 
-      StreamCacheEntry entry;
-      entry.source = stream.data;
-      entry.bytes = uint32_t(out_bytes);
-      entry.stride = stream.stride;
-      entry.primitive = cache_kind;
-      entry.ref = allocation.ref;
-      entry.size = uint32_t(out_bytes);
-      g_stream_cache.push_back(entry);
+      g_stream_cache.emplace(stream_key, StreamCacheEntry{allocation.ref, uint32_t(out_bytes)});
     }
 
     if (expand || expand_quads) {
       draw_count = out_vertices;
       expanded = true;
     }
+  }
   }
 
   if (quad_list) {
@@ -2332,7 +2358,10 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // Deliberately outside the binding cache below: the first draw of a frame to
   // declare the probe slot may well be a cache hit, and then the loop that
   // decodes fetch constants never runs. One extra decode per frame.
-  CaptureProjectionProbe(call, texture_mask);
+  {
+    ProfileZone probe_zone(kPhaseProjectionProbe);
+    CaptureProjectionProbe(call, texture_mask);
+  }
 
   RenderDescriptorSet* texture_set;
   RenderDescriptorSet* sampler_set;
@@ -2405,15 +2434,18 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     return false;
   }
 
-  commands->setGraphicsDescriptorSet(texture_set, kTextureDescriptorSet);
-  commands->setGraphicsDescriptorSet(sampler_set, kSamplerDescriptorSet);
-  commands->setVertexBuffers(0, views, slot_count, slots);
+  {
+    ProfileZone submit_zone(kPhaseSubmit);
+    commands->setGraphicsDescriptorSet(texture_set, kTextureDescriptorSet);
+    commands->setGraphicsDescriptorSet(sampler_set, kSamplerDescriptorSet);
+    commands->setVertexBuffers(0, views, slot_count, slots);
 
-  if (call.indexed) {
-    commands->setIndexBuffer(&index_view);
-    commands->drawIndexedInstanced(index_count, 1, 0, call.base_vertex, 0);
-  } else {
-    commands->drawInstanced(draw_count, 1, 0, 0);
+    if (call.indexed) {
+      commands->setIndexBuffer(&index_view);
+      commands->drawIndexedInstanced(index_count, 1, 0, call.base_vertex, 0);
+    } else {
+      commands->drawInstanced(draw_count, 1, 0, 0);
+    }
   }
 
   ++g_draws_issued;
