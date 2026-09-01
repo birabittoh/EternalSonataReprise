@@ -178,12 +178,13 @@ struct ArenaBlock {
 std::vector<ArenaBlock> g_arena;
 uint32_t g_arena_block = 0;
 
-// The last draw's texture and sampler descriptor sets, held against the mirror
-// generation and shader slot mask they were built from. See its use in
-// IssueGuestDraw for why a single entry is enough and why the generation has to
-// include the frame boundary.
+// The last draw's texture and sampler descriptor sets, held against the shader
+// slot mask, the content epoch and a hash of the fetch constants they were
+// built from. See its use in IssueGuestDraw for why a single entry is enough
+// and why the epoch has to include the frame boundary.
 struct BindingCache {
-  uint64_t generation = 0;
+  uint64_t epoch = 0;
+  uint64_t signature = 0;
   uint32_t mask = 0;
   RenderDescriptorSet* texture_set = nullptr;
   RenderDescriptorSet* sampler_set = nullptr;
@@ -2343,17 +2344,27 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // All of that is derived from the fetch constants and the shader's slot mask,
   // and neither moves between most consecutive draws: this title issues roughly
   // three draws per SetTexture call. So the whole loop, and the two set lookups
-  // under it, are cached against the mirror's binding generation.
+  // under it, are cached against the fetch constants they were built from.
   //
-  // The generation moves on SetTexture, on the sampler setters, on a resolve
-  // and at every frame boundary. That last one is what keeps this honest: the
-  // texture mirror refreshes a rewritten texture at most once per texture per
-  // frame, so a cache that survived a frame boundary would freeze the font
-  // atlas, which is a bug this renderer has already had once. Within a frame,
-  // skipping the mirror on an unchanged generation is exactly equivalent, since
-  // the second visit would find the refresh already throttled out.
+  // Keyed on what the bindings are actually made of rather than on the binding
+  // generation. The generation moves on every SetTexture, and this title issues
+  // roughly three draws per SetTexture while frequently setting the same
+  // texture back, so keying on it missed about 39% of the time and paid the
+  // whole loop again for bindings that had not moved. The signature is a hash
+  // of the raw fetch constants of the declared slots, which covers everything
+  // SetTexture and the three sampler setters can do; the content epoch covers
+  // the two things they cannot, a resolve replacing the host image behind an
+  // unchanged address and the frame boundary.
+  //
+  // That frame boundary is what keeps this honest: the texture mirror refreshes
+  // a rewritten texture at most once per texture per frame, so a cache that
+  // survived one would freeze the font atlas, which is a bug this renderer has
+  // already had once. Within a frame, skipping the mirror on identical fetch
+  // constants is exactly equivalent, since the second visit would find the
+  // refresh already throttled out.
   const uint32_t texture_mask = GuestPipelineTextureMask(call.pipeline);
-  const uint64_t binding_generation = TextureBindingGeneration();
+  const uint64_t content_epoch = TextureContentEpoch();
+  const uint64_t fetch_signature = BoundTextureFetchSignature(call.memory_base, texture_mask);
 
   // Deliberately outside the binding cache below: the first draw of a frame to
   // declare the probe slot may well be a cache hit, and then the loop that
@@ -2365,8 +2376,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 
   RenderDescriptorSet* texture_set;
   RenderDescriptorSet* sampler_set;
-  if (g_binding_cache.valid && g_binding_cache.generation == binding_generation &&
-      g_binding_cache.mask == texture_mask) {
+  // WaterPinT12 rewrites a fetch constant *after* it is read, so a draw under
+  // it does not describe itself; the pin is a debug knob and is zero in a
+  // shipped frame, so the cache is simply stood down while it is set.
+  const bool cacheable = fetch_signature != 0 && WaterPinT12() == 0;
+  if (cacheable && g_binding_cache.valid && g_binding_cache.epoch == content_epoch &&
+      g_binding_cache.signature == fetch_signature && g_binding_cache.mask == texture_mask) {
     ++g_binding_cache_hits;
     texture_set = g_binding_cache.texture_set;
     sampler_set = g_binding_cache.sampler_set;
@@ -2421,13 +2436,14 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     sampler_set = AcquireBindingSet(device, g_sampler_sets, kMaxSamplerSets, true, samplers,
                                     &g_sampler_set_misses);
     ++g_binding_cache_misses;
-    g_binding_cache.generation = binding_generation;
+    g_binding_cache.epoch = content_epoch;
+    g_binding_cache.signature = fetch_signature;
     g_binding_cache.mask = texture_mask;
     g_binding_cache.texture_set = texture_set;
     g_binding_cache.sampler_set = sampler_set;
     // A failed lookup is not worth remembering, and caching a null set would
     // hand the next draw the same failure without retrying it.
-    g_binding_cache.valid = texture_set != nullptr && sampler_set != nullptr;
+    g_binding_cache.valid = cacheable && texture_set != nullptr && sampler_set != nullptr;
   }
   if (texture_set == nullptr || sampler_set == nullptr) {
     Drop(kDropNoArena, "a descriptor set could not be created; the heap behind it is full");
@@ -2468,7 +2484,7 @@ void ResetGuestDrawArena() {
   g_transient_sets.clear();
 
   // A cached set may be one of those, so it cannot outlive them. The frame
-  // boundary bumps the binding generation too, which would invalidate this on
+  // boundary bumps the content epoch too, which would invalidate this on
   // its own; this is here so the lifetime does not depend on that ordering.
   g_binding_cache.valid = false;
 

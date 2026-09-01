@@ -57,13 +57,13 @@ namespace {
 
 std::atomic<uint32_t> g_device{0};
 
-// See TextureBindingGeneration in the header. Atomic only because the frame
+// See TextureContentEpoch in the header. Atomic only because the frame
 // boundary bump can arrive from the present path; every other bump and every
 // read is on the guest thread.
-std::atomic<uint64_t> g_texture_binding_generation{1};
+std::atomic<uint64_t> g_texture_content_epoch{1};
 
-void BumpTextureBindingGeneration() {
-  g_texture_binding_generation.fetch_add(1, std::memory_order_relaxed);
+void BumpTextureContentEpoch() {
+  g_texture_content_epoch.fetch_add(1, std::memory_order_relaxed);
 }
 
 // Bound state, guest pointers. Written from the guest thread only.
@@ -1009,8 +1009,31 @@ bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out,
   return out.type == 2 && out.base_address != 0 && out.width != 0 && out.height != 0;
 }
 
-uint64_t TextureBindingGeneration() {
-  return g_texture_binding_generation.load(std::memory_order_relaxed);
+uint64_t TextureContentEpoch() {
+  return g_texture_content_epoch.load(std::memory_order_relaxed);
+}
+
+uint64_t BoundTextureFetchSignature(uint8_t* base, uint32_t mask) {
+  const uint32_t device = g_device.load(std::memory_order_relaxed);
+  if (base == nullptr || device == 0)
+    return 0;
+
+  // FNV-1a over the raw dwords of the declared slots, the mask included so two
+  // different masks over the same constants cannot collide. Raw rather than
+  // decoded on purpose: this has to notice everything SetTexture and the three
+  // sampler setters can write, and the decode discards bits.
+  uint64_t hash = 0xCBF29CE484222325ull;
+  auto fold = [&hash](uint32_t value) {
+    hash = (hash ^ value) * 0x100000001B3ull;
+  };
+  fold(mask);
+  for (uint32_t stage = 0; stage < d3d::kSamplerCount; ++stage) {
+    if ((mask & (1u << stage)) == 0)
+      continue;
+    for (uint32_t word = 0; word < 6; ++word)
+      fold(FetchConstantWord(base, device, stage, word));
+  }
+  return hash;
 }
 
 void D3DTilingExtent(uint32_t* width, uint32_t* height) {
@@ -1558,7 +1581,7 @@ REX_HOOK_RAW(D3DDevice__Resolve) {
 
   // A resolve can replace the host image behind an address the guest never
   // rebinds, so a cached binding over it has to be invalidated here too.
-  BumpTextureBindingGeneration();
+  BumpTextureContentEpoch();
 
   const bool first = TrackResolveDestination(fetch.base_address);
   if (first && g_resolve_examples_logged < 8) {
@@ -1583,8 +1606,8 @@ REX_HOOK_RAW(D3DDevice__Swap) {
   eternalsonata::PlumePresentFrame();
   eternalsonata::TextureMirrorBeginFrame();
   // The frame boundary invalidates every cached binding, so the once-per-frame
-  // content hash still happens. See TextureBindingGeneration.
-  eternalsonata::BumpTextureBindingGeneration();
+  // content hash still happens. See TextureContentEpoch.
+  eternalsonata::BumpTextureContentEpoch();
   // Rolls the shader debugger's "active this frame" flags over, so its list
   // shows what the game is drawing now rather than what it ever drew.
   eternalsonata::GuestShaderDebugEndFrame();
@@ -1619,7 +1642,6 @@ REX_HOOK_RAW(D3DDevice__SetTexture) {
   ++g_texture_calls;
   CheckSamplerClobber(base, device, sampler);
   RecordTextureFetch(base, device, sampler);
-  BumpTextureBindingGeneration();
 }
 
 // The three sampler setters, hooked only to snapshot what they wrote so the
@@ -1633,7 +1655,6 @@ REX_HOOK_RAW(D3DDevice__SetSamplerState_MinFilter) {
     return;
   ++eternalsonata::g_sampler_sets;
   eternalsonata::SnapshotSampler(base, device, stage);
-  eternalsonata::BumpTextureBindingGeneration();
 }
 
 REX_HOOK_RAW(D3DDevice__SetSamplerState_MagFilter) {
@@ -1644,7 +1665,6 @@ REX_HOOK_RAW(D3DDevice__SetSamplerState_MagFilter) {
     return;
   ++eternalsonata::g_sampler_sets;
   eternalsonata::SnapshotSampler(base, device, stage);
-  eternalsonata::BumpTextureBindingGeneration();
 }
 
 REX_HOOK_RAW(D3DDevice__SetSamplerState_MipMapLodBias) {
@@ -1655,5 +1675,4 @@ REX_HOOK_RAW(D3DDevice__SetSamplerState_MipMapLodBias) {
     return;
   ++eternalsonata::g_sampler_sets;
   eternalsonata::SnapshotSampler(base, device, stage);
-  eternalsonata::BumpTextureBindingGeneration();
 }
