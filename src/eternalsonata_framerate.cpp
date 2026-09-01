@@ -15,6 +15,7 @@
 
 #include "eternalsonata_hooks_internal.h"
 #include "guest_main_thread.h"
+#include "guest_profiler.h"
 
 // frame_rate cvar: "30" / "60" / "adaptive" / "unlocked". Defined (and
 // persisted) in settings.cpp; declared here so the frame-driver hook can read it
@@ -646,7 +647,17 @@ REX_HOOK_RAW(sub_8210AAD8) {
     g_applied_fps = fps;
     g_applied_vsync = vsynced;
   }
+  // The guest's own present, timed so the profiler can separate it from
+  // everything the guest did before reaching here. Both halves are guest CPU
+  // work; the split only says which half to go looking in.
+  const auto present_start = std::chrono::steady_clock::now();
   __imp__sub_8210AAD8(ctx, base);
+  eternalsonata::GuestProfilerNotePresent(uint64_t(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() -
+                                                           present_start)
+          .count()));
+  eternalsonata::GuestProfilerFrameBoundary();
+
   // Debug tools queue guest calls that are only safe on this thread; see
   // guest_main_thread.h for why the mod-registry tick will not do.
   eternalsonata::DrainGuestMainThread();
@@ -662,4 +673,9 @@ REX_HOOK_RAW(sub_8210AAD8) {
   // headroom and talk the ladder into stepping up.
   LimitFrame(TurboHeld() ? 0 : fps);
   ReportFramePacing(base, fps);
+  // Rolls the guest profiler's one-second window. Placed after the limiter so
+  // its per-frame wait figures cover the whole frame, and so the summary's own
+  // cost (symbolisation, once a second) lands outside the paced region rather
+  // than eating into the next frame's budget.
+  eternalsonata::GuestProfilerReport();
 }

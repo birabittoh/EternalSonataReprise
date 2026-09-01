@@ -26,6 +26,7 @@
 #include "field_player_model_override.h"
 #include "fonts.generated.h"
 #include "force_load_area.h"
+#include "guest_profiler.h"
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
 #include "native_renderer.h"
@@ -306,6 +307,13 @@ class EternalsonataApp : public rex::ReXApp {
 
     WireShaderDebugger();
 
+    // Guest-side frame profiler, shown and hidden by F3 alongside the SDK's own
+    // debug overlay: that one says how fast the frame is, this one says why.
+    // Constructed unconditionally because constructing an ImGuiDialog is what
+    // registers it for input; it draws nothing, and samples nothing, until F3
+    // turns it on. See src/guest_profiler.h.
+    guest_profiler_overlay_ = eternalsonata::CreateGuestProfilerOverlay(imgui_drawer());
+
     // On-screen pad. The SDK's touch driver reports no device until a layout
     // is installed, so this is what turns the touch controls on for this game;
     // the touch_controls cvar (on by default only on Android) still decides
@@ -379,6 +387,9 @@ class EternalsonataApp : public rex::ReXApp {
   }
 
   std::filesystem::path user_settings_path() const { return user_data_root() / "settings.toml"; }
+
+  // F3's guest-side half. Owned here so it lives as long as the drawer does.
+  std::unique_ptr<rex::ui::ImGuiDialog> guest_profiler_overlay_;
 
   // Guest frame present count, bumped by the per-swap callback (any thread).
   std::atomic<uint64_t> guest_swap_count_{0};
