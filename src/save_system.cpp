@@ -284,6 +284,26 @@ int32_t SlotFromContainerName(std::string_view file_name) {
   return slot < kSlotCount ? slot : -1;
 }
 
+// A file timestamp as seconds since the Unix epoch.
+//
+// file_time_type's own epoch is unspecified, and the standard conversion,
+// std::chrono::clock_cast, is not available everywhere this builds: the NDK's
+// libc++ does not ship it, and the SDK's rex::chrono::clock_cast has no
+// conversion defined for the filesystem clock. Measuring the offset between
+// the two clocks right now works on every toolchain. It is only as accurate as
+// the gap between the two now() calls, which is far below the one-second
+// resolution reported.
+uint64_t ToUnixSeconds(std::filesystem::file_time_type file_time) {
+  const auto file_now = std::filesystem::file_time_type::clock::now();
+  const auto system_now = std::chrono::system_clock::now();
+  const auto system_time =
+      system_now +
+      std::chrono::duration_cast<std::chrono::system_clock::duration>(file_time - file_now);
+  const auto seconds =
+      std::chrono::duration_cast<std::chrono::seconds>(system_time.time_since_epoch()).count();
+  return seconds > 0 ? static_cast<uint64_t>(seconds) : 0;
+}
+
 // Total bytes and newest write time of every file in a container directory.
 // Both are best effort: a container that cannot be walked reports zeros rather
 // than failing the whole listing.
@@ -310,11 +330,7 @@ void MeasureContainer(const std::filesystem::path& dir, uint64_t* out_size,
     if (ec) {
       continue;
     }
-    // file_time_type's epoch is unspecified, so the timestamp only becomes a
-    // Unix one after a cast to the system clock.
-    const auto system_time = std::chrono::time_point_cast<std::chrono::seconds>(
-        std::chrono::clock_cast<std::chrono::system_clock>(write_time));
-    const auto seconds = static_cast<uint64_t>(system_time.time_since_epoch().count());
+    const uint64_t seconds = ToUnixSeconds(write_time);
     if (seconds > *out_modified) {
       *out_modified = seconds;
     }
@@ -406,7 +422,8 @@ REX_HOOK_RAW(sub_82241190) {
   __imp__sub_82241190(ctx, base);
 
   if (!(ctx.r3.u32 & 0xFF)) {
-    eternalsonata::OnSaveFinished(false, ETERNALSONATA_SAVE_FAIL_NOT_STARTED);
+    eternalsonata::OnSaveFinished(false,
+                                  static_cast<double>(ETERNALSONATA_SAVE_FAIL_NOT_STARTED));
   }
 }
 
@@ -440,7 +457,8 @@ REX_HOOK_RAW(sub_8223DC58) {
   __imp__sub_8223DC58(ctx, base);
 
   const bool succeeded = (ctx.r3.u32 & 0xFF) != 0;
-  eternalsonata::OnSaveFinished(succeeded, succeeded ? 0.0 : ETERNALSONATA_SAVE_FAIL_WRITE);
+  eternalsonata::OnSaveFinished(
+      succeeded, succeeded ? 0.0 : static_cast<double>(ETERNALSONATA_SAVE_FAIL_WRITE));
 }
 
 // ---------------------------------------------------------------------------
