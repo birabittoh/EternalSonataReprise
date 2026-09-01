@@ -86,6 +86,7 @@ set(ETERNALSONATA_SOURCES
     src/room_presence.cpp
     src/party_system.cpp
     src/battle_system.cpp
+    src/save_system.cpp
     src/guest_main_thread.cpp
     src/host_timer_resolution.cpp
     src/force_load_area.cpp
