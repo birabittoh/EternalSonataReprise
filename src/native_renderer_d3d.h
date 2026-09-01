@@ -197,22 +197,34 @@ TextureFetch DecodeTextureFetch(const uint32_t words[6]);
 bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out,
                           GuestSamplerState* sampler_out = nullptr);
 
-// A counter bumped whenever anything a texture binding is derived from changes:
-// SetTexture, the three sampler setters, a resolve (which can replace the host
-// image behind an address without the guest touching a fetch constant), and the
-// frame boundary.
+// A counter bumped whenever the *content* behind an unchanged fetch constant
+// can have changed under us: a resolve, which replaces the host image behind an
+// address the guest never rebinds, and the frame boundary.
+//
+// Deliberately not bumped by SetTexture or by the sampler setters, which is
+// what it used to do. Those move about three times as often as the bindings
+// actually change, because the guest issues roughly three draws per SetTexture
+// and frequently sets the same texture back, so a cache keyed on them missed
+// about 39% of the time and rebuilt bindings identical to the ones it threw
+// away. Pair this with BoundTextureFetchSignature, which covers everything
+// those setters can write, and the two together are exactly as strict while
+// missing only when something really moved.
 //
 // The frame boundary is in there for correctness, not for tidiness. The texture
 // mirror notices the guest rewriting a texture under an address it already
 // holds by hashing the source once per texture per frame, so a draw path that
-// skips the mirror on an unchanged generation must still visit it at least once
-// per frame or the font atlas stops refreshing. That was a real bug; see the
-// trap about sampled hashes in the handoff.
+// skips the mirror must still visit it at least once per frame or the font
+// atlas stops refreshing. That was a real bug; see the trap about sampled
+// hashes in the handoff.
 //
-// The intended use is a cache of work derived from the fetch constants: hold
-// the generation alongside the result and redo the work when it moves. It never
-// wraps in practice and a wrap would only cost one stale frame anyway.
-uint64_t TextureBindingGeneration();
+// It never wraps in practice and a wrap would only cost one stale frame anyway.
+uint64_t TextureContentEpoch();
+
+// A value equal exactly when the fetch constants of every slot in `mask` hold
+// the same six dwords as they did last time. Zero when they could not be read
+// at all, which callers must treat as "no answer" rather than as a value, since
+// zero is also a legal hash.
+uint64_t BoundTextureFetchSignature(uint8_t* base, uint32_t mask);
 
 // Guest address of the device object, or 0 before D3D__CreateDevice returns.
 uint32_t D3DDeviceAddress();
