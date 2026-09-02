@@ -32,6 +32,7 @@
 #include "native_renderer.h"
 #include "native_renderer_overlay.h"
 #include "native_renderer_plume.h"
+#include "native_renderer_profile.h"
 #include "native_renderer_shader_debug.h"
 #include "party_system.h"
 #include "photo_system.h"
@@ -274,6 +275,32 @@ class EternalsonataApp : public rex::ReXApp {
       stats.frame_count = count;
       return stats;
     });
+
+    // The line the frame rate above does not answer: whether the frame is
+    // waiting on us or on the GPU. Both halves are measured by the native
+    // renderer -- the fence wait and the queue's own timestamp pair -- so the
+    // verdict is a measurement, not a guess, and it is the first thing to read
+    // before changing anything for speed. Only meaningful under the native
+    // renderer; the Xenos backend measures neither, so the row is left out
+    // rather than shown reading zero.
+    if (eternalsonata::NativeRendererEnabled()) {
+      SetDebugOverlayDetails([]() {
+        const auto bound = eternalsonata::GetFrameBoundStats();
+        const bool gpu_bound = bound.verdict[0] == 'G';
+        const bool present_bound = bound.verdict[0] == 'P';
+        const ImVec4 colour = present_bound ? ImVec4(0.6f, 0.8f, 1.0f, 1.0f)
+                              : gpu_bound   ? ImVec4(1.0f, 0.7f, 0.3f, 1.0f)
+                                            : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+        ImGui::TextColored(colour, "%s", bound.verdict);
+        ImGui::Text("CPU: %.2f ms busy + %.2f ms fence wait", bound.cpu_ms, bound.wait_ms);
+        if (bound.gpu_valid) {
+          ImGui::Text("GPU: %.2f ms", bound.gpu_ms);
+        } else {
+          ImGui::TextUnformatted("GPU: not timed");
+        }
+        ImGui::Text("Frame: %.2f ms", bound.frame_ms);
+      });
+    }
 
     // Discord Rich Presence: reports the field area the player is currently
     // in, updated once per guest frame (area id read from byte_8244B500 and

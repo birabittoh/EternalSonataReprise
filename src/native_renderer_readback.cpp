@@ -20,6 +20,43 @@
 #include <windows.h>
 #endif
 
+// Whether this platform can answer a guest read of a resolve destination with a
+// page fault. It needs two things: a way to make a page inaccessible (portable,
+// rex::memory::Protect) and a fault handler that can say whether the access that
+// trapped was a read or a write. Filling a buffer the guest is in the middle of
+// *writing* destroys what it wrote, so a handler that cannot tell the two apart
+// is worse than no handler.
+//
+// Both platforms install *in front of* the SDK's own handler, and that ordering
+// is load-bearing rather than incidental.
+//
+// The memory system watches guest physical pages by protecting them and catching
+// the fault (MMIOHandler). Its handler, for any address inside the guest mapping
+// that is not an MMIO range, reads the current protection and -- on kNoAccess --
+// falls through into its write-watch callback (mmio_handler.cpp, "recheck if the
+// pages are still protected"). It cannot tell one of our armed pages from one of
+// its own watches, so whichever handler runs first owns the fault.
+//
+// Windows gets this for free: AddVectoredExceptionHandler(1, ...) puts this at
+// the head of the chain, ahead of the SDK's. On Linux, arch::ExceptionHandler
+// appends and the memory system installs at startup, so registering there puts
+// this last -- the memory system claimed every fault, this handler was never
+// reached (one fault in a whole run against 2829 arms), and its watch state was
+// being driven by pages it never watched. Hence a sigaction of our own, which
+// forwards anything that is not ours to whatever was installed before it.
+//
+// Reading the fault as a read or a write is what confines this to x86-64: the
+// bit lives in the page-fault error code at REG_ERR. Filling a buffer the guest
+// is mid-write into destroys what it wrote, so a platform that cannot tell the
+// two apart must not arm. Android also stays on the eager fill for that reason.
+#if defined(_WIN32)
+#define ETERNALSONATA_READBACK_PAGE_TRAP 1
+#elif defined(__linux__) && !defined(__ANDROID__) && defined(__x86_64__)
+#define ETERNALSONATA_READBACK_PAGE_TRAP 1
+#include <signal.h>
+#include <ucontext.h>
+#endif
+
 #include "native_renderer_frame.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_profile.h"
@@ -46,7 +83,14 @@ namespace {
 // Guest pages are armed at host page granularity, so the tail of an extent
 // shares a page with whatever the guest put after it. A fault there is not
 // evidence about this destination, and only the extent itself counts.
-constexpr uintptr_t kGuestPageBytes = 4096;
+// The host page size, which is what a protection call rounds to. 4096 on every
+// platform this has run on, but asked for rather than assumed: arming a range
+// rounded to the wrong granularity either leaves the first page of a destination
+// unprotected or protects memory in front of it.
+uintptr_t GuestPageBytes() {
+  const uintptr_t reported = uintptr_t(rex::memory::page_size());
+  return reported != 0 ? reported : 4096u;
+}
 
 // The apertures guest physical memory is reachable through. All three alias the
 // same physical pages, but they are three separate host mappings: protecting one
@@ -101,7 +145,7 @@ struct ArmedRange {
   size_t page_bytes = 0;
   uint8_t* start = nullptr;  // the destination's own first byte in this mapping
   uint64_t bytes = 0;
-  unsigned long old_protect = 0;
+  rex::memory::PageAccess old_access = rex::memory::PageAccess::kReadWrite;
   bool armed = false;
 };
 
@@ -247,6 +291,11 @@ uint64_t g_flushes = 0;
 uint64_t g_refused_stale = 0;
 uint64_t g_refused_large = 0;
 uint64_t g_disowned_faults = 0;
+// `unanswered` splits two ways that need opposite fixes: a fault on a thread
+// that cannot flush (the recording belongs to another thread), and a flush that
+// was attempted and failed. Counted apart so the summary says which.
+uint64_t g_unanswered_thread = 0;
+uint64_t g_unanswered_flush = 0;
 
 // The most recent frame any resolve was published in, i.e. what "now" means to
 // a fault, which arrives from guest code rather than from the frame loop.
@@ -256,7 +305,10 @@ uint64_t g_unanswered = 0;
 // The thread the frame is recorded on, learned from the publish. A flush
 // submits that recording, so it can only be asked for from there; a fault on
 // any other thread has to be answered with whatever is already in hand.
-std::atomic<uint32_t> g_render_thread{0};
+// A thread-local flag rather than a thread id: the only question ever asked of
+// it is "am I the thread that records the frame", and every platform answers
+// that the same way. The id form needed GetCurrentThreadId().
+thread_local bool g_is_render_thread = false;
 uint64_t g_fills = 0;
 uint64_t g_fill_bytes = 0;
 uint64_t g_refused_format = 0;
@@ -639,16 +691,16 @@ bool EnsureData(Destination& destination) {
   if (DataReady(destination))
     return true;
 
-#ifdef _WIN32
-  if (GetCurrentThreadId() != g_render_thread.load(std::memory_order_relaxed)) {
+  if (!g_is_render_thread) {
+    ++g_unanswered_thread;
     // Some other thread got there first. Flushing means submitting a command
     // list the render thread is still writing, so the honest answer is to leave
     // guest memory alone and count it.
     ++g_unanswered;
     return false;
   }
-#endif
   if (!PlumeFlushGuestWork()) {
+    ++g_unanswered_flush;
     ++g_unanswered;
     return false;
   }
@@ -665,14 +717,22 @@ bool EnsureData(Destination& destination) {
 // ---------------------------------------------------------------------------
 // Arming, and the fault that disarms
 
+// Puts back exactly the protection Arm replaced, per range.
+//
+// This is not bookkeeping for its own sake. The memory system watches guest
+// physical pages for writes by marking them kReadOnly and catching the fault
+// (MMIOHandler's access-violation callback), and those are the same pages a
+// resolve destination lives in. Restoring a blanket kReadWrite here clears that
+// watch permanently: the watch never fires again, whatever cache it feeds never
+// learns the guest rewrote the memory, and the stale contents are drawn for the
+// rest of the run. That is what "textures corrupt as I play" looked like.
 void Disarm(Destination& destination) {
-#ifdef _WIN32
+#ifdef ETERNALSONATA_READBACK_PAGE_TRAP
   for (uint32_t i = 0; i < destination.range_count; ++i) {
     ArmedRange& range = destination.ranges[i];
     if (!range.armed)
       continue;
-    DWORD previous = 0;
-    VirtualProtect(range.page_base, range.page_bytes, range.old_protect, &previous);
+    rex::memory::Protect(range.page_base, range.page_bytes, range.old_access);
     range.armed = false;
   }
 #endif
@@ -680,7 +740,7 @@ void Disarm(Destination& destination) {
 }
 
 void Arm(Destination& destination) {
-#ifdef _WIN32
+#ifdef ETERNALSONATA_READBACK_PAGE_TRAP
   destination.range_count = 0;
   const uint32_t offset = GuestOffset(destination.fetch);
   for (uint32_t aperture : kApertures) {
@@ -691,16 +751,23 @@ void Arm(Destination& destination) {
     ArmedRange& range = destination.ranges[destination.range_count];
     range.start = mapping;
     range.bytes = destination.extent;
-    const uintptr_t page_start = uintptr_t(mapping) & ~(kGuestPageBytes - 1);
+    const uintptr_t page_bytes = GuestPageBytes();
+    const uintptr_t page_start = uintptr_t(mapping) & ~(page_bytes - 1);
     const uintptr_t page_end =
-        (uintptr_t(mapping) + destination.extent + kGuestPageBytes - 1) & ~(kGuestPageBytes - 1);
+        (uintptr_t(mapping) + destination.extent + page_bytes - 1) & ~(page_bytes - 1);
     range.page_base = reinterpret_cast<uint8_t*>(page_start);
     range.page_bytes = size_t(page_end - page_start);
 
-    DWORD previous = 0;
-    if (!VirtualProtect(range.page_base, range.page_bytes, PAGE_NOACCESS, &previous))
+    // Ask for the protection being replaced rather than assuming it. This was
+    // `= kReadWrite` on the reasoning that RangeWritable had just established
+    // as much, and that reasoning is wrong in the one case that matters: the
+    // memory system watches guest pages by making them kReadOnly, and restoring
+    // those as kReadWrite silently destroys the watch. See Disarm.
+    range.old_access = rex::memory::PageAccess::kReadWrite;
+    if (!rex::memory::Protect(range.page_base, range.page_bytes,
+                              rex::memory::PageAccess::kNoAccess, &range.old_access)) {
       continue;
-    range.old_protect = previous;
+    }
     range.armed = true;
     ++destination.range_count;
     ++g_arms;
@@ -710,20 +777,19 @@ void Arm(Destination& destination) {
 #endif
 }
 
-#ifdef _WIN32
-long __stdcall ReadbackExceptionHandler(EXCEPTION_POINTERS* info) {
-  if (info == nullptr || info->ExceptionRecord == nullptr)
-    return EXCEPTION_CONTINUE_SEARCH;
-  if (info->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
-    return EXCEPTION_CONTINUE_SEARCH;
-  if (info->ExceptionRecord->NumberParameters < 2)
-    return EXCEPTION_CONTINUE_SEARCH;
+#ifdef ETERNALSONATA_READBACK_PAGE_TRAP
+// The platform-independent half of the fault: everything from "is this address
+// one of ours" to "guest memory now holds the pixels". Returns true if the
+// access was ours and has been let through, so the faulting instruction can be
+// retried; false to pass the fault on to whoever else wants it.
+//
+// Both callers arrive here on the faulting thread with the fault synchronous, so
+// taking the mutex and writing memory is no worse than it is on either platform
+// alone. `g_in_handler` is what keeps a fault raised inside this from recursing
+// onto the mutex it already holds.
+bool HandleReadbackFault(uint8_t* address, bool is_write) {
   if (g_in_handler)
-    return EXCEPTION_CONTINUE_SEARCH;
-
-  const bool is_write = info->ExceptionRecord->ExceptionInformation[0] == 1;
-  auto* address = reinterpret_cast<uint8_t*>(info->ExceptionRecord->ExceptionInformation[1]);
-
+    return false;
   g_in_handler = true;
   struct Guard {
     ~Guard() { g_in_handler = false; }
@@ -743,13 +809,14 @@ long __stdcall ReadbackExceptionHandler(EXCEPTION_POINTERS* info) {
       // on memory that merely used to be ours, and swallowing it would turn a
       // clean crash into a silent one. The arming is dropped either way so the
       // question is not asked twice.
-      MEMORY_BASIC_INFORMATION info = {};
-      const bool ours = VirtualQuery(address, &info, sizeof(info)) != 0 &&
-                        info.State == MEM_COMMIT && (info.Protect & PAGE_NOACCESS) != 0;
+      size_t region_bytes = 0;
+      rex::memory::PageAccess access = rex::memory::PageAccess::kReadWrite;
+      const bool ours = rex::memory::QueryProtect(address, region_bytes, access) &&
+                        access == rex::memory::PageAccess::kNoAccess;
       if (!ours) {
         ++g_disowned_faults;
         Disarm(destination);
-        return EXCEPTION_CONTINUE_SEARCH;
+        return false;
       }
 
       // Ours. Whatever happens next, the guest's access has to be allowed
@@ -779,10 +846,26 @@ long __stdcall ReadbackExceptionHandler(EXCEPTION_POINTERS* info) {
         }
         LogEvent(destination, "guest read", filled);
       }
-      return EXCEPTION_CONTINUE_EXECUTION;
+      return true;
     }
   }
-  return EXCEPTION_CONTINUE_SEARCH;
+  return false;
+}
+#endif
+
+#ifdef _WIN32
+long __stdcall ReadbackExceptionHandler(EXCEPTION_POINTERS* info) {
+  if (info == nullptr || info->ExceptionRecord == nullptr)
+    return EXCEPTION_CONTINUE_SEARCH;
+  if (info->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
+    return EXCEPTION_CONTINUE_SEARCH;
+  if (info->ExceptionRecord->NumberParameters < 2)
+    return EXCEPTION_CONTINUE_SEARCH;
+
+  const bool is_write = info->ExceptionRecord->ExceptionInformation[0] == 1;
+  auto* address = reinterpret_cast<uint8_t*>(info->ExceptionRecord->ExceptionInformation[1]);
+  return HandleReadbackFault(address, is_write) ? EXCEPTION_CONTINUE_EXECUTION
+                                                : EXCEPTION_CONTINUE_SEARCH;
 }
 
 // Installed on the first arm rather than at startup, so a run with the readback
@@ -791,6 +874,70 @@ long __stdcall ReadbackExceptionHandler(EXCEPTION_POINTERS* info) {
 void EnsureExceptionHandler() {
   static void* handle = AddVectoredExceptionHandler(1, ReadbackExceptionHandler);
   (void)handle;
+}
+
+#elif defined(ETERNALSONATA_READBACK_PAGE_TRAP)
+
+// What was installed before us, forwarded to for every fault that is not ours.
+// The SDK's own chain lives behind this, so getting the forward right is what
+// keeps the memory system's watches working.
+struct sigaction g_previous_segv = {};
+bool g_previous_segv_valid = false;
+
+void ForwardSegv(int signal_number, siginfo_t* info, void* context) {
+  if (g_previous_segv_valid) {
+    if ((g_previous_segv.sa_flags & SA_SIGINFO) != 0 && g_previous_segv.sa_sigaction != nullptr) {
+      g_previous_segv.sa_sigaction(signal_number, info, context);
+      return;
+    }
+    if (g_previous_segv.sa_handler != SIG_DFL && g_previous_segv.sa_handler != SIG_IGN) {
+      g_previous_segv.sa_handler(signal_number);
+      return;
+    }
+  }
+  // Nobody else wants it. Restore the default and return, so the faulting
+  // instruction runs again and dies the way it would have without us, with its
+  // registers and fault address intact for a core dump.
+  struct sigaction fallback = {};
+  fallback.sa_handler = SIG_DFL;
+  sigemptyset(&fallback.sa_mask);
+  sigaction(signal_number, &fallback, nullptr);
+}
+
+void ReadbackSegvHandler(int signal_number, siginfo_t* info, void* context) {
+  if (info == nullptr || context == nullptr) {
+    ForwardSegv(signal_number, info, context);
+    return;
+  }
+
+  // Bit 1 of the x86-64 page-fault error code: set for a write, clear for a
+  // read. Same field the SDK's own posix handler reads.
+  const auto* uc = static_cast<const ucontext_t*>(context);
+  const bool is_write = (uc->uc_mcontext.gregs[REG_ERR] & 0x2) != 0;
+  auto* address = static_cast<uint8_t*>(info->si_addr);
+
+  // HandleReadbackFault claims the fault only if the address falls inside a
+  // range this armed, so everything else -- including every guest write watch --
+  // goes on to the handler that was there before.
+  if (!HandleReadbackFault(address, is_write))
+    ForwardSegv(signal_number, info, context);
+  // Returning retries the faulting instruction, as EXCEPTION_CONTINUE_EXECUTION
+  // does on Windows. The page is accessible again by now, so it succeeds.
+}
+
+// Installed on the first arm, which is well after the memory system has
+// installed its own -- that is the point: this has to be the newer handler to
+// be the one the kernel calls.
+void EnsureExceptionHandler() {
+  static const bool installed = []() {
+    struct sigaction action = {};
+    action.sa_sigaction = ReadbackSegvHandler;
+    action.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigemptyset(&action.sa_mask);
+    g_previous_segv_valid = sigaction(SIGSEGV, &action, &g_previous_segv) == 0;
+    return g_previous_segv_valid;
+  }();
+  (void)installed;
 }
 #endif
 
@@ -820,10 +967,8 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   // necessarily on the render thread these counters assume.
   ProfileZone zone(kPhaseReadbackPublish);
 
-#ifdef _WIN32
   // Whoever publishes is whoever records the frame, which is what a flush needs.
-  g_render_thread.store(GetCurrentThreadId(), std::memory_order_relaxed);
-#endif
+  g_is_render_thread = true;
 
   std::lock_guard<std::mutex> lock(g_mutex);
   Destination* destination = Find(dest.base_address);
@@ -943,12 +1088,21 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   }
 
   if (mode == Mode::kEager) {
-    if (EnsureData(*destination))
-      Fill(*destination);
+    // Deliberately no EnsureData: this fills with whatever the GPU has already
+    // finished, one frame late, which is what `readback_resolve=fast` does and
+    // what every non-Windows build did before the page trap existed.
+    //
+    // Asking EnsureData for a same-frame guarantee here calls PlumeFlushGuestWork
+    // during the very first resolve, before the frame this is recording into has
+    // ever been presented, and that hangs the guest at frame 0 -- no window ever
+    // appears. `auto` does not hit it because its first resolve arms rather than
+    // fills. Eager is the instrument you reach for when the trap is the suspect,
+    // so it has to boot.
+    Fill(*destination);
     return;
   }
 
-#ifdef _WIN32
+#ifdef ETERNALSONATA_READBACK_PAGE_TRAP
   // Too big to be answered on the strength of a read fault alone; see
   // kMaxArmedExtentBytes. Left tracked and left copied, so the texture mirror can
   // still pull it with the layout check that a fault cannot do.
@@ -966,8 +1120,12 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   EnsureExceptionHandler();
   Arm(*destination);
 #else
-  // No page trap off Windows, so "auto" has nothing to arm and nothing would
-  // ever be written. Fill unconditionally rather than silently doing nothing.
+  // No page trap on this platform, so "auto" has nothing to arm and nothing
+  // would ever be written. Fill unconditionally rather than silently doing
+  // nothing. This is `eager` in all but name and it costs what `eager` costs --
+  // several ms a frame for destinations the guest never reads -- so a platform
+  // landing here is a platform with a performance problem, not just a different
+  // code path.
   Fill(*destination);
 #endif
 }
@@ -1054,12 +1212,14 @@ void LogReadbackSummary() {
   std::lock_guard<std::mutex> lock(g_mutex);
   REXLOG_INFO(
       "native_renderer: readback destinations={} arms={} | faults read={} write={} outside={} "
-      "disowned={} | mirror pulls={} | fills={} ({} MiB) | flushes={} unanswered={} | "
+      "disowned={} | mirror pulls={} | fills={} ({} MiB) | flushes={} unanswered={} "
+      "(thread {}, flush {}) | "
       "refused format={} "
       "extent={} unmapped={} stale={} untrapped={} | layout disagreements={}",
       g_destinations.size(), g_arms, g_read_faults, g_write_faults, g_outside_faults,
       g_disowned_faults, g_pulls,
-      g_fills, g_fill_bytes >> 20, g_flushes, g_unanswered, g_refused_format, g_refused_extent,
+      g_fills, g_fill_bytes >> 20, g_flushes, g_unanswered, g_unanswered_thread,
+      g_unanswered_flush, g_refused_format, g_refused_extent,
       g_refused_unmapped, g_refused_stale, g_refused_large, g_layout_disagreements);
 
   // One line per destination anything has actually asked for, which is the

@@ -103,6 +103,37 @@ class ProfileZone {
 // alongside the other summaries.
 void LogProfileSummary();
 
+// The one question the summary above answers only if you read every line of it:
+// is this frame waiting on us or on the GPU? Both numbers come from instruments
+// that already exist -- the GPU timestamp pair and the fence wait zone -- over a
+// short trailing window, so the verdict tracks the scene rather than the run.
+//
+//   busy  = wall clock minus the fence wait, i.e. time the CPU spent working
+//           rather than blocked on the GPU. This is the CPU cost of the frame.
+//   gpu   = the queue's own measurement of the same frame.
+//
+// Whichever is larger is what the frame is waiting on. If neither is close to
+// the frame time, something outside both is pacing us (vsync, the guest's own
+// throttle, or a sleep), and saying "CPU bound" there would be a lie.
+struct FrameBoundStats {
+  double frame_ms = 0.0;  // swap to swap wall clock
+  double cpu_ms = 0.0;    // of which the CPU was busy
+  double gpu_ms = 0.0;    // of which the GPU was busy
+  double wait_ms = 0.0;   // of which the CPU sat on the fence
+  bool gpu_valid = false;
+  // "CPU bound" / "GPU bound" / "Present bound" / "measuring". Never empty.
+  const char* verdict = "measuring";
+};
+
+// Rolls the trailing window forward by one guest swap. Call once per present,
+// after the present, so the fence wait and the GPU timestamps of the frame that
+// just retired are already in the accumulators.
+void ProfileEndFrame();
+
+// Safe to call from any thread; the window is only written by ProfileEndFrame
+// on the render thread and a torn read costs one stale frame of display.
+FrameBoundStats GetFrameBoundStats();
+
 }  // namespace eternalsonata
 
 #endif  // ETERNALSONATA_NATIVE_RENDERER_PROFILE_H
