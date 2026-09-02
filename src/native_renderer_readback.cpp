@@ -114,6 +114,13 @@ struct Destination {
   // there is. Chosen fresh on each publish, because which apertures are
   // committed is a property of the guest's memory map rather than of ours.
   uint8_t* guest = nullptr;
+  // Which of the three apertures `guest` was taken from. Kept only to be logged:
+  // the base address the fill uses has been through the address fixup, which adds
+  // a page for the 0xE0000000 aperture, so writing it through a different one is
+  // a page of skew (see the comment on out.raw_base_address in
+  // native_renderer_d3d.cpp). That has never been observed here and the fills are
+  // pixel-exact for the thumbnails, but it costs nothing to be able to see it.
+  uint32_t aperture = 0;
   uint64_t extent = 0;
   uint32_t texel_bytes = 0;
 
@@ -162,6 +169,8 @@ struct Destination {
   // same bytes twice from the same readback.
   bool filled_since_publish = false;
   bool refused = false;
+  // Reported once: this destination is too large for the page trap.
+  bool arming_refused = false;
   bool layout_reported = false;
 };
 
@@ -176,6 +185,38 @@ struct Destination {
 // catches the guest unmapping or recommitting the memory underneath, which the
 // skipped path would otherwise never look at again.
 constexpr uint64_t kRearmPeriod = 64;
+
+// The largest destination whose guest pages are worth trapping on.
+//
+// The trap answers a read by writing the destination's *whole extent*, however
+// long ago the resolve was and whatever the guest has done with the memory since,
+// and the fault itself carries no evidence either way: it says some guest code
+// touched an address, not that it still thinks that address holds this image.
+// The damage from getting that wrong scales with the extent, and the two things
+// this title actually reads back with its own CPU are small: the save thumbnail
+// at 320x160 (204,800 bytes) and the in-game photo at 416x256 (425,984).
+//
+// Three crashes with an identical shape came from the other end of the range. A
+// 1280x720 destination resolved during the boot sequence, armed and untouched for
+// eighteen hundred frames, then read once: the fill scattered 3,768,320 bytes of
+// an ancient loading screen over whatever the guest had put there since, which
+// every time included the XMA context block. The guest's next XMAReleaseContext
+// indexed XmaDecoder::contexts_ with a zeroed pointer and dereferenced a null.
+//
+// Nothing cheaper distinguishes those two. Age does not: the thumbnail is
+// resolved once and read 251 frames later, sometimes 649, which is the same order
+// as the crashing reads and is why a lifetime on the arming turned every new save
+// thumbnail black. `guest_owns` does not either -- it is set from a write fault,
+// and all three crashing runs report `faults read=1 write=0`, so nothing ever
+// wrote through an armed aperture to give it a signal.
+//
+// A large destination is still tracked, still copied into its readback buffer and
+// still filled through ReadbackFillForRead when the texture mirror binds it,
+// because that path compares the layout the destination was written as against
+// the layout it is being read as and refuses on disagreement. It just no longer
+// has a page trap standing over three megabytes of guest memory waiting to
+// overwrite it on the strength of one read.
+constexpr uint64_t kMaxArmedExtentBytes = 1024 * 1024;
 
 // Does this publish describe the same destination, in the same place, as the
 // one that armed it?
@@ -204,6 +245,7 @@ uint64_t g_pulls = 0;
 uint64_t g_layout_disagreements = 0;
 uint64_t g_flushes = 0;
 uint64_t g_refused_stale = 0;
+uint64_t g_refused_large = 0;
 uint64_t g_disowned_faults = 0;
 
 // The most recent frame any resolve was published in, i.e. what "now" means to
@@ -872,6 +914,7 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
     uint8_t* candidate = memory_base + (aperture | offset);
     if (RangeWritable(candidate, destination->extent)) {
       destination->guest = candidate;
+      destination->aperture = aperture;
       break;
     }
   }
@@ -888,13 +931,15 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   }
   destination->refused = false;
 
-  if (g_logged < 8) {
+  if (g_logged < 24) {
     ++g_logged;
     REXLOG_INFO(
-        "native_renderer: readback tracking resolve destination 0x{:08X}, {}x{} fmt {} {} pitch {} "
-        "endian {}, {} guest byte(s), mode {}",
-        dest.base_address, dest.width, dest.height, dest.format, dest.tiled ? "tiled" : "linear",
-        dest.pitch, dest.endianness, destination->extent, mode == Mode::kEager ? "eager" : "auto");
+        "native_renderer: readback tracking resolve destination 0x{:08X} (raw 0x{:08X}, aperture "
+        "0x{:08X}), {}x{} fmt {} {} pitch {} endian {}, {} guest byte(s) to 0x{:08X}, mode {}",
+        dest.base_address, dest.raw_base_address, destination->aperture, dest.width, dest.height,
+        dest.format, dest.tiled ? "tiled" : "linear", dest.pitch, dest.endianness,
+        destination->extent,
+        uint32_t(GuestOffset(dest) + destination->extent), mode == Mode::kEager ? "eager" : "auto");
   }
 
   if (mode == Mode::kEager) {
@@ -904,6 +949,20 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   }
 
 #ifdef _WIN32
+  // Too big to be answered on the strength of a read fault alone; see
+  // kMaxArmedExtentBytes. Left tracked and left copied, so the texture mirror can
+  // still pull it with the layout check that a fault cannot do.
+  if (destination->extent > kMaxArmedExtentBytes) {
+    if (!destination->arming_refused) {
+      destination->arming_refused = true;
+      ++g_refused_large;
+      REXLOG_INFO(
+          "native_renderer: readback will not trap on resolve destination 0x{:08X}: {}x{} is {} "
+          "guest byte(s), too much to write back on a read fault alone",
+          dest.base_address, dest.width, dest.height, destination->extent);
+    }
+    return;
+  }
   EnsureExceptionHandler();
   Arm(*destination);
 #else
@@ -997,11 +1056,11 @@ void LogReadbackSummary() {
       "native_renderer: readback destinations={} arms={} | faults read={} write={} outside={} "
       "disowned={} | mirror pulls={} | fills={} ({} MiB) | flushes={} unanswered={} | "
       "refused format={} "
-      "extent={} unmapped={} stale={} | layout disagreements={}",
+      "extent={} unmapped={} stale={} untrapped={} | layout disagreements={}",
       g_destinations.size(), g_arms, g_read_faults, g_write_faults, g_outside_faults,
       g_disowned_faults, g_pulls,
       g_fills, g_fill_bytes >> 20, g_flushes, g_unanswered, g_refused_format, g_refused_extent,
-      g_refused_unmapped, g_refused_stale, g_layout_disagreements);
+      g_refused_unmapped, g_refused_stale, g_refused_large, g_layout_disagreements);
 
   // One line per destination anything has actually asked for, which is the
   // question this whole path exists to answer: who reads a resolved surface
