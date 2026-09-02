@@ -4,6 +4,7 @@
 
 #include "native_renderer_draw.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -77,6 +78,10 @@ bool PhaseIsNested(uint32_t phase) {
     // submitted. It is no longer inside any other phase, so leaving it nested
     // would charge its time to `other`.
     case kPhaseFenceWait:
+    // Called from FrameResolve, which is a guest entry point of its own and is
+    // inside neither the present nor a draw. Leaving it nested charged its time
+    // to `other`, which on Linux hid the single largest term in the frame.
+    case kPhaseReadbackPublish:
       return false;
     default:
       return true;
@@ -2579,6 +2584,91 @@ void LogGuestDrawSummary() {
   }
 }
 
+// --- CPU/GPU bound verdict -------------------------------------------------
+//
+// A trailing window rather than a single frame: one frame's GPU timestamp pair
+// belongs to a frame kFramesInFlight back, and a single fence wait swings wildly
+// depending on where in the ring the present landed. Over a second of frames
+// both settle, and the verdict stops flickering between the two answers.
+namespace {
+
+constexpr double kBoundWindowSec = 0.5;
+
+// Deltas, because the accumulators the window reads from are only reset every
+// 300 swaps by the summary. Each of these is "what it read last time".
+uint64_t g_bound_last_wait_ns = 0;
+uint64_t g_bound_last_gpu_ns = 0;
+uint64_t g_bound_last_gpu_count = 0;
+std::chrono::steady_clock::time_point g_bound_window_start = std::chrono::steady_clock::now();
+uint64_t g_bound_frames = 0;
+uint64_t g_bound_wait_ns = 0;
+uint64_t g_bound_gpu_ns = 0;
+uint64_t g_bound_gpu_count = 0;
+
+FrameBoundStats g_bound_stats;
+
+}  // namespace
+
+void ProfileEndFrame() {
+  // The summary resets the accumulators under us every 300 swaps. A reset shows
+  // up as the accumulator going backwards, and the honest thing to do with the
+  // frame that straddles it is to drop its delta rather than to read a huge
+  // negative as a huge positive.
+  const uint64_t wait_ns = g_profile_ns[kPhaseFenceWait];
+  const uint64_t gpu_ns = g_gpu_frame_ns;
+  const uint64_t gpu_count = g_gpu_frame_count;
+  if (wait_ns >= g_bound_last_wait_ns)
+    g_bound_wait_ns += wait_ns - g_bound_last_wait_ns;
+  if (gpu_ns >= g_bound_last_gpu_ns && gpu_count >= g_bound_last_gpu_count) {
+    g_bound_gpu_ns += gpu_ns - g_bound_last_gpu_ns;
+    g_bound_gpu_count += gpu_count - g_bound_last_gpu_count;
+  }
+  g_bound_last_wait_ns = wait_ns;
+  g_bound_last_gpu_ns = gpu_ns;
+  g_bound_last_gpu_count = gpu_count;
+  ++g_bound_frames;
+
+  const auto now = std::chrono::steady_clock::now();
+  const double elapsed = std::chrono::duration<double>(now - g_bound_window_start).count();
+  if (elapsed < kBoundWindowSec || g_bound_frames == 0)
+    return;
+
+  FrameBoundStats stats;
+  stats.frame_ms = elapsed * 1000.0 / double(g_bound_frames);
+  stats.wait_ms = double(g_bound_wait_ns) / 1e6 / double(g_bound_frames);
+  // Anything the CPU did not spend blocked on the fence, it spent working: the
+  // present, the draws, the guest's own code, all of it.
+  stats.cpu_ms = stats.frame_ms - stats.wait_ms;
+  if (stats.cpu_ms < 0.0)
+    stats.cpu_ms = 0.0;
+  if (g_bound_gpu_count != 0) {
+    stats.gpu_valid = true;
+    stats.gpu_ms = double(g_bound_gpu_ns) / 1e6 / double(g_bound_gpu_count);
+  }
+
+  // The frame is bound by whichever processor is busy for most of it. The
+  // "present bound" case is the one worth naming separately: both are idle for a
+  // good part of the frame, so the pacing is coming from vsync, from the guest's
+  // own throttle, or from a sleep, and cutting either side moves nothing.
+  const double busiest = stats.gpu_valid ? std::max(stats.cpu_ms, stats.gpu_ms) : stats.cpu_ms;
+  if (stats.frame_ms > 0.0 && busiest < 0.7 * stats.frame_ms) {
+    stats.verdict = "Present bound";
+  } else if (!stats.gpu_valid) {
+    stats.verdict = "CPU bound (no GPU timing)";
+  } else {
+    stats.verdict = stats.gpu_ms > stats.cpu_ms ? "GPU bound" : "CPU bound";
+  }
+  g_bound_stats = stats;
+
+  g_bound_window_start = now;
+  g_bound_frames = 0;
+  g_bound_wait_ns = 0;
+  g_bound_gpu_ns = 0;
+  g_bound_gpu_count = 0;
+}
+
+FrameBoundStats GetFrameBoundStats() { return g_bound_stats; }
+
 void LogProfileSummary() {
   const auto now = std::chrono::steady_clock::now();
   const uint64_t wall_ns = uint64_t(
@@ -2618,6 +2708,12 @@ void LogProfileSummary() {
                     (double(g_gpu_frame_count) * double(wall_ns)),
                 g_gpu_frame_count);
   }
+  const FrameBoundStats bound = GetFrameBoundStats();
+  REXLOG_INFO(
+      "native_renderer:   verdict: {} -- {:.2f} ms/frame = {:.2f} ms CPU busy + {:.2f} ms waiting "
+      "on the GPU, against {:.2f} ms of GPU work",
+      bound.verdict, bound.frame_ms, bound.cpu_ms, bound.wait_ms, bound.gpu_ms);
+
   g_gpu_frame_ns = 0;
   g_gpu_frame_count = 0;
 

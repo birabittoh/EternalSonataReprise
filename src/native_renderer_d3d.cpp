@@ -1611,6 +1611,9 @@ REX_HOOK_RAW(D3DDevice__Swap) {
   // Rolls the shader debugger's "active this frame" flags over, so its list
   // shows what the game is drawing now rather than what it ever drew.
   eternalsonata::GuestShaderDebugEndFrame();
+  // After the present, so this frame's fence wait and the GPU timestamps of the
+  // frame that just retired are already in the accumulators it reads.
+  eternalsonata::ProfileEndFrame();
 
   static uint64_t swaps = 0;
   if (++swaps % 300 == 0) {
