@@ -29,6 +29,7 @@
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
 #include "party_system.h"
+#include "photo_system.h"
 #include "room_presence.h"
 #include "save_system.h"
 #include "settings.h"
@@ -171,6 +172,10 @@ class EternalsonataApp : public rex::ReXApp {
     // Save state for mods: src/eternalsonata_save_api.h answers "unavailable"
     // and publishes no save event until this runs.
     eternalsonata::BindSaveSystem(runtime());
+
+    // Photo album for mods: src/eternalsonata_photo_api.h answers
+    // "unavailable" and publishes no photo event until this runs.
+    eternalsonata::BindPhotoSystem(runtime());
 
     // Debug tool: force-loads a field area via the F4 settings overlay's
     // "Force Load Area..." button. See force_load_area.h.
