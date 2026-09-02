@@ -455,9 +455,13 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       ImGui::PopStyleColor();
       ImGui::SameLine();
       if (ImGui::SmallButton("Restart Now")) {
-        if (rex::platform::process::Relaunch() && window_) {
-          window_->RequestClose();
-        }
+        // Not Relaunch()+RequestClose() inline: this dialog is not always drawn
+        // on the UI thread. Under the native renderer the overlay runs on the
+        // guest's own render thread (see OnCreateImmediateDrawer), and closing
+        // the window from there tears the title down from inside itself and
+        // hangs, leaving the old window on screen next to the relaunched one.
+        // RestartNow() marshals the close back to the UI thread.
+        RestartNow();
       }
       ImGui::Separator();
     }
@@ -590,7 +594,11 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         if (rex::system::AutoUpdater::ApplyAndRestart(rex::filesystem::GetExecutableFolder(),
                                                        rex::filesystem::GetExecutablePath()) &&
             window_) {
-          window_->RequestClose();
+          // Marshalled for the same reason as "Restart Now" above: the overlay
+          // may be drawing on the guest render thread, and RequestClose has to
+          // run on the thread that owns the window.
+          rex::ui::Window* window = window_;
+          window->app_context().CallInUIThread([window] { window->RequestClose(); });
         }
       }
       ImGui::Separator();
@@ -1165,11 +1173,13 @@ bool RestartNow() {
   }
   // RequestClose ends up in WindowSDL::RequestCloseImpl, which destroys the
   // window directly rather than going through SDL's event queue, so it has to
-  // run on the thread that owns the window. The F4 overlay's "Restart Now"
-  // button is already on that thread; the game's own Options screen is not (it
-  // runs on the guest CPU thread), and calling straight through from there
-  // leaves the old process alive, contending with the relaunched one for the
-  // GPU and audio devices. Marshalling covers both callers.
+  // run on the thread that owns the window. Neither caller is guaranteed to be
+  // on it: the game's own Options screen runs on the guest CPU thread, and so
+  // does the F4 overlay under the native renderer, which draws it from the
+  // guest's render thread. Calling straight through from there hangs the close
+  // (the title is torn down from inside itself), leaving the old window on
+  // screen contending with the relaunched one for the GPU and audio devices.
+  // Marshalling covers every caller.
   rex::ui::Window* window = g_window;
   window->app_context().CallInUIThread([window] { window->RequestClose(); });
   return true;
