@@ -129,7 +129,11 @@ uint32_t g_slot = 0;
 // The highest guest frame index whose GPU work has completed; see
 // PlumeFrameRetired. Frame indices start at zero, so "nothing has retired yet"
 // needs a sentinel rather than a lower value.
-uint64_t g_retired_frame = ~0ull;
+// Atomic because the readback path asks this from the guest thread that faulted
+// on a resolve destination, which is not the thread that retires frames. It was
+// a plain uint64_t while the only reader was a one-shot check; a reader that
+// now polls it in a loop makes the race real.
+std::atomic<uint64_t> g_retired_frame{~0ull};
 
 PlumeBackend g_backend;
 std::atomic<bool> g_ready{false};
@@ -182,8 +186,9 @@ bool g_recording = false;
 // waiting on any one fence retires every frame submitted at or before it. That
 // is what lets the flush path below retire the whole ring by waiting on one.
 void RetireThrough(uint64_t frame) {
-  if (g_retired_frame == ~0ull || frame > g_retired_frame)
-    g_retired_frame = frame;
+  const uint64_t retired = g_retired_frame.load(std::memory_order_relaxed);
+  if (retired == ~0ull || frame > retired)
+    g_retired_frame.store(frame, std::memory_order_release);
 }
 
 // Block until this slot's outstanding work has run, and collect what it
@@ -329,7 +334,8 @@ RenderCommandList* PlumeGuestCommands() {
 uint32_t PlumeFrameSlot() { return g_slot; }
 
 bool PlumeFrameRetired(uint64_t frame) {
-  return g_retired_frame != ~0ull && frame <= g_retired_frame;
+  const uint64_t retired = g_retired_frame.load(std::memory_order_acquire);
+  return retired != ~0ull && frame <= retired;
 }
 
 bool InitPlumeBackend(void* window_handle) {
@@ -395,7 +401,7 @@ bool InitPlumeBackend(void* window_handle) {
     slot.gpu_timer = g_backend.device->createQueryPool(2);
   }
   g_slot = 0;
-  g_retired_frame = ~0ull;
+  g_retired_frame.store(~0ull, std::memory_order_release);
 
   // Present wait is what makes vsync usable on a frame-clocked engine. Without
   // it Plume's D3D12 present issues `Present(1, 0)`, which blocks on the vblank

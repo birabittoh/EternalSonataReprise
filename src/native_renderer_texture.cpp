@@ -4,6 +4,7 @@
 
 #include "native_renderer_texture.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -1086,6 +1087,54 @@ void LogTextureMirrorSummary() {
 
   REXLOG_INFO("native_renderer:   aperture walks={} reused={}", g_aperture_walks,
               g_aperture_reuses);
+}
+
+void TextureMirrorOccupiedRanges(uint32_t address, uint64_t bytes, uint32_t expected_address,
+                                 uint32_t expected_width, uint32_t expected_height,
+                                 std::vector<MirrorOccupiedRange>* out) {
+  if (out == nullptr || bytes == 0)
+    return;
+  const uint64_t end = uint64_t(address) + bytes;
+  for (const std::unique_ptr<MirroredTexture>& entry : g_textures) {
+    if (entry == nullptr || entry->source_bytes == 0)
+      continue;
+    const uint64_t entry_end = uint64_t(entry->address) + entry->source_bytes;
+    if (entry_end <= address || entry->address >= end)
+      continue;
+    // Overlaps. The destination's own image is not a conflict with itself: the
+    // guest binds a resolved thumbnail as a texture, which is the whole reason
+    // a resolve destination is reachable from here at all.
+    if (entry->address == expected_address && entry->width == expected_width &&
+        entry->height == expected_height) {
+      continue;
+    }
+    // Nothing is asked about when the texture was decoded. That test used to be
+    // here -- a texture cached before the resolve was treated as stale -- and it
+    // is not true: a resolve writes the host render target and the readback
+    // buffer, never guest memory, so a cached texture overlapping a destination
+    // is live guest data whichever happened first.
+    const uint64_t begin = (uint64_t(entry->address) > address ? uint64_t(entry->address) : address)
+                           - address;
+    const uint64_t stop = (entry_end < end ? entry_end : end) - address;
+    out->push_back({begin, stop});
+  }
+
+  if (out->size() < 2)
+    return;
+  std::sort(out->begin(), out->end(),
+            [](const MirrorOccupiedRange& a, const MirrorOccupiedRange& b) {
+              return a.begin < b.begin;
+            });
+  size_t kept = 0;
+  for (size_t i = 1; i < out->size(); ++i) {
+    if ((*out)[i].begin <= (*out)[kept].end) {
+      if ((*out)[i].end > (*out)[kept].end)
+        (*out)[kept].end = (*out)[i].end;
+    } else {
+      (*out)[++kept] = (*out)[i];
+    }
+  }
+  out->resize(kept + 1);
 }
 
 void TextureMirrorBeginFrame() { ++g_frame; }
