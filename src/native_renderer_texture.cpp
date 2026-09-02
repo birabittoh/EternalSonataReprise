@@ -126,16 +126,26 @@ bool GuestRangeReadable(const uint8_t* start, uint64_t bytes) {
 // whole thing. So the aperture is chosen per read, by asking which one actually
 // spans the bytes wanted, rather than fixed.
 //
-// The offset is the *raw* fetch field rather than the fixed-up address, because
-// the fixup's 0x1000 exists only to make an E-aperture resource compare equal to
-// its resolve destination and would be a page of skew here.
-const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t raw_base_address,
+// The address is the physical one the fetch decode produces, not the raw field.
+// The three apertures alias the same physical pages but do not put a physical
+// address at the same host byte: the 0xE0000000 view sits one 4 KB page above
+// physical memory. That is what PhysicalHeap::GetPhysicalAddress in the SDK
+// compensates for (a heap based at or above 0xE0000000 adds 0x1000), and what
+// DecodeTextureFetch already applies to the fetch's base field.
+//
+// Indexing all three at one offset is therefore correct only for the aperture a
+// texture was allocated in, and a page out in the other two. Since the aperture
+// is chosen by asking which one is committed, that made an asset read either
+// correctly or as the neighbouring allocation's bytes depending on when it was
+// first bound. Each aperture undoes its own shift instead.
+const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t physical_address,
                                     uint64_t bytes) {
   ProfileZone zone(kPhaseGuestPointer);
-  const uint32_t offset = raw_base_address & 0x1FFFFFFFu;
+  const uint32_t offset = physical_address & 0x1FFFFFFFu;
   const uint8_t* first = nullptr;
   for (uint32_t aperture : {0xA0000000u, 0xC0000000u, 0xE0000000u}) {
-    const uint8_t* candidate = memory_base + (aperture | offset);
+    const uint32_t shifted = aperture == 0xE0000000u ? offset - 0x1000u : offset;
+    const uint8_t* candidate = memory_base + (aperture | shifted);
     if (first == nullptr)
       first = candidate;
     if (GuestRangeReadableBytes(candidate, bytes) >= bytes)
@@ -820,7 +830,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
 
   std::vector<uint8_t> texels;
   if (!ReadTexels(GuestPhysicalPointer(memory_base,
-                                       fetch.raw_base_address +
+                                       fetch.base_address +
                                            uint32_t(Level0ByteOffset(fetch, info)),
                                        SourceExtentBytes(fetch, info)),
                   fetch, info,
@@ -831,7 +841,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
     // would be one line per bind forever.
     if (g_count_refusals && g_refused_unmapped + g_refused_extent <= 8) {
       const uint64_t wanted = SourceExtentBytes(fetch, info);
-      const uint32_t offset = fetch.raw_base_address & 0x1FFFFFFFu;
+      const uint32_t offset = fetch.base_address & 0x1FFFFFFFu;
       REXLOG_INFO(
           "native_renderer: texture mirror refused {}x{} fmt {} {} pitch {} at 0x{:08X}, "
           "of {} source byte(s) readable: A={} C={} E={} 0={} 8={}",
@@ -839,7 +849,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
           fetch.base_address, wanted,
           GuestRangeReadableBytes(memory_base + (0xA0000000u | offset), wanted),
           GuestRangeReadableBytes(memory_base + (0xC0000000u | offset), wanted),
-          GuestRangeReadableBytes(memory_base + (0xE0000000u | offset), wanted),
+          GuestRangeReadableBytes(memory_base + (0xE0000000u | (offset - 0x1000u)), wanted),
           GuestRangeReadableBytes(memory_base + offset, wanted),
           GuestRangeReadableBytes(memory_base + (0x80000000u | offset), wanted));
     }
@@ -958,7 +968,7 @@ const uint8_t* EntrySourcePointer(MirroredTexture* entry, uint8_t* memory_base,
   if (stale) {
     ++g_aperture_walks;
     entry->source_pointer = GuestPhysicalPointer(
-        memory_base, fetch.raw_base_address + entry->level0_offset, entry->source_bytes);
+        memory_base, fetch.base_address + entry->level0_offset, entry->source_bytes);
     entry->source_pointer_frame = g_frame;
   } else {
     ++g_aperture_reuses;
