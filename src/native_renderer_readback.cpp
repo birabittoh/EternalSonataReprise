@@ -6,10 +6,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <rex/cvar.h>
@@ -60,6 +62,7 @@
 #include "native_renderer_frame.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_profile.h"
+#include "native_renderer_texture.h"
 
 // How a resolved render target gets back into guest memory.
 //
@@ -296,6 +299,15 @@ uint64_t g_disowned_faults = 0;
 // was attempted and failed. Counted apart so the summary says which.
 uint64_t g_unanswered_thread = 0;
 uint64_t g_unanswered_flush = 0;
+// Reads answered by waiting for the recording thread's present rather than by
+// flushing. See WaitForCopy.
+uint64_t g_waited_copies = 0;
+// Fills that had to skip part of their extent because the mirror holds another
+// texture over it, and how many bytes went unwritten that way.
+uint64_t g_clipped_fills = 0;
+uint64_t g_clipped_bytes = 0;
+uint32_t g_clipped_reported = 0;
+constexpr uint32_t kMaxClippedReports = 8;
 
 // The most recent frame any resolve was published in, i.e. what "now" means to
 // a fault, which arrives from guest code rather than from the frame loop.
@@ -494,6 +506,32 @@ bool RangeWritable(const uint8_t* start, uint64_t bytes) {
 
 // Lay the host image out the way the guest's own fetch constant describes it.
 // Called with the destination's pages accessible.
+// Write the parts of [offset, offset + bytes) that no cached texture owns.
+//
+// `occupied` is sorted and non-overlapping, so this walks it once. Empty is the
+// normal case and costs one comparison.
+void WriteClipped(uint8_t* guest, const std::vector<MirrorOccupiedRange>& occupied,
+                  uint64_t offset, const uint8_t* source, uint64_t bytes, uint64_t* skipped) {
+  uint64_t cursor = offset;
+  const uint64_t end = offset + bytes;
+  for (const MirrorOccupiedRange& range : occupied) {
+    if (range.end <= cursor)
+      continue;
+    if (range.begin >= end)
+      break;
+    if (range.begin > cursor) {
+      const uint64_t run = range.begin - cursor;
+      std::memcpy(guest + cursor, source + (cursor - offset), size_t(run));
+    }
+    *skipped += (range.end < end ? range.end : end) - (range.begin > cursor ? range.begin : cursor);
+    cursor = range.end;
+    if (cursor >= end)
+      return;
+  }
+  if (cursor < end)
+    std::memcpy(guest + cursor, source + (cursor - offset), size_t(end - cursor));
+}
+
 bool Fill(Destination& destination) {
   if (destination.pixels == nullptr || destination.guest == nullptr)
     return false;
@@ -512,6 +550,20 @@ bool Fill(Destination& destination) {
   }
 
   const TextureFetch& fetch = destination.fetch;
+
+  // Which of these pages belong to somebody else by now.
+  //
+  // The guest frees a render target and streams an ordinary asset into the same
+  // pages; nothing arms a destination once it has been filled, so `Fresh` never
+  // hears about it. Refusing the whole fill on any overlap made save previews
+  // black, and filling regardless corrupted textures -- both are the fill being
+  // all-or-nothing over a range it does not need all of, so the overlap is cut
+  // out and the rest is written.
+  static thread_local std::vector<MirrorOccupiedRange> occupied;
+  occupied.clear();
+  TextureMirrorOccupiedRanges(destination.address, destination.extent, destination.address,
+                              fetch.width, fetch.height, &occupied);
+  uint64_t skipped = 0;
   const uint32_t texel_bytes = destination.texel_bytes;
   // Clamped to the buffer in both directions, texels as well as bytes: the loop
   // below indexes the scratch row by texel, so a width the buffer cannot back
@@ -609,19 +661,21 @@ bool Fill(Destination& destination) {
         const uint32_t offset = TiledBlockOffset(x, y, pitch_macro_tiles, texel_bytes_log2);
         if (uint64_t(offset) + 16 > destination.extent)
           continue;
-        std::memcpy(destination.guest + offset, row.data() + size_t(x) * texel_bytes, 16);
+        WriteClipped(destination.guest, occupied, offset, row.data() + size_t(x) * texel_bytes, 16,
+                     &skipped);
       }
       for (; x < row_texels; ++x) {
         const uint32_t offset = TiledBlockOffset(x, y, pitch_macro_tiles, texel_bytes_log2);
         if (uint64_t(offset) + texel_bytes > destination.extent)
           continue;
-        std::memcpy(destination.guest + offset, row.data() + size_t(x) * texel_bytes, texel_bytes);
+        WriteClipped(destination.guest, occupied, offset, row.data() + size_t(x) * texel_bytes,
+                     texel_bytes, &skipped);
       }
     } else {
       const uint64_t offset = uint64_t(y) * pitch_texels * texel_bytes;
       if (offset + row_source_bytes > destination.extent)
         break;
-      std::memcpy(destination.guest + offset, row.data(), row_source_bytes);
+      WriteClipped(destination.guest, occupied, offset, row.data(), row_source_bytes, &skipped);
     }
   }
 
@@ -629,6 +683,18 @@ bool Fill(Destination& destination) {
   ++destination.fills;
   ++g_fills;
   g_fill_bytes += uint64_t(row_source_bytes) * rows;
+  if (skipped != 0) {
+    ++g_clipped_fills;
+    g_clipped_bytes += skipped;
+    if (g_clipped_reported < kMaxClippedReports) {
+      ++g_clipped_reported;
+      REXLOG_WARN(
+          "native_renderer: readback clipped the fill of 0x{:08X} {}x{}: {} of {} guest byte(s) "
+          "belong to {} cached texture(s) now, the first at 0x{:08X}",
+          destination.address, fetch.width, fetch.height, skipped, destination.extent,
+          occupied.size(), uint32_t(destination.address + occupied.front().begin));
+    }
+  }
   return true;
 }
 
@@ -687,15 +753,69 @@ void LogEvent(const Destination& destination, const char* what, bool filled) {
 // a save screenshot would show as stale or, on the first one, as nothing. This
 // is the SDK's `readback_resolve=full` behaviour, reached only when a read
 // actually needs it.
-bool EnsureData(Destination& destination) {
+// How long a guest thread that is not recording the frame will wait for the
+// copy it needs to retire on its own. Two or three frames at 60 Hz: long enough
+// to cover a present that is already in flight, short enough that a render
+// thread which is itself blocked behind this one degrades to the old black
+// image rather than to a hang.
+constexpr auto kCopyWaitTimeout = std::chrono::milliseconds(50);
+constexpr auto kCopyWaitPoll = std::chrono::milliseconds(1);
+
+// Wait for a recorded copy to run, without submitting anything.
+//
+// `lock` is released for the duration, which is the whole point: the render
+// thread takes the same mutex in ReadbackPublish, so holding it here would stop
+// the very present that retires the frame being waited on. That also means
+// `destination` does not survive the call -- g_destinations is a vector and the
+// render thread can grow it -- so this takes the address and the caller re-finds.
+bool WaitForCopy(uint32_t address, uint64_t copy_frame, std::unique_lock<std::mutex>& lock) {
+  if (copy_frame == ~0ull)
+    return false;
+  const auto deadline = std::chrono::steady_clock::now() + kCopyWaitTimeout;
+  lock.unlock();
+  bool retired = false;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (PlumeFrameRetired(copy_frame)) {
+      retired = true;
+      break;
+    }
+    std::this_thread::sleep_for(kCopyWaitPoll);
+  }
+  lock.lock();
+  (void)address;
+  return retired;
+}
+
+// Defined below; needed here because a destination reference does not survive
+// EnsureData releasing the lock.
+Destination* Find(uint32_t address);
+
+bool EnsureData(Destination& destination, std::unique_lock<std::mutex>& lock) {
   if (DataReady(destination))
     return true;
 
   if (!g_is_render_thread) {
+    // Another thread got there first, so a flush is not available: submitting
+    // means submitting a command list the render thread is still writing.
+    //
+    // Waiting is, though, and it is what this case actually needs. The save
+    // screenshot is resolved and read in the same frame, from the guest's save
+    // thread rather than from the thread recording the frame, so the copy has
+    // been recorded and simply has not run yet. Giving up here is what made the
+    // *first* save after boot come back black while every later one worked --
+    // a later one is answered from DataReady above, because its copy ran frames
+    // ago.
+    //
+    // So wait for the render thread to present, which retires the frame and
+    // completes the copy with no extra synchronisation. The caller re-finds the
+    // destination afterwards; this releases the mutex.
+    const uint32_t address = destination.address;
+    const uint64_t copy_frame = destination.copy_frame;
+    if (WaitForCopy(address, copy_frame, lock)) {
+      ++g_waited_copies;
+      return true;
+    }
     ++g_unanswered_thread;
-    // Some other thread got there first. Flushing means submitting a command
-    // list the render thread is still writing, so the honest answer is to leave
-    // guest memory alone and count it.
     ++g_unanswered;
     return false;
   }
@@ -795,7 +915,7 @@ bool HandleReadbackFault(uint8_t* address, bool is_write) {
     ~Guard() { g_in_handler = false; }
   } guard;
 
-  std::lock_guard<std::mutex> lock(g_mutex);
+  std::unique_lock<std::mutex> lock(g_mutex);
   for (Destination& destination : g_destinations) {
     for (uint32_t i = 0; i < destination.range_count; ++i) {
       const ArmedRange& range = destination.ranges[i];
@@ -838,13 +958,30 @@ bool HandleReadbackFault(uint8_t* address, bool is_write) {
       } else {
         ++destination.reads;
         ++g_read_faults;
+        // EnsureData may release the lock to wait for a copy, and the render
+        // thread can grow g_destinations while it is out. Everything after that
+        // point goes through a fresh lookup rather than through this reference.
+        const uint32_t address = destination.address;
         bool filled = false;
         if (!Fresh(destination)) {
           ++g_refused_stale;
-        } else if (EnsureData(destination)) {
-          filled = Fill(destination);
+          LogEvent(destination, "guest read", false);
+        } else {
+          const bool ready = EnsureData(destination, lock);
+          Destination* again = Find(address);
+          if (again == nullptr) {
+            // Freed while we waited. Nothing to fill and nothing to say about
+            // it beyond that the access has been let through.
+            ++g_refused_stale;
+          } else {
+            // Pages this destination shares with a cached texture are somebody
+            // else's by now; Fill cuts them out of the write rather than
+            // refusing the whole fill. See the comment there.
+            if (ready)
+              filled = Fill(*again);
+            LogEvent(*again, "guest read", filled);
+          }
         }
-        LogEvent(destination, "guest read", filled);
       }
       return true;
     }
@@ -1134,7 +1271,8 @@ bool ReadbackFillForRead(const TextureFetch& bound) {
   if (CurrentMode() == Mode::kOff || bound.base_address == 0)
     return false;
 
-  std::lock_guard<std::mutex> lock(g_mutex);
+  // unique_lock because EnsureData may release it to wait for a copy.
+  std::unique_lock<std::mutex> lock(g_mutex);
   Destination* destination = Find(bound.base_address);
   if (destination == nullptr || destination->refused || destination->pixels == nullptr ||
       destination->guest == nullptr) {
@@ -1185,9 +1323,13 @@ bool ReadbackFillForRead(const TextureFetch& bound) {
   // Disarmed first, and not only for speed: the caller is about to read these
   // pages, and the fill writes to them.
   Disarm(*destination);
-  if (!EnsureData(*destination))
+  const uint32_t address = destination->address;
+  if (!EnsureData(*destination, lock))
     return false;
-  return Fill(*destination);
+  // Re-found for the same reason as in the fault handler: EnsureData may have
+  // released the lock, and the reference does not survive that.
+  destination = Find(address);
+  return destination != nullptr && Fill(*destination);
 }
 
 void ReadbackForget(uint32_t address) {
@@ -1212,15 +1354,16 @@ void LogReadbackSummary() {
   std::lock_guard<std::mutex> lock(g_mutex);
   REXLOG_INFO(
       "native_renderer: readback destinations={} arms={} | faults read={} write={} outside={} "
-      "disowned={} | mirror pulls={} | fills={} ({} MiB) | flushes={} unanswered={} "
-      "(thread {}, flush {}) | "
+      "disowned={} | mirror pulls={} | fills={} ({} MiB) | flushes={} waited={} "
+      "unanswered={} (thread {}, flush {}) | "
       "refused format={} "
-      "extent={} unmapped={} stale={} untrapped={} | layout disagreements={}",
+      "extent={} unmapped={} stale={} untrapped={} | clipped fills={} ({} KiB) | layout disagreements={}",
       g_destinations.size(), g_arms, g_read_faults, g_write_faults, g_outside_faults,
       g_disowned_faults, g_pulls,
-      g_fills, g_fill_bytes >> 20, g_flushes, g_unanswered, g_unanswered_thread,
+      g_fills, g_fill_bytes >> 20, g_flushes, g_waited_copies, g_unanswered, g_unanswered_thread,
       g_unanswered_flush, g_refused_format, g_refused_extent,
-      g_refused_unmapped, g_refused_stale, g_refused_large, g_layout_disagreements);
+      g_refused_unmapped, g_refused_stale, g_refused_large, g_clipped_fills,
+      g_clipped_bytes >> 10, g_layout_disagreements);
 
   // One line per destination anything has actually asked for, which is the
   // question this whole path exists to answer: who reads a resolved surface

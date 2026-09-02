@@ -31,6 +31,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "native_renderer_d3d.h"
 
@@ -51,6 +52,32 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch);
 // Tick the frame counter the content hash is throttled against. Called once per
 // guest swap; without it every cached texture is hashed only once, ever, and a
 // texture the guest rewrites in place is never noticed.
+// A byte range of guest memory, as offsets from the address that was asked
+// about.
+struct MirrorOccupiedRange {
+  uint64_t begin;
+  uint64_t end;
+};
+
+// Which parts of [address, address + bytes) does the mirror hold cached
+// textures over, other than `expected` itself? Asked by the readback before it
+// scatters a resolve destination's pixels into guest memory: the guest reuses a
+// freed render target's pages for ordinary assets, and a fill landing on one is
+// a texture corrupting itself for no visible reason.
+//
+// The answer is a set of ranges rather than a yes or no because the fill does
+// not need all of the extent it claims: refusing the whole fill on any overlap
+// blacks save previews, and waving it through corrupts textures. Both symptoms
+// are the fill being all-or-nothing, so it is clipped to the bytes nobody else
+// owns instead. Ranges come out sorted and non-overlapping, as offsets from
+// `address`.
+//
+// `expected_*` describe the destination doing the asking, so a texture that IS
+// that destination -- same base, same extent -- is not an occupant.
+void TextureMirrorOccupiedRanges(uint32_t address, uint64_t bytes, uint32_t expected_address,
+                                 uint32_t expected_width, uint32_t expected_height,
+                                 std::vector<MirrorOccupiedRange>* out);
+
 void TextureMirrorBeginFrame();
 
 void LogTextureMirrorSummary();
