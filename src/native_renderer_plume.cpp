@@ -120,9 +120,12 @@ void BootstrapAppleVulkanRuntime() {
     return {};
   };
 
-  std::vector<fs::path> loaders = {exe_dir / "libvulkan.1.dylib", exe_dir / "libvulkan.dylib",
-                                   exe_dir / "lib" / "libvulkan.1.dylib",
-                                   exe_dir / "libMoltenVK.dylib"};
+  // vulkan/lib first: that is the layout the SDK's CMake stages, so it is the
+  // loader the SDK was built against rather than whatever else is lying around.
+  std::vector<fs::path> loaders = {
+      exe_dir / "vulkan" / "lib" / "libvulkan.1.dylib", exe_dir / "libvulkan.1.dylib",
+      exe_dir / "libvulkan.dylib", exe_dir / "lib" / "libvulkan.1.dylib",
+      exe_dir / "vulkan" / "lib" / "libMoltenVK.dylib", exe_dir / "libMoltenVK.dylib"};
   if (!bundle.empty()) {
     loaders.push_back(bundle / "Frameworks" / "libvulkan.1.dylib");
     loaders.push_back(bundle / "Frameworks" / "libvulkan.dylib");
@@ -150,8 +153,10 @@ void BootstrapAppleVulkanRuntime() {
   if ((existing && existing[0]) || (existing_legacy && existing_legacy[0]))
     return;
 
-  std::vector<fs::path> icds = {exe_dir / "vulkan" / "icd.d" / "MoltenVK_icd.json",
-                                exe_dir / "share" / "vulkan" / "icd.d" / "MoltenVK_icd.json"};
+  std::vector<fs::path> icds = {
+      exe_dir / "vulkan" / "share" / "vulkan" / "icd.d" / "MoltenVK_icd.json",
+      exe_dir / "share" / "vulkan" / "icd.d" / "MoltenVK_icd.json",
+      exe_dir / "vulkan" / "icd.d" / "MoltenVK_icd.json"};
   if (!bundle.empty()) {
     icds.push_back(bundle / "Resources" / "vulkan" / "icd.d" / "MoltenVK_icd.json");
   }
