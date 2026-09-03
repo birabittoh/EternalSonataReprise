@@ -1830,10 +1830,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 
   uint32_t target_width = 0;
   uint32_t target_height = 0;
+  uint32_t target_scale = 1;
   bool have_targets;
   {
     ProfileZone targets_zone(kPhaseBindTargets);
-    have_targets = FrameBindDrawTargets(commands, &target_width, &target_height) != nullptr;
+    have_targets =
+        FrameBindDrawTargets(commands, &target_width, &target_height, &target_scale) != nullptr;
   }
   if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
@@ -2286,13 +2288,20 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // The viewport, clamped to the target. The guest renders 720p through EDRAM
   // in bands, so its viewport can be taller than the surface it is bound to;
   // the band's own origin is what the resolve carries, not what this does.
+  //
+  // The guest states it in guest pixels and the target may be supersampled, so
+  // it is scaled up before the clamp -- that scaling *is* the higher rendering
+  // resolution, since it is the viewport transform that decides how many host
+  // pixels the same clip-space triangle covers. `target_scale` rather than
+  // NativeRenderScale, so a draw into a target that was not grown is untouched.
   float x = 0.0f, y = 0.0f;
   float width = float(target_width), height = float(target_height);
   if (g_viewport.set) {
-    x = float(g_viewport.x);
-    y = float(g_viewport.y);
-    width = float(g_viewport.width);
-    height = float(g_viewport.height);
+    const float s = float(target_scale);
+    x = float(g_viewport.x) * s;
+    y = float(g_viewport.y) * s;
+    width = float(g_viewport.width) * s;
+    height = float(g_viewport.height) * s;
     if (x + width > float(target_width))
       width = float(target_width) - x;
     if (y + height > float(target_height))
@@ -2336,6 +2345,14 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // Moving the viewport rather than the vertices puts it before the rasteriser
   // for every draw, which is what makes it correct for the passes that never
   // touch a screen-space UV as well.
+  //
+  // Half a *host* pixel, so it is deliberately not multiplied by target_scale
+  // above: what it corrects is where the host rasteriser takes its sample
+  // within a target pixel, which is a property of the target's own grid. The
+  // game's baked half-texel UVs are a separate, guest-space term and are
+  // already right. The ripple field is never supersampled anyway (it is not
+  // screen-width, so AcquireTarget leaves it alone), so the case this comment
+  // was written about is unaffected either way.
   commands->setViewports(
       RenderViewport(x + 0.5f, y + 0.5f, width, height, g_viewport.min_z, g_viewport.max_z));
   commands->setScissors(

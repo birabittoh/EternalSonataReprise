@@ -29,6 +29,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace rex::ui {
 class Window;
 }
@@ -44,10 +46,16 @@ inline constexpr const char* kNativeRendererPluginName = "plume";
 // meaningful once the config files have been loaded.
 bool NativeRendererEnabled();
 
+// Supersampling factor the guest's 1280x720 frame is rendered at, 1..8. This is
+// the `resolution_scale` cvar, latched at boot; see NativeRenderScale's body for
+// why it cannot be a live read. Always 1 on the Xenos path, which owns the cvar
+// itself and does its own scaling.
+uint32_t NativeRenderScale();
+
 // Registers the cvars a GPU plugin would have registered, so selecting this
-// renderer does not silently lose them. Currently just `vsync`, which lives in
-// the Xenos plugin's command processor and therefore never registers when no
-// plugin is loaded. Call from OnPreSetup: after the config file has been read
+// renderer does not silently lose them: `vsync` and `resolution_scale`, both of
+// which live inside rexgpu-xenos and therefore never register when no plugin is
+// loaded. Call from OnPreSetup: after the config file has been read
 // (so a saved value is still waiting to be applied to it) and before the SDK
 // decides whether to load a plugin (so the plugin, if one is loaded instead,
 // keeps sole ownership of the name). No-op unless NativeRendererEnabled().

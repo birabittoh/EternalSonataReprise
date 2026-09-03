@@ -14,6 +14,7 @@
 #include <rex/cvar.h>
 #include <rex/logging.h>
 
+#include "native_renderer.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_readback.h"
@@ -73,6 +74,13 @@ struct GuestTarget {
   uint32_t host_width = 0;
   uint32_t host_height = 0;
 
+  // Supersampling factor baked into host_width/host_height, so 1 for a target
+  // that is not the screen. Kept rather than recomputed because everything
+  // downstream (the viewport, the resolve rectangle) has to agree with the size
+  // the image was actually created at, and NativeRenderScale alone does not say
+  // whether this particular target was grown. See AcquireTarget.
+  uint32_t scale = 1;
+
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
 };
@@ -92,10 +100,25 @@ struct FramebufferEntry {
 // bind recognises this as something the frame produced rather than an asset.
 struct ResolvedTexture {
   uint32_t address = 0;
+  // The guest's extent, always. The image behind it is scale times bigger in
+  // each axis, but this is what a texture bind is matched against
+  // (FrameResolveTextureByAddress) and what the guest expects to read back, so
+  // keeping it in guest units is what stops supersampling leaking into either.
   uint32_t width = 0;
   uint32_t height = 0;
+  uint32_t scale = 1;
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
+
+  // Guest-sized copy of `texture`, and the machinery to produce it, for the
+  // readback path only. A supersampled destination cannot be copied straight
+  // into the guest's buffer -- the guest wants its own 1280x720 -- and
+  // copyTextureRegion cannot rescale, so it goes through a downscaling draw
+  // first. Only allocated when scale > 1 and something is actually reading.
+  std::unique_ptr<RenderTexture> readback_source;
+  std::unique_ptr<RenderFramebuffer> readback_framebuffer;
+  std::unique_ptr<RenderDescriptorSet> readback_set;
+  RenderTextureLayout readback_source_layout = RenderTextureLayout::UNKNOWN;
 
   // The guest's own copy of this image, for the guest's own CPU to read. See
   // native_renderer_readback.h: the copy into this buffer is recorded into the
@@ -128,6 +151,22 @@ struct ResolvedTexture {
 // number would mean the rule is too strict rather than that the game is
 // recycling buffers.
 uint64_t g_resolve_extent_mismatch = 0;
+
+// Destinations rebuilt because they existed at a different supersampling factor
+// than the target being resolved out of. A handful during the first frames is
+// expected and is the tiling extent arriving late; see the rebuild in
+// FrameResolve. One that keeps climbing means two targets at different scales
+// are resolving into the same address and fighting over it.
+uint64_t g_resolve_scale_mismatch = 0;
+
+// Resolves dropped because the source target was smaller than the destination
+// already is. Should stay at zero; see the guard in FrameResolve.
+uint64_t g_resolve_scale_undersized = 0;
+
+// Readbacks skipped because the guest-sized downscale of a supersampled
+// destination could not be set up. Non-zero means the guest is reading stale
+// pixels, so it is a defect rather than a note.
+uint64_t g_readback_downscale_failed = 0;
 
 // Bumped once per frame, at the point the frame's command list is opened. Only
 // ever compared for equality; the readback path uses it to offer a destination
@@ -181,6 +220,17 @@ GuestTarget* BoundDepthTarget() {
 // from there rather than at the present: the frame can also be flushed without
 // presenting.
 const RenderFramebuffer* g_bound_framebuffer = nullptr;
+
+// Resources replaced part way through a frame, held until the frame that may
+// still reference them has run. A command list keeps raw pointers to everything
+// recorded into it and does not execute until the present, so destroying a
+// texture the moment it is replaced leaves the submission reading freed memory.
+//
+// Drained from FrameNotifyCommandListBegun, which is reached only after the
+// present's fence wait, so anything in here has been retired by then.
+std::vector<std::unique_ptr<RenderTexture>> g_retired_textures;
+std::vector<std::unique_ptr<RenderFramebuffer>> g_retired_framebuffers;
+std::vector<std::unique_ptr<RenderDescriptorSet>> g_retired_sets;
 
 void BindFramebuffer(RenderCommandList* commands, RenderFramebuffer* framebuffer) {
   if (g_bound_framebuffer == framebuffer)
@@ -238,6 +288,167 @@ uint32_t AlignUp(uint32_t value, uint32_t alignment) {
 // row width in texels rather than bytes.
 constexpr uint32_t kReadbackRowAlignment = 256;
 
+// --- The readback downscale ---
+//
+// The same full-screen triangle as the present blit, but rendering into a
+// guest-sized image in the guest targets' own format rather than into the swap
+// chain. It exists for one reason: the guest's CPU occasionally reads the pixels
+// it resolved (the save screenshot, the cross-fade sources; see
+// native_renderer_readback.h), and it expects them at 1280x720 no matter what
+// the renderer drew at.
+//
+// The linear sampler makes this a 2x2 (or 4x4) box filter for free, which is
+// the right answer here anyway: what the guest gets back is a downsample of a
+// higher-resolution frame rather than of the frame it would have drawn itself,
+// which is strictly better and is what the save thumbnail wants.
+struct DownscaleResources {
+  std::unique_ptr<RenderShader> vertex_shader;
+  std::unique_ptr<RenderShader> pixel_shader;
+  std::unique_ptr<RenderPipelineLayout> pipeline_layout;
+  std::unique_ptr<RenderPipeline> pipeline;
+  std::unique_ptr<RenderSampler> sampler;
+  bool initialized = false;
+  bool failed = false;
+};
+
+DownscaleResources g_downscale;
+
+// The layout every downscale descriptor set is built from. One texture at 0, one
+// sampler at 1, matching blitFrag.hlsl.
+RenderDescriptorSetDesc DownscaleSetDesc(RenderDescriptorRange (&ranges)[2]) {
+  ranges[0] = RenderDescriptorRange(RenderDescriptorRangeType::TEXTURE, 0, 1);
+  ranges[1] = RenderDescriptorRange(RenderDescriptorRangeType::SAMPLER, 1, 1);
+  return RenderDescriptorSetDesc(ranges, 2);
+}
+
+bool EnsureDownscaleResources(RenderDevice* device) {
+  if (g_downscale.initialized)
+    return true;
+  if (g_downscale.failed || device == nullptr)
+    return false;
+
+  RenderDescriptorRange ranges[2];
+  RenderDescriptorSetDesc set_desc = DownscaleSetDesc(ranges);
+
+  RenderPipelineLayoutDesc layout_desc;
+  layout_desc.descriptorSetDescs = &set_desc;
+  layout_desc.descriptorSetDescsCount = 1;
+  layout_desc.allowInputLayout = false;
+  g_downscale.pipeline_layout = device->createPipelineLayout(layout_desc);
+
+  const RenderShaderFormat shader_format = PlumeShaderFormat();
+#ifdef _WIN32
+  if (shader_format == RenderShaderFormat::DXIL) {
+    g_downscale.vertex_shader =
+        device->createShader(blitVertBlobDXIL, sizeof(blitVertBlobDXIL), "VSMain", shader_format);
+    g_downscale.pixel_shader =
+        device->createShader(blitFragBlobDXIL, sizeof(blitFragBlobDXIL), "PSMain", shader_format);
+  } else
+#endif
+      if (shader_format == RenderShaderFormat::SPIRV) {
+    g_downscale.vertex_shader = device->createShader(blitVertBlobSPIRV, sizeof(blitVertBlobSPIRV),
+                                                     "VSMain", shader_format);
+    g_downscale.pixel_shader = device->createShader(blitFragBlobSPIRV, sizeof(blitFragBlobSPIRV),
+                                                    "PSMain", shader_format);
+  }
+
+  RenderSamplerDesc sampler_desc;
+  sampler_desc.minFilter = RenderFilter::LINEAR;
+  sampler_desc.magFilter = RenderFilter::LINEAR;
+  sampler_desc.mipmapMode = RenderMipmapMode::NEAREST;
+  sampler_desc.addressU = RenderTextureAddressMode::CLAMP;
+  sampler_desc.addressV = RenderTextureAddressMode::CLAMP;
+  sampler_desc.addressW = RenderTextureAddressMode::CLAMP;
+  g_downscale.sampler = device->createSampler(sampler_desc);
+
+  if (g_downscale.vertex_shader && g_downscale.pixel_shader && g_downscale.pipeline_layout) {
+    RenderGraphicsPipelineDesc pipeline_desc;
+    pipeline_desc.pipelineLayout = g_downscale.pipeline_layout.get();
+    pipeline_desc.vertexShader = g_downscale.vertex_shader.get();
+    pipeline_desc.pixelShader = g_downscale.pixel_shader.get();
+    // The guest targets' format, not the swap chain's: this renders into an
+    // image the readback copy then reads as kColorFormat.
+    pipeline_desc.renderTargetFormat[0] = kColorFormat;
+    pipeline_desc.renderTargetCount = 1;
+    pipeline_desc.cullMode = RenderCullMode::NONE;
+    pipeline_desc.depthEnabled = false;
+    pipeline_desc.depthWriteEnabled = false;
+    pipeline_desc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
+    g_downscale.pipeline = device->createGraphicsPipeline(pipeline_desc);
+  }
+
+  if (!g_downscale.pipeline || !g_downscale.sampler) {
+    REXLOG_ERROR(
+        "native_renderer: could not create the readback downscale pipeline, so the guest cannot "
+        "read back its own resolved pixels while supersampling");
+    g_downscale.failed = true;
+    return false;
+  }
+
+  g_downscale.initialized = true;
+  return true;
+}
+
+bool DownscaleToReadbackSource(RenderCommandList* commands, ResolvedTexture* destination) {
+  RenderDevice* device = PlumeDevice();
+  if (device == nullptr || !EnsureDownscaleResources(device)) {
+    ++g_readback_downscale_failed;
+    return false;
+  }
+
+  if (!destination->readback_source) {
+    destination->readback_source = device->createTexture(
+        RenderTextureDesc::ColorTarget(destination->width, destination->height, kColorFormat));
+    if (!destination->readback_source) {
+      ++g_readback_downscale_failed;
+      return false;
+    }
+
+    const RenderTexture* attachment = destination->readback_source.get();
+    RenderFramebufferDesc fb_desc;
+    fb_desc.colorAttachments = &attachment;
+    fb_desc.colorAttachmentsCount = 1;
+    destination->readback_framebuffer = device->createFramebuffer(fb_desc);
+
+    // One set per destination, written once and never rewritten, because a set
+    // is a pointer into a heap that the command list reads at execute time
+    // (trap 2 in the handoff). It only ever points at this destination's own
+    // image, so there is nothing to rebind.
+    RenderDescriptorRange ranges[2];
+    RenderDescriptorSetDesc set_desc = DownscaleSetDesc(ranges);
+    destination->readback_set = device->createDescriptorSet(set_desc);
+    if (!destination->readback_framebuffer || !destination->readback_set) {
+      destination->readback_source.reset();
+      destination->readback_framebuffer.reset();
+      destination->readback_set.reset();
+      ++g_readback_downscale_failed;
+      return false;
+    }
+    destination->readback_set->setTexture(0, destination->texture.get(),
+                                          RenderTextureLayout::SHADER_READ);
+    destination->readback_set->setSampler(1, g_downscale.sampler.get());
+  }
+
+  // Both barriers before the framebuffer is bound: Plume's Vulkan backend ends
+  // the active render pass around a barrier issued inside one.
+  Transition(commands, destination->texture.get(), destination->layout,
+             RenderBarrierStage::GRAPHICS, RenderTextureLayout::SHADER_READ);
+  Transition(commands, destination->readback_source.get(), destination->readback_source_layout,
+             RenderBarrierStage::GRAPHICS, RenderTextureLayout::COLOR_WRITE);
+
+  BindFramebuffer(commands, destination->readback_framebuffer.get());
+  const float width = float(destination->width);
+  const float height = float(destination->height);
+  commands->setViewports(RenderViewport(0.0f, 0.0f, width, height));
+  commands->setScissors(RenderRect(0, 0, int32_t(destination->width), int32_t(destination->height)));
+  commands->setPipeline(g_downscale.pipeline.get());
+  commands->setGraphicsPipelineLayout(g_downscale.pipeline_layout.get());
+  commands->setGraphicsDescriptorSet(destination->readback_set.get(), 0);
+  commands->drawInstanced(3, 1, 0, 0);
+  return true;
+}
+
+
 // Keep the guest's own copy of a resolve destination up to date.
 //
 // Two things happen here, in this order and for that reason. First the buffer's
@@ -246,9 +457,10 @@ constexpr uint32_t kReadbackRowAlignment = 256;
 // whether the guest ever actually reads them and writes guest memory if so.
 // Then this frame's copy is recorded over them.
 //
-// `box` is the region of the destination image the resolve just wrote, so a
-// title that resolves the screen in bands accumulates the bands into one buffer
-// exactly as it accumulates them into one texture.
+// `box` is the region of the destination image the resolve just wrote, in the
+// guest's own coordinates rather than the supersampled image's, so a title that
+// resolves the screen in bands accumulates the bands into one buffer exactly as
+// it accumulates them into one texture.
 void ReadbackRecordCopy(RenderCommandList* commands, ResolvedTexture* destination,
                         const TextureFetch& dest_fetch, uint8_t* memory_base,
                         const RenderBox& box) {
@@ -283,14 +495,26 @@ void ReadbackRecordCopy(RenderCommandList* commands, ResolvedTexture* destinatio
                     destination->readback_written, g_frame);
   }
 
-  Transition(commands, destination->texture.get(), destination->layout, RenderBarrierStage::COPY,
+  // What the guest's buffer is filled from. At scale 1 that is the destination
+  // image itself; above it, a guest-sized downscale of it, because the buffer's
+  // pitch and extent are the guest's and a copy cannot rescale.
+  RenderTexture* source = destination->texture.get();
+  RenderTextureLayout* source_layout = &destination->layout;
+  if (destination->scale > 1) {
+    if (!DownscaleToReadbackSource(commands, destination))
+      return;
+    source = destination->readback_source.get();
+    source_layout = &destination->readback_source_layout;
+  }
+
+  Transition(commands, source, *source_layout, RenderBarrierStage::COPY,
              RenderTextureLayout::COPY_SOURCE);
   commands->copyTextureRegion(
       RenderTextureCopyLocation::PlacedFootprint(destination->readback.get(), kColorFormat,
                                                  destination->width, destination->height, 1,
                                                  destination->readback_row_bytes / 4),
-      RenderTextureCopyLocation::Subresource(destination->texture.get()), uint32_t(box.left),
-      uint32_t(box.top), 0, &box);
+      RenderTextureCopyLocation::Subresource(source), uint32_t(box.left), uint32_t(box.top), 0,
+      &box);
   destination->readback_written = true;
 }
 
@@ -312,6 +536,35 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
   uint32_t host_height = surface.height;
   if (extent_width == surface.width && extent_height > surface.height)
     host_height = extent_height;
+
+  // Supersampling, and only for surfaces that are a *resolution* rather than a
+  // fixed-size buffer. Growing the latter is wrong, not merely wasteful: the
+  // water simulation's 64x64 ping-pong pair is addressed in texels by shaders
+  // with the extent baked in (see the ripple probe below), and a grown one reads
+  // its own neighbourhood at the wrong stride.
+  //
+  // The test is area against the tiling extent, which is not elegant but is the
+  // only thing that separates the two groups in this title. Matching the extent
+  // width exactly is what the banding logic above wants and is too narrow here:
+  // it misses the 720x720 surface the game renders scenes into at tile 0, which
+  // then resolved into the same 1280x720 destination as the 2x screen target and
+  // fought with it over the destination's size, once per frame, forever.
+  //
+  // Observed either side of the line, at a 1280x720 extent (area 921600):
+  //   scaled:     1280x720 (screen), 1280x384 (the 2x MSAA band), 720x720
+  //   left alone: 640x360, 320x160, 256x256, 64x64
+  // The gap between 720x720 (518400) and 640x360 (230400) is wide, so a third of
+  // the extent's area sits comfortably in it rather than on either edge.
+  //
+  // Colour and depth stay in step for free, because a depth surface carries the
+  // same dimensions as the colour surface it pairs with; a rule keyed on the
+  // EDRAM tile would not, and would trip the attachment mismatch check.
+  const uint64_t extent_area = uint64_t(extent_width) * extent_height;
+  const uint64_t surface_area = uint64_t(surface.width) * surface.height;
+  const bool is_resolution = extent_area != 0 && surface_area * 3 >= extent_area;
+  const uint32_t scale = is_resolution ? NativeRenderScale() : 1u;
+  host_width *= scale;
+  host_height *= scale;
 
   for (auto& candidate : g_targets) {
     if (candidate->base_tile == surface.base_tile && candidate->width == surface.width &&
@@ -336,6 +589,7 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
   target->depth = depth;
   target->host_width = host_width;
   target->host_height = host_height;
+  target->scale = scale;
 
   // Multisampling is recorded but the host image is single sampled for now.
   // Nothing draws yet, so the only thing this loses is edge quality on a target
@@ -780,6 +1034,11 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
   ++g_clears_applied;
 }
 
+// Defined with the present blit below. Drops its cached "what the descriptor set
+// already points at" pointer, so a replaced image is rebound rather than
+// mistaken for the one still in the set.
+void PresentBlitForgetTexture();
+
 void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& dest_fetch,
                   int32_t src_x1, int32_t src_y1, int32_t src_x2, int32_t src_y2, int32_t dest_x,
                   int32_t dest_y) {
@@ -822,10 +1081,17 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   //
   // A resolve with no rectangle passes 0x7FFFFFFF and means "the whole
   // surface", so it is not evidence that the target is too small.
+  // All of the rectangle arithmetic below stays in guest pixels, including the
+  // comparisons against the target, and only the final box and destination point
+  // are scaled. The alternative (scaling the guest's rectangle up front) makes
+  // every clamp and every log line read in two different units at once.
+  const uint32_t scale = target->scale;
+  const int32_t target_width = int32_t(target->host_width / scale);
+  const int32_t target_height = int32_t(target->host_height / scale);
+
   const bool unbounded_rect = src_x2 == 0x7FFFFFFF;
   const bool host_covers_screen =
-      unbounded_rect ||
-      (int32_t(target->host_height) >= src_y2 && int32_t(target->host_width) >= src_x2);
+      unbounded_rect || (target_height >= src_y2 && target_width >= src_x2);
   const int32_t local_x = host_covers_screen ? src_x1 : src_x1 - dest_x;
   const int32_t local_y = host_covers_screen ? src_y1 : src_y1 - dest_y;
   if (!host_covers_screen)
@@ -837,8 +1103,8 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
 
   // Clamp against the source surface and against what is left of the
   // destination from the point the copy starts at.
-  const int32_t source_right = int32_t(target->host_width);
-  const int32_t source_bottom = int32_t(target->host_height);
+  const int32_t source_right = target_width;
+  const int32_t source_bottom = target_height;
   const int32_t dest_right = int32_t(dest_width) - (dest_x < 0 ? 0 : dest_x) + x1;
   const int32_t dest_bottom = int32_t(dest_height) - (dest_y < 0 ? 0 : dest_y) + y1;
   const int32_t limit_right = source_right < dest_right ? source_right : dest_right;
@@ -889,25 +1155,105 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     created->address = dest_address;
     created->width = dest_width;
     created->height = dest_height;
+    // Sized to match the target it is resolved out of, so the supersampled
+    // pixels survive being resolved instead of being thrown away at the first
+    // copy. Almost everything the frame draws is sampled back out of a resolve
+    // destination at some point, so a guest-sized destination here would undo
+    // the whole thing.
+    created->scale = scale;
+    const uint32_t image_width = dest_width * scale;
+    const uint32_t image_height = dest_height * scale;
     // A colour target rather than a plain texture: the copy needs it as a copy
     // destination now, and a later draw needs to sample it, but the guest also
     // resolves into textures it goes on to render into. Depth has no such case
     // -- nothing renders into a resolved depth mask -- so a plain texture is
     // enough, in the R32_FLOAT view of the same bits D32_FLOAT holds.
     created->texture =
-        is_depth ? device->createTexture(
-                       RenderTextureDesc::Texture2D(dest_width, dest_height, 1, RenderFormat::R32_FLOAT))
+        is_depth ? device->createTexture(RenderTextureDesc::Texture2D(image_width, image_height, 1,
+                                                                     RenderFormat::R32_FLOAT))
                  : device->createTexture(
-                       RenderTextureDesc::ColorTarget(dest_width, dest_height, kColorFormat));
+                       RenderTextureDesc::ColorTarget(image_width, image_height, kColorFormat));
     if (created->texture) {
-      REXLOG_INFO("native_renderer: resolve destination 0x{:08X} is {}x{}", dest_address,
-                  dest_width, dest_height);
+      REXLOG_INFO("native_renderer: resolve destination 0x{:08X} is {}x{} (host {}x{})",
+                  dest_address, dest_width, dest_height, image_width, image_height);
       g_resolved.push_back(std::move(created));
       destination = g_resolved.back().get();
       destination_created = true;
     }
   }
   if (destination == nullptr) {
+    ++g_resolves_dropped;
+    return;
+  }
+
+  // A destination is found by address alone, so it can be resolved into from
+  // targets at two different scales, and the copy cannot rescale. This is not
+  // hypothetical and not rare: BeginTiling does not establish the tiling extent
+  // until part way into the first frame, and AcquireTarget needs that extent to
+  // decide whether a surface is the screen. So every destination created before
+  // it exists at scale 1, and would then be resolved into from a scaled target
+  // for the rest of the run.
+  //
+  // Rebuild it at the new scale rather than dropping the resolve. Dropping is
+  // what made the scene black while leaving the one destination created after
+  // BeginTiling to draw the UI.
+  //
+  // Upward only, and that is what makes it terminate. Two targets at different
+  // scales can share a destination, and rebuilding on every disagreement means
+  // rebuilding twice a frame for the rest of the run, which is both a stall and
+  // a destination whose contents never survive long enough for the guest to read
+  // them. Keeping the larger size costs a partial resolve out of the smaller
+  // target landing in a corner of it; going back and forth costs the image.
+  if (destination->scale < scale) {
+    RenderDevice* rebuild_device = PlumeDevice();
+    if (rebuild_device == nullptr) {
+      ++g_resolves_dropped;
+      return;
+    }
+    const uint32_t image_width = destination->width * scale;
+    const uint32_t image_height = destination->height * scale;
+    auto rebuilt =
+        is_depth ? rebuild_device->createTexture(RenderTextureDesc::Texture2D(
+                       image_width, image_height, 1, RenderFormat::R32_FLOAT))
+                 : rebuild_device->createTexture(
+                       RenderTextureDesc::ColorTarget(image_width, image_height, kColorFormat));
+    if (!rebuilt) {
+      ++g_resolves_dropped;
+      return;
+    }
+
+    REXLOG_INFO(
+        "native_renderer: resolve destination 0x{:08X} rebuilt at {}x for a {}x{} guest extent "
+        "(host {}x{}); it was created before BeginTiling gave the tiling extent",
+        dest_address, scale, destination->width, destination->height, image_width, image_height);
+
+    // Everything that pointed at the old image goes with it: the downscale's
+    // descriptor set names it, and the present blit caches it by pointer, which
+    // a recycled allocation would otherwise alias.
+    g_retired_textures.push_back(std::move(destination->texture));
+    if (destination->readback_source)
+      g_retired_textures.push_back(std::move(destination->readback_source));
+    if (destination->readback_framebuffer)
+      g_retired_framebuffers.push_back(std::move(destination->readback_framebuffer));
+    if (destination->readback_set)
+      g_retired_sets.push_back(std::move(destination->readback_set));
+    destination->readback_source_layout = RenderTextureLayout::UNKNOWN;
+    PresentBlitForgetTexture();
+
+    destination->texture = std::move(rebuilt);
+    destination->layout = RenderTextureLayout::UNKNOWN;
+    destination->scale = scale;
+    // The readback buffer is sized from the guest extent, which has not changed,
+    // so it survives. Only what feeds it had to go.
+    ++g_resolve_scale_mismatch;
+  }
+
+  // The other direction: a target smaller than the destination it feeds. The
+  // copy cannot rescale, so this would put the target's pixels in a corner of a
+  // destination the rest of the frame reads whole. With the area rule above
+  // nothing should reach here; it is counted rather than assumed away.
+  if (destination->scale != scale) {
+    ++g_resolve_scale_undersized;
     ++g_resolves_dropped;
     return;
   }
@@ -928,15 +1274,19 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   const int32_t place_x = (dest_x < 0 ? 0 : dest_x) + (x1 - local_x);
   const int32_t place_y = (dest_y < 0 ? 0 : dest_y) + (y1 - local_y);
 
-  const RenderBox box(x1, y1, x2, y2);
+  // Into host pixels at last: both images are scaled by the same factor, so the
+  // rectangle and the point it lands at scale together.
+  const int32_t s = int32_t(scale);
+  const RenderBox box(x1 * s, y1 * s, x2 * s, y2 * s);
   commands->copyTextureRegion(RenderTextureCopyLocation::Subresource(destination->texture.get()),
                               RenderTextureCopyLocation::Subresource(target->texture.get()),
-                              uint32_t(place_x), uint32_t(place_y), 0, &box);
+                              uint32_t(place_x * s), uint32_t(place_y * s), 0, &box);
 
   // And the same region again, out to a buffer the guest's own CPU can be given
   // if it ever asks. The region is the one just written, in the destination
-  // image's coordinates rather than the source surface's. Not for depth: see
-  // the comment above on why a depth resolve never sets this up.
+  // image's coordinates rather than the source surface's, and unscaled: the
+  // guest reads its own 1280x720. Not for depth: see the comment above on why a
+  // depth resolve never sets this up.
   if (!is_depth) {
     const RenderBox readback_box(place_x, place_y, place_x + (x2 - x1), place_y + (y2 - y1));
     ReadbackRecordCopy(commands, destination, dest_fetch, memory_base, readback_box);
@@ -1014,19 +1364,22 @@ uint64_t FrameIndex() { return g_frame; }
 void LogFrameSummary() {
   REXLOG_INFO(
       "native_renderer: frame targets={} framebuffers={} resolve destinations={} | clears "
-      "applied={} dropped={} aliased={} | resolves copied={} dropped={} banded={} extent mismatch={} | "
-      "attachment mismatch={} | "
+      "applied={} dropped={} aliased={} | resolves copied={} dropped={} banded={} extent mismatch={} "
+      "scale rebuilds={} undersized={} | "
+      "attachment mismatch={} | scale={}x downscale failed={} | "
       "composites={} skipped={} | presenting 0x{:08X} ({}x{})",
       g_targets.size(), g_framebuffers.size(), g_resolved.size(), g_clears_applied,
       g_clears_dropped, g_clears_aliased, g_resolves_copied, g_resolves_dropped, g_resolves_banded,
-      g_resolve_extent_mismatch, g_attachment_mismatch, g_composites, g_composites_skipped,
+      g_resolve_extent_mismatch, g_resolve_scale_mismatch, g_resolve_scale_undersized,
+      g_attachment_mismatch,
+      NativeRenderScale(), g_readback_downscale_failed, g_composites, g_composites_skipped,
       g_present_texture ? g_present_texture->address : 0,
       g_present_texture ? g_present_texture->width : 0,
       g_present_texture ? g_present_texture->height : 0);
 }
 
 RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* width,
-                                        uint32_t* height) {
+                                        uint32_t* height, uint32_t* scale) {
   // Colour target 0 and the depth stencil. The guest binds targets 1..3 in this
   // title only for the resolve source selector to name, and the pixel shaders
   // export a single colour (e0, all 128 of them), so one attachment is the whole
@@ -1055,6 +1408,11 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
     *width = framebuffer->getWidth();
   if (height)
     *height = framebuffer->getHeight();
+  // Taken from the attachment rather than from NativeRenderScale, so a draw into
+  // a target AcquireTarget declined to grow gets 1 and its viewport is left
+  // alone. Colour and depth are already known to agree on size here.
+  if (scale)
+    *scale = color != nullptr ? color->scale : depth->scale;
   return framebuffer;
 }
 
@@ -1065,7 +1423,14 @@ const void* FrameCurrentColorTexture() {
 
 // Not the place to count frames: the readback path can flush the frame's work
 // mid frame, and the fresh command list that follows would look like a new one.
-void FrameNotifyCommandListBegun() { g_bound_framebuffer = nullptr; }
+void FrameNotifyCommandListBegun() {
+  g_bound_framebuffer = nullptr;
+  // Safe here and nowhere earlier: whatever recorded these has been submitted
+  // and waited on. See g_retired_textures.
+  g_retired_textures.clear();
+  g_retired_framebuffers.clear();
+  g_retired_sets.clear();
+}
 
 // --- The present probe ---
 //
@@ -1120,6 +1485,8 @@ struct BlitResources {
 };
 
 BlitResources g_blit;
+
+void PresentBlitForgetTexture() { g_blit.bound_texture = nullptr; }
 
 bool EnsureBlitResources(RenderDevice* device) {
   if (g_blit.initialized)
@@ -1295,6 +1662,9 @@ void ShutdownFrameTargets() {
   }
 
   g_bound_framebuffer = nullptr;
+  g_retired_textures.clear();
+  g_retired_framebuffers.clear();
+  g_retired_sets.clear();
   g_framebuffers.clear();
   g_targets.clear();
   g_resolved.clear();
