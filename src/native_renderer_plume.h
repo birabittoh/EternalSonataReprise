@@ -29,10 +29,15 @@ class UIDrawer;
 namespace eternalsonata {
 
 // Bring up a Plume device and a swap chain on `window_handle` (an HWND on
-// Windows). Safe to call once; returns false and logs if the backend could not
+// Windows, an SDL_Window* on Linux, an ANativeWindow* on Android, an NSWindow*
+// on Apple). Safe to call once; returns false and logs if the backend could not
 // be created, in which case every other entry point here is a no-op and the
 // game runs headless exactly as it did before.
-bool InitPlumeBackend(void* window_handle);
+//
+// `window_view` is only read on Apple, where Plume's RenderWindow is a
+// {NSWindow*, CAMetalLayer*} pair rather than a single handle and the layer is
+// what actually becomes the Vulkan surface. Every other platform passes null.
+bool InitPlumeBackend(void* window_handle, void* window_view = nullptr);
 
 // True once InitPlumeBackend has succeeded.
 bool PlumeBackendReady();
