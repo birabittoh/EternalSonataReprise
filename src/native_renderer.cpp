@@ -9,6 +9,11 @@
 #include <rex/logging.h>
 #include <rex/ui/window.h>
 
+#include <algorithm>
+#include <charconv>
+#include <cstdint>
+#include <string>
+
 #if defined(PLUME_SDL_VULKAN_ENABLED) || defined(__ANDROID__) || defined(__APPLE__)
 #include <SDL3/SDL.h>
 #endif
@@ -42,7 +47,29 @@ namespace {
 // and writes exactly like the Xenos plugin's own.
 bool g_vsync = true;
 
+// Storage behind `resolution_scale`, same idea. See RegisterNativeRendererCvars.
+int32_t g_resolution_scale = 1;
+
+constexpr int32_t kMinRenderScale = 1;
+constexpr int32_t kMaxRenderScale = 8;
+
 }  // namespace
+
+uint32_t NativeRenderScale() {
+  // Latched, like NativeRendererEnabled: a host render target's size is part of
+  // its identity (see GuestTarget in native_renderer_frame.cpp), so changing
+  // this mid-run would leave every target the previous frames drew into keyed at
+  // the old size. The cvar is kRequiresRestart for the same reason on Xenos.
+  static const uint32_t scale = [] {
+    if (!NativeRendererEnabled())
+      return 1u;
+    const int32_t value = std::clamp(g_resolution_scale, kMinRenderScale, kMaxRenderScale);
+    if (value > 1)
+      REXLOG_INFO("native_renderer: rendering at {}x the guest's 1280x720", value);
+    return uint32_t(value);
+  }();
+  return scale;
+}
 
 void RegisterNativeRendererCvars() {
   if (!NativeRendererEnabled())
@@ -74,6 +101,39 @@ void RegisterNativeRendererCvars() {
   entry.lifecycle = rex::cvar::Lifecycle::kHotReload;
   entry.default_value = "true";
   rex::cvar::RegisterFlag(std::move(entry));
+
+  // Same again for `resolution_scale`, which the Xenos plugin defines in
+  // graphics/pipeline/texture/cache.cpp and which is therefore missing entirely
+  // under this renderer. That is not cosmetic: the settings overlay's
+  // Resolution row and the game's own Options screen both write it alongside
+  // `resolution` (SetResolutionSetting in settings.cpp), so without it the
+  // window grew and the game kept rendering 720p.
+  //
+  // Type, category, range, default and lifecycle match the SDK's definition, so
+  // a settings.toml round-trips between the two renderers unchanged.
+  rex::cvar::FlagEntry scale;
+  scale.name = "resolution_scale";
+  scale.type = rex::cvar::FlagType::Int32;
+  scale.category = "GPU";
+  scale.description =
+      "Draw resolution scale for both X and Y axes (same as setting "
+      "draw_resolution_scale_x and draw_resolution_scale_y)";
+  scale.setter = [](std::string_view value) {
+    int32_t parsed = 0;
+    const char* begin = value.data();
+    const auto result = std::from_chars(begin, begin + value.size(), parsed);
+    if (result.ec != std::errc())
+      return false;
+    g_resolution_scale = std::clamp(parsed, kMinRenderScale, kMaxRenderScale);
+    return true;
+  };
+  scale.getter = []() { return std::to_string(g_resolution_scale); };
+  scale.command_callback = [](std::string_view) {};
+  scale.lifecycle = rex::cvar::Lifecycle::kRequiresRestart;
+  scale.constraints.min = kMinRenderScale;
+  scale.constraints.max = kMaxRenderScale;
+  scale.default_value = "1";
+  rex::cvar::RegisterFlag(std::move(scale));
 }
 
 void InitNativeRenderer(rex::ui::Window* window) {

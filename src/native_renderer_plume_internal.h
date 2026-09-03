@@ -91,10 +91,15 @@ void FramePresentGuestImage(plume::RenderCommandList* commands, uint32_t width, 
 // back its size so a draw can clamp the guest's viewport to it. Null when the
 // guest has nothing bound, which is a draw that cannot be issued.
 //
+// `scale` is the supersampling factor the attachments were created at, which is
+// what the guest's own viewport (in guest pixels) has to be multiplied by. Not
+// always NativeRenderScale: a target that is not the screen is never grown.
+//
 // The bind is deduplicated inside, because Plume's Vulkan backend ends the
 // active render pass on every setFramebuffer.
 plume::RenderFramebuffer* FrameBindDrawTargets(plume::RenderCommandList* commands,
-                                               uint32_t* width, uint32_t* height);
+                                               uint32_t* width, uint32_t* height,
+                                               uint32_t* scale);
 
 // A fresh command list has no framebuffer bound, so the deduplication above has
 // to be told. Called from wherever the frame's list is begun.
