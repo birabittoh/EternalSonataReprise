@@ -9,7 +9,7 @@
 #include <rex/logging.h>
 #include <rex/ui/window.h>
 
-#if defined(PLUME_SDL_VULKAN_ENABLED) || defined(__ANDROID__)
+#if defined(PLUME_SDL_VULKAN_ENABLED) || defined(__ANDROID__) || defined(__APPLE__)
 #include <SDL3/SDL.h>
 #endif
 
@@ -118,13 +118,50 @@ void InitNativeRenderer(rex::ui::Window* window) {
     }
     SDL_free(windows);
   }
+#elif defined(__APPLE__)
+  // Plume's RenderWindow is a {NSWindow*, CAMetalLayer*} pair here, and the
+  // layer is what vkCreateMetalSurfaceEXT needs. SDL's window has no layer of
+  // its own, so attach one. Both SDL calls are main-thread only, which
+  // OnPreLaunchModule is.
+  //
+  // Not routed through PLUME_SDL_VULKAN_ENABLED even though this is still
+  // Vulkan: Plume checks that macro before __APPLE__ in the same #elif chain,
+  // so defining it would pick the Linux shape. See CMakeLists.txt.
+  void* handle = nullptr;
+  void* view = nullptr;
+  if (window) {
+    int window_count = 0;
+    SDL_Window** windows = SDL_GetWindows(&window_count);
+    if (windows && window_count > 0) {
+      handle = SDL_GetPointerProperty(SDL_GetWindowProperties(windows[0]),
+                                      SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
+      // Leaked at exit on purpose: the swap chain reads the layer until the
+      // last present, and SDL wants the view destroyed before its window,
+      // which only SDL's own teardown can order.
+      static SDL_MetalView metal_view = nullptr;
+      metal_view = SDL_Metal_CreateView(windows[0]);
+      if (metal_view != nullptr) {
+        view = SDL_Metal_GetLayer(metal_view);
+      } else {
+        REXLOG_ERROR("native_renderer: SDL_Metal_CreateView failed: {}", SDL_GetError());
+      }
+    }
+    SDL_free(windows);
+  }
 #else
   void* handle = window ? window->GetNativeWindowHandle() : nullptr;
 #endif
+#if defined(__APPLE__)
+  REXLOG_INFO(
+      "native_renderer: no GPU plugin loaded, so there is no ring buffer and the guest's D3D "
+      "packet writers are dead code. Native window handle {}, Metal layer {}.",
+      handle, view);
+#else
   REXLOG_INFO(
       "native_renderer: no GPU plugin loaded, so there is no ring buffer and the guest's D3D "
       "packet writers are dead code. Native window handle {}.",
       handle);
+#endif
 
   // Loaded before the backend so a missing or stale pack is reported once, at
   // startup, rather than as a pile of failed pipelines at the first draw. It is
@@ -136,7 +173,11 @@ void InitNativeRenderer(rex::ui::Window* window) {
         "a host pipeline. Rebuild to regenerate guest_shaders.bin.");
   }
 
+#if defined(__APPLE__)
+  if (!InitPlumeBackend(handle, view)) {
+#else
   if (!InitPlumeBackend(handle)) {
+#endif
     REXLOG_WARN(
         "native_renderer: no host backend, so the game will run headless to a black window. "
         "Everything except presentation still works.");

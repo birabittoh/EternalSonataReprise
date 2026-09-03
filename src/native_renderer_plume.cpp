@@ -11,6 +11,15 @@
 #include <mutex>
 #include <vector>
 
+#if defined(__APPLE__)
+#include <dlfcn.h>
+
+#include <filesystem>
+#include <string>
+
+#include <rex/filesystem.h>
+#endif
+
 #include <rex/cvar.h>
 #include <rex/logging.h>
 
@@ -78,6 +87,89 @@ constexpr uint32_t kSwapChainBuffers = 3;
 // is not a legal argument, so the swap chain was silently running on DXGI's
 // default of 1.
 constexpr uint32_t kMaxFrameLatency = 2;
+
+#if defined(__APPLE__)
+// Point Vulkan at the loader and MoltenVK shipped in the package, so the game
+// runs without a Vulkan SDK or Homebrew installed.
+//
+// The loader has to be dlopen'd by absolute path here rather than found later:
+// volk dlopens it by leaf name, which only searches the DYLD_ variables, and
+// dyld captures those at launch so setenv cannot extend them. Preloading works
+// because a leaf dlopen matches an already loaded image. The driver manifest,
+// by contrast, is read at instance creation, so VK_DRIVER_FILES is in time.
+// Without it vkCreateInstance returns VK_ERROR_INCOMPATIBLE_DRIVER.
+//
+// Both halves defer to an environment that already says otherwise. Probes the
+// flat layout then the .app one, matching the SDK's own vulkan_moltenvk.cpp.
+void BootstrapAppleVulkanRuntime() {
+  namespace fs = std::filesystem;
+
+  const fs::path exe_dir = rex::filesystem::GetExecutableFolder();
+  if (exe_dir.empty())
+    return;
+  // Contents/MacOS -> Contents, for the bundle layouts below. Empty when the
+  // executable is not inside a bundle, in which case those probes are skipped.
+  const fs::path bundle = exe_dir.filename() == "MacOS" ? exe_dir.parent_path() : fs::path();
+
+  auto first_existing = [](const std::vector<fs::path>& candidates) -> fs::path {
+    for (const fs::path& candidate : candidates) {
+      std::error_code ec;
+      if (!candidate.empty() && fs::exists(candidate, ec))
+        return candidate;
+    }
+    return {};
+  };
+
+  std::vector<fs::path> loaders = {exe_dir / "libvulkan.1.dylib", exe_dir / "libvulkan.dylib",
+                                   exe_dir / "lib" / "libvulkan.1.dylib",
+                                   exe_dir / "libMoltenVK.dylib"};
+  if (!bundle.empty()) {
+    loaders.push_back(bundle / "Frameworks" / "libvulkan.1.dylib");
+    loaders.push_back(bundle / "Frameworks" / "libvulkan.dylib");
+    loaders.push_back(bundle / "Frameworks" / "libMoltenVK.dylib");
+  }
+
+  const fs::path loader = first_existing(loaders);
+  if (!loader.empty()) {
+    // RTLD_GLOBAL, not RTLD_LOCAL: volk's later dlopen has to be able to match
+    // this image. Never dlclose'd; it is needed for the life of the process.
+    if (dlopen(loader.string().c_str(), RTLD_NOW | RTLD_GLOBAL) != nullptr) {
+      REXLOG_INFO("native_renderer: preloaded the bundled Vulkan loader from {}", loader.string());
+    } else {
+      REXLOG_WARN("native_renderer: could not load the bundled Vulkan loader at {}: {}",
+                  loader.string(), dlerror());
+    }
+  } else {
+    REXLOG_INFO(
+        "native_renderer: no Vulkan loader shipped with this build, falling back to whatever is "
+        "installed on the system");
+  }
+
+  const char* existing = std::getenv("VK_DRIVER_FILES");
+  const char* existing_legacy = std::getenv("VK_ICD_FILENAMES");
+  if ((existing && existing[0]) || (existing_legacy && existing_legacy[0]))
+    return;
+
+  std::vector<fs::path> icds = {exe_dir / "vulkan" / "icd.d" / "MoltenVK_icd.json",
+                                exe_dir / "share" / "vulkan" / "icd.d" / "MoltenVK_icd.json"};
+  if (!bundle.empty()) {
+    icds.push_back(bundle / "Resources" / "vulkan" / "icd.d" / "MoltenVK_icd.json");
+  }
+
+  const fs::path icd = first_existing(icds);
+  if (icd.empty()) {
+    REXLOG_INFO(
+        "native_renderer: no MoltenVK driver manifest shipped with this build; if Vulkan instance "
+        "creation fails with ErrorIncompatibleDriver, that is why");
+    return;
+  }
+  // Both names: VK_DRIVER_FILES is the current one, VK_ICD_FILENAMES the
+  // deprecated spelling older loaders still read.
+  setenv("VK_DRIVER_FILES", icd.string().c_str(), 1);
+  setenv("VK_ICD_FILENAMES", icd.string().c_str(), 1);
+  REXLOG_INFO("native_renderer: using the bundled MoltenVK driver manifest at {}", icd.string());
+}
+#endif  // __APPLE__
 
 struct PlumeBackend {
   // Not named `interface`: windows.h defines that as a macro, and Plume drags
@@ -338,13 +430,35 @@ bool PlumeFrameRetired(uint64_t frame) {
   return retired != ~0ull && frame <= retired;
 }
 
-bool InitPlumeBackend(void* window_handle) {
+bool InitPlumeBackend(void* window_handle, void* window_view) {
   if (g_ready.load(std::memory_order_acquire))
     return true;
   if (window_handle == nullptr) {
     REXLOG_ERROR("native_renderer: no native window handle, cannot bring up Plume");
     return false;
   }
+
+  // Plume's RenderWindow is a single handle except on Apple, where it is a
+  // {NSWindow*, CAMetalLayer*} pair. Plume only asserts the layer is non-null,
+  // which a release build drops, so check it here instead.
+  //
+  // The interface still comes from the no-argument CreateVulkanInterface()
+  // below: Apple lists VK_EXT_metal_surface statically and only needs a window
+  // at swap chain time, unlike the SDL path.
+#if defined(__APPLE__)
+  if (window_view == nullptr) {
+    REXLOG_ERROR("native_renderer: no CAMetalLayer for the game window, cannot bring up Plume");
+    return false;
+  }
+  const RenderWindow render_window{window_handle, window_view};
+
+  // Before anything touches volk. See the function's comment for why this
+  // cannot be done with environment variables alone.
+  BootstrapAppleVulkanRuntime();
+#else
+  (void)window_view;
+  const RenderWindow render_window = static_cast<RenderWindow>(window_handle);
+#endif
 
   // D3D12 on Windows, Vulkan elsewhere. Plume's Vulkan backend goes through
   // volk and loads the loader at runtime, so this does not add a link time
@@ -375,7 +489,7 @@ bool InitPlumeBackend(void* window_handle) {
     }
   }
 #elif defined(PLUME_SDL_VULKAN_ENABLED)
-  g_backend.render_interface = CreateVulkanInterface(static_cast<RenderWindow>(window_handle));
+  g_backend.render_interface = CreateVulkanInterface(render_window);
   g_backend.api_name = "Vulkan";
 #else
   g_backend.render_interface = CreateVulkanInterface();
@@ -420,7 +534,7 @@ bool InitPlumeBackend(void* window_handle) {
   // that needs MAILBOX, which is a Plume-side change).
   g_present_wait = g_backend.device->getCapabilities().presentWait;
   g_backend.swap_chain = g_backend.queue->createSwapChain(
-      RenderSwapChainDesc(static_cast<RenderWindow>(window_handle), kSwapChainFormat,
+      RenderSwapChainDesc(render_window, kSwapChainFormat,
                           kSwapChainBuffers, g_present_wait, kMaxFrameLatency));
   if (!g_backend.swap_chain) {
     REXLOG_ERROR("native_renderer: Plume could not create a swap chain on the game window");

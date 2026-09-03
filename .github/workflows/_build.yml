@@ -225,7 +225,7 @@ jobs:
         run: sccache --show-stats || true
 
       - name: Package (desktop)
-        if: matrix.platform != 'android-arm64'
+        if: matrix.platform != 'android-arm64' && !startsWith(matrix.platform, 'mac-')
         shell: bash
         run: |
           if [ "${{ inputs.publish_mode }}" = "artifact" ]; then
@@ -234,6 +234,24 @@ jobs:
             out="eternalsonata-${{ inputs.tag }}-${{ matrix.artifact_suffix }}"
           fi
           python scripts/build.py --package "${out}"
+
+      # macOS gets a .app inside a .dmg rather than a tar.gz: the Vulkan
+      # runtime has to be bundled (there is none on macOS by default), and a
+      # disk image is what lets the user drag the app out to /Applications,
+      # which is also what frees it from App Translocation. See
+      # scripts/package-mac.py.
+      - name: Package (macOS)
+        if: startsWith(matrix.platform, 'mac-')
+        shell: bash
+        run: |
+          if [ "${{ inputs.publish_mode }}" = "artifact" ]; then
+            out="${{ inputs.artifact_name }}-${{ matrix.artifact_suffix }}"
+            version="0.0.0"
+          else
+            out="eternalsonata-${{ inputs.tag }}-${{ matrix.artifact_suffix }}"
+            version="$(echo "${{ inputs.tag }}" | sed 's/^v//')"
+          fi
+          python scripts/package-mac.py --name "${out}" --version "${version}"
 
       - name: Generate Android launcher icon
         if: matrix.platform == 'android-arm64'
