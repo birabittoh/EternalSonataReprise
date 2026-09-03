@@ -77,7 +77,7 @@ def find_in_roots(roots, relative_paths):
     return None
 
 
-def stage_vulkan_runtime(macos_dir):
+def stage_vulkan_runtime(macos_dir, resources_dir):
     """Copies the loader, the driver and a rewritten manifest into the bundle.
 
     Warns rather than fails when it is missing: the bundle still runs on a
@@ -102,9 +102,11 @@ def stage_vulkan_runtime(macos_dir):
     print(f"+ cp {driver} {macos_dir}/{MOLTENVK_NAME}")
     shutil.copy2(driver, os.path.join(macos_dir, MOLTENVK_NAME))
 
-    # A relative library_path resolves against the manifest's own directory,
-    # two levels up to Contents/MacOS. The rest is copied from the installed
-    # manifest so api_version is not guessed.
+    # The manifest goes in Resources, not next to the driver: codesign --deep
+    # reads any directory under Contents/MacOS as a nested code component and
+    # rejects the bundle over it. A relative library_path resolves against the
+    # manifest's own directory. The rest is copied from the installed manifest
+    # so api_version is not guessed.
     manifest = {"file_format_version": "1.0.0", "ICD": {"api_version": "1.2.0"}}
     if icd:
         try:
@@ -113,9 +115,9 @@ def stage_vulkan_runtime(macos_dir):
         except (OSError, ValueError) as exc:
             print(f"warning: could not read {icd} ({exc}); writing a default manifest",
                   file=sys.stderr)
-    manifest.setdefault("ICD", {})["library_path"] = f"../../{MOLTENVK_NAME}"
+    manifest.setdefault("ICD", {})["library_path"] = f"../../../MacOS/{MOLTENVK_NAME}"
 
-    icd_dir = os.path.join(macos_dir, "vulkan", "icd.d")
+    icd_dir = os.path.join(resources_dir, "vulkan", "icd.d")
     os.makedirs(icd_dir, exist_ok=True)
     icd_out = os.path.join(icd_dir, "MoltenVK_icd.json")
     print(f"+ write {icd_out}")
@@ -219,7 +221,7 @@ def build_app(app_path, project_name, version):
         sys.exit(1)
     os.chmod(exe, 0o755)
 
-    stage_vulkan_runtime(macos_dir)
+    stage_vulkan_runtime(macos_dir, resources)
     icon_name = stage_icon(resources)
     write_info_plist(contents, project_name, icon_name, version)
 
