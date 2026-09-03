@@ -1117,8 +1117,26 @@ void TextureMirrorOccupiedRanges(uint32_t address, uint64_t bytes, uint32_t expe
     // Overlaps. The destination's own image is not a conflict with itself: the
     // guest binds a resolved thumbnail as a texture, which is the whole reason
     // a resolve destination is reachable from here at all.
-    if (entry->address == expected_address && entry->width == expected_width &&
-        entry->height == expected_height) {
+    //
+    // Matched on the base address alone. Requiring the extent to agree as well
+    // made the save preview black: an entry sat at exactly the destination's
+    // address at a different extent and clipped 204800 of 204800 bytes, so a
+    // faithful readback buffer was never written to guest memory. A bind that
+    // does agree is served by FrameResolveTextureByAddress and never reaches
+    // this cache (mirror pulls=0 for that destination), so an entry here is by
+    // construction one whose extent differs, and the resolve the guest just
+    // asked for is the authority on what those pixels are.
+    if (entry->address == expected_address) {
+      if (entry->width != expected_width || entry->height != expected_height) {
+        static uint32_t reported = 0;
+        if (reported < 8) {
+          ++reported;
+          REXLOG_INFO(
+              "native_renderer: readback fill overwrites cached texture 0x{:08X} {}x{} with the "
+              "{}x{} resolve destination at the same address",
+              entry->address, entry->width, entry->height, expected_width, expected_height);
+        }
+      }
       continue;
     }
     // Nothing is asked about when the texture was decoded. That test used to be
