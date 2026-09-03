@@ -341,9 +341,8 @@ void RecordLoopConstants(uint8_t* base, uint32_t device, uint32_t first, uint32_
     if (trip > g_loop_max_count[slot])
       g_loop_max_count[slot] = trip;
     g_loop_last_count[slot] = trip;
-    // Only when the value in a slot changes. Unconditionally this was six
-    // formatted log writes a frame on the guest thread; the per-slot last and
-    // max counts in the summary are what the running state is read from.
+    // On change only: unconditionally this was six log writes a frame on the
+    // guest thread, and the summary already carries the per-slot counts.
     if (written != 0 && written != g_loop_last_written[slot]) {
       REXLOG_INFO(
           "native_renderer: loop i{} <- 0x{:08X} (count={} start={} step={}) from source 0x{:08X}",
