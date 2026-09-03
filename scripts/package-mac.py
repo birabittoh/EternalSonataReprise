@@ -55,7 +55,10 @@ def brew_prefix(formula):
 
 
 def vulkan_search_roots():
-    roots = []
+    # The SDK's CMake stages a pinned loader, MoltenVK and manifest into
+    # <build dir>/vulkan, which build.py copies to the repo root. Preferred over
+    # Homebrew: it is the runtime the SDK was actually built against.
+    roots = [os.path.join(ROOT, "vulkan")]
     for formula in ("vulkan-loader", "molten-vk"):
         prefix = brew_prefix(formula)
         if prefix:

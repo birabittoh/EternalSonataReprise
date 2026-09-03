@@ -31,8 +31,15 @@ guest_shaders.bin
 guest_shaders_debug.bin
 /*.so
 /*.dll
+/*.dylib
 /*.rdc
 /*.cap
+# macOS Vulkan runtime, staged next to the exe by build.py from the SDK's build
+/vulkan/
+# scripts/package-mac.py output
+/EternalSonata.app/
+/pkg/
+/pkg-dmg/
 
 # Embedded icon header/ico, rebuilt from assets/default.xex by scripts/gen-icon.py
 /src/icon.generated.h
