@@ -1,5 +1,5 @@
 [project]
-sdk_version = ""
+sdk_version = "0.10.0"
 name = "eternalsonata"
 
 [entrypoint]

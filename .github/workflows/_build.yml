@@ -45,6 +45,16 @@ jobs:
             sdk_dir: linux-arm64
             artifact_suffix: linux-arm64
 
+          - platform: mac-amd64
+            runner: macos-26-intel
+            sdk_dir: mac-amd64
+            artifact_suffix: mac-amd64
+
+          - platform: mac-arm64
+            runner: macos-26
+            sdk_dir: mac-arm64
+            artifact_suffix: mac-arm64
+
           - platform: android-arm64
             runner: ubuntu-latest
             # Host SDK for codegen (runs natively on x86_64 Linux)
@@ -70,6 +80,16 @@ jobs:
         run: |
           wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 20
           sudo apt-get install -y ninja-build
+
+      - name: Install dependencies (macOS)
+        if: startsWith(matrix.platform, 'mac-')
+        run: brew install cmake ninja vulkan-loader molten-vk
+
+      # Xcode 26's `metal` compiler lives in a separate, opt-in component;
+      # HLSL-to-metallib shader compilation needs it installed explicitly.
+      - name: Install Metal Toolchain (macOS)
+        if: startsWith(matrix.platform, 'mac-')
+        run: xcodebuild -downloadComponent MetalToolchain
 
       - name: Install LLVM, CMake, Ninja (Windows)
         if: matrix.platform == 'windows'
@@ -104,14 +124,33 @@ jobs:
           variant: sccache
           key: ${{ matrix.platform }}
 
+      # download-sdk.py authenticates its GitHub API calls with this token so
+      # the 6 parallel matrix legs share the 5000/hour authenticated rate
+      # limit instead of the 60/hour unauthenticated one, which a burst of
+      # simultaneous requests from the runner IPs could exhaust on its own.
       - name: Download ReXGlue SDK
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/download-sdk.py sdk/${{ matrix.sdk_dir }} --pinned
 
       - name: Download ReXGlue SDK (Android target)
         if: matrix.target_sdk_dir
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/download-sdk.py sdk/${{ matrix.target_sdk_dir }} --pinned --platform ${{ matrix.target_sdk_dir }}
+
+      # Ninja re-invokes codegen using the SDK CMAKE_PREFIX_PATH points at,
+      # which here is the Android target SDK's ARM64 rexglue, built for the
+      # device. rexglue is build-only tooling, so swap in the host binary
+      # here. Its librexruntime.so dependency comes from LD_LIBRARY_PATH on
+      # the build step below, keeping the target SDK's own arm64 runtime
+      # libraries in place.
+      - name: Use host rexglue for codegen in the Android target SDK
+        if: matrix.target_sdk_dir
+        shell: bash
+        run: cp sdk/${{ matrix.sdk_dir }}/bin/rexglue sdk/${{ matrix.target_sdk_dir }}/bin/rexglue
 
       - name: Install Python build dependencies
         shell: bash
@@ -124,6 +163,9 @@ jobs:
           path: assets/${{ env.ASSET_PATH }}
           key: ${{ env.ASSET_CACHE_KEY }}
 
+      # On a cold cache all 6 matrix legs hit the assets repo's contents API
+      # at once, and the burst can trip a 403 on whichever request lands
+      # last. Retry with a backoff rather than serialising the legs.
       - name: Fetch XEX asset
         if: steps.asset-cache.outputs.cache-hit != 'true'
         env:
@@ -131,12 +173,18 @@ jobs:
         shell: bash
         run: |
           mkdir -p assets
-          gh api -H "Accept: application/vnd.github.raw" \
-            "repos/${{ env.ASSETS_REPO }}/contents/${{ env.ASSET_PATH }}" \
-            > "assets/${{ env.ASSET_PATH }}"
+          for attempt in 1 2 3 4 5; do
+            if gh api -H "Accept: application/vnd.github.raw" \
+                 "repos/${{ env.ASSETS_REPO }}/contents/${{ env.ASSET_PATH }}" \
+                 > "assets/${{ env.ASSET_PATH }}"; then
+              break
+            fi
+            echo "Attempt $attempt failed; retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
           size=$(wc -c < "assets/${{ env.ASSET_PATH }}")
           echo "Fetched ${{ env.ASSET_PATH }} ($size bytes)"
-          [ "$size" -ge 1048576 ] || { echo "Asset too small — fetch likely failed"; exit 1; }
+          [ "$size" -ge 1048576 ] || { echo "Asset too small, fetch likely failed"; exit 1; }
 
       - name: Build (desktop)
         if: matrix.platform != 'android-arm64'
@@ -165,6 +213,10 @@ jobs:
       - name: CMake build (Android)
         if: matrix.platform == 'android-arm64'
         shell: bash
+        # Lets the host rexglue swapped into the target SDK's bin/ (see step
+        # above) find its librexruntime.so, without a copy near the arm64 one.
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/sdk/${{ matrix.sdk_dir }}/bin:${{ github.workspace }}/sdk/${{ matrix.sdk_dir }}/lib
         run: cmake --build --preset android-arm64-release --parallel $(nproc)
 
       - name: sccache stats
