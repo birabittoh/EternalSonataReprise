@@ -14,6 +14,8 @@
 11. [Implemented Hooks](#implemented-hooks)
 12. [Hooking Architecture](#hooking-architecture)
 13. [IDA Session Notes](#ida-session-notes)
+14. [Options Screen (native settings rows)](#options-screen-native-settings-rows)
+15. [Profiling cvars](#profiling-cvars)
 
 ---
 
@@ -976,3 +978,42 @@ value highlight (`sub_82201620` / `sub_82179F78`), found the settings globals at
 `0x8243FC04`, decoded the `1500`/`1502` selection records, and implemented the
 Fullscreen row's own highlight bar (type-110 record + `sub_82200FE8`'s init
 placement).*
+
+---
+
+## 15. Profiling cvars
+
+Two independent, unrelated instruments for asking "why is the frame slow." Both
+default to off. Neither reads the other's data.
+
+### `native_profile_zones` (`src/settings.cpp`)
+
+Gates `ProfileZone` (`src/native_renderer_profile.h`), the manually placed
+timers inside the native renderer's own code: present, draw, vertex upload,
+texture bind, fence wait, and so on (full phase list in
+`native_renderer_draw.cpp`'s `kPhaseNames`). Each zone reads the clock on
+construction and destruction, which is cheap once but adds up: with millions of
+draws and several nested zones each, this alone was measured as several
+percent of frame time on its own, so it stays off unless someone wants the
+per-phase breakdown and the CPU/GPU bound verdict that the swap summary prints.
+
+Only tells you about time spent inside the native renderer's own C++. It has no
+way to see guest code, kernel calls, or anything else running on the thread.
+
+### `guest_profile` (`src/guest_profiler.cpp`)
+
+Gates a separate stack-sampling profiler: a background thread periodically
+suspends the render thread, reads its actual call stack via
+`SuspendThread`/`GetThreadContext`, and symbolizes it. Also tracks wait/block
+time by kind, and a handful of guest zones (`kZoneNames` in the same file,
+covering the render task, animation update, and related guest functions).
+
+Because it samples the real call stack, it sees everything running on that
+thread: guest PPC code, kernel calls (`NtWaitForSingleObject`), even unrelated
+injected code such as `NVENCODEAPI_Thunk` from a capture overlay. This is the
+tool for "what is actually running," as opposed to `native_profile_zones`'s
+"how long did our own code take."
+
+Turn it on with the F3 overlay (Guest Profiler window) or log continuously with
+`--guest_profile=true` / the `guest_profile` cvar. `guest_profile_top` caps how
+many ranked rows print; `guest_profile_hz` sets the sampling rate.

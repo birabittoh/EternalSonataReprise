@@ -101,6 +101,15 @@ REXCVAR_DEFINE_BOOL(menu_scan, false, "Eternal Sonata",
 REXCVAR_DEFINE_BOOL(debug_show_all_maps, false, "Eternal Sonata",
                     "Debug: show all areas in debug overlay, including unnamed event/menu areas");
 
+// The native renderer's per-phase timing (native_renderer_profile.h) reads the
+// clock twice per zone, many times per draw call, measured as a real,
+// several-percent chunk of frame time on its own. Off by default so playing
+// isn't paying for it; turn on to get the frame summary and CPU/GPU verdict.
+REXCVAR_DEFINE_BOOL(native_profile_zones, false, "Eternal Sonata",
+                    "Time the native renderer's per-phase zones (present, draw, texture bind, "
+                    "etc.). Off skips every clock read those zones make, at the cost of the "
+                    "frame time summary and CPU/GPU verdict going blank.");
+
 // Which model the overworld leader wears. "party" tracks the active party's
 // first member (the game itself always spawns Allegretto regardless of party
 // order); a character name pins that character; "default" leaves the game's
