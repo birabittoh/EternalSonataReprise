@@ -2,8 +2,8 @@
 //
 // See native_renderer_readback.h.
 
-// Has to precede every include: it is what exposes the mcontext layout the
-// fault handler below reads the access direction out of.
+// Must precede every include: exposes the mcontext layout the fault handler
+// reads the access direction from.
 #if defined(__APPLE__) && !defined(_XOPEN_SOURCE)
 #define _XOPEN_SOURCE 700
 #endif
@@ -54,28 +54,47 @@
 // forwards anything that is not ours to whatever was installed before it.
 //
 // Filling a buffer the guest is mid-*write* into destroys what it wrote, so a
-// platform that cannot tell a read fault from a write fault must not arm. Where
-// that bit lives is per architecture: the x86-64 page-fault error code, or bit 6
-// (WnR) of a data abort's ESR on arm64.
+// platform that cannot tell a read fault from a write fault must not arm.
 //
-// This list is an allowlist, and that is a defect rather than a policy. A target
-// that is not on it does not fail to build, it falls into the eager fill below
-// and pays several ms a frame that nobody goes looking for -- which is how macOS
-// spent its whole life at 40% of frame time in ReadbackPublish. Android is off
-// the list for no reason that still holds: Linux arm64 keeps the ESR in a
-// variable-length extension chain in mcontext.__reserved rather than a fixed
-// field, so it needs a walk this file does not have yet, but the NDK has had
-// esr_context since r16 and this project builds with 27.
+// Asked as two separate capabilities so a target answering neither trips the
+// #error below instead of inheriting the eager fill unnoticed.
 #if defined(_WIN32)
+#define ETERNALSONATA_READBACK_TRAP_INSTALL_WIN32 1
+#elif defined(__APPLE__) || defined(__linux__)
+#define ETERNALSONATA_READBACK_TRAP_INSTALL_POSIX 1
+#endif
+
+// Where the direction bit lives is an architecture question: the x86-64
+// page-fault error code, or bit 6 (WnR) of a data abort's ESR on arm64. Windows
+// answers it from the exception record for either.
+#if defined(_WIN32) || defined(__x86_64__) || defined(__aarch64__)
+#define ETERNALSONATA_READBACK_TRAP_DIRECTION 1
+#endif
+
+#if defined(ETERNALSONATA_READBACK_TRAP_DIRECTION) && \
+    (defined(ETERNALSONATA_READBACK_TRAP_INSTALL_WIN32) || \
+     defined(ETERNALSONATA_READBACK_TRAP_INSTALL_POSIX))
 #define ETERNALSONATA_READBACK_PAGE_TRAP 1
-#elif (defined(__linux__) && !defined(__ANDROID__) && defined(__x86_64__)) || defined(__APPLE__)
-#define ETERNALSONATA_READBACK_PAGE_TRAP 1
+#endif
+
+#ifdef ETERNALSONATA_READBACK_TRAP_INSTALL_POSIX
 #include <signal.h>
 #if defined(__APPLE__)
 #include <sys/ucontext.h>
 #else
 #include <ucontext.h>
+#if defined(__aarch64__)
+// struct esr_context, ESR_MAGIC, struct _aarch64_ctx.
+#include <asm/sigcontext.h>
 #endif
+#endif
+#endif
+
+// Every preset has both halves. A target that cannot must opt out explicitly,
+// since the fallback costs several ms a frame and is invisible until profiled.
+#if !defined(ETERNALSONATA_READBACK_PAGE_TRAP) && !defined(ETERNALSONATA_READBACK_NO_PAGE_TRAP)
+#error \
+    "No readback page trap on this target: it would silently fall back to filling every resolve destination every frame. Add the platform shims, or define ETERNALSONATA_READBACK_NO_PAGE_TRAP to take the eager fill on purpose."
 #endif
 
 #include "native_renderer_frame.h"
@@ -1009,7 +1028,7 @@ bool HandleReadbackFault(uint8_t* address, bool is_write) {
 }
 #endif
 
-#ifdef _WIN32
+#ifdef ETERNALSONATA_READBACK_TRAP_INSTALL_WIN32
 long __stdcall ReadbackExceptionHandler(EXCEPTION_POINTERS* info) {
   if (info == nullptr || info->ExceptionRecord == nullptr)
     return EXCEPTION_CONTINUE_SEARCH;
@@ -1032,17 +1051,14 @@ void EnsureExceptionHandler() {
   (void)handle;
 }
 
-#elif defined(ETERNALSONATA_READBACK_PAGE_TRAP)
+#elif defined(ETERNALSONATA_READBACK_TRAP_INSTALL_POSIX)
 
 // What was installed before us, forwarded to for every fault that is not ours.
 // The SDK's own chain lives behind this, so getting the forward right is what
 // keeps the memory system's watches working.
 //
-// Two signals on macOS, because Darwin splits what Linux reports as one:
-// KERN_INVALID_ADDRESS becomes SIGSEGV but KERN_PROTECTION_FAILURE becomes
-// SIGBUS, and an armed destination is a mapped page made inaccessible, so it is
-// the SIGBUS one. Handling only SIGSEGV there arms every destination and catches
-// nothing.
+// Two signals on macOS: an armed page is mapped but inaccessible, and Darwin
+// raises KERN_PROTECTION_FAILURE as SIGBUS rather than SIGSEGV.
 struct PreviousHandler {
   int signal_number;
   struct sigaction action;
@@ -1081,19 +1097,55 @@ void ForwardSegv(int signal_number, siginfo_t* info, void* context) {
   sigaction(signal_number, &fallback, nullptr);
 }
 
-// Same fields the SDK's own posix handler reads; see exception_handler_posix.cpp.
+#if defined(__aarch64__)
+// A data abort has ESR bits 31:26 of 0b10010x, and then bit 6 (WnR) is set for
+// a write. Anything else this cannot answer.
+bool EsrSaysWrite(uint64_t esr, bool* known) {
+  if (((esr >> 26) & 0b111110) != 0b100100) {
+    *known = false;
+    return false;
+  }
+  *known = true;
+  return (esr & (UINT64_C(1) << 6)) != 0;
+}
+#endif
+
+// Same fields the SDK's posix handler reads; see exception_handler_posix.cpp.
+//
+// Unknown resolves to write: skipping a fill leaves a stale image, filling over
+// a guest write destroys it. Surfaces as faults write=N read=0 with no fills.
 bool FaultWasWrite(void* context) {
   const auto* uc = static_cast<const ucontext_t*>(context);
 #if defined(__APPLE__) && defined(__aarch64__)
-  // A data abort has ESR bits 31:26 of 0b10010x, and then bit 6 (WnR) says
-  // write. Anything else is an instruction fetch, which cannot be a write and in
-  // practice cannot be one of ours either.
-  const uint32_t esr = uint32_t(uc->uc_mcontext->__es.__esr);
-  return ((esr >> 26) & 0b111110) == 0b100100 && (esr & (1u << 6)) != 0;
+  bool known = false;
+  const bool is_write = EsrSaysWrite(uc->uc_mcontext->__es.__esr, &known);
+  return known ? is_write : true;
 #elif defined(__APPLE__)
-  return (uint64_t(uc->uc_mcontext->__es.__err) & 0x2) != 0;
-#else
   // Bit 1 of the x86-64 page-fault error code.
+  return (uint64_t(uc->uc_mcontext->__es.__err) & 0x2) != 0;
+#elif defined(__aarch64__)
+  // The ESR is in a variable-length chain in mcontext.__reserved, not a field.
+  // Bounded at both ends: a malformed chain would spin inside a fault handler.
+  const auto& mcontext = uc->uc_mcontext;
+  const auto* cursor = reinterpret_cast<const uint8_t*>(mcontext.__reserved);
+  const uint8_t* const end = cursor + sizeof(mcontext.__reserved);
+  while (cursor + sizeof(_aarch64_ctx) <= end) {
+    const auto* extension = reinterpret_cast<const _aarch64_ctx*>(cursor);
+    if (extension->magic == 0 || extension->size < sizeof(_aarch64_ctx))
+      break;
+    if (extension->magic == ESR_MAGIC &&
+        cursor + sizeof(esr_context) <= end) {
+      bool known = false;
+      const bool is_write =
+          EsrSaysWrite(reinterpret_cast<const esr_context*>(cursor)->esr, &known);
+      if (known)
+        return is_write;
+      break;
+    }
+    cursor += extension->size;
+  }
+  return true;
+#else
   return (uint64_t(uc->uc_mcontext.gregs[REG_ERR]) & 0x2) != 0;
 #endif
 }
@@ -1176,12 +1228,8 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   // Nothing has changed and the pages are still armed, so the arming from the
   // previous frame is still the right one and still points at the right buffer.
   // Rebuilt every so often anyway; see kRearmPeriod.
-  // First resolve into a small destination only. "A handful a session" was
-  // wrong: the water simulation's 64x64 ping-pong pair resolves every frame, so
-  // this was a formatted log write per frame on the guest thread. What it was
-  // for -- a save preview filled from a buffer whose last resolve was at frame
-  // 239 means no screenshot was resolved at save time -- is answered by the
-  // last-resolved frame on the per-destination summary line instead.
+  // First resolve only: the water simulation's 64x64 pair resolves every frame.
+  // The last-resolved frame is on the per-destination summary line instead.
   if (dest.width <= 512 && destination->publishes == 0) {
     REXLOG_INFO("native_renderer: readback resolve into 0x{:08X} {}x{}, first at frame {}",
                 dest.base_address, dest.width, dest.height, frame);
