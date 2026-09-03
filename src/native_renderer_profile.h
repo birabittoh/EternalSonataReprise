@@ -22,10 +22,17 @@
 #ifndef ETERNALSONATA_NATIVE_RENDERER_PROFILE_H
 #define ETERNALSONATA_NATIVE_RENDERER_PROFILE_H
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 
 namespace eternalsonata {
+
+// Refreshed once a frame from the `native_profile_zones` cvar (see
+// ApplyProfileZonesCvar in native_renderer_draw.cpp) rather than read directly
+// by ProfileZone, so turning zones off actually removes the clock reads
+// instead of trading them for a cvar string lookup per zone.
+extern std::atomic<bool> g_profile_zones_enabled;
 
 // Ordered roughly outermost first, which is also the order the summary prints.
 // `kPhaseCount` is the array size; keep `kPhaseNames` in step with it.
@@ -55,6 +62,7 @@ enum ProfilePhase : uint32_t {
   kPhaseSubmit,          // the command list calls that actually record the draw
   kPhaseDeclDecode,      // vertex declaration decode on the hook thread
   kPhaseReadbackPublish,  // arming a resolve destination for the guest to read
+  kPhasePacerWait,       // LimitFrame's own sleep/spin to hit the declared fps
   kPhaseCount,
 };
 
@@ -82,9 +90,13 @@ extern std::chrono::steady_clock::time_point g_profile_window_start;
 class ProfileZone {
  public:
   explicit ProfileZone(ProfilePhase phase)
-      : phase_(phase), start_(std::chrono::steady_clock::now()) {}
+      : phase_(phase),
+        active_(g_profile_zones_enabled.load(std::memory_order_relaxed)),
+        start_(active_ ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{}) {}
 
   ~ProfileZone() {
+    if (!active_)
+      return;
     const auto end = std::chrono::steady_clock::now();
     g_profile_ns[phase_] +=
         uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start_).count());
@@ -96,6 +108,7 @@ class ProfileZone {
 
  private:
   ProfilePhase phase_;
+  bool active_;
   std::chrono::steady_clock::time_point start_;
 };
 
@@ -120,6 +133,7 @@ struct FrameBoundStats {
   double cpu_ms = 0.0;    // of which the CPU was busy
   double gpu_ms = 0.0;    // of which the GPU was busy
   double wait_ms = 0.0;   // of which the CPU sat on the fence
+  double pacer_ms = 0.0;  // of which the CPU sat in LimitFrame pacing to the fps cap
   bool gpu_valid = false;
   // "CPU bound" / "GPU bound" / "Present bound" / "measuring". Never empty.
   const char* verdict = "measuring";

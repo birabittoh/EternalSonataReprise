@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <rex/cvar.h>
 #include <rex/logging.h>
 
 #include "native_renderer_frame.h"
@@ -25,6 +26,8 @@
 #include "native_renderer_shader_debug.h"
 #include "native_renderer_texture.h"
 
+REXCVAR_DECLARE(bool, native_profile_zones);
+
 namespace eternalsonata {
 
 // The profiler's storage lives here because this is the translation unit that
@@ -34,8 +37,15 @@ uint64_t g_profile_hits[kPhaseCount] = {};
 uint64_t g_gpu_frame_ns = 0;
 uint64_t g_gpu_frame_count = 0;
 std::chrono::steady_clock::time_point g_profile_window_start = std::chrono::steady_clock::now();
+std::atomic<bool> g_profile_zones_enabled{false};
 
 namespace {
+
+// Cheap per-frame refresh so ProfileZone only ever pays for an atomic load,
+// not a cvar lookup, on its hot path.
+void ApplyProfileZonesCvar() {
+  g_profile_zones_enabled.store(REXCVAR_GET(native_profile_zones), std::memory_order_relaxed);
+}
 
 // In enum order. A name out of step with the enum silently mislabels every
 // number below it, which is worth one comment to prevent.
@@ -62,6 +72,7 @@ const char* const kPhaseNames[kPhaseCount] = {
     "  submit",
     "decl decode",
     "readback publish",
+    "pacer wait",
 };
 
 // Phases that nest inside another phase. Their time is already inside their
@@ -82,6 +93,8 @@ bool PhaseIsNested(uint32_t phase) {
     // inside neither the present nor a draw. Leaving it nested charged its time
     // to `other`, which on Linux hid the single largest term in the frame.
     case kPhaseReadbackPublish:
+    // Runs after the present, on the same guest thread, but is not inside it.
+    case kPhasePacerWait:
       return false;
     default:
       return true;
@@ -2614,11 +2627,13 @@ constexpr double kBoundWindowSec = 0.5;
 // Deltas, because the accumulators the window reads from are only reset every
 // 300 swaps by the summary. Each of these is "what it read last time".
 uint64_t g_bound_last_wait_ns = 0;
+uint64_t g_bound_last_pacer_ns = 0;
 uint64_t g_bound_last_gpu_ns = 0;
 uint64_t g_bound_last_gpu_count = 0;
 std::chrono::steady_clock::time_point g_bound_window_start = std::chrono::steady_clock::now();
 uint64_t g_bound_frames = 0;
 uint64_t g_bound_wait_ns = 0;
+uint64_t g_bound_pacer_ns = 0;
 uint64_t g_bound_gpu_ns = 0;
 uint64_t g_bound_gpu_count = 0;
 
@@ -2627,20 +2642,25 @@ FrameBoundStats g_bound_stats;
 }  // namespace
 
 void ProfileEndFrame() {
+  ApplyProfileZonesCvar();
   // The summary resets the accumulators under us every 300 swaps. A reset shows
   // up as the accumulator going backwards, and the honest thing to do with the
   // frame that straddles it is to drop its delta rather than to read a huge
   // negative as a huge positive.
   const uint64_t wait_ns = g_profile_ns[kPhaseFenceWait];
+  const uint64_t pacer_ns = g_profile_ns[kPhasePacerWait];
   const uint64_t gpu_ns = g_gpu_frame_ns;
   const uint64_t gpu_count = g_gpu_frame_count;
   if (wait_ns >= g_bound_last_wait_ns)
     g_bound_wait_ns += wait_ns - g_bound_last_wait_ns;
+  if (pacer_ns >= g_bound_last_pacer_ns)
+    g_bound_pacer_ns += pacer_ns - g_bound_last_pacer_ns;
   if (gpu_ns >= g_bound_last_gpu_ns && gpu_count >= g_bound_last_gpu_count) {
     g_bound_gpu_ns += gpu_ns - g_bound_last_gpu_ns;
     g_bound_gpu_count += gpu_count - g_bound_last_gpu_count;
   }
   g_bound_last_wait_ns = wait_ns;
+  g_bound_last_pacer_ns = pacer_ns;
   g_bound_last_gpu_ns = gpu_ns;
   g_bound_last_gpu_count = gpu_count;
   ++g_bound_frames;
@@ -2653,9 +2673,14 @@ void ProfileEndFrame() {
   FrameBoundStats stats;
   stats.frame_ms = elapsed * 1000.0 / double(g_bound_frames);
   stats.wait_ms = double(g_bound_wait_ns) / 1e6 / double(g_bound_frames);
-  // Anything the CPU did not spend blocked on the fence, it spent working: the
-  // present, the draws, the guest's own code, all of it.
-  stats.cpu_ms = stats.frame_ms - stats.wait_ms;
+  stats.pacer_ms = double(g_bound_pacer_ns) / 1e6 / double(g_bound_frames);
+  // Anything the CPU did not spend blocked on the fence or deliberately paced
+  // by LimitFrame, it spent working: the present, the draws, the guest's own
+  // code, all of it. Pacer time is real CPU idle, not work, even though it is
+  // spent on this thread, so fold it into wait_ms alongside the fence rather
+  // than into cpu_ms, or a title paced to 60 fps reads as permanently CPU
+  // bound no matter how little it actually did that frame.
+  stats.cpu_ms = stats.frame_ms - stats.wait_ms - stats.pacer_ms;
   if (stats.cpu_ms < 0.0)
     stats.cpu_ms = 0.0;
   if (g_bound_gpu_count != 0) {
@@ -2680,6 +2705,7 @@ void ProfileEndFrame() {
   g_bound_window_start = now;
   g_bound_frames = 0;
   g_bound_wait_ns = 0;
+  g_bound_pacer_ns = 0;
   g_bound_gpu_ns = 0;
   g_bound_gpu_count = 0;
 }
@@ -2727,9 +2753,9 @@ void LogProfileSummary() {
   }
   const FrameBoundStats bound = GetFrameBoundStats();
   REXLOG_INFO(
-      "native_renderer:   verdict: {} -- {:.2f} ms/frame = {:.2f} ms CPU busy + {:.2f} ms waiting "
-      "on the GPU, against {:.2f} ms of GPU work",
-      bound.verdict, bound.frame_ms, bound.cpu_ms, bound.wait_ms, bound.gpu_ms);
+      "native_renderer:   verdict: {}: {:.2f} ms/frame = {:.2f} ms CPU busy + {:.2f} ms paced to "
+      "the fps cap + {:.2f} ms waiting on the GPU, against {:.2f} ms of GPU work",
+      bound.verdict, bound.frame_ms, bound.cpu_ms, bound.pacer_ms, bound.wait_ms, bound.gpu_ms);
 
   g_gpu_frame_ns = 0;
   g_gpu_frame_count = 0;
