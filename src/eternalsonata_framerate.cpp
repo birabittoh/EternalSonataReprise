@@ -16,6 +16,7 @@
 #include "eternalsonata_hooks_internal.h"
 #include "guest_main_thread.h"
 #include "guest_profiler.h"
+#include "native_renderer_profile.h"
 
 // frame_rate cvar: "30" / "60" / "adaptive" / "unlocked". Defined (and
 // persisted) in settings.cpp; declared here so the frame-driver hook can read it
@@ -545,13 +546,18 @@ void LimitFrame(u8 fps) {
     return;
   }
 
-  constexpr auto kSpinMargin = std::chrono::microseconds(1500);
-  const auto slack = next_deadline - now;
-  if (slack > kSpinMargin) {
-    PreciseSleep(slack - kSpinMargin);
-  }
-  while (clock::now() < next_deadline) {
-    std::this_thread::yield();
+  {
+    // Deliberate idle time, not CPU work, even though it runs on this thread;
+    // see the profiler's cpu_ms/pacer_ms split for why it has its own zone.
+    eternalsonata::ProfileZone pacer_zone(eternalsonata::kPhasePacerWait);
+    constexpr auto kSpinMargin = std::chrono::microseconds(1500);
+    const auto slack = next_deadline - now;
+    if (slack > kSpinMargin) {
+      PreciseSleep(slack - kSpinMargin);
+    }
+    while (clock::now() < next_deadline) {
+      std::this_thread::yield();
+    }
   }
 
   // Never accumulate debt. If the wait overshot (coarse timer, a slow frame,
