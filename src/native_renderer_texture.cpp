@@ -126,25 +126,28 @@ bool GuestRangeReadable(const uint8_t* start, uint64_t bytes) {
 // whole thing. So the aperture is chosen per read, by asking which one actually
 // spans the bytes wanted, rather than fixed.
 //
-// The address is the physical one the fetch decode produces, not the raw field.
-// The three apertures alias the same physical pages but do not put a physical
-// address at the same host byte: the 0xE0000000 view sits one 4 KB page above
-// physical memory. That is what PhysicalHeap::GetPhysicalAddress in the SDK
-// compensates for (a heap based at or above 0xE0000000 adds 0x1000), and what
-// DecodeTextureFetch already applies to the fetch's base field.
+// The address is the physical one the fetch decode produces, not the raw field,
+// so an E-aperture resource and its resolve destination agree on one key.
 //
-// Indexing all three at one offset is therefore correct only for the aperture a
-// texture was allocated in, and a page out in the other two. Since the aperture
-// is chosen by asking which one is committed, that made an asset read either
-// correctly or as the neighbouring allocation's bytes depending on when it was
-// first bound. Each aperture undoes its own shift instead.
+// Guest side, the 0xE0000000 view sits one 4 KB page above physical memory
+// (PhysicalHeap::GetPhysicalAddress adds 0x1000 for a heap based there). Host
+// side, whether that page is in the mapping at all depends on the platform:
+// Memory::MapViews maps the E view at file offset 0x100001000 rounded down to
+// the allocation granularity, so the page survives only where the granularity
+// is 4 KB. On Windows, at 64 KB, it is masked away and the heap emulates the
+// offset in its own bookkeeping, leaving the E view aliasing A and C byte for
+// byte. Verified live by comparing the views over one range: with the shift
+// applied they differ from byte 0, without it they are equal.
+const uint32_t kEApertureShift =
+    rex::memory::allocation_granularity() > 0x1000 ? 0u : 0x1000u;
+
 const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t physical_address,
                                     uint64_t bytes) {
   ProfileZone zone(kPhaseGuestPointer);
   const uint32_t offset = physical_address & 0x1FFFFFFFu;
   const uint8_t* first = nullptr;
   for (uint32_t aperture : {0xA0000000u, 0xC0000000u, 0xE0000000u}) {
-    const uint32_t shifted = aperture == 0xE0000000u ? offset - 0x1000u : offset;
+    const uint32_t shifted = aperture == 0xE0000000u ? offset - kEApertureShift : offset;
     const uint8_t* candidate = memory_base + (aperture | shifted);
     if (first == nullptr)
       first = candidate;
@@ -849,7 +852,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
           fetch.base_address, wanted,
           GuestRangeReadableBytes(memory_base + (0xA0000000u | offset), wanted),
           GuestRangeReadableBytes(memory_base + (0xC0000000u | offset), wanted),
-          GuestRangeReadableBytes(memory_base + (0xE0000000u | (offset - 0x1000u)), wanted),
+          GuestRangeReadableBytes(memory_base + (0xE0000000u | (offset - kEApertureShift)), wanted),
           GuestRangeReadableBytes(memory_base + offset, wanted),
           GuestRangeReadableBytes(memory_base + (0x80000000u | offset), wanted));
     }
