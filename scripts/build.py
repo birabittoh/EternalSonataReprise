@@ -114,6 +114,12 @@ GUEST_SHADER_PACK = "guest_shaders.bin"
 # renderer actually needs. See src/native_renderer_shader_debug.h.
 GUEST_SHADER_DEBUG_PACK = "guest_shaders_debug.bin"
 
+# macOS has no Vulkan of its own, so the SDK's CMake stages a loader, MoltenVK
+# and the driver manifest into <build dir>/vulkan (rexglue_helpers.cmake). The
+# manifest is the only way the loader finds a driver: without it vkCreateInstance
+# returns VK_ERROR_INCOMPATIBLE_DRIVER even with libMoltenVK.dylib right there.
+VULKAN_RUNTIME_DIR = "vulkan"
+
 
 def lib_extension():
     # macOS shared libraries are .dylib, not .so. Treating them as .so meant the
@@ -167,6 +173,13 @@ def do_package(name, project_name, is_windows):
             print(f"+ cp {src} {pkg_dir}/")
             shutil.copy2(src, pkg_dir)
 
+    # The only directory in the payload, and only on macOS. Shipping the dylibs
+    # without it is what left a mac build unable to create a Vulkan instance.
+    if os.path.isdir(VULKAN_RUNTIME_DIR):
+        print(f"+ cp -r {VULKAN_RUNTIME_DIR} {pkg_dir}/")
+        shutil.copytree(VULKAN_RUNTIME_DIR, os.path.join(pkg_dir, VULKAN_RUNTIME_DIR),
+                        dirs_exist_ok=True)
+
     if is_windows:
         archive_path = f"{name}.zip"
         print(f"+ zip {archive_path}")
@@ -177,6 +190,7 @@ def do_package(name, project_name, is_windows):
         archive_path = f"{name}.tar.gz"
         print(f"+ tar {archive_path}")
         with tarfile.open(archive_path, "w:gz") as tf:
+            # add() recurses into directories, which is what carries vulkan/.
             for f in sorted(os.listdir(pkg_dir)):
                 tf.add(os.path.join(pkg_dir, f), arcname=f)
 
@@ -304,6 +318,11 @@ def main():
         if os.path.isfile(pack):
             print(f"+ cp {pack} {name}")
             shutil.copy2(pack, name)
+
+    staged_vulkan = os.path.join("out", "build", preset, VULKAN_RUNTIME_DIR)
+    if os.path.isdir(staged_vulkan):
+        print(f"+ cp -r {staged_vulkan} {VULKAN_RUNTIME_DIR}")
+        shutil.copytree(staged_vulkan, VULKAN_RUNTIME_DIR, dirs_exist_ok=True)
 
     copy_runtime_libs(is_windows, sdk_dir, build_type)
 
