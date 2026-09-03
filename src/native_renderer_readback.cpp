@@ -2,6 +2,12 @@
 //
 // See native_renderer_readback.h.
 
+// Has to precede every include: it is what exposes the mcontext layout the
+// fault handler below reads the access direction out of.
+#if defined(__APPLE__) && !defined(_XOPEN_SOURCE)
+#define _XOPEN_SOURCE 700
+#endif
+
 #include "native_renderer_readback.h"
 
 #include <algorithm>
@@ -47,16 +53,29 @@
 // being driven by pages it never watched. Hence a sigaction of our own, which
 // forwards anything that is not ours to whatever was installed before it.
 //
-// Reading the fault as a read or a write is what confines this to x86-64: the
-// bit lives in the page-fault error code at REG_ERR. Filling a buffer the guest
-// is mid-write into destroys what it wrote, so a platform that cannot tell the
-// two apart must not arm. Android also stays on the eager fill for that reason.
+// Filling a buffer the guest is mid-*write* into destroys what it wrote, so a
+// platform that cannot tell a read fault from a write fault must not arm. Where
+// that bit lives is per architecture: the x86-64 page-fault error code, or bit 6
+// (WnR) of a data abort's ESR on arm64.
+//
+// This list is an allowlist, and that is a defect rather than a policy. A target
+// that is not on it does not fail to build, it falls into the eager fill below
+// and pays several ms a frame that nobody goes looking for -- which is how macOS
+// spent its whole life at 40% of frame time in ReadbackPublish. Android is off
+// the list for no reason that still holds: Linux arm64 keeps the ESR in a
+// variable-length extension chain in mcontext.__reserved rather than a fixed
+// field, so it needs a walk this file does not have yet, but the NDK has had
+// esr_context since r16 and this project builds with 27.
 #if defined(_WIN32)
 #define ETERNALSONATA_READBACK_PAGE_TRAP 1
-#elif defined(__linux__) && !defined(__ANDROID__) && defined(__x86_64__)
+#elif (defined(__linux__) && !defined(__ANDROID__) && defined(__x86_64__)) || defined(__APPLE__)
 #define ETERNALSONATA_READBACK_PAGE_TRAP 1
 #include <signal.h>
+#if defined(__APPLE__)
+#include <sys/ucontext.h>
+#else
 #include <ucontext.h>
+#endif
 #endif
 
 #include "native_renderer_frame.h"
@@ -1018,19 +1037,40 @@ void EnsureExceptionHandler() {
 // What was installed before us, forwarded to for every fault that is not ours.
 // The SDK's own chain lives behind this, so getting the forward right is what
 // keeps the memory system's watches working.
-struct sigaction g_previous_segv = {};
-bool g_previous_segv_valid = false;
+//
+// Two signals on macOS, because Darwin splits what Linux reports as one:
+// KERN_INVALID_ADDRESS becomes SIGSEGV but KERN_PROTECTION_FAILURE becomes
+// SIGBUS, and an armed destination is a mapped page made inaccessible, so it is
+// the SIGBUS one. Handling only SIGSEGV there arms every destination and catches
+// nothing.
+struct PreviousHandler {
+  int signal_number;
+  struct sigaction action;
+  bool valid;
+};
+
+PreviousHandler g_previous[] = {
+    {SIGSEGV, {}, false},
+#if defined(__APPLE__)
+    {SIGBUS, {}, false},
+#endif
+};
 
 void ForwardSegv(int signal_number, siginfo_t* info, void* context) {
-  if (g_previous_segv_valid) {
-    if ((g_previous_segv.sa_flags & SA_SIGINFO) != 0 && g_previous_segv.sa_sigaction != nullptr) {
-      g_previous_segv.sa_sigaction(signal_number, info, context);
+  for (PreviousHandler& previous : g_previous) {
+    if (previous.signal_number != signal_number)
+      continue;
+    if (!previous.valid)
+      break;
+    if ((previous.action.sa_flags & SA_SIGINFO) != 0 && previous.action.sa_sigaction != nullptr) {
+      previous.action.sa_sigaction(signal_number, info, context);
       return;
     }
-    if (g_previous_segv.sa_handler != SIG_DFL && g_previous_segv.sa_handler != SIG_IGN) {
-      g_previous_segv.sa_handler(signal_number);
+    if (previous.action.sa_handler != SIG_DFL && previous.action.sa_handler != SIG_IGN) {
+      previous.action.sa_handler(signal_number);
       return;
     }
+    break;
   }
   // Nobody else wants it. Restore the default and return, so the faulting
   // instruction runs again and dies the way it would have without us, with its
@@ -1041,16 +1081,30 @@ void ForwardSegv(int signal_number, siginfo_t* info, void* context) {
   sigaction(signal_number, &fallback, nullptr);
 }
 
+// Same fields the SDK's own posix handler reads; see exception_handler_posix.cpp.
+bool FaultWasWrite(void* context) {
+  const auto* uc = static_cast<const ucontext_t*>(context);
+#if defined(__APPLE__) && defined(__aarch64__)
+  // A data abort has ESR bits 31:26 of 0b10010x, and then bit 6 (WnR) says
+  // write. Anything else is an instruction fetch, which cannot be a write and in
+  // practice cannot be one of ours either.
+  const uint32_t esr = uint32_t(uc->uc_mcontext->__es.__esr);
+  return ((esr >> 26) & 0b111110) == 0b100100 && (esr & (1u << 6)) != 0;
+#elif defined(__APPLE__)
+  return (uint64_t(uc->uc_mcontext->__es.__err) & 0x2) != 0;
+#else
+  // Bit 1 of the x86-64 page-fault error code.
+  return (uint64_t(uc->uc_mcontext.gregs[REG_ERR]) & 0x2) != 0;
+#endif
+}
+
 void ReadbackSegvHandler(int signal_number, siginfo_t* info, void* context) {
   if (info == nullptr || context == nullptr) {
     ForwardSegv(signal_number, info, context);
     return;
   }
 
-  // Bit 1 of the x86-64 page-fault error code: set for a write, clear for a
-  // read. Same field the SDK's own posix handler reads.
-  const auto* uc = static_cast<const ucontext_t*>(context);
-  const bool is_write = (uc->uc_mcontext.gregs[REG_ERR] & 0x2) != 0;
+  const bool is_write = FaultWasWrite(context);
   auto* address = static_cast<uint8_t*>(info->si_addr);
 
   // HandleReadbackFault claims the fault only if the address falls inside a
@@ -1067,12 +1121,16 @@ void ReadbackSegvHandler(int signal_number, siginfo_t* info, void* context) {
 // be the one the kernel calls.
 void EnsureExceptionHandler() {
   static const bool installed = []() {
-    struct sigaction action = {};
-    action.sa_sigaction = ReadbackSegvHandler;
-    action.sa_flags = SA_SIGINFO | SA_RESTART;
-    sigemptyset(&action.sa_mask);
-    g_previous_segv_valid = sigaction(SIGSEGV, &action, &g_previous_segv) == 0;
-    return g_previous_segv_valid;
+    bool any = false;
+    for (PreviousHandler& previous : g_previous) {
+      struct sigaction action = {};
+      action.sa_sigaction = ReadbackSegvHandler;
+      action.sa_flags = SA_SIGINFO | SA_RESTART;
+      sigemptyset(&action.sa_mask);
+      previous.valid = sigaction(previous.signal_number, &action, &previous.action) == 0;
+      any = any || previous.valid;
+    }
+    return any;
   }();
   (void)installed;
 }
@@ -1118,13 +1176,14 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   // Nothing has changed and the pages are still armed, so the arming from the
   // previous frame is still the right one and still points at the right buffer.
   // Rebuilt every so often anyway; see kRearmPeriod.
-  // Every resolve into a small destination, uncapped and cheap: there are a
-  // handful a session, and the question they answer is the one the content line
-  // raises. A save preview filled from a buffer whose last resolve was at frame
-  // 239 means no screenshot was resolved at save time, and that is a fact about
-  // the resolve path rather than about the readback.
-  if (dest.width <= 512) {
-    REXLOG_INFO("native_renderer: readback resolve into 0x{:08X} {}x{} at frame {}",
+  // First resolve into a small destination only. "A handful a session" was
+  // wrong: the water simulation's 64x64 ping-pong pair resolves every frame, so
+  // this was a formatted log write per frame on the guest thread. What it was
+  // for -- a save preview filled from a buffer whose last resolve was at frame
+  // 239 means no screenshot was resolved at save time -- is answered by the
+  // last-resolved frame on the per-destination summary line instead.
+  if (dest.width <= 512 && destination->publishes == 0) {
+    REXLOG_INFO("native_renderer: readback resolve into 0x{:08X} {}x{}, first at frame {}",
                 dest.base_address, dest.width, dest.height, frame);
   }
 
@@ -1373,9 +1432,10 @@ void LogReadbackSummary() {
       continue;
     REXLOG_INFO(
         "native_renderer: readback 0x{:08X} {}x{}: guest reads={} writes={} | mirror pulls={} | "
-        "fills={}",
+        "fills={} | last resolved at frame {} of {}",
         destination.address, destination.fetch.width, destination.fetch.height, destination.reads,
-        destination.writes, destination.pulls, destination.fills);
+        destination.writes, destination.pulls, destination.fills, destination.last_publish_frame,
+        destination.publishes);
   }
 }
 
