@@ -311,6 +311,7 @@ uint32_t g_loop_written = 0;  // bit per slot: written at all
 uint32_t g_loop_nonzero = 0;  // bit per slot: given a non-zero trip count
 uint8_t g_loop_max_count[kLoopConstants] = {};
 uint8_t g_loop_last_count[kLoopConstants] = {};
+uint32_t g_loop_last_written[kLoopConstants] = {};  // to log only on a change
 
 // Both setters share this; `first` is the unified index the stage's register 0
 // maps to, which is 0 for the vertex half and 16 for the pixel half.
@@ -340,12 +341,16 @@ void RecordLoopConstants(uint8_t* base, uint32_t device, uint32_t first, uint32_
     if (trip > g_loop_max_count[slot])
       g_loop_max_count[slot] = trip;
     g_loop_last_count[slot] = trip;
-    if (written != 0) {
+    // Only when the value in a slot changes. Unconditionally this was six
+    // formatted log writes a frame on the guest thread; the per-slot last and
+    // max counts in the summary are what the running state is read from.
+    if (written != 0 && written != g_loop_last_written[slot]) {
       REXLOG_INFO(
           "native_renderer: loop i{} <- 0x{:08X} (count={} start={} step={}) from source 0x{:08X}",
           slot, written, trip, (written >> 8) & 0xFFu, int8_t((written >> 16) & 0xFFu),
           source + 16 * i);
     }
+    g_loop_last_written[slot] = written;
   }
 }
 
