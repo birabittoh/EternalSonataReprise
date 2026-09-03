@@ -80,6 +80,28 @@ android {
         layout.projectDirectory.dir("jniLibs")
     )
 
+    /*
+     * SDL3's Android Java glue (org.libsdl.app.*) comes from the SDK, not from
+     * this repository. librexruntime.so links SDL3 statically and registers its
+     * native methods against these exact classes, so a vendored copy goes stale
+     * the moment the SDK updates SDL3 and the app then aborts inside
+     * System.loadLibrary with a NoSuchMethodError. Taking them from the SDK the
+     * .so was built against keeps the signatures in lockstep.
+     *
+     * Override with -PsdkJavaDir=... or ES_SDK_JAVA_DIR when the SDK lives
+     * somewhere other than sdk/android-arm64.
+     */
+    val sdkJavaDir = rootProject.file(
+        (project.findProperty("sdkJavaDir") as String?)
+            ?: System.getenv("ES_SDK_JAVA_DIR")
+            ?: "../sdk/android-arm64/share/rexglue/android/java"
+    )
+    require(sdkJavaDir.isDirectory) {
+        "SDL Java glue not found at $sdkJavaDir. Fetch the Android SDK first: " +
+            "python scripts/download-sdk.py sdk/android-arm64 --pinned --platform android-arm64"
+    }
+    sourceSets["main"].java.srcDirs(sdkJavaDir)
+
     // guest_shaders.bin, staged by CI into assets/.
     sourceSets["main"].assets.srcDirs(
         layout.projectDirectory.dir("assets")

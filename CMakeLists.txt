@@ -33,6 +33,13 @@ message(STATUS "eternalsonata - using Plume submodule at ${ETERNALSONATA_PLUME_D
 # from that SDL_Window directly instead of asking the host to expose raw X11
 # handles, which are not represented by Window::GetNativeWindowHandle().
 # Android does not need this — Plume has native VK_KHR_android_surface support.
+# Apple must not get this either: plume_render_interface_types.h and
+# plume_vulkan.cpp both check PLUME_SDL_VULKAN_ENABLED in the same #elif chain
+# as __APPLE__, before it. Defining it here would swap RenderWindow from
+# Plume's native Apple {window, view} pair (fed to vkCreateMetalSurfaceEXT via
+# a CAMetalLayer) to a bare SDL_Window*, which Plume's Apple surface-creation
+# code does not accept — see native_renderer_plume.cpp for what actually needs
+# to build that {window, view} pair from the SDL window (e.g. SDL_Metal_CreateView).
 if(UNIX AND NOT APPLE AND NOT ANDROID)
     set(PLUME_SDL_VULKAN_ENABLED ON CACHE BOOL "Enable SDL Vulkan integration" FORCE)
 endif()
@@ -243,7 +250,6 @@ set(ETERNALSONATA_SOURCES
     src/native_renderer_texture.cpp
     src/settings.cpp
     ${ETERNALSONATA_AREA_NAMES_HEADER}
-    ${GENERATED_SOURCES}
     ${ETERNALSONATA_ICON_HEADER}
     ${ETERNALSONATA_FONTS_HEADER}
 )
@@ -255,6 +261,13 @@ elseif(ANDROID)
     # Gradle's externalNativeBuild (or a manual jniLibs copy) packages the
     # resulting libeternalsonata.so into the APK.
     add_library(eternalsonata SHARED ${ETERNALSONATA_SOURCES})
+    # Everything linked into that .so has to be position independent, and
+    # rexglue_setup_target() below puts the recompiled guest code in an OBJECT
+    # library, which does not inherit PIC from the target consuming it. Without
+    # this, ld.lld rejects the generated objects (R_AARCH64_ADR_PREL_PG_HI21
+    # against rex::ppc::VectorMaskL). Must be set before rexglue_setup_target()
+    # creates that library.
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     # Plume sets CMAKE_CXX_VISIBILITY_PRESET to hidden globally, which hides
     # SDL_main from the dynamic symbol table. SDLActivity needs to dlsym it,
     # so restore default visibility for this target.
