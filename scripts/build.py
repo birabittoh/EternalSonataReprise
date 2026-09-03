@@ -17,6 +17,8 @@ def detect_preset(build_type="release"):
         os_id = "linux"
     elif os_name == "Windows":
         os_id = "win"
+    elif os_name == "Darwin":
+        os_id = "mac"
     else:
         raise RuntimeError(f"Unsupported OS: {os_name}")
 
@@ -113,6 +115,18 @@ GUEST_SHADER_PACK = "guest_shaders.bin"
 GUEST_SHADER_DEBUG_PACK = "guest_shaders_debug.bin"
 
 
+def lib_extension():
+    # macOS shared libraries are .dylib, not .so. Treating them as .so meant the
+    # SDK runtime libraries were neither deployed next to the built binary nor
+    # picked up by --package, so a mac archive shipped without librexruntime and
+    # dyld aborted the launch on a missing @rpath library.
+    if platform.system() == "Windows":
+        return ".dll"
+    if platform.system() == "Darwin":
+        return ".dylib"
+    return ".so"
+
+
 def copy_runtime_libs(is_windows, sdk_dir, build_type):
     # The SDK ships all build variants of each shared lib side by side
     # (e.g. rexruntime.dll, rexruntimed.dll, rexruntimerd.dll for release,
@@ -121,7 +135,7 @@ def copy_runtime_libs(is_windows, sdk_dir, build_type):
     variant_suffix = {"release": "", "debug": "d", "relwithdebinfo": "rd"}[build_type]
 
     src_dir = os.path.join(sdk_dir, "bin" if is_windows else "lib")
-    ext = ".dll" if is_windows else ".so"
+    ext = lib_extension()
 
     if not os.path.isdir(src_dir):
         return
@@ -145,7 +159,7 @@ def do_package(name, project_name, is_windows):
     os.makedirs(pkg_dir, exist_ok=True)
 
     exe = f"{project_name}.exe" if is_windows else project_name
-    lib_suffix = ".dll" if is_windows else ".so"
+    lib_suffix = lib_extension()
     candidates = [exe, GUEST_SHADER_PACK] + \
         sorted(f for f in os.listdir(".") if f.endswith(lib_suffix))
     for src in candidates:
@@ -241,7 +255,7 @@ def main():
             "-DCMAKE_CXX_COMPILER_LAUNCHER=sccache",
         ]
 
-    lib_suffix = ".dll" if is_windows else ".so"
+    lib_suffix = lib_extension()
     to_remove = [exe_name] + [f for f in os.listdir(".") if f.endswith(lib_suffix)]
     for name in to_remove:
         if os.path.isfile(name):

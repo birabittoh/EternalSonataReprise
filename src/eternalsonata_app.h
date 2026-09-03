@@ -166,8 +166,9 @@ class EternalsonataApp : public rex::ReXApp {
   // rex::ui::ApplyAccentTheme) from this single accent.
   static constexpr ImVec4 kDefaultAccentColor = ImVec4(0x4F / 255.0f, 0x28 / 255.0f, 0x06 / 255.0f, 1.00f);
 
-  void OnConfigureStyle(ImGuiStyle& style) override {
-    rex::ui::ApplyAccentTheme(style, kDefaultAccentColor);
+  void OnConfigureStyle(ImGuiStyle& imgui_style, rex::ui::Style& ui_style) override {
+    (void)ui_style;
+    rex::ui::ApplyAccentTheme(imgui_style, kDefaultAccentColor);
   }
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
