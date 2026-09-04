@@ -8,6 +8,7 @@
 #include <rex/cvar.h>
 #include <rex/logging.h>
 #include <rex/ui/window.h>
+#include <rex/ui/window_listener.h>
 
 #include <algorithm>
 #include <charconv>
@@ -136,6 +137,42 @@ void RegisterNativeRendererCvars() {
   rex::cvar::RegisterFlag(std::move(scale));
 }
 
+#if defined(__ANDROID__)
+namespace {
+
+// Reads the current ANativeWindow back out of SDL. Only valid to call once SDL
+// has published a new one, which is what OnSurfaceRestored signals.
+void* CurrentAndroidWindowHandle() {
+  int window_count = 0;
+  SDL_Window** windows = SDL_GetWindows(&window_count);
+  void* handle = nullptr;
+  if (windows && window_count > 0) {
+    handle = SDL_GetPointerProperty(SDL_GetWindowProperties(windows[0]),
+                                    SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+  }
+  SDL_free(windows);
+  return handle;
+}
+
+// The swap chain is built on the ANativeWindow captured at init, and Android
+// throws that away whenever the app stops being the focused foreground
+// activity. Without rebuilding it the game keeps running, and presenting, into
+// a surface that no longer exists: audio continues and the window is black.
+class SurfaceListener final : public rex::ui::WindowListener {
+ public:
+  void OnSurfaceLost(rex::ui::UIEvent&) override { PlumeSurfaceLost(); }
+  void OnSurfaceRestored(rex::ui::UIEvent&) override {
+    PlumeSurfaceRestored(CurrentAndroidWindowHandle());
+  }
+};
+
+// Outlives the window on purpose: it is removed only at process exit, which is
+// also when the window goes away.
+SurfaceListener g_surface_listener;
+
+}  // namespace
+#endif  // __ANDROID__
+
 void InitNativeRenderer(rex::ui::Window* window) {
   if (!NativeRendererEnabled())
     return;
@@ -242,6 +279,12 @@ void InitNativeRenderer(rex::ui::Window* window) {
         "native_renderer: no host backend, so the game will run headless to a black window. "
         "Everything except presentation still works.");
   }
+
+#if defined(__ANDROID__)
+  if (window) {
+    window->AddListener(&g_surface_listener);
+  }
+#endif
 }
 
 }  // namespace eternalsonata
