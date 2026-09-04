@@ -150,6 +150,20 @@ class EternalsonataApp : public rex::ReXApp {
     settings.default_xex_sha256 = "91184E7765172A358ECAA6E5CA1784DB1AE796C60F25051A45C5206F8949501E";
     settings.config_path = config_path();
 
+    // Match the overlay's brown-and-purple palette instead of the SDK's
+    // neutral dark default, and show the game's icon above the bar.
+    settings.progress_theme.background[0] = 0x3D;
+    settings.progress_theme.background[1] = 0x24;
+    settings.progress_theme.background[2] = 0x10;
+    settings.progress_theme.bar_fill[0] = 0x9B;
+    settings.progress_theme.bar_fill[1] = 0x59;
+    settings.progress_theme.bar_fill[2] = 0xB6;
+    settings.progress_theme.bar_frame[0] = 0x4F;
+    settings.progress_theme.bar_frame[1] = 0x28;
+    settings.progress_theme.bar_frame[2] = 0x06;
+    settings.progress_icon_data = eternalsonata::kIconPNG;
+    settings.progress_icon_size = eternalsonata::kIconPNGSize;
+
     return rex::system::GameDataSelector::EnsureGameData(settings);
   }
 
