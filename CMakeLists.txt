@@ -228,6 +228,9 @@ set(ETERNALSONATA_SOURCES
     src/party_system.cpp
     src/battle_system.cpp
     src/save_system.cpp
+    src/eternalsonata_asset_container.cpp
+    src/eternalsonata_asset_texture.cpp
+    src/eternalsonata_asset_system.cpp
     src/photo_system.cpp
     src/guest_main_thread.cpp
     src/guest_profiler.cpp
