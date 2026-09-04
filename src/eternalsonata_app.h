@@ -23,6 +23,7 @@
 #include <rex/version.h>
 
 #include "battle_system.h"
+#include "eternalsonata_asset_system.h"
 #include "field_player_model_override.h"
 #include "fonts.generated.h"
 #include "force_load_area.h"
@@ -340,6 +341,12 @@ class EternalsonataApp : public rex::ReXApp {
     // Save state for mods: src/eternalsonata_save_api.h answers "unavailable"
     // and publishes no save event until this runs.
     eternalsonata::BindSaveSystem(runtime());
+
+    // Granular asset replacement: collects every enabled mod's assets/ tree,
+    // builds one patched image per container and serves it ahead of the mods'
+    // own game/ overlays. Before the guest starts, because it remounts the game
+    // data partition. See eternalsonata_asset_system.h.
+    eternalsonata::BindAssetSystem(runtime());
 
     // Photo album for mods: src/eternalsonata_photo_api.h answers
     // "unavailable" and publishes no photo event until this runs.

@@ -4,8 +4,11 @@ NocturneRecomp mods are folders under `mods/`, layered over the game's data
 and, optionally, shipping native code. Two kinds of content can go in a mod,
 and a single mod can mix both:
 
-- **Asset replacement**: swap game files, textures, or shaders by mirroring
-  the game's own directory layout.
+- **Asset replacement**: swap a single line of text, a single texture, or a
+  single mesh, without repacking the container it ships in (see
+  [Replacing single assets](#replacing-single-assets)); or, at the low level,
+  swap a whole game file by mirroring the game's own directory layout (see
+  [Whole-file asset replacement](#whole-file-asset-replacement) at the end).
 - **Code**: a native DLL that hooks into the app lifecycle (register ImGui
   overlays, keybinds, read guest memory, etc.), via the SDK's mod-plugin ABI.
 
@@ -21,27 +24,324 @@ from that repo's releases (one zip per mod, with binaries for all three
 platforms), or clone it to develop a new one; this doc otherwise describes
 the mod-plugin ABI and `mod.toml` format that repo's mods target.
 
-## Asset-only mods
+## Replacing single assets
 
-An asset mod is just a folder under `mods/<name>/` with any of these
-subfolders (all optional; only the ones present are used):
+Eternal Sonata keeps almost nothing in a file of its own. Dialogue, textures
+and meshes all live inside `.e` (and `.bmd`) containers that hold hundreds of
+unrelated assets at once, so replacing one line of dialogue with a whole-file
+overlay means redistributing every texture, mesh and script that happens to
+share that container: megabytes of other people's copyrighted data, shipped to
+change one sentence. Two mods that each want to change one string in the same
+container also can't coexist, because only one of their files can win.
+
+So don't do that. A mod ships **only the assets it authored**, as loose files
+under `assets/`, and the host splices them into the container as the game
+loads it:
 
 ```
 mods/<name>/
-  game/        overlays the game data partition (game:\ / d:\)
-  update/      overlays the update partition
-  dlc/<name>/  overlays an installed DLC package
-  textures/    texture replacements: <hash16>.dds or .png (flat dir)
-  shaders/     shader replacements (DXBC/SPIR-V binaries)
-  mod.toml     descriptive metadata (see below)
-  icon.png     shown in the F1 mod manager overlay
+  assets/
+    cfdata/adg01.e/
+      text/ITA/17.txt                 one string, one language
+      textures/face_alg.tga.png       one texture, by its name in the container
+      meshes/head.gltf                one mesh, by its name in the container
+    map/nyaza.e/
+      textures/3.png                  by ordinal, when a chunk has no name
+    text/ITA.csv                      a whole translation, any container
+  mod.toml
+  icon.png
 ```
 
-Files under `game/`/`update/`/`dlc/` mirror the exact guest path they
-replace, for example `mods/<mod>/game/DATA/sound/bgmusic.wma` replaces
-`DATA/sound/bgmusic.wma`. Texture files are named by a 16-hex-digit content
-hash (dump one with `texture_dump_enabled = true` in `nocturnerecomp.toml` to
-find the hash for a texture you want to replace).
+Nothing is written to disk and the game's own loader is untouched: the host
+decodes the container in memory (see
+[asset-formats.md](asset-formats.md) §2), splices in every patch, and serves
+the result uncompressed, always rewriting that file's `index.vmtoc` record
+(codec flag to stored, size to the new decoded length) to match. The loader
+sizes its allocation from that record, so the two are never served apart. The
+shipped game files stay exactly as installed.
+
+> **Implementation status.** Text patches (both the per-string `.txt` files and
+> the `.csv` tables) and texture patches are live. Meshes and audio are
+> described here but are not spliced yet: the host logs the patch and leaves the
+> container alone. `scripts/es_asset.py` and the asset browser overlay do not
+> exist yet either.
+
+### Finding what to replace
+
+Every asset has a **reference**, which is the guest path plus what to address
+inside it:
+
+```
+cfdata/adg01.e#text:USA/17        string id 17 in the USA language block
+cfdata/adg01.e#text:1/USA/17      same, in the file's second BTX blob
+e0020_020.e#tex:face_alg.tga      texture chunk by its embedded name
+e0020_020.e#tex:3                 fourth texture chunk, in file order
+map/nyaza.e#mesh:head             mesh (NSHP chunk) by name
+map/nyaza.e#mesh:2                third mesh, in file order
+```
+
+The guest path is the path as it appears in `index.vmtoc`: lowercase,
+`/`-separated, no `game:\` prefix. Prefer names over ordinals wherever a name
+exists; an ordinal shifts if the container ever changes, a name doesn't.
+
+To list them:
+
+```bash
+python scripts/es_asset.py list "extracted/e/cfdata/adg01.e"
+python scripts/es_asset.py list --kind text --lang ITA "extracted/e/cfdata/*.e"
+python scripts/es_asset.py extract "cfdata/adg01.e#tex:face_alg.tga" -o face.png
+```
+
+`extract` writes the shipped asset out in the same format the replacement goes
+back in (`.txt`, `.png`, `.gltf`), so the round trip is: extract, edit, drop
+the result into your mod under the matching name. In-game, the **asset browser
+overlay** does the same thing live for whatever the current area has loaded,
+with a Reload button that re-reads your `assets/` folder without restarting.
+
+### The folder layout in full
+
+The path under `assets/` *is* the reference, spelled as directories:
+
+| Reference | File |
+|---|---|
+| `cfdata/adg01.e#text:ITA/17` | `assets/cfdata/adg01.e/text/ITA/17.txt` |
+| `cfdata/adg01.e#text:1/ITA/17` | `assets/cfdata/adg01.e/text/1/ITA/17.txt` |
+| `e0020_020.e#tex:face_alg.tga` | `assets/e0020_020.e/textures/face_alg.tga.png` |
+| `map/nyaza.e#mesh:head` | `assets/map/nyaza.e/meshes/head.gltf` |
+| `sound/cxs/bgm042.cxs#music` | `assets/sound/cxs/bgm042.cxs/music.ogg` |
+| `sound/spc001.csf#sfx:7` | `assets/sound/spc001.csf/sfx/7.wav` |
+| whole file `sound/vo/field01.wav` | `assets/sound/vo/field01.wav` |
+
+Language folders are the game's own fourccs without the trailing space: `JPN`,
+`USA`, `GBR`, `FRA`, `ITA`, `DEU`, `ESP`. A folder named `ALL` applies to every
+language, which is what a mod shipping a single translation usually wants.
+
+Textures accept `.png` or an uncompressed 32-bit `.dds` (export a compressed
+one as `.png` instead); meshes accept `.gltf`/`.glb`. A
+whole-file replacement is just the file itself with no `<container>/<kind>/`
+folder in the path, which is the same thing the `game/` overlay does, kept here
+so a mod doesn't need two trees.
+
+For a translation, one file per string gets old fast, so a whole language can
+go in one table instead:
+
+```csv
+# mods/<name>/assets/text/ITA.csv
+file,blob,id,text
+cfdata/adg01.e,0,17,"Che cosa stai facendo qui?"
+cfdata/adg01.e,0,18,"Niente di importante."
+btldata/script/tutorial/t0001.e,0,4,"Premi A per attaccare."
+```
+
+`blob` is almost always `0` and may be left empty. The text is the game's own
+single-byte encoding, not UTF-8 (see [Text encoding](#text-encoding) below);
+`es_asset.py` writes and validates these tables.
+
+### Size rules
+
+By default a patch must fit the space the original occupies, and the remainder
+is padded, so nothing after it moves and nothing else in the container can be
+disturbed. Text gets extra room for free here: identical strings within a
+language block are deduplicated to share one copy, which the game's reader
+cannot tell apart from the original layout.
+
+When that isn't enough, `allow_resize` rebuilds the container and fixes up the
+`.e` relocation tables for the shift (the mechanism is documented in
+[asset-formats.md](asset-formats.md) §3.4.2, including the crash it avoids).
+It's set per patch in an optional `assets.toml` next to the tree:
+
+```toml
+# mods/<name>/assets.toml
+[defaults]
+allow_resize = false
+
+["cfdata/adg01.e#text:ITA/17"]
+allow_resize = true
+```
+
+Resizing is well tested for text and is what a translation normally needs. It
+does not apply to textures at all: a texture is always spliced into the pixel
+region the shipped chunk already owns, so the replacement has to carry the
+original's dimensions and the container never changes length. Meshes
+essentially never re-encode to the original size, so mesh replacement usually
+implies `allow_resize`.
+
+### What a replacement may and may not change
+
+Textures are re-encoded to whatever format the original chunk used (DXT1, DXT3
+or DXT5), mipped, and tiled for the Xbox 360 by the host. The replacement must
+match the original's dimensions exactly, because the chunk's fetch constant, its
+mip chain's layout and the size of its pixel region are one consistent set that
+a splice cannot rewrite. Use `#tex:` enumeration or the studio's viewer to find
+out what a chunk's dimensions are.
+
+Two kinds of chunk are refused rather than guessed at: a texture whose mip
+layout the host cannot reproduce (three chunks in the whole game, all
+non-power-of-two), and the handful of chunks that are not DXT. Both are logged
+naming the mod and the reference.
+
+Meshes are constrained by the rest of the container, not by this feature:
+
+- Bone indices must be slots the original chunk's bone list already has. A
+  replacement can't introduce a bone, because the skeleton is a separate NBN2
+  chunk that every animation is authored against.
+- Every face section's material id must be one the container already declares.
+  A replacement can't introduce a new material or texture slot.
+- Vertex and index counts are otherwise free.
+
+### Music and sound effects
+
+Music (`.cxs`, one file per track) and sound and voice banks (`.csf`, many
+clips per file) both hold raw XMA2, the Xbox 360's codec, and no open encoder
+for it exists. So audio is the one kind that is **not** re-encoded and spliced
+into its container. The host already decodes XMA to play it, and it substitutes
+your audio there instead:
+
+```
+mods/<name>/assets/
+  sound/cxs/bgm042.cxs/music.ogg     replaces one music track
+  sound/spc001.csf/sfx/7.wav         replaces clip 7 of a bank
+  sound/vo/field01.wav               a plain PCM .wav, replaced whole
+```
+
+Ship ordinary audio: WAV, FLAC or OGG, any sample rate, any channel count. The
+host resamples and downmixes. You never touch XMA and you never need the XDK.
+
+Because the container itself is untouched, audio replacement never resizes
+anything, never rebuilds an `.e`, and can't collide with a text or texture
+patch in the same file. Replacing one effect in a bank of two hundred leaves
+the other 199 playing as shipped.
+
+Two things follow from substituting rather than splicing:
+
+- **Music length is free, voice length isn't.** A `.cxs` track loops on its
+  own loop points (47 of the 62 retail tracks have them) and can be any length;
+  put `loop_start`/`loop_end` in a WAV `smpl` chunk or an Ogg
+  `LOOPSTART`/`LOOPLENGTH` comment to override them, or inherit the shipped
+  track's. A voice clip that a text box waits on (the `<wv>` tag) should match
+  the original's duration: longer audio is cut off when the game moves on,
+  not waited for.
+- **The `.wav` files under `assets/sound` are a separate, easier case.** They
+  are plain big-endian PCM rather than XMA, so they are replaced as whole
+  files with a byte swap and no decoder involvement at all. Drop a normal
+  little-endian WAV in and the host swaps it.
+
+### Text encoding
+
+The game's font draws **one glyph per byte**: text is single-byte CP1252 /
+Latin-1, not UTF-8, so `é` written as UTF-8 renders as two garbled glyphs.
+`.txt` and `.csv` files under `assets/text*` are read as UTF-8 and transcoded
+for you, and `es_asset.py` fails loudly on a character with no single-byte
+equivalent rather than emitting mojibake. If you write bytes directly through
+the C API you get no such help; write `"\xE9"`.
+
+A newline inside a string is the literal two-character sequence `\` `n`, not
+`0x0A`. Markup tags (`<w>`, `<w1500>`, `<c Allegretto>`, …) pass through
+untouched; [asset-formats.md](asset-formats.md) §3.5 lists the set. `JPN ` is
+Shift-JIS; the six western blocks are single-byte.
+
+### Layering and conflicts
+
+There is **one** patched image per container, built from every enabled mod at
+once. The host does not pick a winning mod and use its version of the file: it
+collects the patches from all of them, keyed by reference, and splices them all
+into a single rebuild. Two mods that each change a different string in
+`cfdata/adg01.e` both take effect, and neither has to know the other exists.
+This is the whole point of the feature, and it is what the `game/` overlay
+cannot do.
+
+The rules, in order:
+
+1. **Distinct references all apply.** Different strings, different texture
+   chunks, different meshes, even in the same file, compose with no conflict
+   and in any mod order.
+2. **The same reference is resolved by priority.** Whichever mod is earlier in
+   `mods.toml` wins. The loser's patch is dropped, not merged: a texture or a
+   mesh is a whole-chunk replacement and there is no meaningful way to blend
+   two of them. The drop is logged at WARN naming both mods and the reference,
+   the F1 mod manager flags it, and the C API returns
+   `ETERNALSONATA_ASSET_CONFLICT` to the losing caller rather than silently
+   swallowing it.
+3. **`force` overrides priority.** A patch with `force = true` in `assets.toml`
+   (or `ETERNALSONATA_ASSET_FORCE` from code) beats an earlier mod's patch for
+   the same reference. Two forcing mods fall back to rule 2 between
+   themselves. This is for a compatibility patch that exists precisely to
+   override another mod, not a way to opt out of load order.
+4. **A whole-file replacement becomes the base.** If a mod ships the container
+   itself under `game/`, that file replaces the shipped one (by rule 2 among
+   whole-file overlays), and every mod's granular patches are then applied on
+   top of it, including the replacing mod's own. A reference that no longer
+   resolves against the new file is reported as
+   `ETERNALSONATA_ASSET_NOT_FOUND` naming the mod that registered it, which is
+   the usual sign that a whole-file mod and a granular mod disagree about what
+   the container holds.
+5. **Splicing order is by file offset, not by mod order.** All the surviving
+   patches for a container are applied in one pass in ascending offset, so
+   several resizing patches in the same file compose and offsets are recomputed
+   once. Mod order decides *which* patch applies, never *where* the bytes land,
+   so the result does not depend on load order beyond rule 2.
+
+One shared budget is worth knowing about: under the default preserve-size rule
+the free room in a BTX language block comes from deduplicating identical
+strings *in that block*, so several mods growing strings in the same block are
+spending the same pool. When it runs out, the patches that did not fit are
+reported individually (`ETERNALSONATA_ASSET_TOO_LARGE`, with the mod and
+reference named) instead of one of them corrupting the block. Setting
+`allow_resize` on those patches removes the limit; it is set per patch, so one
+mod opting into a rebuild does not force the cost or the risk on the others.
+
+### Doing it from code
+
+A mod that decides at runtime what to replace (a translation that follows the
+language setting, a texture built from the player's own files, a randomiser)
+uses the C ABI instead. Copy `src/eternalsonata_asset_api.h` from this repo
+into your mod for the signatures and the full contract; the entry points
+resolve out of the host executable exactly as with the Options and party APIs:
+
+```cpp
+#include "eternalsonata_asset_api.h"
+
+auto set_text = reinterpret_cast<EternalSonataSetTextFn>(
+    GetProcAddress(GetModuleHandle(nullptr), "EternalSonataSetText"));
+if (set_text) {
+  set_text("cfdata/adg01.e#text:ITA/17", "Nuova battuta", 0);
+}
+```
+
+Things worth knowing before you use it:
+
+- **Always null-check the `GetProcAddress` result**, and call
+  `EternalSonataAssetAbiVersion()` if you need to branch on host capability.
+- **Register before the container is first opened.** `OnModuleLaunched()` is
+  early enough for everything but boot-time files; a patch registered later
+  applies the next time that container loads, which for field data is the next
+  area transition. `EternalSonataInvalidateAsset()` forces the rebuild for a
+  file already cached.
+- **Register lazily for anything large.** Pushing thousands of patches up front
+  to cover text the player may never reach is wasteful;
+  `EternalSonataRegisterAssetProvider()` calls you once per container, at the
+  moment the host is about to build its patched image, and you register only
+  what that container needs. The `"eternalsonata.asset.loading"` event on the
+  shared registry bus is the same point without the header.
+- **Providers and asset events run on the guest thread doing the load.** They
+  must be thread-safe, must not touch ImGui, and must not block: the game is
+  waiting on that file.
+- **`EternalSonataEnumerateAssets()` decodes every file it touches.** It's a
+  browse call for tooling and startup scans, not something to run per frame.
+- **Nothing here runs guest code**, so no call is queued and none can be
+  refused for game state. Patches take effect at load time.
+
+### Textures the hash path already covers
+
+The SDK's content-hash texture replacement (`mods/<name>/textures/<hash16>.png`,
+described under [Whole-file asset replacement](#whole-file-asset-replacement)
+below) is independent of all of this and needs no container knowledge at all:
+it replaces any texture the game uploads to the GPU, wherever it came from. If
+you already have a hash from a dump and only care about how the texture looks
+on screen, that path is simpler and stays the recommended one. Reach for
+`#tex:` references when you want to address a texture by the name it carries in
+the container rather than by a hash you had to dump first, or when the texture
+is one the game reads but never uploads.
 
 See the `NocturneRecomp-Mods` repo's `src/` directory for some working examples.
 
@@ -722,3 +1022,44 @@ shared registry (like `ui_color` does; see
 above) instead of branching on `is_patched()` itself. All the sample mods
 here follow one of those two rules, so `make_mods.py`'s output loads
 unchanged into either build.
+
+## Whole-file asset replacement
+
+This is the low-level path: it swaps a **whole guest file**, with no merging.
+For text, textures and meshes prefer
+[Replacing single assets](#replacing-single-assets), which ships only what you
+authored and lets two mods touch the same container. Use this one for assets
+that are a file of their own (audio, DLC content), for a structural change no
+in-place splice can do, and for GPU-side texture and shader overrides, which
+are keyed by content hash and are not container-aware at all.
+
+An asset mod is just a folder under `mods/<name>/` with any of these
+subfolders (all optional; only the ones present are used):
+
+```
+mods/<name>/
+  assets/      granular per-asset replacement (see above)
+  game/        overlays the game data partition (game:\ / d:\)
+  update/      overlays the update partition
+  dlc/<name>/  overlays an installed DLC package
+  textures/    texture replacements: <hash16>.dds or .png (flat dir)
+  shaders/     shader replacements (DXBC/SPIR-V binaries)
+  mod.toml     descriptive metadata (see below)
+  icon.png     shown in the F1 mod manager overlay
+```
+
+Files under `game/`/`update/`/`dlc/` mirror the exact guest path they
+replace, for example `mods/<mod>/game/DATA/sound/bgmusic.wma` replaces
+`DATA/sound/bgmusic.wma`. If two mods ship the same guest path, the one
+earliest in `mods.toml` wins outright and the other's file is simply not used,
+whether or not the two changed the same bytes.
+
+Texture files are named by a 16-hex-digit content hash (dump one with
+`texture_dump_enabled = true` in the config to find the hash for a texture you
+want to replace). This path keys on the bytes the GPU sees, so it works for any
+texture the game uploads regardless of which container it came from, and it
+composes fine with `assets/`: hash replacements are applied at upload time,
+container patches at load time.
+
+[dumping-and-replacing-assets.md](dumping-and-replacing-assets.md) covers the
+texture and shader dump/replace cvars and workflow in detail.
