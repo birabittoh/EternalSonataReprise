@@ -27,6 +27,7 @@
 #include "fonts.generated.h"
 #include "force_load_area.h"
 #include "guest_profiler.h"
+#include "host_menu.h"
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
 #include "native_renderer.h"
@@ -197,8 +198,13 @@ class EternalsonataApp : public rex::ReXApp {
     config.update_asset_format = "eternalsonata-{tag}-{platform}";
     config.update_repo = "birabittoh/EternalSonataReprise";
 
-    // One-shot toast shown top-left as the game starts
+    // One-shot toast shown top-left as the game starts. Android has no
+    // keyboard, so it names the touch overlay's Guide button instead.
+#if REX_PLATFORM_ANDROID
+    config.startup_hint = "Press Guide to open settings.";
+#else
     config.startup_hint = "Press F4 to open settings.";
+#endif
 
     // "plume" is not a plugin the SDK can load; it selects this project's own
     // renderer. Clearing the name here (the last point before ReXApp decides
@@ -356,6 +362,11 @@ class EternalsonataApp : public rex::ReXApp {
     // turns it on. See src/guest_profiler.h.
     guest_profiler_overlay_ = eternalsonata::CreateGuestProfilerOverlay(imgui_drawer());
 
+    // Constructed unconditionally, same reasoning as the profiler overlay
+    // above: the constructor is what registers the back/gamepad-Back binds.
+    host_menu_ = std::make_unique<eternalsonata::HostMenu>(window(), runtime()->user_data_root(),
+                                                           cache_root());
+
     // On-screen pad. The SDK's touch driver reports no device until a layout
     // is installed, so this is what turns the touch controls on for this game;
     // the touch_controls cvar (on by default only on Android) still decides
@@ -432,6 +443,10 @@ class EternalsonataApp : public rex::ReXApp {
 
   // F3's guest-side half. Owned here so it lives as long as the drawer does.
   std::unique_ptr<rex::ui::ImGuiDialog> guest_profiler_overlay_;
+
+  // Back-button entry point into the F-key overlays on touch-only devices.
+  // See host_menu.h.
+  std::unique_ptr<eternalsonata::HostMenu> host_menu_;
 
   // Guest frame present count, bumped by the per-swap callback (any thread).
   std::atomic<uint64_t> guest_swap_count_{0};
