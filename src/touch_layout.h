@@ -75,7 +75,13 @@ inline rex::input::touch::TouchLayout BuildTouchLayout(float width, float height
                                      TouchTrigger::kRight));
   layout.controls.push_back(MakePill(width - margin - pill_rx - step, pill_y, pill_rx, pill_ry,
                                      "RB", X_INPUT_GAMEPAD_RIGHT_SHOULDER));
-  layout.controls.push_back(MakePill(width * 0.5f, pill_y, u * 0.10f, pill_ry, "START",
+  // Start and Guide sit side by side, the pair centred on the row rather than
+  // either one of them.
+  const float menu_rx = u * 0.10f;
+  const float menu_offset = menu_rx + u * 0.01f;
+  layout.controls.push_back(MakePill(width * 0.5f - menu_offset, pill_y, menu_rx, pill_ry, "GUIDE",
+                                     X_INPUT_GAMEPAD_GUIDE));
+  layout.controls.push_back(MakePill(width * 0.5f + menu_offset, pill_y, menu_rx, pill_ry, "START",
                                      X_INPUT_GAMEPAD_START));
 
   return layout;
