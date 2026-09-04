@@ -23,12 +23,19 @@
         Game Dashboard framework what this app is; isGame is the pre-API-26
         spelling of the same thing, still read by some launchers.
     -->
+    <!--
+        Predictive back (default on for targetSdk 33+) delivers back through
+        OnBackInvokedCallback instead of the classic KEYCODE_BACK, which is
+        what SDL_HINT_ANDROID_TRAP_BACK_BUTTON (window_sdl.cpp) hooks. Opt out
+        so back still reaches the host menu (host_menu.cpp).
+    -->
     <application
         android:label="Eternal Sonata: Reprise"
         android:icon="@mipmap/ic_launcher"
         android:hasCode="true"
         android:appCategory="game"
-        android:isGame="true">
+        android:isGame="true"
+        android:enableOnBackInvokedCallback="false">
 
         <!--
             EternalSonataActivity extends SDLActivity and overrides getLibraries()
