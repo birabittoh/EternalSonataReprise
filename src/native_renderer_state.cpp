@@ -21,9 +21,13 @@ namespace {
 // device+10372, which is 10316 + 4*14.
 constexpr uint32_t kShadow2200 = 10420;  // 0x2200..0x220B
 constexpr uint32_t kShadow2100 = 10316;  // 0x2100..0x2114
+constexpr uint32_t kShadow2180 = 10400;  // 0x2180..0x2184
+constexpr uint32_t kShadow2280 = 10468;  // 0x2280..0x2294
 
 constexpr uint32_t Reg2200(uint32_t reg) { return kShadow2200 + 4 * (reg - 0x2200); }
 constexpr uint32_t Reg2100(uint32_t reg) { return kShadow2100 + 4 * (reg - 0x2100); }
+constexpr uint32_t Reg2180(uint32_t reg) { return kShadow2180 + 4 * (reg - 0x2180); }
+constexpr uint32_t Reg2280(uint32_t reg) { return kShadow2280 + 4 * (reg - 0x2280); }
 
 }  // namespace
 
@@ -99,6 +103,19 @@ GuestRenderState ReadGuestRenderState(uint8_t* base, uint32_t device) {
   // RB_COLORCONTROL: alpha_func +0 (3 bits), alpha_test_enable +3.
   state.alpha_func = GuestCompare(state.color_control & 7u);
   state.alpha_test_enabled = ((state.color_control >> 3) & 1u) != 0;
+
+  // SQ_PROGRAM_CNTL: param_gen +18. SQ_CONTEXT_MISC: param_gen_pos +8, a byte.
+  const uint32_t program_cntl = REX_LOAD_U32(device + Reg2180(0x2180));
+  const uint32_t context_misc = REX_LOAD_U32(device + Reg2180(0x2181));
+  state.param_gen_enabled = ((program_cntl >> 18) & 1u) != 0;
+  state.param_gen_pos = (context_misc >> 8) & 0xFFu;
+
+  // PA_SU_POINT_SIZE: height +0, width +16, each a half extent in 12.4 fixed
+  // point. Doubled back to a diameter so the geometry shader's one multiply by
+  // the reciprocal viewport extent produces a clip space radius.
+  const uint32_t point_size = REX_LOAD_U32(device + Reg2280(0x2280));
+  state.point_diameter_y = float(point_size & 0xFFFFu) * (2.0f / 16.0f);
+  state.point_diameter_x = float((point_size >> 16) & 0xFFFFu) * (2.0f / 16.0f);
 
   state.valid = true;
   return state;

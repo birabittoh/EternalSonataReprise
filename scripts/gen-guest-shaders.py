@@ -54,7 +54,7 @@ import xenos_hlsl as H  # noqa: E402
 import xenos_ucode as U  # noqa: E402
 
 PACK_MAGIC = b"ESGS"
-PACK_VERSION = 5
+PACK_VERSION = 6
 
 # The sidecar the F2 shader debugger reads: per shader, the extractor's name,
 # the microcode disassembly and the emitted HLSL. Kept out of guest_shaders.bin
@@ -63,7 +63,7 @@ PACK_VERSION = 5
 # out of it on demand rather than loading it. Missing, the overlay still lists,
 # names and toggles shaders; it just has no source to show.
 DEBUG_MAGIC = b"ESGD"
-DEBUG_VERSION = 1
+DEBUG_VERSION = 2
 
 # Both guest tables are 256 entries; the pack holds vertex slots first, then
 # pixel slots, so an entry index is `kind_base + slot`.
@@ -74,7 +74,12 @@ FLAG_HAS_CUBE = 1 << 1
 
 # Shader model 6.0 is the floor Plume's D3D12 and Vulkan backends both accept,
 # and nothing emitted here needs anything newer.
-PROFILE = {"vs": "vs_6_0", "ps": "ps_6_0"}
+PROFILE = {"vs": "vs_6_0", "ps": "ps_6_0", "gs": "gs_6_0"}
+
+# The point sprite expansion shader, which is ours rather than the guest's: it
+# has no table slot, so it rides in one extra entry past the two 256 slot
+# tables. See xenos_hlsl.point_sprite_gs.
+POINT_SPRITE_NAME = "point_sprite_gs"
 
 # Matches Plume's own helper (examples/cmake/modules/PlumeDXC.cmake) so the
 # guest shaders and the overlay shaders are compiled the same way. -fvk-invert-y
@@ -108,14 +113,17 @@ class Translated:
         self.slot = slot
         self.name = name
         self.inputs = [(e["usage"], e["usage_index"]) for e in emitted.inputs] \
-            if kind == "vs" else []
-        self.keys = sorted(e["key"] for e in emitted.interpolators)
+            if kind == "vs" and emitted is not None else []
+        self.keys = [] if emitted is None else \
+            sorted(e["key"] for e in emitted.interpolators)
         self.texture_mask = 0
         self.flags = 0
         # 16 floats for constants 252..255, or None. See xenos_ucode's note
         # above PREFIX_CANDIDATES for why this has to travel with the shader.
-        self.literals = emitted.literals
-        if kind == "ps":
+        self.literals = None if emitted is None else emitted.literals
+        if emitted is None:
+            pass
+        elif kind == "ps":
             for texture_slot, kind_name in emitted.textures.items():
                 self.texture_mask |= 1 << texture_slot
                 if kind_name == "TextureCube":
@@ -172,6 +180,14 @@ def translate(xex, hlsl_dir):
             entry.disassembly = ("; %s does not disassemble: %s"
                                  % (shader.name, exc)).encode("utf-8")
         out.append(entry)
+
+    # The point sprite expansion shader. Built against the same title-wide
+    # interpolator layout, so it passes every varying through unchanged.
+    gs = Translated("gs", 0, POINT_SPRITE_NAME, None)
+    gs.hlsl = H.point_sprite_gs(layout).encode("utf-8")
+    gs.source = os.path.join(hlsl_dir, POINT_SPRITE_NAME + ".hlsl")
+    write_if_different(gs.source, gs.hlsl)
+    out.append(gs)
     return out
 
 
@@ -267,9 +283,14 @@ def pack(entries, formats):
         seen[data] = where
         return where
 
-    table = [None] * (SLOTS * 2)
+    # Two 256 slot tables, then one entry for the point sprite geometry shader,
+    # which is ours and has no guest table slot.
+    table = [None] * (SLOTS * 2 + 1)
     for entry in entries:
-        index = (0 if entry.kind == "vs" else SLOTS) + entry.slot
+        if entry.kind == "gs":
+            index = SLOTS * 2
+        else:
+            index = (0 if entry.kind == "vs" else SLOTS) + entry.slot
         if table[index] is not None:
             raise SystemExit("two shaders claim %s slot %d"
                              % (entry.kind, entry.slot))
@@ -320,9 +341,12 @@ def pack_debug(entries):
         return where
 
     empty = struct.pack("<IIIIII", 0, 0, 0, 0, 0, 0)
-    table = [empty] * (SLOTS * 2)
+    table = [empty] * (SLOTS * 2 + 1)
     for entry in entries:
-        index = (0 if entry.kind == "vs" else SLOTS) + entry.slot
+        if entry.kind == "gs":
+            index = SLOTS * 2
+        else:
+            index = (0 if entry.kind == "vs" else SLOTS) + entry.slot
         name = place(entry.name.encode("utf-8"))
         ucode = place(entry.disassembly)
         hlsl = place(entry.hlsl)
@@ -385,9 +409,10 @@ def main():
     write_if_different(debug_path, debug_data)
 
     vertex = sum(1 for e in entries if e.kind == "vs")
+    pixel = sum(1 for e in entries if e.kind == "ps")
     print("guest shaders: %d vertex, %d pixel, formats %s, %d blob bytes, "
           "pack %d bytes -> %s (debug sidecar %d bytes -> %s)"
-          % (vertex, len(entries) - vertex, "+".join(formats), blob_bytes,
+          % (vertex, pixel, "+".join(formats), blob_bytes,
              len(data), pack_path, len(debug_data), debug_path))
     return 0
 
