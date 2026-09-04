@@ -241,6 +241,12 @@ std::atomic<bool> g_ready{false};
 // arrives.
 std::atomic<bool> g_resize_pending{false};
 
+// The window surface going away and coming back (Android backgrounding). Same
+// deferral as the resize: recorded on the UI thread, applied by the next
+// present. `g_pending_surface` holds the new ANativeWindow to rebuild on.
+std::atomic<bool> g_surface_lost{false};
+std::atomic<void*> g_pending_surface{nullptr};
+
 // Same shape as the resize, and for the same reason: the `vsync` cvar can be
 // changed from the settings overlay at any time, but the swap chain is only
 // safe to touch from the thread that presents. The change callback records the
@@ -382,6 +388,43 @@ void ApplyResize() {
   }
   CreateFramebuffers();
   GrowReleaseSemaphores();
+}
+
+// Drops the swap chain and everything indexed by its images. Presenting is
+// skipped until a new surface arrives, but the frame's guest work still has to
+// be drained every frame or the next one reopens a list that is still
+// recording, which is what FlushWithoutPresent in the present path is for.
+void ReleaseSwapChain() {
+  if (!g_backend.swap_chain)
+    return;
+  // The images are still being rendered into by whatever is in flight.
+  WaitForAllSlots();
+  g_backend.framebuffers.clear();
+  g_backend.swap_chain.reset();
+}
+
+bool RebuildSwapChain(void* window_handle) {
+  ReleaseSwapChain();
+  if (window_handle == nullptr)
+    return false;
+
+  g_backend.swap_chain = g_backend.queue->createSwapChain(
+      RenderSwapChainDesc(static_cast<RenderWindow>(window_handle), kSwapChainFormat,
+                          kSwapChainBuffers, g_present_wait, kMaxFrameLatency));
+  if (!g_backend.swap_chain) {
+    REXLOG_ERROR("native_renderer: could not rebuild the swap chain on the new window surface");
+    return false;
+  }
+  // Same order as init: vsync before the first resize, since on Vulkan the
+  // present mode is what the resize actually bakes in.
+  g_backend.swap_chain->setVsyncEnabled(g_vsync_wanted.load(std::memory_order_acquire));
+  g_vsync_applied.store(g_vsync_wanted.load(std::memory_order_acquire), std::memory_order_relaxed);
+  g_backend.swap_chain->resize();
+  CreateFramebuffers();
+  GrowReleaseSemaphores();
+  REXLOG_INFO("native_renderer: swap chain rebuilt on the new window surface, {}x{}",
+              g_backend.swap_chain->getWidth(), g_backend.swap_chain->getHeight());
+  return true;
 }
 
 }  // namespace
@@ -597,6 +640,19 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
 
 bool PlumeBackendReady() { return g_ready.load(std::memory_order_acquire); }
 
+void PlumeSurfaceLost() {
+  if (!g_ready.load(std::memory_order_acquire))
+    return;
+  g_pending_surface.store(nullptr, std::memory_order_release);
+  g_surface_lost.store(true, std::memory_order_release);
+}
+
+void PlumeSurfaceRestored(void* window_handle) {
+  if (!g_ready.load(std::memory_order_acquire) || window_handle == nullptr)
+    return;
+  g_pending_surface.store(window_handle, std::memory_order_release);
+}
+
 bool PlumeFlushGuestWork() {
   if (!g_ready.load(std::memory_order_acquire) || !g_recording)
     return false;
@@ -608,6 +664,22 @@ void PlumePresentFrame() {
   if (!g_ready.load(std::memory_order_acquire))
     return;
   ProfileZone present_zone(kPhasePresent);
+
+  // Before anything that touches the swap chain, since these can leave it
+  // absent. The old surface is already gone by the time the event reaches us,
+  // so the teardown is what stops the next present from drawing into a
+  // released window.
+  if (g_surface_lost.exchange(false, std::memory_order_acq_rel))
+    ReleaseSwapChain();
+  if (void* surface = g_pending_surface.exchange(nullptr, std::memory_order_acq_rel))
+    RebuildSwapChain(surface);
+
+  // Backgrounded, with no surface to present to. The guest keeps running and
+  // still needs its work drained.
+  if (!g_backend.swap_chain) {
+    FlushWithoutPresent();
+    return;
+  }
 
   // Before the resize check, because on Vulkan a present mode change is exactly
   // what needsResize() reports.

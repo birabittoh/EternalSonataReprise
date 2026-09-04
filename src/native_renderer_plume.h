@@ -42,6 +42,15 @@ bool InitPlumeBackend(void* window_handle, void* window_view = nullptr);
 // True once InitPlumeBackend has succeeded.
 bool PlumeBackendReady();
 
+// Android hands out a new ANativeWindow every time the app returns to the
+// foreground, and releases the old one on the way out; a swap chain built on
+// the old one presents to nothing, which is a black window with the game still
+// running behind it. Both only record the request: the swap chain is not
+// thread safe, so the work happens on the next present, the same way a resize
+// does.
+void PlumeSurfaceLost();
+void PlumeSurfaceRestored(void* window_handle);
+
 // Hand over the SDK's ImGui drawer so the overlays can record into the frame.
 // Until this is called the frame is only the clear. Null disables them again.
 void PlumeSetOverlayDrawer(rex::ui::UIDrawer* drawer);
