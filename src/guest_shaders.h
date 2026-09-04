@@ -90,6 +90,13 @@ bool LoadGuestShaders(const char* path = nullptr);
 const GuestShader& GuestVertexShader(uint32_t slot);
 const GuestShader& GuestPixelShader(uint32_t slot);
 
+// The point sprite expansion geometry shader, which is the renderer's own and
+// so has no guest table slot. A POINT_LIST draw needs it: the console rasterises
+// each vertex as a quad sized by the vertex shader's e63 export and generates a
+// sprite coordinate across it, and a host point list does neither. See
+// scripts/xenos_hlsl.py's point_sprite_gs.
+const GuestShader& GuestPointSpriteShader();
+
 // How many slots of each table the pack actually filled, for the startup log.
 uint32_t GuestVertexShaderCount();
 uint32_t GuestPixelShaderCount();

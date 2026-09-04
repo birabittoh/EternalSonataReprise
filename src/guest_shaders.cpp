@@ -38,8 +38,9 @@ constexpr uint32_t kMagic = 0x53475345;  // 'ESGS', little endian
 // Bumped to 2 when the emitter moved the pixel shaders' constant buffers to b2
 // and b3. The pack layout did not change, so a stale pack would load and bind
 // the vertex float bank to every pixel shader; refusing it is the point.
-// Bumped to 5 for the literal constant pool section.
-constexpr uint32_t kVersion = 5;
+// Bumped to 5 for the literal constant pool section, and to 6 for the point
+// sprite geometry shader's entry past the two slot tables.
+constexpr uint32_t kVersion = 6;
 constexpr char kDefaultName[] = "guest_shaders.bin";
 
 constexpr uint8_t kFlagPointSize = 1 << 0;
@@ -78,6 +79,7 @@ static_assert(sizeof(PackEntry) == 30, "pack entry layout");
 std::vector<uint8_t> g_pack;
 std::vector<GuestShader> g_vertex;
 std::vector<GuestShader> g_pixel;
+GuestShader g_point_sprite;
 const GuestShader g_absent;
 bool g_attempted = false;
 bool g_loaded = false;
@@ -163,7 +165,10 @@ bool LoadGuestShaders(const char* path) {
     return false;
   }
 
-  const size_t entries_bytes = size_t(header.slots) * 2 * sizeof(PackEntry);
+  // One entry past the two tables holds the point sprite geometry shader, which
+  // is ours rather than the guest's and so has no table slot of its own.
+  const size_t entry_count = size_t(header.slots) * 2 + 1;
+  const size_t entries_bytes = entry_count * sizeof(PackEntry);
   const size_t expected = sizeof(PackHeader) + entries_bytes +
                           size_t(header.input_count) * sizeof(GuestVertexInput) +
                           size_t(header.key_bytes) + size_t(header.literal_blocks) * 64 +
@@ -186,12 +191,16 @@ bool LoadGuestShaders(const char* path) {
 
   g_vertex.assign(header.slots, GuestShader{});
   g_pixel.assign(header.slots, GuestShader{});
-  for (uint32_t i = 0; i < header.slots * 2; ++i) {
-    GuestShader& out = i < header.slots ? g_vertex[i] : g_pixel[i - header.slots];
+  g_point_sprite = GuestShader{};
+  for (size_t i = 0; i < entry_count; ++i) {
+    GuestShader& out = i >= size_t(header.slots) * 2 ? g_point_sprite
+                       : i < header.slots            ? g_vertex[i]
+                                                     : g_pixel[i - header.slots];
     if (!Decode(records[i], header, blob, inputs, keys, literals, out)) {
       REXLOG_ERROR("guest_shaders: entry {} in {} is out of range", i, resolved);
       g_vertex.clear();
       g_pixel.clear();
+      g_point_sprite = GuestShader{};
       g_pack.clear();
       return false;
     }
@@ -210,6 +219,8 @@ const GuestShader& GuestVertexShader(uint32_t slot) {
 const GuestShader& GuestPixelShader(uint32_t slot) {
   return slot < g_pixel.size() ? g_pixel[slot] : g_absent;
 }
+
+const GuestShader& GuestPointSpriteShader() { return g_point_sprite; }
 
 uint32_t GuestVertexShaderCount() {
   uint32_t count = 0;
