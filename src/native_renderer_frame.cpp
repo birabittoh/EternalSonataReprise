@@ -712,8 +712,14 @@ bool ClearTargets(RenderCommandList* commands, GuestTarget* color, GuestTarget* 
     const float b = float(argb & 0xFFu) / 255.0f;
     commands->clearColor(0, RenderColor(r, g, b, a));
   }
-  if (depth)
-    commands->clearDepthStencil(clear_depth, clear_stencil, z, stencil);
+  // The guest asks for D3DCLEAR_STENCIL, but every depth target here is
+  // D32_FLOAT, which has no stencil plane. Asking to clear one names an aspect
+  // the image does not have: desktop drivers drop the extra bit, Adreno drops
+  // the whole clear, and depth stays at zero so every 3D fragment fails the
+  // depth test.
+  static_assert(kDepthFormat == RenderFormat::D32_FLOAT, "revisit the stencil clear below");
+  if (depth && clear_depth)
+    commands->clearDepthStencil(clear_depth, false, z, stencil);
 
   if (out_width != nullptr)
     *out_width = width;
