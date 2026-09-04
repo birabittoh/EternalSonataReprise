@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -532,7 +533,7 @@ uint64_t CacheKey(rex::Runtime* runtime) {
       h = HashUpdate(h, file.string());
       h = HashUpdate(h, std::to_string(std::filesystem::file_size(file, ec)));
       const auto when = std::filesystem::last_write_time(file, ec);
-      h = HashUpdate(h, std::to_string(when.time_since_epoch().count()));
+      h = HashUpdate(h, std::to_string(static_cast<int64_t>(when.time_since_epoch().count())));
     };
     for (const auto& [key, patch] : container.textures) {
       h = HashUpdate(h, key);
