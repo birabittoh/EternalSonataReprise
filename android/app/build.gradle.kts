@@ -14,6 +14,36 @@ plugins {
  * The CI workflow handles this staging automatically.
  */
 
+/*
+ * Version comes from the newest v* tag reachable from HEAD, so a CI build and
+ * a local build of the same commit agree. Override with -PappVersionName= or
+ * ES_VERSION_NAME when git history is unavailable (shallow clone, tarball).
+ */
+val appVersionName: String = run {
+    val override = (project.findProperty("appVersionName") as String?)
+        ?: System.getenv("ES_VERSION_NAME")
+    if (!override.isNullOrBlank()) return@run override.removePrefix("v")
+    try {
+        val proc = ProcessBuilder("git", "describe", "--tags", "--abbrev=0", "--match", "v*")
+            .directory(rootProject.projectDir)
+            .redirectErrorStream(true)
+            .start()
+        val out = proc.inputStream.bufferedReader().readText().trim()
+        if (proc.waitFor() == 0 && out.isNotEmpty()) out.removePrefix("v") else "0.0.0"
+    } catch (e: Exception) {
+        "0.0.0"
+    }
+}
+
+// Packed major/minor/patch so it rises monotonically across releases; Android
+// refuses to install an APK whose versionCode is lower than the installed one.
+val appVersionCode: Int = run {
+    val parts = Regex("""^(\d+)\.(\d+)\.(\d+)""").find(appVersionName)?.destructured
+        ?: return@run 1
+    val (major, minor, patch) = parts
+    maxOf(1, major.toInt() * 1_000_000 + minor.toInt() * 1_000 + patch.toInt())
+}
+
 android {
     namespace = "com.birabittoh.eternalsonata"
     compileSdk = 35
@@ -22,8 +52,8 @@ android {
         applicationId = "com.birabittoh.eternalsonata"
         minSdk = 28        // matches CMAKE_ANDROID_API in CMakePresets.json
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         ndk {
             // Only arm64 is supported right now.
@@ -49,28 +79,34 @@ android {
      *
      * Path, alias and passwords are overridable through gradle properties
      * (-PsideloadKeystore=...) or ES_KEYSTORE / ES_KEYSTORE_PASSWORD /
-     * ES_KEY_ALIAS / ES_KEY_PASSWORD in the environment, so CI can inject one
-     * from a secret. When no keystore is found the build falls back to debug
-     * signing, which is what CI does today.
+     * ES_KEY_ALIAS / ES_KEY_PASSWORD in the environment. CI restores the same
+     * keystore from the ES_KEYSTORE_BASE64 secret so its APKs and local ones
+     * are interchangeable. When no keystore is found the build falls back to
+     * debug signing.
      */
+    // CI exports these from repository secrets, which arrive as empty strings
+    // rather than unset when the secret does not exist, so blanks have to fall
+    // through to the default too.
+    fun signingSetting(property: String, env: String, fallback: String): String =
+        listOf(project.findProperty(property) as String?, System.getenv(env), fallback)
+            .firstOrNull { !it.isNullOrBlank() }!!
+
     // Resolved against the android/ directory, not app/, so the keystore sits
     // next to the Gradle build rather than inside the module.
     val sideloadKeystore = rootProject.file(
-        (project.findProperty("sideloadKeystore") as String?)
-            ?: System.getenv("ES_KEYSTORE")
-            ?: "keystore/sideload.jks"
+        signingSetting("sideloadKeystore", "ES_KEYSTORE", "keystore/sideload.jks")
     )
 
     signingConfigs {
         if (sideloadKeystore.isFile) {
             create("sideload") {
                 storeFile = sideloadKeystore
-                storePassword = (project.findProperty("sideloadKeystorePassword") as String?)
-                    ?: System.getenv("ES_KEYSTORE_PASSWORD") ?: "eternalsonata"
-                keyAlias = (project.findProperty("sideloadKeyAlias") as String?)
-                    ?: System.getenv("ES_KEY_ALIAS") ?: "eternalsonata"
-                keyPassword = (project.findProperty("sideloadKeyPassword") as String?)
-                    ?: System.getenv("ES_KEY_PASSWORD") ?: "eternalsonata"
+                storePassword = signingSetting(
+                    "sideloadKeystorePassword", "ES_KEYSTORE_PASSWORD", "eternalsonata")
+                keyAlias = signingSetting(
+                    "sideloadKeyAlias", "ES_KEY_ALIAS", "eternalsonata")
+                keyPassword = signingSetting(
+                    "sideloadKeyPassword", "ES_KEY_PASSWORD", "eternalsonata")
             }
         }
     }
