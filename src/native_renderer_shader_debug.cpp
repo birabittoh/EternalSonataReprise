@@ -67,7 +67,9 @@ const GuestShader& PackEntry(bool pixel, uint32_t slot) {
 // the details pane and nothing else.
 
 constexpr uint32_t kDebugMagic = 0x44475345;  // 'ESGD', little endian
-constexpr uint32_t kDebugVersion = 1;
+// Bumped to 2 when the point sprite geometry shader added one entry past the
+// two slot tables.
+constexpr uint32_t kDebugVersion = 2;
 constexpr char kDebugPackName[] = "guest_shaders_debug.bin";
 
 #pragma pack(push, 1)
@@ -118,7 +120,9 @@ bool EnsureTextPack() {
     return false;
   }
 
-  g_text_entries.resize(size_t(header.slots) * 2);
+  // One past the two tables for the point sprite geometry shader, which the
+  // overlay does not list but which has to be skipped to find the text.
+  g_text_entries.resize(size_t(header.slots) * 2 + 1);
   file.read(reinterpret_cast<char*>(g_text_entries.data()),
             std::streamsize(g_text_entries.size() * sizeof(DebugEntry)));
   if (!file) {

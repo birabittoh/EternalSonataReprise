@@ -1609,15 +1609,18 @@ void WaterProbeEndFrame() {
   g_water_frame = WaterProbeFrame();
 }
 
-// The alpha test constants, which are built rather than copied, so they are
-// cached on their two values instead of on the guest bytes behind them.
-struct AlphaTestCache {
-  uint32_t func = 0;
-  float ref = 0.0f;
+// The draw state constants, which are built rather than copied, so they are
+// cached on their values instead of on the guest bytes behind them. Alpha test,
+// param gen and the point sprite size all share one buffer because they are all
+// fixed function state with no host equivalent and a root descriptor is per
+// pipeline layout rather than per stage. See XeDrawState in
+// scripts/xenos_hlsl.py.
+struct DrawStateCache {
+  uint32_t words[8] = {};
   RenderBufferReference buffer;
   bool valid = false;
 };
-AlphaTestCache g_alpha_cache;
+DrawStateCache g_draw_state_cache;
 
 // A one-shot probe for the world-locked "colour filter" boundary. The terrain
 // pixel shader branches on a projected mask in texture slot 11, sampled at
@@ -2267,36 +2270,9 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   DumpConstantsForShader(call);
   WaterProbeNoteConstants(call);
 
-  // The alpha test. Not a guest bank: these are host-order values built from
-  // RB_COLORCONTROL and RB_ALPHA_REF, so nothing here swaps. The disabled case
-  // is sent as ALWAYS rather than skipped, because the buffer has to hold
-  // something and a stale enabled test would discard the whole draw.
-  //
-  // Reused between draws while the state holds, the same way the constant banks
-  // are: a 256 byte root CBV allocation per draw would otherwise be the largest
-  // single consumer of the arena, and this changes far less often than it is
-  // read.
   const bool alpha_enabled = call.state.valid && call.state.alpha_test_enabled;
   if (alpha_enabled)
     ++g_alpha_test_draws;
-  const uint32_t alpha_func = alpha_enabled ? uint32_t(call.state.alpha_func) : 7u;  // 7 is ALWAYS
-  if (!g_alpha_cache.valid || g_alpha_cache.func != alpha_func ||
-      g_alpha_cache.ref != call.state.alpha_ref) {
-    const Allocation allocation = ArenaAllocate(device, kUploadAlignment);
-    if (!allocation) {
-      Drop(kDropNoArena, "the alpha test constants could not be uploaded");
-      return false;
-    }
-    std::memcpy(allocation.cpu, &alpha_func, 4);
-    std::memcpy(allocation.cpu + 4, &call.state.alpha_ref, 4);
-    std::memset(allocation.cpu + 8, 0, 8);
-    g_alpha_cache.func = alpha_func;
-    g_alpha_cache.ref = call.state.alpha_ref;
-    g_alpha_cache.buffer = allocation.ref;
-    g_alpha_cache.valid = true;
-    g_constant_bytes += kUploadAlignment;
-  }
-  const RenderBufferReference alpha_test = g_alpha_cache.buffer;
 
   // The viewport, clamped to the target. The guest renders 720p through EDRAM
   // in bands, so its viewport can be taller than the surface it is bound to;
@@ -2370,6 +2346,60 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
       RenderViewport(x + 0.5f, y + 0.5f, width, height, g_viewport.min_z, g_viewport.max_z));
   commands->setScissors(
       RenderRect(int32_t(x), int32_t(y), int32_t(x + width), int32_t(y + height)));
+
+  // The draw state buffer. Not a guest bank: these are host-order values built
+  // from the register shadows, so nothing here swaps.
+  //
+  // The alpha test's disabled case is sent as ALWAYS rather than skipped,
+  // because the buffer has to hold something and a stale enabled test would
+  // discard the whole draw. Param gen is likewise sent as off for anything that
+  // is not a point list: the guest sets it per pixel shader and leaves it set,
+  // but its zw is only meaningful under the point sprite geometry shader, and
+  // overwriting an interpolator register with a stale one everywhere else would
+  // cost far more geometry than it fixed.
+  //
+  // The viewport reciprocal is what turns a point diameter in pixels into a clip
+  // space radius, so it is built here rather than in the pipeline: the same
+  // pipeline is used across viewport changes. Its y is negated under SPIR-V
+  // because the vertex shaders are compiled with -fvk-invert-y and the geometry
+  // shader is not, so the position it expands has already been flipped into
+  // Vulkan's y-down clip space while the sprite coordinate's v still runs from
+  // the top down.
+  //
+  // Reused between draws while the values hold, the same way the constant banks
+  // are: a 256 byte root CBV allocation per draw would otherwise be the largest
+  // single consumer of the arena, and this changes far less often than it is
+  // read.
+  const bool point_list = call.primitive_type == 1;
+  const float ndc_y_sign = PlumeShaderFormat() == RenderShaderFormat::SPIRV ? -1.0f : 1.0f;
+  uint32_t draw_state[8] = {};
+  const uint32_t alpha_func = alpha_enabled ? uint32_t(call.state.alpha_func) : 7u;  // 7 is ALWAYS
+  const uint32_t param_gen = point_list && call.state.param_gen_enabled ? 1u : 0u;
+  const float point_ndc[2] = {1.0f / width, ndc_y_sign / height};
+  draw_state[0] = alpha_func;
+  std::memcpy(&draw_state[1], &call.state.alpha_ref, 4);
+  draw_state[2] = call.state.param_gen_pos;
+  draw_state[3] = param_gen;
+  std::memcpy(&draw_state[4], &call.state.point_diameter_x, 4);
+  std::memcpy(&draw_state[5], &call.state.point_diameter_y, 4);
+  std::memcpy(&draw_state[6], &point_ndc[0], 4);
+  std::memcpy(&draw_state[7], &point_ndc[1], 4);
+  if (!g_draw_state_cache.valid ||
+      std::memcmp(g_draw_state_cache.words, draw_state, sizeof(draw_state)) != 0) {
+    const Allocation allocation = ArenaAllocate(device, kUploadAlignment);
+    if (!allocation) {
+      Drop(kDropNoArena, "the draw state constants could not be uploaded");
+      return false;
+    }
+    std::memcpy(allocation.cpu, draw_state, sizeof(draw_state));
+    std::memset(allocation.cpu + sizeof(draw_state), 0,
+                kUploadAlignment - sizeof(draw_state));
+    std::memcpy(g_draw_state_cache.words, draw_state, sizeof(draw_state));
+    g_draw_state_cache.buffer = allocation.ref;
+    g_draw_state_cache.valid = true;
+    g_constant_bytes += kUploadAlignment;
+  }
+  const RenderBufferReference alpha_test = g_draw_state_cache.buffer;
 
   commands->setGraphicsPipelineLayout(GuestPipelineLayout());
   commands->setPipeline(GuestPipelineObject(call.pipeline));
@@ -2541,7 +2571,7 @@ void BeginGuestDrawFrame(uint32_t slot) {
   g_stream_cache.clear();
   for (ConstantCacheEntry& cache : g_constant_cache)
     cache.valid = false;
-  g_alpha_cache.valid = false;
+  g_draw_state_cache.valid = false;
 
   // Safe here and only here: the caller has waited on this slot's fence, so the
   // frame that recorded draws against these sets is done with them.
@@ -2782,7 +2812,7 @@ void ShutdownGuestDraws() {
     cache.valid = false;
     cache.raw.clear();
   }
-  g_alpha_cache.valid = false;
+  g_draw_state_cache.valid = false;
   g_texture_sets.clear();
   g_sampler_sets.clear();
   for (SamplerCacheEntry& entry : g_samplers) {

@@ -116,6 +116,22 @@ struct GuestRenderState {
   GuestCompare alpha_func = GuestCompare::kAlways;
   float alpha_ref = 0.0f;
 
+  // SQ_PROGRAM_CNTL (0x2180, shadow device+10400) and SQ_CONTEXT_MISC (0x2181).
+  // PsParamGen is a register the sequencer synthesises for the pixel shader
+  // rather than something the vertex shader exports: `param_gen` says whether it
+  // is generated at all and `param_gen_pos` which interpolator register it
+  // replaces. Its zw is the point sprite coordinate, so a point sprite draw
+  // reads nothing without it. See the param gen block in scripts/xenos_hlsl.py.
+  bool param_gen_enabled = false;
+  uint32_t param_gen_pos = 0;
+
+  // PA_SU_POINT_SIZE (0x2280, shadow device+10468), as a diameter in guest
+  // pixels. The register holds a half extent in 12.4 fixed point, so the decode
+  // is the raw field times 2/16. This is what a POINT_LIST draw sizes its quads
+  // by when the vertex shader has no e63 export of its own.
+  float point_diameter_x = 0.0f;
+  float point_diameter_y = 0.0f;
+
   bool valid = false;
 };
 
