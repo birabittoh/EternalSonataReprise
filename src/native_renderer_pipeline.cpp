@@ -430,6 +430,28 @@ RenderBlend MapBlendFactor(uint32_t factor, bool alpha_half) {
   }
 }
 
+RenderStencilOp MapStencilOp(GuestStencilOp op) {
+  switch (op) {
+    case GuestStencilOp::kZero:
+      return RenderStencilOp::ZERO;
+    case GuestStencilOp::kReplace:
+      return RenderStencilOp::REPLACE;
+    case GuestStencilOp::kIncrementClamp:
+      return RenderStencilOp::INCREMENT_AND_CLAMP;
+    case GuestStencilOp::kDecrementClamp:
+      return RenderStencilOp::DECREMENT_AND_CLAMP;
+    case GuestStencilOp::kInvert:
+      return RenderStencilOp::INVERT;
+    case GuestStencilOp::kIncrementWrap:
+      return RenderStencilOp::INCREMENT_AND_WRAP;
+    case GuestStencilOp::kDecrementWrap:
+      return RenderStencilOp::DECREMENT_AND_WRAP;
+    case GuestStencilOp::kKeep:
+    default:
+      return RenderStencilOp::KEEP;
+  }
+}
+
 RenderBlendOperation MapBlendOp(uint32_t op) {
   switch (op) {
     case 0:
@@ -493,13 +515,15 @@ struct PipelineKey {
   uint32_t blend_control = 0;
   uint32_t mode_cntl = 0;
   uint32_t color_mask = 0;
+  uint32_t stencil_ref_mask = 0;
 
   bool operator==(const PipelineKey& other) const {
     if (vertex_slot != other.vertex_slot || pixel_slot != other.pixel_slot ||
         topology != other.topology || targets != other.targets ||
         declaration_identity != other.declaration_identity ||
         depth_control != other.depth_control || blend_control != other.blend_control ||
-        mode_cntl != other.mode_cntl || color_mask != other.color_mask) {
+        mode_cntl != other.mode_cntl || color_mask != other.color_mask ||
+        stencil_ref_mask != other.stencil_ref_mask) {
       return false;
     }
     for (uint32_t i = 0; i < kMaxPipelineStreams; ++i) {
@@ -816,6 +840,11 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
     key.blend_control = request.state.blend_control;
     key.mode_cntl = request.state.mode_cntl;
     key.color_mask = request.state.color_mask;
+    // Only when the test is on: RB_STENCILREFMASK keeps changing underneath
+    // draws that ignore it, and keying on it unconditionally would split the
+    // cache for nothing.
+    if (request.state.stencil_enabled)
+      key.stencil_ref_mask = request.state.stencil_ref_mask;
   }
 
   // Only the streams this declaration references, so an unrelated stream the
@@ -1025,11 +1054,30 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
     }
   }
 
-  // Stencil is read but not applied: the host reference and masks live in
-  // RB_STENCILREFMASK, and nothing has checked which of the two faces this title
-  // uses. Counted so a title that leans on it says so.
-  if (state.valid && state.stencil_enabled)
+  // Stencil. This title masks whole passes with it: the outline pass (ps_101)
+  // tests NOT_EQUAL against ref 0 through read mask 0x02, and the scene's own
+  // meshes tag that bit by writing the reference on zpass. Dropping it drew the
+  // outline over the entire screen, silhouetting flat ground and every mesh
+  // border, which is what this exists for.
+  //
+  // The reference is part of the pipeline rather than a command, so a draw that
+  // only changes it gets its own PSO; RB_STENCILREFMASK is in the key for that
+  // reason.
+  if (request.has_depth_target && state.valid && state.stencil_enabled) {
+    desc.stencilEnabled = true;
+    desc.stencilReadMask = state.stencil_read_mask;
+    desc.stencilWriteMask = state.stencil_write_mask;
+    desc.stencilReference = state.stencil_ref;
+    desc.stencilFrontFace.compareFunction = MapCompare(state.stencil_func);
+    desc.stencilFrontFace.failOp = MapStencilOp(state.stencil_fail_op);
+    desc.stencilFrontFace.passOp = MapStencilOp(state.stencil_zpass_op);
+    desc.stencilFrontFace.depthFailOp = MapStencilOp(state.stencil_zfail_op);
+    desc.stencilBackFace.compareFunction = MapCompare(state.stencil_func_bf);
+    desc.stencilBackFace.failOp = MapStencilOp(state.stencil_fail_op_bf);
+    desc.stencilBackFace.passOp = MapStencilOp(state.stencil_zpass_op_bf);
+    desc.stencilBackFace.depthFailOp = MapStencilOp(state.stencil_zfail_op_bf);
     ++g_stencil_draws;
+  }
 
   // Culling. `face` says which winding is front, and the two cull bits are
   // independent, so "cull both" is expressible on the console and is not on the
@@ -1101,12 +1149,14 @@ void LogPipelineSummary() {
   // Render state the host cannot express, all of it counted rather than
   // substituted for. Zeroes here are what say the mapping above is complete for
   // this title.
-  if (g_stencil_draws != 0 || g_cull_both_draws != 0 || g_blend_factor_unknown != 0) {
+  if (g_cull_both_draws != 0 || g_blend_factor_unknown != 0) {
     REXLOG_INFO(
-        "native_renderer:   render state not applied: stencil enabled on {} pipeline(s), both "
-        "faces culled on {}, unknown blend factor {}x",
-        g_stencil_draws, g_cull_both_draws, g_blend_factor_unknown);
+        "native_renderer:   render state not applied: both faces culled on {}, unknown blend "
+        "factor {}x",
+        g_cull_both_draws, g_blend_factor_unknown);
   }
+  if (g_stencil_draws != 0)
+    REXLOG_INFO("native_renderer:   stencil enabled on {} pipeline(s)", g_stencil_draws);
 
   // The vertex formats the declarations actually use, which is what says whether
   // the packed-format gap above is a real problem for this title or a

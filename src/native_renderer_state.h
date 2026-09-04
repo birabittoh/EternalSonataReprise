@@ -35,6 +35,18 @@
 
 namespace eternalsonata {
 
+// Xenos StencilOp, in RB_DEPTHCONTROL's three op fields per face.
+enum class GuestStencilOp : uint32_t {
+  kKeep = 0,
+  kZero = 1,
+  kReplace = 2,
+  kIncrementClamp = 3,
+  kDecrementClamp = 4,
+  kInvert = 5,
+  kIncrementWrap = 6,
+  kDecrementWrap = 7,
+};
+
 // Xenos CompareFunction, used by both the depth test and the alpha test.
 enum class GuestCompare : uint32_t {
   kNever = 0,
@@ -58,6 +70,26 @@ struct GuestRenderState {
   bool depth_write = false;
   bool stencil_enabled = false;
   GuestCompare depth_func = GuestCompare::kAlways;
+
+  // The stencil half of RB_DEPTHCONTROL, plus RB_STENCILREFMASK (0x210D, shadow
+  // device+10368). Two faces on the console; the back one is only its own when
+  // backface_enable is set, and otherwise repeats the front, which is what the
+  // hardware does. The masks and the reference are not per face here because a
+  // host pipeline has one of each, so RB_STENCILREFMASK_BF has nowhere to go;
+  // this title never sets backface_enable, so nothing is lost yet.
+  uint32_t stencil_ref_mask = 0;
+  bool stencil_backface_enabled = false;
+  GuestCompare stencil_func = GuestCompare::kAlways;
+  GuestStencilOp stencil_fail_op = GuestStencilOp::kKeep;
+  GuestStencilOp stencil_zpass_op = GuestStencilOp::kKeep;
+  GuestStencilOp stencil_zfail_op = GuestStencilOp::kKeep;
+  GuestCompare stencil_func_bf = GuestCompare::kAlways;
+  GuestStencilOp stencil_fail_op_bf = GuestStencilOp::kKeep;
+  GuestStencilOp stencil_zpass_op_bf = GuestStencilOp::kKeep;
+  GuestStencilOp stencil_zfail_op_bf = GuestStencilOp::kKeep;
+  uint32_t stencil_ref = 0;
+  uint32_t stencil_read_mask = 0xFF;
+  uint32_t stencil_write_mask = 0xFF;
 
   // PA_SU_SC_MODE_CNTL (0x2205, shadow device+10440).
   uint32_t mode_cntl = 0;

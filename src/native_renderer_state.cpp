@@ -48,6 +48,31 @@ GuestRenderState ReadGuestRenderState(uint8_t* base, uint32_t device) {
   state.depth_write = ((state.depth_control >> 2) & 1u) != 0;
   state.depth_func = GuestCompare((state.depth_control >> 4) & 7u);
 
+  // RB_DEPTHCONTROL again, the stencil half: backface_enable +7, then per face
+  // func +8, fail +11, zpass +14, zfail +17, and the back face's four at +20.
+  state.stencil_backface_enabled = ((state.depth_control >> 7) & 1u) != 0;
+  state.stencil_func = GuestCompare((state.depth_control >> 8) & 7u);
+  state.stencil_fail_op = GuestStencilOp((state.depth_control >> 11) & 7u);
+  state.stencil_zpass_op = GuestStencilOp((state.depth_control >> 14) & 7u);
+  state.stencil_zfail_op = GuestStencilOp((state.depth_control >> 17) & 7u);
+  if (state.stencil_backface_enabled) {
+    state.stencil_func_bf = GuestCompare((state.depth_control >> 20) & 7u);
+    state.stencil_fail_op_bf = GuestStencilOp((state.depth_control >> 23) & 7u);
+    state.stencil_zpass_op_bf = GuestStencilOp((state.depth_control >> 26) & 7u);
+    state.stencil_zfail_op_bf = GuestStencilOp((state.depth_control >> 29) & 7u);
+  } else {
+    state.stencil_func_bf = state.stencil_func;
+    state.stencil_fail_op_bf = state.stencil_fail_op;
+    state.stencil_zpass_op_bf = state.stencil_zpass_op;
+    state.stencil_zfail_op_bf = state.stencil_zfail_op;
+  }
+
+  // RB_STENCILREFMASK: ref +0, read mask +8, write mask +16, a byte each.
+  state.stencil_ref_mask = REX_LOAD_U32(device + Reg2100(0x210D));
+  state.stencil_ref = state.stencil_ref_mask & 0xFFu;
+  state.stencil_read_mask = (state.stencil_ref_mask >> 8) & 0xFFu;
+  state.stencil_write_mask = (state.stencil_ref_mask >> 16) & 0xFFu;
+
   // PA_SU_SC_MODE_CNTL: cull_front +0, cull_back +1, face +2 where 0 means
   // front is counter clockwise and 1 means clockwise.
   state.cull_front = (state.mode_cntl & 1u) != 0;

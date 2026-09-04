@@ -22,9 +22,13 @@
 #ifdef _WIN32
 #include "shaders/blitVert.hlsl.dxil.h"
 #include "shaders/blitFrag.hlsl.dxil.h"
+#include "shaders/depthResolveVert.hlsl.dxil.h"
+#include "shaders/depthResolveFrag.hlsl.dxil.h"
 #endif
 #include "shaders/blitVert.hlsl.spirv.h"
 #include "shaders/blitFrag.hlsl.spirv.h"
+#include "shaders/depthResolveVert.hlsl.spirv.h"
+#include "shaders/depthResolveFrag.hlsl.spirv.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -43,7 +47,11 @@ using namespace plume;
 // creates is an 8888 variant, and the ones that are not will show up as a
 // mismatch in the log rather than silently rendering wrong.
 constexpr RenderFormat kColorFormat = RenderFormat::B8G8R8A8_UNORM;
-constexpr RenderFormat kDepthFormat = RenderFormat::D32_FLOAT;
+// Depth carries a stencil plane because the guest masks whole passes with
+// stencil: see the stencil block in native_renderer_pipeline.cpp. The depth
+// half stays float32, which the outline pass depends on -- its second
+// difference of view depth resolves steps of 1e-5.
+constexpr RenderFormat kDepthFormat = RenderFormat::D32_FLOAT_S8_UINT;
 
 // A host image standing in for a region of EDRAM.
 //
@@ -119,6 +127,16 @@ struct ResolvedTexture {
   std::unique_ptr<RenderFramebuffer> readback_framebuffer;
   std::unique_ptr<RenderDescriptorSet> readback_set;
   RenderTextureLayout readback_source_layout = RenderTextureLayout::UNKNOWN;
+
+  // The same machinery for the depth resolve, which is a draw rather than a
+  // copy: depth carries a stencil plane and its copy group no longer matches
+  // this destination's R32_FLOAT. The set names one source image and is never
+  // rewritten, for the reason the readback set is not; if the depth target is
+  // ever rebuilt, the set is rebuilt with it and the old one retired.
+  std::unique_ptr<RenderFramebuffer> depth_framebuffer;
+  std::unique_ptr<RenderDescriptorSet> depth_set;
+  std::unique_ptr<RenderTextureView> depth_source_view;
+  const RenderTexture* depth_set_source = nullptr;
 
   // The guest's own copy of this image, for the guest's own CPU to read. See
   // native_renderer_readback.h: the copy into this buffer is recorded into the
@@ -386,6 +404,189 @@ bool EnsureDownscaleResources(RenderDevice* device) {
   }
 
   g_downscale.initialized = true;
+  return true;
+}
+
+// The depth resolve's own pipeline. Point sampled and built for R32_FLOAT,
+// which is what makes it a resolve rather than a filter; see
+// depth_resolve.frag.hlsl.
+struct DepthResolveResources {
+  std::unique_ptr<RenderShader> vertex_shader;
+  std::unique_ptr<RenderShader> pixel_shader;
+  std::unique_ptr<RenderPipelineLayout> pipeline_layout;
+  std::unique_ptr<RenderPipeline> pipeline;
+  std::unique_ptr<RenderSampler> sampler;
+  bool initialized = false;
+  bool failed = false;
+};
+
+DepthResolveResources g_depth_resolve;
+uint64_t g_depth_resolve_failed = 0;
+
+// The source rectangle, as depth_resolve.vert.hlsl reads it.
+struct DepthResolveConstants {
+  float uv_scale[2] = {1.0f, 1.0f};
+  float uv_offset[2] = {0.0f, 0.0f};
+};
+
+bool EnsureDepthResolveResources(RenderDevice* device) {
+  if (g_depth_resolve.initialized)
+    return true;
+  if (g_depth_resolve.failed || device == nullptr)
+    return false;
+
+  RenderDescriptorRange ranges[2];
+  RenderDescriptorSetDesc set_desc = DownscaleSetDesc(ranges);
+
+  const RenderPushConstantRange push_constants(0, 0, 0, sizeof(DepthResolveConstants),
+                                               RenderShaderStageFlag::VERTEX);
+
+  RenderPipelineLayoutDesc layout_desc;
+  layout_desc.pushConstantRanges = &push_constants;
+  layout_desc.pushConstantRangesCount = 1;
+  layout_desc.descriptorSetDescs = &set_desc;
+  layout_desc.descriptorSetDescsCount = 1;
+  layout_desc.allowInputLayout = false;
+  g_depth_resolve.pipeline_layout = device->createPipelineLayout(layout_desc);
+
+  const RenderShaderFormat shader_format = PlumeShaderFormat();
+#ifdef _WIN32
+  if (shader_format == RenderShaderFormat::DXIL) {
+    g_depth_resolve.vertex_shader = device->createShader(
+        depthResolveVertBlobDXIL, sizeof(depthResolveVertBlobDXIL), "VSMain", shader_format);
+    g_depth_resolve.pixel_shader = device->createShader(
+        depthResolveFragBlobDXIL, sizeof(depthResolveFragBlobDXIL), "PSMain", shader_format);
+  } else
+#endif
+      if (shader_format == RenderShaderFormat::SPIRV) {
+    g_depth_resolve.vertex_shader = device->createShader(
+        depthResolveVertBlobSPIRV, sizeof(depthResolveVertBlobSPIRV), "VSMain", shader_format);
+    g_depth_resolve.pixel_shader = device->createShader(
+        depthResolveFragBlobSPIRV, sizeof(depthResolveFragBlobSPIRV), "PSMain", shader_format);
+  }
+
+  RenderSamplerDesc sampler_desc;
+  sampler_desc.minFilter = RenderFilter::NEAREST;
+  sampler_desc.magFilter = RenderFilter::NEAREST;
+  sampler_desc.mipmapMode = RenderMipmapMode::NEAREST;
+  sampler_desc.addressU = RenderTextureAddressMode::CLAMP;
+  sampler_desc.addressV = RenderTextureAddressMode::CLAMP;
+  sampler_desc.addressW = RenderTextureAddressMode::CLAMP;
+  g_depth_resolve.sampler = device->createSampler(sampler_desc);
+
+  if (g_depth_resolve.vertex_shader && g_depth_resolve.pixel_shader &&
+      g_depth_resolve.pipeline_layout) {
+    RenderGraphicsPipelineDesc pipeline_desc;
+    pipeline_desc.pipelineLayout = g_depth_resolve.pipeline_layout.get();
+    pipeline_desc.vertexShader = g_depth_resolve.vertex_shader.get();
+    pipeline_desc.pixelShader = g_depth_resolve.pixel_shader.get();
+    pipeline_desc.renderTargetFormat[0] = RenderFormat::R32_FLOAT;
+    pipeline_desc.renderTargetCount = 1;
+    pipeline_desc.cullMode = RenderCullMode::NONE;
+    pipeline_desc.depthEnabled = false;
+    pipeline_desc.depthWriteEnabled = false;
+    pipeline_desc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
+    g_depth_resolve.pipeline = device->createGraphicsPipeline(pipeline_desc);
+  }
+
+  if (!g_depth_resolve.pipeline || !g_depth_resolve.sampler) {
+    REXLOG_ERROR(
+        "native_renderer: could not create the depth resolve pipeline, so nothing that reads the "
+        "resolved depth (the outline pass, for one) will see anything");
+    g_depth_resolve.failed = true;
+    return false;
+  }
+
+  g_depth_resolve.initialized = true;
+  return true;
+}
+
+// Resolve `target`'s depth into `destination`, `box` of the source landing at
+// (place_x, place_y). All in host pixels, both images at the same scale, which
+// is what the caller has already established.
+bool DepthResolveDraw(RenderCommandList* commands, GuestTarget* target,
+                      ResolvedTexture* destination, const RenderBox& box, int32_t place_x,
+                      int32_t place_y) {
+  RenderDevice* device = PlumeDevice();
+  if (device == nullptr || !EnsureDepthResolveResources(device)) {
+    ++g_depth_resolve_failed;
+    return false;
+  }
+
+  if (!destination->depth_framebuffer) {
+    const RenderTexture* attachment = destination->texture.get();
+    RenderFramebufferDesc fb_desc;
+    fb_desc.colorAttachments = &attachment;
+    fb_desc.colorAttachmentsCount = 1;
+    destination->depth_framebuffer = device->createFramebuffer(fb_desc);
+    if (!destination->depth_framebuffer) {
+      ++g_depth_resolve_failed;
+      return false;
+    }
+  }
+  if (!destination->depth_set || destination->depth_set_source != target->texture.get()) {
+    if (destination->depth_set)
+      g_retired_sets.push_back(std::move(destination->depth_set));
+    RenderDescriptorRange ranges[2];
+    RenderDescriptorSetDesc set_desc = DownscaleSetDesc(ranges);
+    destination->depth_set = device->createDescriptorSet(set_desc);
+    if (!destination->depth_set) {
+      ++g_depth_resolve_failed;
+      return false;
+    }
+    // An explicit view, not the default one. The depth image's own format is
+    // typeless underneath (R32G8X24 for D32_FLOAT_S8_UINT), and a null SRV
+    // description asks the driver to infer a view from a typeless resource,
+    // which is what removed the device here. Naming the format sends it through
+    // Plume's toDXGITextureView, which specialises it to the depth plane.
+    destination->depth_source_view =
+        target->texture->createTextureView(RenderTextureViewDesc::Texture2D(kDepthFormat));
+    if (!destination->depth_source_view) {
+      destination->depth_set.reset();
+      ++g_depth_resolve_failed;
+      return false;
+    }
+    destination->depth_set->setTexture(0, target->texture.get(), RenderTextureLayout::SHADER_READ,
+                                       destination->depth_source_view.get());
+    destination->depth_set->setSampler(1, g_depth_resolve.sampler.get());
+    destination->depth_set_source = target->texture.get();
+  }
+
+  // Before the framebuffer is bound, as in DownscaleToReadbackSource: a barrier
+  // inside a render pass ends it on Plume's Vulkan backend.
+  Transition(commands, target->texture.get(), target->layout, RenderBarrierStage::GRAPHICS,
+             RenderTextureLayout::SHADER_READ);
+  Transition(commands, destination->texture.get(), destination->layout,
+             RenderBarrierStage::GRAPHICS, RenderTextureLayout::COLOR_WRITE);
+
+  BindFramebuffer(commands, destination->depth_framebuffer.get());
+
+  // The viewport is the destination rectangle, so the covering triangle is
+  // clipped to exactly the region the copy would have written, and the push
+  // constants map that region back onto the source rectangle.
+  const float dest_w = float(box.right - box.left);
+  const float dest_h = float(box.bottom - box.top);
+  commands->setViewports(RenderViewport(float(place_x), float(place_y), dest_w, dest_h));
+  commands->setScissors(RenderRect(place_x, place_y, place_x + int32_t(dest_w),
+                                   place_y + int32_t(dest_h)));
+
+  const float source_w = float(target->host_width);
+  const float source_h = float(target->host_height);
+  if (source_w <= 0.0f || source_h <= 0.0f) {
+    ++g_depth_resolve_failed;
+    return false;
+  }
+  DepthResolveConstants push;
+  push.uv_scale[0] = dest_w / source_w;
+  push.uv_scale[1] = dest_h / source_h;
+  push.uv_offset[0] = float(box.left) / source_w;
+  push.uv_offset[1] = float(box.top) / source_h;
+
+  commands->setPipeline(g_depth_resolve.pipeline.get());
+  commands->setGraphicsPipelineLayout(g_depth_resolve.pipeline_layout.get());
+  commands->setGraphicsPushConstants(0, &push);
+  commands->setGraphicsDescriptorSet(destination->depth_set.get(), 0);
+  commands->drawInstanced(3, 1, 0, 0);
   return true;
 }
 
@@ -712,14 +913,14 @@ bool ClearTargets(RenderCommandList* commands, GuestTarget* color, GuestTarget* 
     const float b = float(argb & 0xFFu) / 255.0f;
     commands->clearColor(0, RenderColor(r, g, b, a));
   }
-  // The guest asks for D3DCLEAR_STENCIL, but every depth target here is
-  // D32_FLOAT, which has no stencil plane. Asking to clear one names an aspect
-  // the image does not have: desktop drivers drop the extra bit, Adreno drops
-  // the whole clear, and depth stays at zero so every 3D fragment fails the
-  // depth test.
-  static_assert(kDepthFormat == RenderFormat::D32_FLOAT, "revisit the stencil clear below");
-  if (depth && clear_depth)
-    commands->clearDepthStencil(clear_depth, false, z, stencil);
+  // Both aspects, as the guest asked. Naming an aspect the image does not have
+  // is what made this pass `false` while depth was D32_FLOAT: desktop drivers
+  // dropped the extra bit, Adreno dropped the whole clear, and depth stayed at
+  // zero so every 3D fragment failed the depth test.
+  static_assert(kDepthFormat == RenderFormat::D32_FLOAT_S8_UINT,
+                "the clear below names both aspects");
+  if (depth && (clear_depth || clear_stencil))
+    commands->clearDepthStencil(clear_depth, clear_stencil, z, stencil);
 
   if (out_width != nullptr)
     *out_width = width;
@@ -1169,16 +1370,12 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     created->scale = scale;
     const uint32_t image_width = dest_width * scale;
     const uint32_t image_height = dest_height * scale;
-    // A colour target rather than a plain texture: the copy needs it as a copy
-    // destination now, and a later draw needs to sample it, but the guest also
-    // resolves into textures it goes on to render into. Depth has no such case
-    // -- nothing renders into a resolved depth mask -- so a plain texture is
-    // enough, in the R32_FLOAT view of the same bits D32_FLOAT holds.
-    created->texture =
-        is_depth ? device->createTexture(RenderTextureDesc::Texture2D(image_width, image_height, 1,
-                                                                     RenderFormat::R32_FLOAT))
-                 : device->createTexture(
-                       RenderTextureDesc::ColorTarget(image_width, image_height, kColorFormat));
+    // A colour target either way: the copy needs it as a copy destination and a
+    // later draw needs to sample it, and depth is now resolved by a draw that
+    // renders into it (see DepthResolveDraw). Depth keeps its R32_FLOAT view of
+    // the depth plane's bits, which is what the guest reads back.
+    created->texture = device->createTexture(RenderTextureDesc::ColorTarget(
+        image_width, image_height, is_depth ? RenderFormat::R32_FLOAT : kColorFormat));
     if (created->texture) {
       REXLOG_INFO("native_renderer: resolve destination 0x{:08X} is {}x{} (host {}x{})",
                   dest_address, dest_width, dest_height, image_width, image_height);
@@ -1218,11 +1415,8 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     }
     const uint32_t image_width = destination->width * scale;
     const uint32_t image_height = destination->height * scale;
-    auto rebuilt =
-        is_depth ? rebuild_device->createTexture(RenderTextureDesc::Texture2D(
-                       image_width, image_height, 1, RenderFormat::R32_FLOAT))
-                 : rebuild_device->createTexture(
-                       RenderTextureDesc::ColorTarget(image_width, image_height, kColorFormat));
+    auto rebuilt = rebuild_device->createTexture(RenderTextureDesc::ColorTarget(
+        image_width, image_height, is_depth ? RenderFormat::R32_FLOAT : kColorFormat));
     if (!rebuilt) {
       ++g_resolves_dropped;
       return;
@@ -1243,6 +1437,11 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
       g_retired_framebuffers.push_back(std::move(destination->readback_framebuffer));
     if (destination->readback_set)
       g_retired_sets.push_back(std::move(destination->readback_set));
+    if (destination->depth_framebuffer)
+      g_retired_framebuffers.push_back(std::move(destination->depth_framebuffer));
+    if (destination->depth_set)
+      g_retired_sets.push_back(std::move(destination->depth_set));
+    destination->depth_set_source = nullptr;
     destination->readback_source_layout = RenderTextureLayout::UNKNOWN;
     PresentBlitForgetTexture();
 
@@ -1270,11 +1469,6 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     return;
   }
 
-  Transition(commands, target->texture.get(), target->layout, RenderBarrierStage::COPY,
-             RenderTextureLayout::COPY_SOURCE);
-  Transition(commands, destination->texture.get(), destination->layout, RenderBarrierStage::COPY,
-             RenderTextureLayout::COPY_DEST);
-
   // Where the copy lands, carrying over however far the source origin had to be
   // clamped so the two stay in step.
   const int32_t place_x = (dest_x < 0 ? 0 : dest_x) + (x1 - local_x);
@@ -1284,9 +1478,24 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   // rectangle and the point it lands at scale together.
   const int32_t s = int32_t(scale);
   const RenderBox box(x1 * s, y1 * s, x2 * s, y2 * s);
-  commands->copyTextureRegion(RenderTextureCopyLocation::Subresource(destination->texture.get()),
-                              RenderTextureCopyLocation::Subresource(target->texture.get()),
-                              uint32_t(place_x * s), uint32_t(place_y * s), 0, &box);
+
+  if (is_depth) {
+    // Not a copy: the depth image is D32_FLOAT_S8_UINT and the destination is
+    // R32_FLOAT, which are not copy compatible on either API now that there is
+    // a stencil plane. The draw samples the depth aspect instead.
+    if (!DepthResolveDraw(commands, target, destination, box, place_x * s, place_y * s)) {
+      ++g_resolves_dropped;
+      return;
+    }
+  } else {
+    Transition(commands, target->texture.get(), target->layout, RenderBarrierStage::COPY,
+               RenderTextureLayout::COPY_SOURCE);
+    Transition(commands, destination->texture.get(), destination->layout, RenderBarrierStage::COPY,
+               RenderTextureLayout::COPY_DEST);
+    commands->copyTextureRegion(RenderTextureCopyLocation::Subresource(destination->texture.get()),
+                                RenderTextureCopyLocation::Subresource(target->texture.get()),
+                                uint32_t(place_x * s), uint32_t(place_y * s), 0, &box);
+  }
 
   // And the same region again, out to a buffer the guest's own CPU can be given
   // if it ever asks. The region is the one just written, in the destination
