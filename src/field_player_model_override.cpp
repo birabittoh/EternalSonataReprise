@@ -525,6 +525,15 @@ REX_EXTERN(__imp__sub_820FCF80);
 
 REX_HOOK_RAW(sub_820FCF80) {
   const uint32_t map_manager = ctx.r3.u32;
+  if (eternalsonata::FieldPlayerModelOverride::Selection() ==
+          eternalsonata::FieldPlayerModelOverride::kSelectionFollowParty &&
+      eternalsonata::FieldPlayerModelOverride::DesiredCharacter() !=
+          g_applied_character &&
+      ctx.r5.u32 == 0) {
+    // Scripted party transitions can reuse the retail slot even when the
+    // character occupying it changed, so its own refresh must be forced.
+    ctx.r5.u32 = 1;
+  }
   __imp__sub_820FCF80(ctx, base);
 
   const int character = eternalsonata::FieldPlayerModelOverride::DesiredCharacter();
