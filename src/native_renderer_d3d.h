@@ -165,6 +165,10 @@ struct TextureFetch {
   uint32_t type = 0;          // FetchConstantType; 2 is kTexture
   uint32_t format = 0;        // xenos::TextureFormat
   uint32_t endianness = 0;
+  // sign_x/y/z/w, two bits each: 0 unsigned, 1 signed, 2 bias, 3 gamma. Picks
+  // between the unsigned and signed host format, the way xenia's texture cache
+  // keys a host format on signedness.
+  uint32_t sign = 0;
   uint32_t base_address = 0;  // already shifted up by 12, and aperture-fixed
   uint32_t raw_base_address = 0;  // the same field before the fixup, for reads
   uint32_t width = 0;         // stored minus one, corrected here

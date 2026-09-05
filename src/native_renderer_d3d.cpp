@@ -938,6 +938,7 @@ bool DecodeVertexDeclaration(uint8_t* base, uint32_t address, VertexDeclaration&
 TextureFetch DecodeTextureFetch(const uint32_t words[6]) {
   TextureFetch out;
   out.type = words[0] & 0x3u;
+  out.sign = (words[0] >> 2) & 0xFFu;
   out.pitch = ((words[0] >> 22) & 0x1FFu) << 5;
   out.tiled = ((words[0] >> 31) & 1u) != 0;
 

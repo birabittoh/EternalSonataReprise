@@ -182,6 +182,7 @@ enum class Expand {
   kNone,
   k5_6_5,
   k1_5_5_5,
+  k8_8,
   kBC1,
   kBC2,
   kBC3,
@@ -225,8 +226,8 @@ uint32_t HostBlockBytes(const FormatInfo& info) {
   return info.expand == Expand::kNone ? info.block_bytes : 4;
 }
 
-bool MapTextureFormat(uint32_t format, FormatInfo& out) {
-  switch (format) {
+bool MapTextureFormat(const TextureFetch& fetch, FormatInfo& out) {
+  switch (fetch.format) {
     // k_1_5_5_5 and k_5_6_5. The in-game photo feature renders into one of
     // these, and a refused format is drawn with the 1x1 white placeholder, which
     // is exactly what a photo that comes out completely white looks like.
@@ -243,18 +244,24 @@ bool MapTextureFormat(uint32_t format, FormatInfo& out) {
     case 6:
       out = {RenderFormat::B8G8R8A8_UNORM, 4, 1};
       return true;
-    // k_8_8, a two channel 8 bit texture. Only two guest formats are ever
-    // refused across a whole run, this one and 22 (k_24_8, a depth format), so
-    // every non-depth texture the mirror has been unable to produce is this.
-    // Two channels of eight bits is what a title stores a tangent space normal
-    // or a DuDv offset map in, which is why the water's normal map slot reads
-    // as the 1x1 white placeholder.
+    // k_8_8, a two channel 8 bit texture, which is what a title stores a
+    // tangent space normal or a DuDv offset map in.
     //
-    // Nothing else has to change for it: the untiler, the endian swap and the
-    // upload are all written in terms of block_bytes, and a 16 bit addressable
-    // unit is one the Xenos tiler already handles.
+    // Widened to four channels rather than bound as a two channel host format,
+    // because the hardware does not read zero out of the missing ones: xenia's
+    // host format table gives k_8_8 the swizzle RGGG, so both b and a sample
+    // back as g. The terrain material depends on it: its normal map fetch is
+    // `tfetch2D r11.xyz_` and the tangent frame it builds normalizes
+    // (x, y, z) with z coming from that third channel, so a zero there leaves a
+    // normal lying in the tangent plane, N.L collapses to zero for every light,
+    // and the ground draws with its ambient term alone.
+    //
+    // The signedness is the fetch's, for the same reason: xenia keys the host
+    // format on it, and a normal map read as unsigned has no negative half.
     case 10:
-      out = {RenderFormat::R8G8_UNORM, 2, 1};
+      out = {(fetch.sign & 3u) != 0 ? RenderFormat::R8G8B8A8_SNORM
+                                    : RenderFormat::R8G8B8A8_UNORM,
+             2, 1, Expand::k8_8};
       return true;
     // The guest unit stays 8 or 16 bytes over a 4x4 block either way: that is
     // what the untiler and the endian swap address in, and it is what guest
@@ -652,6 +659,15 @@ void ExpandRows(const std::vector<uint8_t>& in, uint32_t in_row_bytes, uint32_t 
     for (uint32_t x = 0; x < width; ++x) {
       uint16_t value = 0;
       std::memcpy(&value, source + size_t(x) * 2, 2);
+      // RGGG, and in RGBA order rather than the BGRA the other two widen into,
+      // because the host format here keeps the guest's channel order.
+      if (expand == Expand::k8_8) {
+        dest[x * 4 + 0] = source[size_t(x) * 2 + 0];
+        dest[x * 4 + 1] = source[size_t(x) * 2 + 1];
+        dest[x * 4 + 2] = source[size_t(x) * 2 + 1];
+        dest[x * 4 + 3] = source[size_t(x) * 2 + 1];
+        continue;
+      }
       uint8_t r = 0, g = 0, b = 0, a = 255;
       if (expand == Expand::k5_6_5) {
         const uint32_t r5 = (value >> 11) & 0x1F;
@@ -997,7 +1013,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   }
 
   FormatInfo info;
-  if (!MapTextureFormat(fetch.format, info)) {
+  if (!MapTextureFormat(fetch, info)) {
     ++g_refused_format;
     if (fetch.format < 64 && !g_format_reported[fetch.format]) {
       g_format_reported[fetch.format] = true;
