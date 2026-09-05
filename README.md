@@ -21,6 +21,25 @@ Just extract the archive, run the executable and it will prompt you to extract t
 
 **This project is built and tested against the PAL version of the game.**
 
+## Troubleshooting
+
+### Black screen before the window title appears
+
+On some Windows systems, SDL's DirectInput device scan can block while Windows
+queries an unresponsive HID device. The window stays black and unresponsive
+for a while and then starts normally after the HID request times out. Any HID
+input device, including a mouse, can be queried during controller discovery
+and delay the entire startup process.
+
+To bypass the DirectInput scan for one launch, start the game from PowerShell:
+
+```powershell
+$env:SDL_JOYSTICK_DIRECTINPUT = "0"
+.\eternalsonata.exe
+```
+
+This setting disables support for controllers that require DirectInput.
+
 ## Building from scratch
 
 ### 0. Install dependencies
