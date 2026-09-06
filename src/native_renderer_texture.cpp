@@ -182,6 +182,7 @@ enum class Expand {
   kNone,
   k5_6_5,
   k1_5_5_5,
+  k8_8,
   kBC1,
   kBC2,
   kBC3,
@@ -243,18 +244,9 @@ bool MapTextureFormat(uint32_t format, FormatInfo& out) {
     case 6:
       out = {RenderFormat::B8G8R8A8_UNORM, 4, 1};
       return true;
-    // k_8_8, a two channel 8 bit texture. Only two guest formats are ever
-    // refused across a whole run, this one and 22 (k_24_8, a depth format), so
-    // every non-depth texture the mirror has been unable to produce is this.
-    // Two channels of eight bits is what a title stores a tangent space normal
-    // or a DuDv offset map in, which is why the water's normal map slot reads
-    // as the 1x1 white placeholder.
-    //
-    // Nothing else has to change for it: the untiler, the endian swap and the
-    // upload are all written in terms of block_bytes, and a 16 bit addressable
-    // unit is one the Xenos tiler already handles.
+    // Preserve unsigned sampling while allowing constant channels in the fetch swizzle.
     case 10:
-      out = {RenderFormat::R8G8_UNORM, 2, 1};
+      out = {RenderFormat::R8G8B8A8_UNORM, 2, 1, Expand::k8_8};
       return true;
     // The guest unit stays 8 or 16 bytes over a 4x4 block either way: that is
     // what the untiler and the endian swap address in, and it is what guest
@@ -421,14 +413,22 @@ std::vector<std::unique_ptr<MirroredTexture>> g_textures;
 // scan of it is paid per texture slot per draw. At a few hundred entries that
 // was the single largest cost in the frame; the working set here reaches ~390.
 //
-// The key is exact rather than a hash of the fields: a fetch's address is 32
-// bits, its format 6, and its width and height 13 each, which is 64 bits with
-// nothing to spare. So a match on the key is a match on all four fields and the
-// entries need no further comparison.
-//
 // Nothing is ever evicted (see the note on the cache being unbounded), so this
 // only ever grows alongside g_textures and needs no invalidation.
-std::unordered_map<uint64_t, MirroredTexture*> g_texture_index;
+struct TextureCacheKey {
+  uint64_t layout;
+  uint32_t interpretation;
+  bool operator==(const TextureCacheKey&) const = default;
+};
+
+struct TextureCacheHash {
+  size_t operator()(const TextureCacheKey& key) const {
+    return std::hash<uint64_t>{}(key.layout) ^
+           (std::hash<uint32_t>{}(key.interpretation) * size_t(0x9E3779B9u));
+  }
+};
+
+std::unordered_map<TextureCacheKey, MirroredTexture*, TextureCacheHash> g_texture_index;
 
 uint64_t TextureKey(uint32_t address, uint32_t format, uint32_t width, uint32_t height) {
   return (uint64_t(address) << 32) | (uint64_t(format & 0x3F) << 26) |
@@ -644,7 +644,7 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
 // filled so that an all-ones channel comes out as 255 rather than 248.
 void ExpandRows(const std::vector<uint8_t>& in, uint32_t in_row_bytes, uint32_t width,
                 uint32_t height, Expand expand, uint32_t out_row_bytes,
-                std::vector<uint8_t>& out) {
+                std::vector<uint8_t>& out, const TextureFetch& fetch) {
   out.assign(size_t(out_row_bytes) * height, 0);
   for (uint32_t y = 0; y < height; ++y) {
     const uint8_t* source = in.data() + size_t(y) * in_row_bytes;
@@ -652,6 +652,14 @@ void ExpandRows(const std::vector<uint8_t>& in, uint32_t in_row_bytes, uint32_t 
     for (uint32_t x = 0; x < width; ++x) {
       uint16_t value = 0;
       std::memcpy(&value, source + size_t(x) * 2, 2);
+      if (expand == Expand::k8_8) {
+        const uint8_t r = source[size_t(x) * 2];
+        const uint8_t g = source[size_t(x) * 2 + 1];
+        const uint8_t channels[8] = {r, g, 0, 255, 0, 255, 0, 0};
+        for (uint32_t channel = 0; channel < 4; ++channel)
+          dest[x * 4 + channel] = channels[(fetch.swizzle >> (channel * 3)) & 7u];
+        continue;
+      }
       uint8_t r = 0, g = 0, b = 0, a = 255;
       if (expand == Expand::k5_6_5) {
         const uint32_t r5 = (value >> 11) & 0x1F;
@@ -898,7 +906,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
 
     std::vector<uint8_t> widened;
     ExpandRows(texels, read_row_bytes, width_blocks, height_blocks, info.expand, upload_row_bytes,
-               widened);
+               widened, fetch);
     texels.swap(widened);
   }
 
@@ -1007,7 +1015,10 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     return nullptr;
   }
 
-  const uint64_t key = TextureKey(fetch.base_address, fetch.format, fetch.width, fetch.height);
+  // Expanded texels depend on the fetch mapping even when the guest bytes match.
+  const TextureCacheKey key{
+      TextureKey(fetch.base_address, fetch.format, fetch.width, fetch.height),
+      fetch.format == 10 ? fetch.swizzle : 0u};
   const auto found = g_texture_index.find(key);
   if (found != g_texture_index.end()) {
     MirroredTexture* candidate = found->second;
