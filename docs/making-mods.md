@@ -44,7 +44,9 @@ mods/<name>/
     cfdata/adg01.e/
       text/ITA/17.txt                 one string, one language
       textures/face_alg.tga.png       one texture, by its name in the container
-      meshes/head.gltf                one mesh, by its name in the container
+      meshes/head.nshp                one native mesh chunk, by embedded name
+      skeletons/0.nbn2                its skeleton, by ordinal
+      animations/walk.nmtn            one animation, by embedded name
     map/nyaza.e/
       textures/3.png                  by ordinal, when a chunk has no name
     text/ITA.csv                      a whole translation, any container
@@ -52,19 +54,17 @@ mods/<name>/
   icon.png
 ```
 
-Nothing is written to disk and the game's own loader is untouched: the host
-decodes the container in memory (see
+The game's installed files and loader are untouched. The host decodes the
+container (see
 [asset-formats.md](asset-formats.md) §2), splices in every patch, and serves
-the result uncompressed, always rewriting that file's `index.vmtoc` record
-(codec flag to stored, size to the new decoded length) to match. The loader
-sizes its allocation from that record, so the two are never served apart. The
-shipped game files stay exactly as installed.
+the result into a generation-keyed cache under the user data directory. It
+always writes that generation's matching `index.vmtoc` record with the codec
+set to stored and the size set to the new decoded length. The loader sizes its
+allocation from that record, so the two are never served apart.
 
-> **Implementation status.** Text patches (both the per-string `.txt` files and
-> the `.csv` tables) and texture patches are live. Meshes and audio are
-> described here but are not spliced yet: the host logs the patch and leaves the
-> container alone. `scripts/es_asset.py` and the asset browser overlay do not
-> exist yet either.
+> **Implementation status.** Text, texture, and native NSHP, NBN2, and NMTN
+> patches are live. Audio is described here but is not substituted yet.
+> `scripts/es_asset.py` and the asset browser overlay do not exist yet either.
 
 ### Finding what to replace
 
@@ -78,13 +78,15 @@ e0020_020.e#tex:face_alg.tga      texture chunk by its embedded name
 e0020_020.e#tex:3                 fourth texture chunk, in file order
 map/nyaza.e#mesh:head             mesh (NSHP chunk) by name
 map/nyaza.e#mesh:2                third mesh, in file order
+e0020_020.e#skeleton:0            first NBN2 skeleton
+e0020_020.e#animation:walk        NMTN animation by embedded name
 ```
 
 The guest path is the path as it appears in `index.vmtoc`: lowercase,
 `/`-separated, no `game:\` prefix. Prefer names over ordinals wherever a name
 exists; an ordinal shifts if the container ever changes, a name doesn't.
 
-To list them:
+The planned `es_asset.py` tooling will list and extract them with:
 
 ```bash
 python scripts/es_asset.py list "extracted/e/cfdata/adg01.e"
@@ -92,11 +94,11 @@ python scripts/es_asset.py list --kind text --lang ITA "extracted/e/cfdata/*.e"
 python scripts/es_asset.py extract "cfdata/adg01.e#tex:face_alg.tga" -o face.png
 ```
 
-`extract` writes the shipped asset out in the same format the replacement goes
-back in (`.txt`, `.png`, `.gltf`), so the round trip is: extract, edit, drop
-the result into your mod under the matching name. In-game, the **asset browser
-overlay** does the same thing live for whatever the current area has loaded,
-with a Reload button that re-reads your `assets/` folder without restarting.
+`extract` is planned to write the shipped asset out in the same format the
+replacement goes back in, so the intended round trip is: extract, edit, drop
+the result into your mod under the matching name. The planned in-game asset
+browser will do the same thing for assets loaded by the current area, with a
+Reload button that re-reads `assets/`.
 
 ### The folder layout in full
 
@@ -107,7 +109,9 @@ The path under `assets/` *is* the reference, spelled as directories:
 | `cfdata/adg01.e#text:ITA/17` | `assets/cfdata/adg01.e/text/ITA/17.txt` |
 | `cfdata/adg01.e#text:1/ITA/17` | `assets/cfdata/adg01.e/text/1/ITA/17.txt` |
 | `e0020_020.e#tex:face_alg.tga` | `assets/e0020_020.e/textures/face_alg.tga.png` |
-| `map/nyaza.e#mesh:head` | `assets/map/nyaza.e/meshes/head.gltf` |
+| `map/nyaza.e#mesh:head` | `assets/map/nyaza.e/meshes/head.nshp` |
+| `e0020_020.e#skeleton:0` | `assets/e0020_020.e/skeletons/0.nbn2` |
+| `e0020_020.e#animation:walk` | `assets/e0020_020.e/animations/walk.nmtn` |
 | `sound/cxs/bgm042.cxs#music` | `assets/sound/cxs/bgm042.cxs/music.ogg` |
 | `sound/spc001.csf#sfx:7` | `assets/sound/spc001.csf/sfx/7.wav` |
 | whole file `sound/vo/field01.wav` | `assets/sound/vo/field01.wav` |
@@ -117,8 +121,9 @@ Language folders are the game's own fourccs without the trailing space: `JPN`,
 language, which is what a mod shipping a single translation usually wants.
 
 Textures accept `.png` or an uncompressed 32-bit `.dds` (export a compressed
-one as `.png` instead); meshes accept `.gltf`/`.glb`. A
-whole-file replacement is just the file itself with no `<container>/<kind>/`
+one as `.png` instead). Model graph replacements use complete native `.nshp`,
+`.nbn2`, and `.nmtn` chunks. A whole-file replacement is just the file itself
+with no `<container>/<kind>/`
 folder in the path, which is the same thing the `game/` overlay does, kept here
 so a mod doesn't need two trees.
 
@@ -135,7 +140,7 @@ btldata/script/tutorial/t0001.e,0,4,"Premi A per attaccare."
 
 `blob` is almost always `0` and may be left empty. The text is the game's own
 single-byte encoding, not UTF-8 (see [Text encoding](#text-encoding) below);
-`es_asset.py` writes and validates these tables.
+The planned `es_asset.py` validator will check these tables before shipping.
 
 ### Size rules
 
@@ -162,9 +167,9 @@ allow_resize = true
 Resizing is well tested for text and is what a translation normally needs. It
 does not apply to textures at all: a texture is always spliced into the pixel
 region the shipped chunk already owns, so the replacement has to carry the
-original's dimensions and the container never changes length. Meshes
-essentially never re-encode to the original size, so mesh replacement usually
-implies `allow_resize`.
+original's dimensions and the container never changes length. Model chunks
+often change size, so NSHP, NBN2, and NMTN replacement usually implies
+`allow_resize`.
 
 ### What a replacement may and may not change
 
@@ -180,14 +185,31 @@ layout the host cannot reproduce (three chunks in the whole game, all
 non-power-of-two), and the handful of chunks that are not DXT. Both are logged
 naming the mod and the reference.
 
-Meshes are constrained by the rest of the container, not by this feature:
+Models are patched as a graph. Geometry is an NSHP chunk, its skeleton is an
+NBN2 chunk, and its animations are NMTN chunks. All three may grow or shrink:
+the host updates enclosing NOBJ and NMDL sizes, repairs `.e` relocations, then
+serves the final container with a matching stored `index.vmtoc` record.
 
-- Bone indices must be slots the original chunk's bone list already has. A
-  replacement can't introduce a bone, because the skeleton is a separate NBN2
-  chunk that every animation is authored against.
+```text
+mods/<name>/assets/
+  e0020_020.e/meshes/body.nshp
+  e0020_020.e/skeletons/0.nbn2
+  e0020_020.e/animations/walk.nmtn
+```
+
+Native chunk files include their eight-byte magic and size header. The runtime
+deliberately consumes the exact NSHP, NBN2, and NMTN encodings the game uses;
+the studio documents and exports the decoded model graph for authoring tools.
+
+Model changes are constrained by the rest of the container:
+
+- An isolated NSHP replacement keeps its original local bone list, so its bone
+  indices must remain within that list. To introduce bones, replace the NSHP,
+  NBN2, and affected NMTN chunks together.
 - Every face section's material id must be one the container already declares.
   A replacement can't introduce a new material or texture slot.
-- Vertex and index counts are otherwise free.
+- Vertex, index, bone, track, and keyframe counts are otherwise free when
+  `allow_resize` is enabled.
 
 ### Music and sound effects
 
@@ -308,28 +330,34 @@ if (set_text) {
 }
 ```
 
+The same ABI exposes structured mesh replacement through
+`EternalSonataReplaceMesh`, full fidelity `.nshp` replacement through
+`EternalSonataReplaceMeshFromFile`, native NBN2 skeleton and NMTN animation
+replacement through their memory and file variants, and decoded whole-file
+replacement through `EternalSonataReplaceFile`. These calls remain ABI version
+1 because the project has not released this API yet.
+
 Things worth knowing before you use it:
 
 - **Always null-check the `GetProcAddress` result**, and call
   `EternalSonataAssetAbiVersion()` if you need to branch on host capability.
-- **Register before the container is first opened.** `OnModuleLaunched()` is
-  early enough for everything but boot-time files; a patch registered later
-  applies the next time that container loads, which for field data is the next
-  area transition. `EternalSonataInvalidateAsset()` forces the rebuild for a
-  file already cached.
+- **Register before the startup cache build.** A patch registered afterward
+  applies when `EternalSonataInvalidateAsset()` rebuilds and remounts the
+  served cache. In the current implementation any invalidation rebuilds the
+  complete cache generation, even when a guest path is supplied.
 - **Register lazily for anything large.** Pushing thousands of patches up front
   to cover text the player may never reach is wasteful;
   `EternalSonataRegisterAssetProvider()` calls you once per container, at the
   moment the host is about to build its patched image, and you register only
   what that container needs. The `"eternalsonata.asset.loading"` event on the
   shared registry bus is the same point without the header.
-- **Providers and asset events run on the guest thread doing the load.** They
-  must be thread-safe, must not touch ImGui, and must not block: the game is
-  waiting on that file.
+- **Providers and asset events run on the cache-building thread.** They must
+  be thread-safe, must not touch ImGui, and must not block startup or an
+  explicit rebuild.
 - **`EternalSonataEnumerateAssets()` decodes every file it touches.** It's a
   browse call for tooling and startup scans, not something to run per frame.
 - **Nothing here runs guest code**, so no call is queued and none can be
-  refused for game state. Patches take effect at load time.
+  refused for game state. Patches take effect after the served cache is built.
 
 ### Textures the hash path already covers
 
