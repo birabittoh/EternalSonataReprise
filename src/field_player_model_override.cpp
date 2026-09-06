@@ -15,6 +15,8 @@
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
 
+REXCVAR_DECLARE(bool, field_action_default_model);
+
 namespace {
 
 // Character number -> cached model-handle slot address, per sub_821A2B38's
@@ -300,6 +302,11 @@ std::atomic<int> g_selection{eternalsonata::FieldPlayerModelOverride::kSelection
 // which is how a selection change is made to take effect.
 int g_applied_character = -1;
 
+// Guest thread only. Special field actions temporarily use the retail model
+// because their authored motion banks are not compatible with the other rigs.
+bool g_default_model_for_action = false;
+bool g_action_model_respawn = false;
+
 }  // namespace
 
 namespace eternalsonata {
@@ -495,7 +502,7 @@ REX_HOOK_RAW(sub_820EE7D8) {
     const int character = eternalsonata::FieldPlayerModelOverride::DesiredCharacter();
     // 0 means leave the game's own handle alone; record it so the resume hook
     // knows the live object is back on the default model.
-    if (character == 0) {
+    if (character == 0 || g_default_model_for_action) {
       g_applied_character = 0;
     } else if (character >= 1 && character <= 10) {
       const u32 handle = REX_LOAD_U32(kCharacterSlotAddr[character - 1]);
@@ -509,6 +516,33 @@ REX_HOOK_RAW(sub_820EE7D8) {
     }
   }
   __imp__sub_820EE7D8(ctx, base);
+}
+
+// Field interaction motions occupy slots 16 through 35 and were only authored
+// for the retail field characters. Swap to the retail model before starting
+// one, then restore the selected model when locomotion resumes.
+REX_EXTERN(__imp__sub_820F1490);
+
+REX_HOOK_RAW(sub_820F1490) {
+  const uint32_t object = ctx.r3.u32;
+  const int32_t animation = ctx.r4.s32;
+  const uint32_t leader = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
+  if (!g_action_model_respawn && object == leader &&
+      eternalsonata::FieldPlayerModelOverride::DesiredCharacter() >= 1) {
+    const bool enabled = REXCVAR_GET(field_action_default_model);
+    const bool starts_action = enabled && animation >= 16 && animation <= 35;
+    const bool resumes_normal = g_default_model_for_action &&
+                                (!enabled || (animation >= 0 && animation < 16));
+    if ((starts_action && !g_default_model_for_action) ||
+        (resumes_normal && g_default_model_for_action)) {
+      g_default_model_for_action = starts_action;
+      g_action_model_respawn = true;
+      RespawnFieldLeader(kMapManager, REX_LOAD_U32(kCurrentPartySlot), 1u);
+      g_action_model_respawn = false;
+      ctx.r3.u32 = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
+    }
+  }
+  __imp__sub_820F1490(ctx, base);
 }
 
 // ---------------------------------------------------------------------------
