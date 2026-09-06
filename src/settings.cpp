@@ -123,6 +123,9 @@ REXCVAR_DEFINE_STRING(field_leader_model, "default", "Eternal Sonata",
     .allowed({"default", "party", "allegretto", "polka", "beat", "frederic", "viola", "salsa",
               "jazz", "falsetto", "claves", "march"});
 
+REXCVAR_DEFINE_BOOL(field_action_default_model, true, "Eternal Sonata",
+                    "Use the story character model for field interaction animations");
+
 namespace eternalsonata {
 
 namespace {
@@ -209,11 +212,11 @@ constexpr std::array kGameDefaults = {
 // native renderer registers it itself (see RegisterNativeRendererCvars), so
 // exactly one of the two owns the name by the time this UI draws. The generic
 // loops no-op on a name that is not registered, same as vulkan_device.
-constexpr std::array<const char*, 13> kBasicCvarNames = {
+constexpr std::array<const char*, 14> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
-    "audio_mute", "audio_volume", "field_leader_model", "host_timer_resolution_ms",
-    "vsync"};
+    "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
+    "host_timer_resolution_ms", "vsync"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -500,6 +503,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 #endif
     DrawLanguageRow();
     DrawFieldLeaderModelRow();
+    DrawFieldActionModelRow();
     DrawInputBackendRow();
 #if REX_HAS_VULKAN
     if (rex::cvar::GetFlagByName("gpu_backend") == "vulkan") {
@@ -944,6 +948,25 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
                      eternalsonata::FieldPlayerModelOverride::kSelectionCount)) {
       // SetSelection persists via SaveUserSettings itself.
       eternalsonata::FieldPlayerModelOverride::SetSelection(selection);
+    }
+    ImGui::PopID();
+  }
+
+  void DrawFieldActionModelRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("field_action_default_model");
+    if (!entry)
+      return;
+    ImGui::TextUnformatted("Compatible Actions");
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Temporarily use the story character model for chest, door, climbing, "
+          "and other field animations. Disable this to keep the selected model, "
+          "which may contort because those animations use an incompatible rig.");
+    }
+    ImGui::SameLine(180.0f);
+    ImGui::PushID("field_action_default_model");
+    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
+      SaveBasic();
     }
     ImGui::PopID();
   }
