@@ -2358,13 +2358,14 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // overwriting an interpolator register with a stale one everywhere else would
   // cost far more geometry than it fixed.
   //
-  // The viewport reciprocal is what turns a point diameter in pixels into a clip
-  // space radius, so it is built here rather than in the pipeline: the same
-  // pipeline is used across viewport changes. Its y is negated under SPIR-V
-  // because the vertex shaders are compiled with -fvk-invert-y and the geometry
-  // shader is not, so the position it expands has already been flipped into
-  // Vulkan's y-down clip space while the sprite coordinate's v still runs from
-  // the top down.
+  // The scaled viewport reciprocal turns a point diameter in guest pixels into
+  // a clip space radius. This includes target_scale because both PA_SU_POINT_SIZE
+  // and a vertex shader's e63 export are measured on the guest's 1280x720 pixel
+  // grid, while width and height describe the supersampled host target. Its y is
+  // negated under SPIR-V because the vertex shaders are compiled with
+  // -fvk-invert-y and the geometry shader is not, so the position it expands has
+  // already been flipped into Vulkan's y-down clip space while the sprite
+  // coordinate's v still runs from the top down.
   //
   // Reused between draws while the values hold, the same way the constant banks
   // are: a 256 byte root CBV allocation per draw would otherwise be the largest
@@ -2375,7 +2376,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   uint32_t draw_state[8] = {};
   const uint32_t alpha_func = alpha_enabled ? uint32_t(call.state.alpha_func) : 7u;  // 7 is ALWAYS
   const uint32_t param_gen = point_list && call.state.param_gen_enabled ? 1u : 0u;
-  const float point_ndc[2] = {1.0f / width, ndc_y_sign / height};
+  const float point_scale = float(target_scale);
+  const float point_ndc[2] = {point_scale / width, ndc_y_sign * point_scale / height};
   draw_state[0] = alpha_func;
   std::memcpy(&draw_state[1], &call.state.alpha_ref, 4);
   draw_state[2] = call.state.param_gen_pos;
