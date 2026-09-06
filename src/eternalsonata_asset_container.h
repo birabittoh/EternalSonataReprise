@@ -64,10 +64,10 @@ bool DecodeAsset(const uint8_t* data, size_t size, uint32_t decoded_size, uint8_
 extern const char* const kBtxLanguages[7];  // "JPN ", "USA ", ... trailing space
 
 struct BtxLang {
-  std::string fourcc;      // 4 chars, trailing space included
-  size_t sub_offset = 0;   // absolute file offset of the sub-block
-  size_t sub_length = 0;   // its byte length
-  uint32_t f12 = 0;        // +0x0C, a constant the reader ignores but we keep
+  std::string fourcc;     // 4 chars, trailing space included
+  size_t sub_offset = 0;  // absolute file offset of the sub-block
+  size_t sub_length = 0;  // its byte length
+  uint32_t f12 = 0;       // +0x0C, a constant the reader ignores but we keep
   std::map<uint32_t, std::string> entries;
 };
 
@@ -88,9 +88,9 @@ std::vector<BtxBlob> FindBtxBlobs(const std::vector<uint8_t>& data);
 
 enum class EditStatus {
   kOk,
-  kNotFound,   // no such blob / language / string id
-  kTooLarge,   // did not fit and ALLOW_RESIZE was not set
-  kBadData,    // the container is not a well-formed .e
+  kNotFound,  // no such blob / language / string id
+  kTooLarge,  // did not fit and ALLOW_RESIZE was not set
+  kBadData,   // the container is not a well-formed .e
 };
 
 struct TextEdit {
@@ -109,6 +109,11 @@ struct TextEdit {
 // Returns true if `data` was modified. Edits that could not be applied are
 // marked in `edits` and leave the container untouched.
 bool ApplyTextEdits(std::vector<uint8_t>& data, std::vector<TextEdit>& edits);
+
+// Replaces one range in the bulk section and adjusts the container header and
+// list B relocation values that point beyond it.
+bool ReplaceContainerRange(std::vector<uint8_t>& data, size_t offset, size_t old_size,
+                           const std::vector<uint8_t>& replacement);
 
 // ---------------------------------------------------------------------------
 // Encoding

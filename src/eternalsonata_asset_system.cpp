@@ -1,9 +1,8 @@
 // eternalsonata - Granular asset replacement.
 //
 // See eternalsonata_asset_system.h for how patches reach the guest, and
-// eternalsonata_asset_api.h for the contract this implements. Text and textures
-// are wired up; meshes and audio parse and report
-// ETERNALSONATA_ASSET_UNSUPPORTED rather than pretending to work.
+// eternalsonata_asset_api.h for the contract this implements. Text, textures,
+// and model chunks are wired up. Audio reports UNSUPPORTED.
 
 #include "eternalsonata_asset_system.h"
 
@@ -27,6 +26,7 @@
 
 #include "eternalsonata_asset_api.h"
 #include "eternalsonata_asset_container.h"
+#include "eternalsonata_asset_mesh.h"
 #include "eternalsonata_asset_texture.h"
 
 namespace eternalsonata {
@@ -53,6 +53,7 @@ struct TextPatch {
 
 struct RawPatch {
   std::filesystem::path host_file;
+  std::vector<uint8_t> bytes;
   std::string owner;
   int priority = 0;
 };
@@ -69,9 +70,32 @@ struct TexturePatch {
   int priority = 0;
 };
 
+struct MeshPatch {
+  std::string selector;
+  std::filesystem::path host_file;
+  std::vector<EternalSonataVertex> vertices;
+  std::vector<uint32_t> indices;
+  std::vector<EternalSonataFaceSection> sections;
+  bool allow_resize = false;
+  std::string owner;
+  int priority = 0;
+};
+
+struct ModelChunkPatch {
+  std::string selector;
+  std::filesystem::path host_file;
+  std::vector<uint8_t> bytes;
+  bool allow_resize = false;
+  std::string owner;
+  int priority = 0;
+};
+
 struct Container {
   std::map<std::string, TextPatch> text;  // key: canonical reference suffix
   std::map<std::string, TexturePatch> textures;
+  std::map<std::string, MeshPatch> meshes;
+  std::map<std::string, ModelChunkPatch> skeletons;
+  std::map<std::string, ModelChunkPatch> animations;
   std::optional<RawPatch> raw;
 };
 
@@ -210,6 +234,38 @@ EternalSonataAssetResult RegisterTexture(const std::string& guest_path, TextureP
   return ETERNALSONATA_ASSET_OK;
 }
 
+EternalSonataAssetResult RegisterMesh(const std::string& guest_path, MeshPatch patch, bool force) {
+  auto& container = state().containers[guest_path];
+  const std::string key = "mesh:" + patch.selector;
+  auto it = container.meshes.find(key);
+  if (it != container.meshes.end()) {
+    const bool wins = force || patch.priority < it->second.priority;
+    REXLOG_WARN("assets: '{}' and '{}' both patch {}#{}; '{}' wins", it->second.owner, patch.owner,
+                guest_path, key, wins ? patch.owner : it->second.owner);
+    if (!wins)
+      return ETERNALSONATA_ASSET_CONFLICT;
+  }
+  container.meshes[key] = std::move(patch);
+  return ETERNALSONATA_ASSET_OK;
+}
+
+EternalSonataAssetResult RegisterModelChunk(const std::string& guest_path, const char* kind,
+                                            ModelChunkPatch patch, bool force) {
+  auto& patches = std::string_view(kind) == "skeleton" ? state().containers[guest_path].skeletons
+                                                       : state().containers[guest_path].animations;
+  const std::string key = std::string(kind) + ":" + patch.selector;
+  auto it = patches.find(key);
+  if (it != patches.end()) {
+    const bool wins = force || patch.priority < it->second.priority;
+    REXLOG_WARN("assets: '{}' and '{}' both patch {}#{}; '{}' wins", it->second.owner, patch.owner,
+                guest_path, key, wins ? patch.owner : it->second.owner);
+    if (!wins)
+      return ETERNALSONATA_ASSET_CONFLICT;
+  }
+  patches[key] = std::move(patch);
+  return ETERNALSONATA_ASSET_OK;
+}
+
 // A chunk answers to its ordinal or to the name it carries, with or without the
 // extension the artist's file had.
 bool TextureMatches(const assets::TextureRef& ref, size_t index, const std::string& selector) {
@@ -228,6 +284,19 @@ bool TextureMatches(const assets::TextureRef& ref, size_t index, const std::stri
     return true;
   const size_t dot = name.rfind('.');
   return dot != std::string::npos && name.compare(0, dot, want) == 0;
+}
+
+bool MeshMatches(const assets::MeshRef& ref, size_t index, const std::string& selector) {
+  if (IsAllDigits(selector))
+    return size_t(std::stoul(selector)) == index;
+  if (ref.name.empty())
+    return false;
+  auto lower = [](std::string value) {
+    for (char& c : value)
+      c = char(std::tolower(uint8_t(c)));
+    return value;
+  };
+  return lower(ref.name) == lower(selector);
 }
 
 // ---------------------------------------------------------------------------
@@ -473,7 +542,11 @@ void ScanModAssets(const std::string& mod_name, int priority,
                     guest_path, mod_name);
         continue;
       }
-      container.raw = RawPatch{it->path(), mod_name, priority};
+      RawPatch patch;
+      patch.host_file = it->path();
+      patch.owner = mod_name;
+      patch.priority = priority;
+      container.raw = std::move(patch);
       continue;
     }
 
@@ -494,6 +567,30 @@ void ScanModAssets(const std::string& mod_name, int priority,
       patch.owner = mod_name;
       patch.priority = priority;
       RegisterTexture(guest_path, std::move(patch), false);
+    } else if ((kind == "meshes" || kind == "mesh") && tail.size() == 1) {
+      MeshPatch patch;
+      patch.selector = it->path().stem().string();
+      patch.host_file = it->path();
+      patch.allow_resize = AllowResizeFor(toml, guest_path, "mesh:" + patch.selector);
+      patch.owner = mod_name;
+      patch.priority = priority;
+      RegisterMesh(guest_path, std::move(patch), false);
+    } else if ((kind == "skeletons" || kind == "skeleton") && tail.size() == 1) {
+      ModelChunkPatch patch;
+      patch.selector = it->path().stem().string();
+      patch.host_file = it->path();
+      patch.allow_resize = AllowResizeFor(toml, guest_path, "skeleton:" + patch.selector);
+      patch.owner = mod_name;
+      patch.priority = priority;
+      RegisterModelChunk(guest_path, "skeleton", std::move(patch), false);
+    } else if ((kind == "animations" || kind == "animation") && tail.size() == 1) {
+      ModelChunkPatch patch;
+      patch.selector = it->path().stem().string();
+      patch.host_file = it->path();
+      patch.allow_resize = AllowResizeFor(toml, guest_path, "animation:" + patch.selector);
+      patch.owner = mod_name;
+      patch.priority = priority;
+      RegisterModelChunk(guest_path, "animation", std::move(patch), false);
     } else {
       REXLOG_WARN("assets: mod '{}' ships {} for {}, which this build cannot patch yet", mod_name,
                   kind, guest_path);
@@ -516,7 +613,7 @@ uint64_t HashUpdate(uint64_t h, std::string_view s) {
 // the decode once per install rather than once per launch.
 uint64_t CacheKey(rex::Runtime* runtime) {
   uint64_t h = 0xCBF29CE484222325ull;
-  h = HashUpdate(h, "v1");
+  h = HashUpdate(h, "v2");
   for (const auto& mod : runtime->EnabledModsInfo()) {
     h = HashUpdate(h, mod.folder_name);
     h = HashUpdate(h, mod.version);
@@ -543,8 +640,40 @@ uint64_t CacheKey(rex::Runtime* runtime) {
       else
         hash_file(patch.host_file);
     }
-    if (container.raw)
-      hash_file(container.raw->host_file);
+    for (const auto& [key, patch] : container.meshes) {
+      h = HashUpdate(h, key);
+      if (!patch.host_file.empty()) {
+        hash_file(patch.host_file);
+        continue;
+      }
+      h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(patch.vertices.data()),
+                                         patch.vertices.size() * sizeof(EternalSonataVertex)));
+      h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(patch.indices.data()),
+                                         patch.indices.size() * sizeof(uint32_t)));
+      h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(patch.sections.data()),
+                                         patch.sections.size() * sizeof(EternalSonataFaceSection)));
+      h = HashUpdate(h, patch.allow_resize ? "r" : "p");
+    }
+    auto hash_chunks = [&](const auto& patches) {
+      for (const auto& [key, patch] : patches) {
+        h = HashUpdate(h, key);
+        if (patch.host_file.empty())
+          h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(patch.bytes.data()),
+                                             patch.bytes.size()));
+        else
+          hash_file(patch.host_file);
+        h = HashUpdate(h, patch.allow_resize ? "r" : "p");
+      }
+    };
+    hash_chunks(container.skeletons);
+    hash_chunks(container.animations);
+    if (container.raw) {
+      if (container.raw->host_file.empty())
+        h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(container.raw->bytes.data()),
+                                           container.raw->bytes.size()));
+      else
+        hash_file(container.raw->host_file);
+    }
   }
   return h;
 }
@@ -570,7 +699,8 @@ std::filesystem::path ResolveBaseFile(rex::Runtime* runtime, const std::string& 
 }
 
 // The one value the TOC writer consumes: patched bytes and the record they must
-// be served with are produced together, and there is no other way to get either.
+// be served with are produced together, and there is no other way to get
+// either.
 struct PatchedContainer {
   std::vector<uint8_t> bytes;
   std::string guest_path;
@@ -602,8 +732,7 @@ void ApplyTexturePatches(const std::string& guest_path, const Container& contain
       if (!TextureMatches(textures[i], i, patch.selector))
         continue;
       matched = true;
-      const EditStatus status =
-          assets::ApplyTextureEdit(result.bytes, textures[i], image, &error);
+      const EditStatus status = assets::ApplyTextureEdit(result.bytes, textures[i], image, &error);
       if (status == EditStatus::kOk) {
         ++result.patches_applied;
         REXLOG_INFO("assets: mod '{}' replaced {}#{} ({}x{} {})", patch.owner, guest_path, key,
@@ -621,6 +750,176 @@ void ApplyTexturePatches(const std::string& guest_path, const Container& contain
   }
 }
 
+void ApplyMeshPatches(const std::string& guest_path, const Container& container,
+                      PatchedContainer& result) {
+  for (const auto& [key, patch] : container.meshes) {
+    const auto meshes = assets::FindMeshes(result.bytes);
+    bool matched = false;
+    for (size_t i = 0; i < meshes.size(); ++i) {
+      if (!MeshMatches(meshes[i], i, patch.selector))
+        continue;
+      matched = true;
+      if (!patch.host_file.empty()) {
+        std::vector<uint8_t> bytes;
+        if (!ReadWholeFile(patch.host_file, bytes) || bytes.size() < 8 ||
+            std::memcmp(bytes.data(), "NSHP", 4) != 0) {
+          REXLOG_WARN("assets: mod '{}' mesh {}#{} is not an NSHP chunk", patch.owner, guest_path,
+                      key);
+          break;
+        }
+        const uint32_t declared = uint32_t(bytes[4]) << 24 | uint32_t(bytes[5]) << 16 |
+                                  uint32_t(bytes[6]) << 8 | bytes[7];
+        if (declared != bytes.size() ||
+            (!patch.allow_resize && bytes.size() > meshes[i].chunk_size)) {
+          REXLOG_WARN("assets: mod '{}' mesh {}#{} has an invalid size", patch.owner, guest_path,
+                      key);
+          break;
+        }
+        if (!patch.allow_resize) {
+          bytes.resize(meshes[i].chunk_size, 0);
+          bytes[4] = uint8_t(meshes[i].chunk_size >> 24);
+          bytes[5] = uint8_t(meshes[i].chunk_size >> 16);
+          bytes[6] = uint8_t(meshes[i].chunk_size >> 8);
+          bytes[7] = uint8_t(meshes[i].chunk_size);
+        }
+        if (assets::ReplaceContainerRange(result.bytes, meshes[i].offset, meshes[i].chunk_size,
+                                          bytes))
+          ++result.patches_applied;
+        break;
+      }
+      EternalSonataMesh mesh{};
+      mesh.vertices = patch.vertices.data();
+      mesh.vertex_count = uint32_t(patch.vertices.size());
+      mesh.indices = patch.indices.data();
+      mesh.index_count = uint32_t(patch.indices.size());
+      mesh.sections = patch.sections.data();
+      mesh.section_count = uint32_t(patch.sections.size());
+      std::string error;
+      const auto status =
+          assets::ReplaceMeshChunk(result.bytes, meshes[i], mesh, patch.allow_resize, &error);
+      if (status == assets::ModelEditStatus::kOk) {
+        ++result.patches_applied;
+        REXLOG_INFO("assets: mod '{}' replaced {}#{}", patch.owner, guest_path, key);
+      } else {
+        REXLOG_WARN("assets: mod '{}' mesh {}#{} {}", patch.owner, guest_path, key, error);
+      }
+      break;
+    }
+    if (!matched) {
+      REXLOG_WARN("assets: mod '{}' patches {}#{}, which the container does not have", patch.owner,
+                  guest_path, key);
+    }
+  }
+}
+
+bool LoadModelChunk(const ModelChunkPatch& patch, const char magic[4], std::vector<uint8_t>& bytes,
+                    std::string* error) {
+  if (patch.host_file.empty()) {
+    bytes = patch.bytes;
+  } else if (!ReadWholeFile(patch.host_file, bytes)) {
+    *error = "could not be read";
+    return false;
+  }
+  if (bytes.size() < 8 || std::memcmp(bytes.data(), magic, 4) != 0) {
+    *error = "does not contain the expected native chunk";
+    return false;
+  }
+  const uint32_t declared =
+      uint32_t(bytes[4]) << 24 | uint32_t(bytes[5]) << 16 | uint32_t(bytes[6]) << 8 | bytes[7];
+  if (declared != bytes.size()) {
+    *error = "chunk size field does not match the file length";
+    return false;
+  }
+  bool valid = false;
+  if (std::memcmp(magic, "NBN2", 4) == 0) {
+    const auto found = assets::FindSkeletons(bytes);
+    valid = found.size() == 1 && found[0].offset == 0;
+  } else {
+    const auto found = assets::FindAnimations(bytes);
+    valid = found.size() == 1 && found[0].offset == 0;
+  }
+  if (!valid) {
+    *error = "native chunk structure is malformed";
+    return false;
+  }
+  return true;
+}
+
+void ApplyModelChunkPatches(const std::string& guest_path, const Container& container,
+                            PatchedContainer& result) {
+  for (const auto& [key, patch] : container.skeletons) {
+    const auto refs = assets::FindSkeletons(result.bytes);
+    const size_t index =
+        IsAllDigits(patch.selector) ? size_t(std::stoul(patch.selector)) : size_t(-1);
+    if (index >= refs.size()) {
+      REXLOG_WARN("assets: mod '{}' patches {}#{}, which the container does not have", patch.owner,
+                  guest_path, key);
+      continue;
+    }
+    std::vector<uint8_t> bytes;
+    std::string error;
+    if (!LoadModelChunk(patch, "NBN2", bytes, &error)) {
+      REXLOG_WARN("assets: mod '{}' skeleton {}#{} {}", patch.owner, guest_path, key, error);
+      continue;
+    }
+    if (!patch.allow_resize && bytes.size() > refs[index].chunk_size) {
+      REXLOG_WARN("assets: mod '{}' skeleton {}#{} does not fit", patch.owner, guest_path, key);
+      continue;
+    }
+    if (!patch.allow_resize) {
+      bytes.resize(refs[index].chunk_size, 0);
+      bytes[4] = uint8_t(refs[index].chunk_size >> 24);
+      bytes[5] = uint8_t(refs[index].chunk_size >> 16);
+      bytes[6] = uint8_t(refs[index].chunk_size >> 8);
+      bytes[7] = uint8_t(refs[index].chunk_size);
+    }
+    if (assets::ReplaceContainerRange(result.bytes, refs[index].offset, refs[index].chunk_size,
+                                      bytes))
+      ++result.patches_applied;
+  }
+  for (const auto& [key, patch] : container.animations) {
+    const auto refs = assets::FindAnimations(result.bytes);
+    size_t index = size_t(-1);
+    if (IsAllDigits(patch.selector)) {
+      index = size_t(std::stoul(patch.selector));
+    } else {
+      for (size_t i = 0; i < refs.size(); ++i)
+        if (std::equal(refs[i].name.begin(), refs[i].name.end(), patch.selector.begin(),
+                       patch.selector.end(), [](char a, char b) {
+                         return std::tolower(uint8_t(a)) == std::tolower(uint8_t(b));
+                       })) {
+          index = i;
+          break;
+        }
+    }
+    if (index >= refs.size()) {
+      REXLOG_WARN("assets: mod '{}' patches {}#{}, which the container does not have", patch.owner,
+                  guest_path, key);
+      continue;
+    }
+    std::vector<uint8_t> bytes;
+    std::string error;
+    if (!LoadModelChunk(patch, "NMTN", bytes, &error)) {
+      REXLOG_WARN("assets: mod '{}' animation {}#{} {}", patch.owner, guest_path, key, error);
+      continue;
+    }
+    if (!patch.allow_resize && bytes.size() > refs[index].chunk_size) {
+      REXLOG_WARN("assets: mod '{}' animation {}#{} does not fit", patch.owner, guest_path, key);
+      continue;
+    }
+    if (!patch.allow_resize) {
+      bytes.resize(refs[index].chunk_size, 0);
+      bytes[4] = uint8_t(refs[index].chunk_size >> 24);
+      bytes[5] = uint8_t(refs[index].chunk_size >> 16);
+      bytes[6] = uint8_t(refs[index].chunk_size >> 8);
+      bytes[7] = uint8_t(refs[index].chunk_size);
+    }
+    if (assets::ReplaceContainerRange(result.bytes, refs[index].offset, refs[index].chunk_size,
+                                      bytes))
+      ++result.patches_applied;
+  }
+}
+
 std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const assets::Toc& toc,
                                                const std::string& guest_path,
                                                const Container& container) {
@@ -628,12 +927,15 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
   result.guest_path = guest_path;
 
   if (container.raw) {
-    if (!ReadWholeFile(container.raw->host_file, result.bytes)) {
+    if (container.raw->host_file.empty()) {
+      result.bytes = container.raw->bytes;
+    } else if (!ReadWholeFile(container.raw->host_file, result.bytes)) {
       REXLOG_ERROR("assets: could not read {}", container.raw->host_file.string());
       return std::nullopt;
     }
     result.patches_applied = 1;
-    if (container.text.empty() && container.textures.empty())
+    if (container.text.empty() && container.textures.empty() && container.meshes.empty() &&
+        container.skeletons.empty() && container.animations.empty())
       return result;
   } else {
     const auto base = ResolveBaseFile(runtime, guest_path);
@@ -676,12 +978,15 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
         ++result.patches_applied;
         break;
       case EditStatus::kNotFound:
-        REXLOG_WARN("assets: mod '{}' patches {}#text:{}/{}, which the container does not have",
-                    owners[i]->owner, guest_path, owners[i]->lang, owners[i]->id);
+        REXLOG_WARN(
+            "assets: mod '{}' patches {}#text:{}/{}, which the container "
+            "does not have",
+            owners[i]->owner, guest_path, owners[i]->lang, owners[i]->id);
         break;
       case EditStatus::kTooLarge:
         REXLOG_WARN(
-            "assets: mod '{}' text {}#text:{}/{} does not fit and did not ask for allow_resize",
+            "assets: mod '{}' text {}#text:{}/{} does not fit and did "
+            "not ask for allow_resize",
             owners[i]->owner, guest_path, owners[i]->lang, owners[i]->id);
         break;
       case EditStatus::kBadData:
@@ -692,6 +997,15 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
   }
 
   ApplyTexturePatches(guest_path, container, result);
+  ApplyMeshPatches(guest_path, container, result);
+  ApplyModelChunkPatches(guest_path, container, result);
+  if (!container.meshes.empty() || !container.skeletons.empty() || !container.animations.empty()) {
+    std::string error;
+    if (!assets::ValidateModelGraph(result.bytes, &error)) {
+      REXLOG_ERROR("assets: model graph in {} is invalid: {}", guest_path, error);
+      return std::nullopt;
+    }
+  }
   return result;
 }
 
@@ -746,8 +1060,10 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir) {
     // The record and the bytes are one unit: this is the only writer of the
     // served TOC, and it only ever runs on what BuildContainer returned.
     if (!toc.SetStored(guest_path, uint32_t(patched->bytes.size()))) {
-      REXLOG_WARN("assets: {} has no TOC record; it will load raw, sized by the file itself",
-                  guest_path);
+      REXLOG_WARN(
+          "assets: {} has no TOC record; it will load raw, sized by "
+          "the file itself",
+          guest_path);
     }
     ++built;
     REXLOG_INFO("assets: patched {} ({} patches, {} bytes)", guest_path, patched->patches_applied,
@@ -766,7 +1082,9 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir) {
     return false;
   }
   if (!WriteWholeFile(dir / "index.vmtoc", toc.bytes())) {
-    REXLOG_ERROR("assets: could not write the patched index.vmtoc, so nothing will be served");
+    REXLOG_ERROR(
+        "assets: could not write the patched index.vmtoc, so nothing "
+        "will be served");
     std::filesystem::remove_all(dir, ec);
     return false;
   }
@@ -799,14 +1117,16 @@ bool Remount(rex::Runtime* runtime, const std::filesystem::path& cache_dir) {
       !REXCVAR_GET(allow_game_relative_writes));
   device->set_overlay_roots(std::move(roots));
   if (!device->Initialize() || !vfs->RegisterDevice(std::move(device))) {
-    REXLOG_ERROR("assets: could not remount the game partition; patches will not be served");
+    REXLOG_ERROR(
+        "assets: could not remount the game partition; patches will "
+        "not be served");
     return false;
   }
 
   auto null_device = std::make_unique<rex::filesystem::NullDevice>(
-      kNullMount, std::initializer_list<std::string>{std::string("\\Partition0"),
-                                                     std::string("\\Cache0"),
-                                                     std::string("\\Cache1")});
+      kNullMount,
+      std::initializer_list<std::string>{std::string("\\Partition0"), std::string("\\Cache0"),
+                                         std::string("\\Cache1")});
   if (null_device->Initialize())
     vfs->RegisterDevice(std::move(null_device));
   return true;
@@ -893,8 +1213,8 @@ extern "C" REX_MOD_PLUGIN_EXPORT uint32_t EternalSonataAssetAbiVersion(void) {
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataSetText(const char* ref,
-                                                                              const char* text,
-                                                                              uint32_t flags) {
+                                                                               const char* text,
+                                                                               uint32_t flags) {
   Reference parsed;
   if (!ParseReference(ref, &parsed) || parsed.kind != "text" || !text)
     return ETERNALSONATA_ASSET_BAD_REF;
@@ -916,8 +1236,8 @@ extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataSetText(c
                       std::move(patch), (flags & ETERNALSONATA_ASSET_FORCE) != 0);
 }
 
-extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataGetText(
-    const char* ref, char* buffer, uint32_t capacity, uint32_t* out_length) {
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataGetText(const char* ref, char* buffer, uint32_t capacity, uint32_t* out_length) {
   Reference parsed;
   if (!ParseReference(ref, &parsed) || parsed.kind != "text")
     return ETERNALSONATA_ASSET_BAD_REF;
@@ -986,14 +1306,64 @@ extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataEnumerate
                  textures[i].chunk_size, user))
       return ETERNALSONATA_ASSET_OK;
   }
+
+  const auto meshes = assets::FindMeshes(data);
+  for (size_t i = 0; i < meshes.size(); ++i) {
+    const std::string ref = path + "#mesh:" + std::to_string(i);
+    if (!visitor(ref.c_str(), ETERNALSONATA_ASSET_KIND_MESH, meshes[i].name.c_str(),
+                 meshes[i].chunk_size, user))
+      return ETERNALSONATA_ASSET_OK;
+  }
+  const auto skeletons = assets::FindSkeletons(data);
+  for (size_t i = 0; i < skeletons.size(); ++i) {
+    const std::string ref = path + "#skeleton:" + std::to_string(i);
+    if (!visitor(ref.c_str(), ETERNALSONATA_ASSET_KIND_SKELETON, "", skeletons[i].chunk_size, user))
+      return ETERNALSONATA_ASSET_OK;
+  }
+  const auto animations = assets::FindAnimations(data);
+  for (size_t i = 0; i < animations.size(); ++i) {
+    const std::string ref = path + "#animation:" + std::to_string(i);
+    if (!visitor(ref.c_str(), ETERNALSONATA_ASSET_KIND_ANIMATION, animations[i].name.c_str(),
+                 animations[i].chunk_size, user))
+      return ETERNALSONATA_ASSET_OK;
+  }
   return ETERNALSONATA_ASSET_OK;
 }
 
-extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataClearAssetPatch(
-    const char* ref) {
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataClearAssetPatch(const char* ref) {
   Reference parsed;
-  if (!ParseReference(ref, &parsed) || (parsed.kind != "text" && parsed.kind != "tex"))
+  if (!ParseReference(ref, &parsed) ||
+      (parsed.kind != "text" && parsed.kind != "tex" && parsed.kind != "mesh" &&
+       parsed.kind != "skeleton" && parsed.kind != "animation" && !parsed.kind.empty()))
     return ETERNALSONATA_ASSET_BAD_REF;
+  if (parsed.kind.empty()) {
+    std::lock_guard<std::recursive_mutex> lock(state().mutex);
+    auto container = state().containers.find(parsed.guest_path);
+    if (container == state().containers.end() || !container->second.raw)
+      return ETERNALSONATA_ASSET_NOT_FOUND;
+    container->second.raw.reset();
+    return ETERNALSONATA_ASSET_OK;
+  }
+  if (parsed.kind == "skeleton" || parsed.kind == "animation") {
+    std::lock_guard<std::recursive_mutex> lock(state().mutex);
+    auto container = state().containers.find(parsed.guest_path);
+    if (container == state().containers.end())
+      return ETERNALSONATA_ASSET_NOT_FOUND;
+    auto& patches =
+        parsed.kind == "skeleton" ? container->second.skeletons : container->second.animations;
+    return patches.erase(parsed.kind + ":" + parsed.selector) ? ETERNALSONATA_ASSET_OK
+                                                              : ETERNALSONATA_ASSET_NOT_FOUND;
+  }
+  if (parsed.kind == "mesh") {
+    std::lock_guard<std::recursive_mutex> lock(state().mutex);
+    auto container = state().containers.find(parsed.guest_path);
+    if (container == state().containers.end())
+      return ETERNALSONATA_ASSET_NOT_FOUND;
+    return container->second.meshes.erase("mesh:" + parsed.selector)
+               ? ETERNALSONATA_ASSET_OK
+               : ETERNALSONATA_ASSET_NOT_FOUND;
+  }
   if (parsed.kind == "tex") {
     std::lock_guard<std::recursive_mutex> lock(state().mutex);
     auto container = state().containers.find(parsed.guest_path);
@@ -1024,8 +1394,8 @@ extern "C" REX_MOD_PLUGIN_EXPORT void EternalSonataInvalidateAsset(const char* g
     RebuildAndServe();
 }
 
-extern "C" REX_MOD_PLUGIN_EXPORT uint32_t EternalSonataRegisterAssetProvider(
-    EternalSonataAssetProviderFn provider, void* user) {
+extern "C" REX_MOD_PLUGIN_EXPORT uint32_t
+EternalSonataRegisterAssetProvider(EternalSonataAssetProviderFn provider, void* user) {
   if (!provider)
     return 0;
   std::lock_guard<std::recursive_mutex> lock(state().mutex);
@@ -1044,15 +1414,33 @@ extern "C" REX_MOD_PLUGIN_EXPORT void EternalSonataUnregisterAssetProvider(uint3
 
 extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceFile(
     const char* guest_path, const uint8_t* bytes, uint32_t size, uint32_t flags) {
-  (void)guest_path;
-  (void)bytes;
-  (void)size;
-  (void)flags;
-  return ETERNALSONATA_ASSET_UNSUPPORTED;
+  if (!guest_path || !*guest_path)
+    return ETERNALSONATA_ASSET_BAD_REF;
+  if (!bytes || !size)
+    return ETERNALSONATA_ASSET_BAD_DATA;
+  const std::string path = NormalizeGuestPath(guest_path);
+  if (path.empty())
+    return ETERNALSONATA_ASSET_BAD_REF;
+  RawPatch patch;
+  patch.bytes.assign(bytes, bytes + size);
+  patch.owner = "runtime";
+  patch.priority = kRuntimePriority;
+  std::lock_guard<std::recursive_mutex> lock(state().mutex);
+  auto& current = state().containers[path].raw;
+  if (current) {
+    const bool wins = (flags & ETERNALSONATA_ASSET_FORCE) != 0 ||
+                      patch.priority < current->priority;
+    REXLOG_WARN("assets: '{}' and '{}' both replace {}; '{}' wins", current->owner, patch.owner,
+                path, wins ? patch.owner : current->owner);
+    if (!wins)
+      return ETERNALSONATA_ASSET_CONFLICT;
+  }
+  current = std::move(patch);
+  return ETERNALSONATA_ASSET_OK;
 }
 
-extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceTexture(
-    const char* ref, const EternalSonataImage* image, uint32_t flags) {
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataReplaceTexture(const char* ref, const EternalSonataImage* image, uint32_t flags) {
   Reference parsed;
   if (!ParseReference(ref, &parsed) || parsed.kind != "tex" || parsed.selector.empty() || !image ||
       !image->pixels || !image->width || !image->height) {
@@ -1077,8 +1465,8 @@ extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceTe
                          (flags & ETERNALSONATA_ASSET_FORCE) != 0);
 }
 
-extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceTextureFromFile(
-    const char* ref, const char* host_path, uint32_t flags) {
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataReplaceTextureFromFile(const char* ref, const char* host_path, uint32_t flags) {
   Reference parsed;
   if (!ParseReference(ref, &parsed) || parsed.kind != "tex" || parsed.selector.empty() ||
       !host_path) {
@@ -1099,32 +1487,126 @@ extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceTe
                          (flags & ETERNALSONATA_ASSET_FORCE) != 0);
 }
 
-extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceMesh(
-    const char* ref, const EternalSonataMesh* mesh, uint32_t flags) {
-  (void)ref;
-  (void)mesh;
-  (void)flags;
-  return ETERNALSONATA_ASSET_UNSUPPORTED;
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataReplaceMesh(const char* ref, const EternalSonataMesh* mesh, uint32_t flags) {
+  Reference parsed;
+  if (!ParseReference(ref, &parsed) || parsed.kind != "mesh" || parsed.selector.empty())
+    return ETERNALSONATA_ASSET_BAD_REF;
+  if (!mesh || !mesh->vertices || !mesh->vertex_count || !mesh->indices || !mesh->index_count ||
+      !mesh->sections || !mesh->section_count)
+    return ETERNALSONATA_ASSET_BAD_DATA;
+
+  MeshPatch patch;
+  patch.selector = parsed.selector;
+  patch.vertices.assign(mesh->vertices, mesh->vertices + mesh->vertex_count);
+  patch.indices.assign(mesh->indices, mesh->indices + mesh->index_count);
+  patch.sections.assign(mesh->sections, mesh->sections + mesh->section_count);
+  patch.allow_resize = (flags & ETERNALSONATA_ASSET_ALLOW_RESIZE) != 0;
+  patch.owner = "runtime";
+  patch.priority = kRuntimePriority;
+  std::lock_guard<std::recursive_mutex> lock(state().mutex);
+  return RegisterMesh(parsed.guest_path, std::move(patch),
+                      (flags & ETERNALSONATA_ASSET_FORCE) != 0);
 }
 
-extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceMeshFromFile(
-    const char* ref, const char* host_path, uint32_t flags) {
-  (void)ref;
-  (void)host_path;
-  (void)flags;
-  return ETERNALSONATA_ASSET_UNSUPPORTED;
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataReplaceMeshFromFile(const char* ref, const char* host_path, uint32_t flags) {
+  Reference parsed;
+  if (!ParseReference(ref, &parsed) || parsed.kind != "mesh" || parsed.selector.empty() ||
+      !host_path)
+    return ETERNALSONATA_ASSET_BAD_REF;
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(host_path, ec))
+    return ETERNALSONATA_ASSET_IO_ERROR;
+  const std::filesystem::path path(host_path);
+  std::string extension = path.extension().string();
+  for (char& c : extension)
+    c = char(std::tolower(uint8_t(c)));
+  if (extension != ".nshp")
+    return ETERNALSONATA_ASSET_UNSUPPORTED;
+  MeshPatch patch;
+  patch.selector = parsed.selector;
+  patch.host_file = path;
+  patch.allow_resize = (flags & ETERNALSONATA_ASSET_ALLOW_RESIZE) != 0;
+  patch.owner = "runtime";
+  patch.priority = kRuntimePriority;
+  std::lock_guard<std::recursive_mutex> lock(state().mutex);
+  return RegisterMesh(parsed.guest_path, std::move(patch),
+                      (flags & ETERNALSONATA_ASSET_FORCE) != 0);
 }
 
-extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceAudio(
-    const char* ref, const EternalSonataAudio* audio, uint32_t flags) {
+EternalSonataAssetResult RegisterNativeModelChunk(const char* ref, const uint8_t* bytes,
+                                                  uint32_t size, uint32_t flags, const char* kind,
+                                                  const char magic[4]) {
+  Reference parsed;
+  if (!ParseReference(ref, &parsed) || parsed.kind != kind || parsed.selector.empty())
+    return ETERNALSONATA_ASSET_BAD_REF;
+  if (!bytes || size < 8 || std::memcmp(bytes, magic, 4) != 0)
+    return ETERNALSONATA_ASSET_BAD_DATA;
+  const uint32_t declared =
+      uint32_t(bytes[4]) << 24 | uint32_t(bytes[5]) << 16 | uint32_t(bytes[6]) << 8 | bytes[7];
+  if (declared != size)
+    return ETERNALSONATA_ASSET_BAD_DATA;
+  ModelChunkPatch patch;
+  patch.selector = parsed.selector;
+  patch.bytes.assign(bytes, bytes + size);
+  patch.allow_resize = (flags & ETERNALSONATA_ASSET_ALLOW_RESIZE) != 0;
+  patch.owner = "runtime";
+  patch.priority = kRuntimePriority;
+  std::lock_guard<std::recursive_mutex> lock(state().mutex);
+  return RegisterModelChunk(parsed.guest_path, kind, std::move(patch),
+                            (flags & ETERNALSONATA_ASSET_FORCE) != 0);
+}
+
+EternalSonataAssetResult RegisterNativeModelChunkFile(const char* ref, const char* host_path,
+                                                      uint32_t flags, const char* kind) {
+  Reference parsed;
+  if (!ParseReference(ref, &parsed) || parsed.kind != kind || parsed.selector.empty() || !host_path)
+    return ETERNALSONATA_ASSET_BAD_REF;
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(host_path, ec))
+    return ETERNALSONATA_ASSET_IO_ERROR;
+  ModelChunkPatch patch;
+  patch.selector = parsed.selector;
+  patch.host_file = host_path;
+  patch.allow_resize = (flags & ETERNALSONATA_ASSET_ALLOW_RESIZE) != 0;
+  patch.owner = "runtime";
+  patch.priority = kRuntimePriority;
+  std::lock_guard<std::recursive_mutex> lock(state().mutex);
+  return RegisterModelChunk(parsed.guest_path, kind, std::move(patch),
+                            (flags & ETERNALSONATA_ASSET_FORCE) != 0);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataReplaceSkeleton(const char* ref, const uint8_t* bytes, uint32_t size, uint32_t flags) {
+  return RegisterNativeModelChunk(ref, bytes, size, flags, "skeleton", "NBN2");
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataReplaceSkeletonFromFile(const char* ref, const char* host_path, uint32_t flags) {
+  return RegisterNativeModelChunkFile(ref, host_path, flags, "skeleton");
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceAnimation(
+    const char* ref, const uint8_t* bytes, uint32_t size, uint32_t flags) {
+  return RegisterNativeModelChunk(ref, bytes, size, flags, "animation", "NMTN");
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataReplaceAnimationFromFile(const char* ref, const char* host_path, uint32_t flags) {
+  return RegisterNativeModelChunkFile(ref, host_path, flags, "animation");
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataReplaceAudio(const char* ref, const EternalSonataAudio* audio, uint32_t flags) {
   (void)ref;
   (void)audio;
   (void)flags;
   return ETERNALSONATA_ASSET_UNSUPPORTED;
 }
 
-extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceAudioFromFile(
-    const char* ref, const char* host_path, uint32_t flags) {
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
+EternalSonataReplaceAudioFromFile(const char* ref, const char* host_path, uint32_t flags) {
   (void)ref;
   (void)host_path;
   (void)flags;

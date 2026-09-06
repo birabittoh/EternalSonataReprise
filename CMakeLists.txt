@@ -230,6 +230,7 @@ set(ETERNALSONATA_SOURCES
     src/battle_system.cpp
     src/save_system.cpp
     src/eternalsonata_asset_container.cpp
+    src/eternalsonata_asset_mesh.cpp
     src/eternalsonata_asset_texture.cpp
     src/eternalsonata_asset_system.cpp
     src/photo_system.cpp
