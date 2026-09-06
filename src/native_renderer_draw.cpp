@@ -2467,6 +2467,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // WaterPinT12 rewrites a fetch constant *after* it is read, so a draw under
   // it does not describe itself; the pin is a debug knob and is zero in a
   // shipped frame, so the cache is simply stood down while it is set.
+  bool frequent_refresh = false;
   const bool cacheable = fetch_signature != 0 && WaterPinT12() == 0;
   if (cacheable && g_binding_cache.valid && g_binding_cache.epoch == content_epoch &&
       g_binding_cache.signature == fetch_signature && g_binding_cache.mask == texture_mask) {
@@ -2499,6 +2500,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
           }
         }
         if (have_fetch) {
+          frequent_refresh |= TextureMirrorNeedsFrequentRefresh(fetch);
           {
             ProfileZone lookup_zone(kPhaseMirrorLookup);
             texture = static_cast<RenderTexture*>(TextureMirrorLookup(call.memory_base, fetch));
@@ -2531,7 +2533,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     g_binding_cache.sampler_set = sampler_set;
     // A failed lookup is not worth remembering, and caching a null set would
     // hand the next draw the same failure without retrying it.
-    g_binding_cache.valid = cacheable && texture_set != nullptr && sampler_set != nullptr;
+    g_binding_cache.valid = cacheable && !frequent_refresh && texture_set != nullptr &&
+                            sampler_set != nullptr;
   }
   if (texture_set == nullptr || sampler_set == nullptr) {
     Drop(kDropNoArena, "a descriptor set could not be created; the heap behind it is full");
