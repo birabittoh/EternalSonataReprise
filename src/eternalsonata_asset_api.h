@@ -1,15 +1,15 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
 // Public C ABI for granular asset replacement: one string, one texture, or one
-// mesh at a time, without shipping the package it lives in.
+// model graph asset at a time, without shipping the package it lives in.
 //
 // Why this exists. The SDK's asset overlay (mods/<name>/game/...) replaces a
 // whole guest file. Eternal Sonata ships almost everything inside .e / .bmd
 // containers that hold hundreds of unrelated assets at once, so replacing one
 // line of dialogue that way means redistributing every texture, mesh and script
 // that shares the container: large, and other people's copyrighted data. This
-// API instead patches the container in memory as the game loads it, so a mod
-// ships only the bytes it authored.
+// API instead rebuilds a patched container in the host cache, so a mod ships
+// only the bytes it authored.
 //
 // A mod does NOT link against this project. Copy this header into the mod and
 // resolve the entry points at runtime out of the host executable, the same way
@@ -44,6 +44,8 @@
 //     e0020_020.e#tex:3                 fourth texture chunk, in file order
 //     map/nyaza.e#mesh:2                third NSHP chunk
 //     map/nyaza.e#mesh:head             NSHP chunk by name
+//     e0020_020.e#skeleton:0             NBN2 skeleton
+//     e0020_020.e#animation:walk         NMTN animation by name
 //     sound/cxs/bgm042.cxs#music        the whole track (one .cxs is one track)
 //     sound/spc001.csf#sfx:7            clip 7 of a sound bank / voice bank
 //     sound/vo/field01.wav              a big-endian PCM .wav, replaced whole
@@ -53,16 +55,17 @@
 //
 // Names are preferred over ordinals wherever a name exists: ordinals shift if
 // the container ever changes, names do not. EternalSonataEnumerateAssets()
-// lists the valid references for a container, which is also what the
-// asset browser overlay and scripts/es_asset.py print.
+// lists the valid references for a container. The planned asset browser and
+// scripts/es_asset.py tooling will present the same list.
 //
 // ---------------------------------------------------------------------------
 // When patches are applied
 // ---------------------------------------------------------------------------
-// The host serves patched containers through the VFS: the first time the game
-// opens a patched file, the host decodes it (see docs/asset-formats.md §2),
-// splices in every registered patch, and serves the result as an uncompressed
-// file. Nothing is written to disk and the game's own loader is untouched.
+// The host eagerly builds patched containers into a generation-keyed cache,
+// then serves that directory through the VFS. It decodes each patched file
+// (see docs/asset-formats.md section 2), splices every registered patch, and
+// writes the result as an uncompressed file. The installed files and the
+// game's own loader are untouched.
 //
 // INVARIANT: a patched container is ALWAYS served together with a patched
 // index.vmtoc record for it, with the codec flag set to 0 (stored) and the
@@ -75,16 +78,12 @@
 //
 // Consequences worth knowing:
 //
-//   - Register patches before the container is first opened. OnModuleLaunched()
-//     is early enough for everything except boot-time files; a patch registered
-//     later applies the next time the container is loaded, which for field data
-//     is the next area transition. EternalSonataInvalidateAsset() forces the
-//     rebuild for a file already in the cache.
-//   - Patching costs one decode plus one rebuild per container, once, cached
-//     until invalidated. Patching a file the game streams every frame is fine;
-//     re-registering a patch every frame is not.
-//   - Every mutation here is thread-safe and takes effect at load time, so no
-//     call runs guest code and none of them can be refused for game state.
+//   - Register patches before the startup cache build. A patch registered later
+//     applies after EternalSonataInvalidateAsset() rebuilds the served cache.
+//   - Patching costs one decode plus one rebuild per container per cache
+//     generation. Re-registering a patch every frame is not useful.
+//   - Every mutation here is thread-safe. No call runs guest code and none can
+//     be refused for game state.
 //
 // ---------------------------------------------------------------------------
 // Composition
@@ -215,12 +214,14 @@ typedef enum EternalSonataAssetResult {
 // Kinds
 // ---------------------------------------------------------------------------
 typedef enum EternalSonataAssetKind {
-  ETERNALSONATA_ASSET_KIND_TEXT = 0,     // a BTX string
-  ETERNALSONATA_ASSET_KIND_TEXTURE = 1,  // an NTX2 / NTEX / NTX3 chunk
-  ETERNALSONATA_ASSET_KIND_MESH = 2,     // an NSHP chunk
-  ETERNALSONATA_ASSET_KIND_RAW = 3,      // a whole guest file
-  ETERNALSONATA_ASSET_KIND_MUSIC = 4,    // a .cxs streaming track
-  ETERNALSONATA_ASSET_KIND_SFX = 5,      // one clip of a .csf bank
+  ETERNALSONATA_ASSET_KIND_TEXT = 0,       // a BTX string
+  ETERNALSONATA_ASSET_KIND_TEXTURE = 1,    // an NTX2 / NTEX / NTX3 chunk
+  ETERNALSONATA_ASSET_KIND_MESH = 2,       // an NSHP chunk
+  ETERNALSONATA_ASSET_KIND_RAW = 3,        // a whole guest file
+  ETERNALSONATA_ASSET_KIND_MUSIC = 4,      // a .cxs streaming track
+  ETERNALSONATA_ASSET_KIND_SFX = 5,        // one clip of a .csf bank
+  ETERNALSONATA_ASSET_KIND_SKELETON = 6,   // an NBN2 skeleton
+  ETERNALSONATA_ASSET_KIND_ANIMATION = 7,  // an NMTN animation
 } EternalSonataAssetKind;
 
 // ---------------------------------------------------------------------------
@@ -244,8 +245,7 @@ typedef EternalSonataAssetResult (*EternalSonataSetTextFn)(const char* ref, cons
 // `out_length` (so a caller can size a buffer and call again). `buffer` may be
 // NULL when `capacity` is 0.
 typedef EternalSonataAssetResult (*EternalSonataGetTextFn)(const char* ref, char* buffer,
-                                                           uint32_t capacity,
-                                                           uint32_t* out_length);
+                                                           uint32_t capacity, uint32_t* out_length);
 
 // ---------------------------------------------------------------------------
 // Textures
@@ -297,9 +297,9 @@ typedef EternalSonataAssetResult (*EternalSonataReplaceTextureFromFileFn)(const 
 // as the triangle list or strip the original used.
 //
 // Constraints, which are the game's and not the API's:
-//   - The bone indices must be slots that exist in the original chunk's bone
-//     list. A replacement cannot introduce a new bone: the skeleton lives in a
-//     separate NBN2 chunk the animations are authored against.
+//   - An isolated mesh replacement keeps the original chunk's local bone list,
+//     so its bone indices must remain within that list. Introducing bones means
+//     replacing the NSHP, NBN2, and affected NMTN chunks together.
 //   - Every face section's material id must be one the original container
 //     declares. A replacement cannot introduce a new material or texture slot.
 //   - Vertex and index counts are otherwise free, subject to the size rules:
@@ -333,13 +333,28 @@ typedef EternalSonataAssetResult (*EternalSonataReplaceMeshFn)(const char* ref,
                                                                const EternalSonataMesh* mesh,
                                                                uint32_t flags);
 
-// Same, from a .gltf/.glb on disk: the format the studio's exporter writes, so
-// export, edit, import is a closed loop. A file with several meshes uses the
-// one whose node name matches the reference's selector, or its first mesh when
-// the reference selects by ordinal.
+// Same, from one complete native .nshp chunk on disk. glTF import belongs in
+// the authoring tool because one glTF model may also change its NBN2 skeleton
+// and NMTN animations; the three resulting native chunks compose here.
 typedef EternalSonataAssetResult (*EternalSonataReplaceMeshFromFileFn)(const char* ref,
                                                                        const char* host_path,
                                                                        uint32_t flags);
+
+// Native model chunks are also replaceable directly. This keeps skeleton and
+// animation changes in the same composed container rebuild as their meshes.
+// `bytes` must contain one complete NBN2 or NMTN chunk, including its header.
+typedef EternalSonataAssetResult (*EternalSonataReplaceSkeletonFn)(const char* ref,
+                                                                   const uint8_t* bytes,
+                                                                   uint32_t size, uint32_t flags);
+typedef EternalSonataAssetResult (*EternalSonataReplaceSkeletonFromFileFn)(const char* ref,
+                                                                           const char* host_path,
+                                                                           uint32_t flags);
+typedef EternalSonataAssetResult (*EternalSonataReplaceAnimationFn)(const char* ref,
+                                                                    const uint8_t* bytes,
+                                                                    uint32_t size, uint32_t flags);
+typedef EternalSonataAssetResult (*EternalSonataReplaceAnimationFromFileFn)(const char* ref,
+                                                                            const char* host_path,
+                                                                            uint32_t flags);
 
 // ---------------------------------------------------------------------------
 // Audio
@@ -420,8 +435,9 @@ typedef EternalSonataAssetResult (*EternalSonataReplaceFileFn)(const char* guest
 // only valid for the duration of the callback.
 //
 // For text, `name` is the string's current value in the reference's language
-// and `size` its byte length. For textures and meshes `name` is the embedded
-// name (empty when the chunk has none) and `size` the chunk's byte size.
+// and `size` its byte length. For textures, meshes, and animations `name` is
+// the embedded name (empty when the chunk has none) and `size` is the chunk's
+// byte size. Skeletons have no chunk name.
 typedef int (*EternalSonataAssetVisitorFn)(const char* ref, EternalSonataAssetKind kind,
                                            const char* name, uint32_t size, void* user);
 
@@ -435,13 +451,12 @@ typedef EternalSonataAssetResult (*EternalSonataEnumerateAssetsFn)(
 // Lazy providers
 // ---------------------------------------------------------------------------
 // Registering thousands of patches up front to cover text a player may never
-// reach is wasteful. A provider is instead called once per container, at the
-// moment the host is about to build its patched image, and may register any
-// number of patches for that container from inside the callback. It is the
+// reach is wasteful. A provider is called once per container during a cache
+// build and may register any number of patches for that container. It is the
 // callback form of the "eternalsonata.asset.loading" event.
 //
-// Called on the guest thread doing the load. It must be thread-safe, must not
-// touch ImGui, and must not block: the game is waiting on this file.
+// Called on the thread building the cache. It must be thread-safe, must not
+// touch ImGui, and must not block startup or an explicit rebuild.
 typedef void (*EternalSonataAssetProviderFn)(const char* guest_path, void* user);
 
 // Returns a token for EternalSonataUnregisterAssetProvider, or 0 on failure.
@@ -452,10 +467,9 @@ typedef void (*EternalSonataUnregisterAssetProviderFn)(uint32_t token);
 // ---------------------------------------------------------------------------
 // Cache control
 // ---------------------------------------------------------------------------
-// Drops the host's cached patched image for a container, so the next open
-// rebuilds it with whatever is registered then. Pass NULL to drop everything.
-// This is what makes live iteration possible; the asset browser overlay's
-// Reload button is this call.
+// Rebuilds and remounts the cache with everything registered at that point.
+// The current implementation rebuilds the whole generation even when a guest
+// path is supplied. The planned asset browser Reload action uses this call.
 typedef void (*EternalSonataInvalidateAssetFn)(const char* guest_path);
 
 // Removes a patch this mod registered, returning the reference to whatever the
