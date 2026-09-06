@@ -47,6 +47,9 @@ namespace eternalsonata {
 // distinct texture rather than once per bind. Guest thread only.
 void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch);
 
+// True for textures whose guest contents can change between draws.
+bool TextureMirrorNeedsFrequentRefresh(const TextureFetch& fetch);
+
 // Counters for the swap-time summary: what was resolved from the frame layer,
 // what was decoded from guest memory, and every reason a decode was refused.
 // Tick the frame counter the content hash is throttled against. Called once per
