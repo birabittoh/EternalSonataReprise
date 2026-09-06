@@ -165,6 +165,7 @@ struct TextureFetch {
   uint32_t type = 0;          // FetchConstantType; 2 is kTexture
   uint32_t format = 0;        // xenos::TextureFormat
   uint32_t endianness = 0;
+  uint32_t swizzle = 0x688;
   uint32_t base_address = 0;  // already shifted up by 12, and aperture-fixed
   uint32_t raw_base_address = 0;  // the same field before the fixup, for reads
   uint32_t width = 0;         // stored minus one, corrected here
