@@ -33,6 +33,7 @@
 #include "icon.generated.h"
 #include "native_renderer.h"
 #include "native_renderer_overlay.h"
+#include "input_overlay.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_profile.h"
 #include "native_renderer_shader_debug.h"
@@ -379,6 +380,7 @@ class EternalsonataApp : public rex::ReXApp {
     // the touch_controls cvar (on by default only on Android) still decides
     // whether they are shown. See src/touch_layout.h.
     if (auto* input_sys = static_cast<rex::input::InputSystem*>(runtime()->input_system())) {
+      input_overlay_ = eternalsonata::CreateInputOverlay(imgui_drawer(), input_sys);
       if (auto* touch = input_sys->GetDriver<rex::input::touch::TouchInputDriver>()) {
         touch->SetLayoutProvider(&eternalsonata::BuildTouchLayout);
       }
@@ -450,6 +452,9 @@ class EternalsonataApp : public rex::ReXApp {
 
   // F3's guest-side half. Owned here so it lives as long as the drawer does.
   std::unique_ptr<rex::ui::ImGuiDialog> guest_profiler_overlay_;
+
+  // F8 device list, backed by the SDK's generic input snapshot API.
+  std::unique_ptr<rex::ui::ImGuiDialog> input_overlay_;
 
   // Back-button entry point into the F-key overlays on touch-only devices.
   // See host_menu.h.
