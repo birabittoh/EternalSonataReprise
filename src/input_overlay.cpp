@@ -1,5 +1,7 @@
 #include "input_overlay.h"
 
+#include <cstdint>
+
 #include <rex/input/input_system.h>
 #include <rex/ui/imgui_dialog.h>
 #include <rex/ui/keybinds.h>
@@ -47,8 +49,7 @@ class InputOverlay final : public rex::ui::ImGuiDialog {
       ImGui::TableHeadersRow();
 
       for (const auto& view : devices) {
-        if (view.device.kind == rex::input::DeviceKind::kPlaceholder ||
-            view.device.kind == rex::input::DeviceKind::kTouch) {
+        if (view.device.kind == rex::input::DeviceKind::kPlaceholder) {
           continue;
         }
         shown++;
@@ -61,7 +62,9 @@ class InputOverlay final : public rex::ui::ImGuiDialog {
             break;
           }
         }
-        ImGui::PushID(static_cast<int>(view.device.ordinal));
+        const uint64_t device_id = static_cast<uint64_t>(view.device.id);
+        ImGui::PushID(static_cast<int>(device_id >> 32));
+        ImGui::PushID(static_cast<int>(device_id));
         ImGui::SetNextItemWidth(90.0f);
         if (ImGui::Combo("##player", &selected_user,
                          "Ignore\0Player 1\0Player 2\0Player 3\0Player 4\0")) {
@@ -70,6 +73,7 @@ class InputOverlay final : public rex::ui::ImGuiDialog {
                                     : static_cast<uint32_t>(selected_user - 1);
           input_system_->AssignDeviceToUser(view.device.id, user);
         }
+        ImGui::PopID();
         ImGui::PopID();
         ImGui::TableSetColumnIndex(1);
         ImGui::TextUnformatted(view.device.name.empty() ? "Controller" : view.device.name.c_str());
