@@ -130,6 +130,25 @@ REXCVAR_DEFINE_STRING(field_leader_model, "default", "Eternal Sonata",
 REXCVAR_DEFINE_BOOL(field_action_default_model, true, "Eternal Sonata",
                     "Use the story character model for field interaction animations");
 
+// Which voice bank suffix the game loads. The two the game ships with are
+// selected by its own byte at 0x8243FC06, which this cvar mirrors rather than
+// replaces: while it names "jpn" or "usa" the path hook stands down entirely
+// and the guest's byte is the only authority. A mod-added id is what turns the
+// hook on and points it at that mod's `_<suffix>` banks.
+//
+// kRequiresRestart because the guest caches loaded banks keyed on its own byte
+// (sub_821BD1C0 at a1+324/+328, sub_821BD778 at +1956/+1960), and a mod voice
+// language leaves that byte at its donor's value, so two mod voice languages
+// are indistinguishable to that cache and a live switch would replay the bank
+// already in it. See BootVoiceLanguageIndex.
+//
+// Not `.allowed(...)`: the valid set is not known until the mods have
+// registered, and an id left behind by a mod that was since disabled has to
+// read back as entry 0 rather than be rejected at parse time.
+REXCVAR_DEFINE_STRING(voice_language, "usa", "Eternal Sonata",
+                      "Spoken language: jpn, usa, or the id a mod's [[voice_language]] declared")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
 namespace eternalsonata {
 
 namespace {
@@ -216,11 +235,16 @@ constexpr std::array kGameDefaults = {
 // native renderer registers it itself (see RegisterNativeRendererCvars), so
 // exactly one of the two owns the name by the time this UI draws. The generic
 // loops no-op on a name that is not registered, same as vulkan_device.
-constexpr std::array<const char*, 14> kBasicCvarNames = {
+// voice_language is listed even though user_language needed special handling to
+// be (see SaveBasicCvars): this subset is saved from *live* cvar values, and the
+// live voice_language is always exactly what the player chose. There is no
+// donor rewrite for voice (a mod voice language gets a bank path of its own
+// rather than borrowing a built-in's), so nothing ever shadows it.
+constexpr std::array<const char*, 15> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
-    "host_timer_resolution_ms", "vsync"};
+    "host_timer_resolution_ms", "vsync", "voice_language"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -304,6 +328,58 @@ std::string NormalizeBtxSlot(std::string_view slot) {
     c = char(std::toupper(static_cast<unsigned char>(c)));
   out.resize(4, ' ');
   return out;
+}
+
+// The two voice languages the game shipped with. `guest_byte` is what
+// BYTE2(dword_8243FC04) holds for each: the selector is a single byte and the
+// path builders (sub_821BD0D0, sub_821BD480) do nothing with it but choose
+// between appending "_usa" and appending nothing.
+//
+// English first, which is NOT the byte's own order, and that is the point.
+// The Options screen draws this row English then Japanese, and the game places
+// its highlight at `base + 200 * (BYTE2(FC04) ^ 1)`: the byte counts the
+// opposite way round from the column. Ordering the list the way the row is
+// drawn makes a list index and a column index the same number everywhere, and
+// leaves exactly one place, guest_byte, where the two disagree. Do not
+// "tidy" this back into byte order; that mismatch is what made the row skip
+// Japanese entirely the first time round.
+//
+// Safe to reorder because nothing indexes this list positionally across runs:
+// the voice_language cvar stores an id, not a position.
+constexpr std::array kBuiltinVoiceLanguages = {
+    VoiceLanguageOption{"usa", "English", "EN", "_usa", 1},
+    VoiceLanguageOption{"jpn", "Japanese", "JP", "", 0},
+};
+
+// Voice languages mods added, through either "settings.voice_language_option"
+// or assets.toml's [[voice_language]] block. Owns its strings for the same
+// reason ModLanguage does.
+struct ModVoiceLanguage {
+  std::string id;
+  std::string label;
+  std::string code;
+  std::string suffix;  // with its leading underscore
+};
+std::vector<ModVoiceLanguage> g_mod_voice_languages;
+
+// What voice_language said at boot, latched once. See BootVoiceLanguageIndex.
+std::string g_boot_voice_id;
+bool g_boot_voice_latched = false;
+
+// Normalises a bank filename suffix to the one form the path hook and the TOC
+// writer both use: lowercase, exactly one leading underscore. Empty in, empty
+// out. That is Japanese, whose banks carry the bare name.
+std::string NormalizeVoiceSuffix(std::string_view suffix) {
+  std::string out(suffix);
+  size_t start = 0;
+  while (start < out.size() && out[start] == '_')
+    ++start;
+  out = out.substr(start);
+  if (out.empty())
+    return out;
+  for (char& c : out)
+    c = char(std::tolower(static_cast<unsigned char>(c)));
+  return "_" + out;
 }
 
 struct FrameRateOption {
@@ -483,7 +559,7 @@ std::vector<std::string> BasicCvarNames() {
 //
 // user_language is in that subset, and while ApplyBootLanguageDonorSlot's
 // override is in force the live cvar holds the donor's id, not the player's.
-// Saving it as-is would quietly rewrite the config from "Pirate" to "Spanish",
+// Saving it as-is would quietly rewrite the config from "Portugues" to "Spanish",
 // so the next launch would come up in the donor language and the mod's language
 // would look like it had unselected itself. Any of the other basic settings
 // changing (frame rate, resolution, fullscreen) is enough to trigger that,
@@ -1248,8 +1324,10 @@ void ApplySettingDefaults() {
 
 void InitSettingsCaches() {
   // Latch the boot language before anything can change it (see
-  // BootUserLanguageIndex).
+  // BootUserLanguageIndex), and the boot voice language with it: the path hook
+  // reads it from the guest thread, so it must not be latched there.
   BootUserLanguageIndex();
+  BootVoiceLanguageIndex();
   g_gpu_plugin_names_cache = rex::system::EnumerateGpuPlugins();
   // Not a staged DLL, so EnumerateGpuPlugins() never reports it: it selects
   // this project's own renderer instead of any plugin. Offer it anyway, or the
@@ -1413,9 +1491,189 @@ bool RegisterModLanguage(std::string_view id, std::string_view label, std::strin
   return true;
 }
 
+int MaxVoiceLanguageOptions() {
+  return ETERNALSONATA_MAX_ROW_VALUES;
+}
+
+std::vector<VoiceLanguageOption> GetVoiceLanguageOptions() {
+  std::vector<VoiceLanguageOption> options(kBuiltinVoiceLanguages.begin(),
+                                           kBuiltinVoiceLanguages.end());
+  options.reserve(options.size() + g_mod_voice_languages.size());
+  for (const auto& mod : g_mod_voice_languages) {
+    options.push_back(
+        {mod.id.c_str(), mod.label.c_str(), mod.code.c_str(), mod.suffix.c_str(), -1});
+  }
+  return options;
+}
+
+bool RegisterModVoiceLanguage(std::string_view id, std::string_view label, std::string_view code,
+                              std::string_view suffix) {
+  ModVoiceLanguage entry;
+  entry.id = std::string(id);
+  entry.label = std::string(label);
+  entry.code = std::string(code);
+  entry.suffix = NormalizeVoiceSuffix(suffix.empty() ? id : suffix);
+
+  for (char& c : entry.id)
+    c = char(std::tolower(static_cast<unsigned char>(c)));
+  if (entry.id.empty() || entry.label.empty()) {
+    REXLOG_WARN("[settings] ignoring a voice language with an empty id or label");
+    return false;
+  }
+  if (entry.code.empty())
+    entry.code = entry.label.substr(0, 2);
+  for (char& c : entry.code)
+    c = char(std::toupper(static_cast<unsigned char>(c)));
+
+  // The one hard limit, and it is tight: an index.vmtoc record's path field is
+  // 32 bytes, and the longest voice path a mod can make is
+  // "btldata\voice\bosfga" + suffix + ".csf". Truncating the record instead
+  // would serve the bank under a path nothing ever asks for, which fails as
+  // silence rather than as an error.
+  if (entry.suffix.size() > kMaxVoiceSuffixBytes) {
+    REXLOG_WARN(
+        "[settings] ignoring voice language '{}': its suffix '{}' is {} bytes and only {} fit in "
+        "an index.vmtoc path record",
+        entry.label, entry.suffix, entry.suffix.size(), kMaxVoiceSuffixBytes);
+    return false;
+  }
+
+  for (const auto& opt : GetVoiceLanguageOptions()) {
+    if (entry.id == opt.id) {
+      REXLOG_WARN(
+          "[settings] ignoring duplicate voice language id '{}' ('{}'); '{}' registered it first",
+          entry.id, entry.label, opt.label);
+      return false;
+    }
+    // Unlike a BTX slot, a voice suffix is never shared: two mods writing
+    // pcNNN_x.csf would each build the same cache path from different clips,
+    // and the built-ins' own suffixes are what the fall-back chain depends on.
+    if (entry.suffix == opt.suffix) {
+      REXLOG_WARN("[settings] ignoring voice language '{}': '{}' already uses suffix '{}'",
+                  entry.label, opt.label, entry.suffix);
+      return false;
+    }
+  }
+  if (static_cast<int>(kBuiltinVoiceLanguages.size() + g_mod_voice_languages.size()) >=
+      MaxVoiceLanguageOptions()) {
+    REXLOG_WARN("[settings] ignoring voice language '{}': the list is full at {} entries",
+                entry.label, MaxVoiceLanguageOptions());
+    return false;
+  }
+
+  REXLOG_INFO("[settings] voice language '{}' added as id '{}' ({}), bank suffix '{}'", entry.label,
+              entry.id, entry.code, entry.suffix);
+  g_mod_voice_languages.push_back(std::move(entry));
+  return true;
+}
+
+int VoiceLanguageCount() {
+  return static_cast<int>(GetVoiceLanguageOptions().size());
+}
+
+const char* VoiceLanguageCode(int index) {
+  const auto options = GetVoiceLanguageOptions();
+  if (index < 0 || index >= static_cast<int>(options.size()))
+    return nullptr;
+  return options[index].code;
+}
+
+const char* VoiceLanguageLabel(int index) {
+  const auto options = GetVoiceLanguageOptions();
+  if (index < 0 || index >= static_cast<int>(options.size()))
+    return nullptr;
+  return options[index].label;
+}
+
+int VoiceLanguageGuestByte(int index) {
+  const auto options = GetVoiceLanguageOptions();
+  if (index < 0 || index >= static_cast<int>(options.size()))
+    return -1;
+  return options[index].guest_byte;
+}
+
+int VoiceLanguageIndexForGuestByte(int guest_byte) {
+  const auto options = GetVoiceLanguageOptions();
+  for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+    if (options[i].guest_byte == guest_byte)
+      return i;
+  }
+  return 0;
+}
+
+int VoiceLanguageIndex() {
+  const auto* entry = rex::cvar::GetFlagInfo("voice_language");
+  const std::string current = entry ? entry->getter() : std::string();
+  const auto options = GetVoiceLanguageOptions();
+  for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+    if (current == options[i].id)
+      return i;
+  }
+  // Same unknown-id fallback as UserLanguageIndex, and for the same reason: a
+  // mod that added a voice language and was then disabled leaves its id in the
+  // config, and that has to read as the first entry rather than clamp.
+  return 0;
+}
+
+void SetVoiceLanguageSetting(int index) {
+  const auto options = GetVoiceLanguageOptions();
+  if (index < 0 || index >= static_cast<int>(options.size()))
+    return;
+  BootVoiceLanguageIndex();  // Latch before the write moves the cvar.
+  // SetFlagByName, not entry->setter: this *is* a change the player made, and
+  // voice_language is kRequiresRestart, so MarkPendingRestart is what puts the
+  // overlay's "restart to apply" banner (and the native row's own marker) into
+  // the right state. Contrast ApplyBootLanguageDonorSlot, which must not.
+  rex::cvar::SetFlagByName("voice_language", options[index].id, /*persist=*/true);
+  SaveUserSettings();
+}
+
+int BootVoiceLanguageIndex() {
+  // Id latched once, index resolved fresh, exactly as BootUserLanguageIndex
+  // does it and for the same reason: a mod's voice language only joins the list
+  // once that mod has registered.
+  if (!g_boot_voice_latched) {
+    g_boot_voice_latched = true;
+    const auto* entry = rex::cvar::GetFlagInfo("voice_language");
+    g_boot_voice_id = entry ? entry->getter() : std::string();
+  }
+  const auto options = GetVoiceLanguageOptions();
+  for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+    if (g_boot_voice_id == options[i].id)
+      return i;
+  }
+  return 0;
+}
+
+const char* BootVoiceSuffix() {
+  const auto options = GetVoiceLanguageOptions();
+  const int index = BootVoiceLanguageIndex();
+  if (index < static_cast<int>(kBuiltinVoiceLanguages.size()))
+    return nullptr;  // The guest's own byte decides; the hook stands down.
+  return options[index].suffix;
+}
+
 void RegisterLanguageListeners(rex::system::ModRegistry* registry) {
   if (!registry)
     return;
+
+  registry->Subscribe(
+      "settings.voice_language_option",
+      [](const rex::system::ModRegistry::EventPayload& payload) {
+        // "id|Label|CODE|SUFFIX"; everything past the label is optional.
+        // payload.bytes only lives for this call, so it is copied.
+        std::string spec(reinterpret_cast<const char*>(payload.bytes.data()),
+                         payload.bytes.size());
+        std::string fields[4];
+        size_t field = 0, start = 0;
+        for (size_t i = 0; i <= spec.size() && field < 4; ++i) {
+          if (i == spec.size() || spec[i] == '|') {
+            fields[field++] = spec.substr(start, i - start);
+            start = i + 1;
+          }
+        }
+        RegisterModVoiceLanguage(fields[0], fields[1], fields[2], fields[3]);
+      });
 
   registry->Subscribe(
       "settings.language_option", [](const rex::system::ModRegistry::EventPayload& payload) {

@@ -408,6 +408,67 @@ The list holds nine languages in total, five built in and four added, which is
 where the Options screen's Text row runs out of width for its two-letter codes.
 Registrations past that are dropped with a warning.
 
+### Adding a new voice language
+
+The voice half of the same idea, and deliberately **not** the same list. The
+game ships two spoken languages, Japanese and English, and a mod can add a
+third; it appears as an extra value on the game's own Voice row, so Text and
+Voice stay independently selectable. Mod text with Japanese voice, or stock
+English text with a mod voice, both work.
+
+Where BTX forced a text language to borrow a donor block, voice has no such
+scarcity. Voice banks are `.csf` files under `btldata\voice\` with **no language
+directory and no language field**: the language is a filename suffix, bare for
+Japanese and `_usa` for English. So a voice language simply gets a suffix of its
+own, both shipped languages stay selectable, and two voice mods never collide.
+
+```toml
+# mods/<name>/assets.toml
+[[voice_language]]
+id = "ptbr"         # what the voice_language cvar stores
+label = "Portugues" # drawn on the Voice row, next to the game's own two values
+code = "PT"         # two-letter form, for menus too narrow for the label
+suffix = "_ptbr"    # the bank filename suffix; defaults to the id
+donor = "usa"       # "usa" or "jpn": which bank your clips are timed against
+```
+
+```
+mods/<name>/assets/btldata/voice/pc001.csf/sfx/3.wav
+```
+
+Address the **shipped** bank, exactly as any other audio patch does, because that is
+the container whose clip numbering your selectors mean. The host builds
+`pc001_ptbr.csf` from your `donor`'s framing, tags the clips you replaced, adds
+its `index.vmtoc` record, and serves it under your suffix. The 18 JP/USA pairs
+all have identical clip counts, so ordinal `3` is the same line whichever donor
+you name.
+
+Five things to know:
+
+* **A clip you did not replace plays in the donor's language.** The donor's own
+  XMA2 is left in place rather than blanked, so a partial voice mod is a mix,
+  not silence.
+* **`.csf` is XMA2 and there is no open encoder**, which is why the bank is
+  synthesised rather than shipped. Your clips are 16-bit PCM WAV, same as every
+  other audio patch.
+* **Duration still matters.** A line the game times a text box against (the
+  `<wv>` markup tag, 568 uses) is cut off at the original's length, because the
+  game advances on its own schedule.
+* **The suffix has at most seven letters.** An `index.vmtoc` path record is 32
+  bytes, and `btldata\voice\bosfga` + suffix + `.csf` has to fit. A longer one is
+  refused at registration with a warning naming your mod.
+* **Voice changes need a restart**, for a sharper reason than text does: the
+  guest caches loaded banks keyed on its own selector byte, which a mod voice
+  language leaves at the donor's value. Two mod voice languages are
+  indistinguishable to that cache, so a live switch would replay the bank
+  already in it.
+
+Not every bank has an English twin (27 of the 45 are Japanese-only), so
+`donor = "usa"` falls back to the bare name for those, exactly as the game's own
+probe does. To do all of this from a code mod instead, publish
+`settings.voice_language_option` with `payload.bytes` set to
+`"id|Label|CODE|SUFFIX"`.
+
 ### Layering and conflicts
 
 There is **one** patched image per container, built from every enabled mod at

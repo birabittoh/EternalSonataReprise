@@ -125,10 +125,87 @@ struct LanguageOption {
 // Registrations past the cap are dropped with a warning.
 int MaxLanguageOptions();
 
-// Subscribes to the three mod-registry events a translation mod publishes.
+// One entry in the *voice* list, which is deliberately a separate list from the
+// text one above: the game ships two voice languages and five text ones, they
+// are selected by different mechanisms, and a player is free to mix them (mod
+// text with Japanese voice, stock English text with a mod voice).
+//
+//   `id`         value stored by the voice_language cvar ("jpn", "usa", or
+//                whatever a mod called itself)
+//   `label`      display text for the F4 overlay
+//   `code`       two-letter form the native Options screen's Voice row draws
+//   `suffix`     the guest filename suffix this language's banks carry, with its
+//                leading underscore: "" for Japanese, "_usa" for English, and
+//                its own for a mod. Voice banks have no language directory and
+//                no language field; the suffix on `btldata\voice\pcNNN.csf` is
+//                the whole of the selection (see the sub_8210D380 hook in
+//                eternalsonata_hooks.cpp).
+//   `guest_byte` what the guest's own selector byte holds for this language, 0
+//                or 1, or -1 for a mod language the guest knows nothing about.
+struct VoiceLanguageOption {
+  const char* id;
+  const char* label;
+  const char* code;
+  const char* suffix;
+  int guest_byte;
+};
+
+// The suffix has to fit the 32-byte path field of an index.vmtoc record
+// alongside `btldata\voice\` (14), the longest bank name (6, "bosfga") and
+// `.csf` (4), so eight bytes including its leading underscore. Registrations
+// with a longer one are refused rather than served from a truncated record.
+constexpr size_t kMaxVoiceSuffixBytes = 8;
+
+// How many entries the voice list can hold. Same reasoning and the same cap as
+// MaxLanguageOptions: the Voice row draws its values side by side.
+int MaxVoiceLanguageOptions();
+
+// Adds a voice language, for the declarative `[[voice_language]]` block in a
+// mod's assets.toml and for the "settings.voice_language_option" event. `suffix`
+// is normalised to exactly one leading underscore. Returns false, and warns, on
+// an empty field, a duplicate id or suffix, an over-long suffix, or a full list.
+bool RegisterModVoiceLanguage(std::string_view id, std::string_view label, std::string_view code,
+                              std::string_view suffix);
+
+// The two built-in voice languages followed by the mod-added ones, in
+// registration order. Same ownership rules as GetLanguageOptions.
+std::vector<VoiceLanguageOption> GetVoiceLanguageOptions();
+
+// The voice_language cvar as an ordered list, for the Voice row in the game's
+// own Options screen and for the F4 overlay. Index 0..VoiceLanguageCount()-1,
+// with the same unknown-id fallback to entry 0 that UserLanguageIndex has.
+int VoiceLanguageCount();
+const char* VoiceLanguageCode(int index);
+const char* VoiceLanguageLabel(int index);
+int VoiceLanguageIndex();
+void SetVoiceLanguageSetting(int index);
+
+// The two directions between a list index and the guest's own selector byte.
+// They are NOT the same number: the list is ordered the way the Options screen
+// draws the row (English, then Japanese) while the byte counts the other way,
+// which is why the game places that row's highlight at `200 * (byte ^ 1)`.
+// Anything touching both has to go through these rather than assume.
+// VoiceLanguageGuestByte returns -1 for a mod language, which the guest has no
+// byte value for; VoiceLanguageIndexForGuestByte falls back to entry 0.
+int VoiceLanguageGuestByte(int index);
+int VoiceLanguageIndexForGuestByte(int guest_byte);
+
+// The voice language the process *started* in, latched exactly like
+// BootUserLanguageIndex and for the same reason: the guest caches voice banks
+// keyed on its own selector byte, which a mod voice language leaves at the
+// donor's value, so switching between two mod voice languages mid-run would
+// silently reuse a stale bank. voice_language is kRequiresRestart accordingly.
+int BootVoiceLanguageIndex();
+
+// The filename suffix the path hook appends, or nullptr when the process booted
+// into one of the two voice languages the game ships, in which case the guest's
+// own selector byte decides and the hook must not touch anything.
+const char* BootVoiceSuffix();
+
+// Subscribes to the four mod-registry events a translation mod publishes.
 // Must run after Runtime exists but before any mod's OnCreateDialogs, i.e. from
 // OnPostLoadXexImage, which the SDK calls immediately before it loads mod
-// plugins. All three are first-wins with a WARN on duplicates, and drop
+// plugins. All four are first-wins with a WARN on duplicates, and drop
 // malformed payloads with a WARN.
 //
 //   "settings.language_option"  adds a Language entry.
@@ -142,6 +219,13 @@ int MaxLanguageOptions();
 //   "settings.native_string"    translates one string this project authors.
 //       payload.u64   = the XLanguage id
 //       payload.bytes = UTF-8 "key=value"
+//   "settings.voice_language_option"  adds a Voice entry. Independent of the
+//       three above: a mod may add a voice language, a text language, or both.
+//       payload.u64   = unused
+//       payload.bytes = ASCII "id|Label|CODE|SUFFIX" (see
+//                       RegisterModVoiceLanguage; CODE and SUFFIX may be
+//                       omitted, in which case the code is derived from the
+//                       label and the suffix from the id)
 //
 // Keys for the last one: `resolution_label`, `framerate_label`, `text_label`
 // and `overworld_model_label` for the rows this project adds to the game's own
