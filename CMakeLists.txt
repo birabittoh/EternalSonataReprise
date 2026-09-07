@@ -241,6 +241,7 @@ set(ETERNALSONATA_SOURCES
     src/field_player_model_override.cpp
     src/debug_area_overlay.cpp
     src/host_menu.cpp
+    src/input_overlay.cpp
     src/dlc_auto_install.cpp
     src/guest_shaders.cpp
     src/native_renderer.cpp
