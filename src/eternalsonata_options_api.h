@@ -30,7 +30,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_OPTIONS_ABI_VERSION 3u
+#define ETERNALSONATA_OPTIONS_ABI_VERSION 4u
 
 // Options is two pages, paged between with LB/RB. Page 1 is the Options screen
 // proper: the game's own Subtitles and Voice rows plus this project's Text
@@ -43,15 +43,24 @@ enum {
   ETERNALSONATA_PAGE_GRAPHICS = 1
 };
 
-// Language slots, matching the five Options display lists the game ships
-// (see kOptionsListByLang in eternalsonata_options.cpp).
+// Language slots. The first five match the Options display lists the game ships
+// (see kOptionsListByLang in eternalsonata_options.cpp); the rest are for
+// languages a mod added, which take the next free slot in registration order.
+// Slot n is the n'th entry of settings.h's GetLanguageOptions(), so a mod that
+// wants to translate a row into a language it added should ask which slot that
+// language ended up in rather than assuming one.
+//
+// The count is capped by ETERNALSONATA_MAX_ROW_VALUES rather than by memory:
+// the built-in Text row draws one value per language side by side on one line,
+// and that is where they stop fitting.
 enum {
   ETERNALSONATA_LANG_EN = 0,
   ETERNALSONATA_LANG_DE = 1,
   ETERNALSONATA_LANG_FR = 2,
   ETERNALSONATA_LANG_ES = 3,
   ETERNALSONATA_LANG_IT = 4,
-  ETERNALSONATA_LANG_COUNT = 5
+  ETERNALSONATA_LANG_BUILTIN_COUNT = 5,
+  ETERNALSONATA_LANG_COUNT = 9
 };
 
 // Returns the currently selected value, as a 0-based index into the `values`

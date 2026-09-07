@@ -23,6 +23,7 @@
 #include <rex/ui/window.h>
 #include <rex/version.h>
 
+#include "achievement_translation.h"
 #include "battle_system.h"
 #include "eternalsonata_asset_system.h"
 #include "field_player_model_override.h"
@@ -243,7 +244,26 @@ class EternalsonataApp : public rex::ReXApp {
   // project renders the guest itself at the Direct3D level rather than
   // emulating Xenos. Runs before the guest starts, so no D3D call can arrive
   // ahead of it. See native_renderer.h.
-  void OnPreLaunchModule() override { eternalsonata::InitNativeRenderer(window()); }
+  // Runs after Runtime exists and immediately before the SDK loads mod plugins
+  // and dispatches their OnCreateDialogs, which is the one window in which
+  // these subscriptions are guaranteed to be in place before the first mod
+  // publishes. A translation mod adds its language, claims a BTX slot and
+  // translates this project's own option labels through these three events;
+  // see settings.h.
+  void OnPostLoadXexImage() override {
+    eternalsonata::RegisterLanguageListeners(runtime()->mod_registry());
+  }
+
+  void OnPreLaunchModule() override {
+    eternalsonata::InitNativeRenderer(window());
+
+    // The game's own UI chrome is 23 BTX blobs inside the executable image, not
+    // an asset the VFS can overlay, so those text patches are written into
+    // guest memory instead of served from the cache. Here rather than in
+    // OnPostSetup because the image has to be loaded first; still before the
+    // guest runs, and the strings are only read once it does.
+    eternalsonata::ApplyXexTextPatches(runtime());
+  }
 
   // Detached overlay mode: with no GPU plugin the SDK creates no presenter and
   // asks the app for a drawer instead. Returning null here is what left the
@@ -258,9 +278,27 @@ class EternalsonataApp : public rex::ReXApp {
     // presentation has been set up.
     eternalsonata::PlumeSetOverlayDrawer(imgui_drawer());
 
+    // Languages a mod declared in its assets.toml rather than in C++. This has
+    // to land before InitSettingsCaches, which latches the boot language: a
+    // language registered after the latch would not be selectable this run.
+    // Mods that publish the event instead already ran, back in OnCreateDialogs.
+    eternalsonata::ScanModLanguages(runtime());
+
     // Seed the GPU plugin/Vulkan device lists once here rather than every
     // time the F4 settings overlay is opened (see settings.cpp).
     eternalsonata::InitSettingsCaches();
+
+    // With the language list final and the boot language latched, point the
+    // guest at the donor BTX block if the player booted into a mod's language.
+    // Before BindAssetSystem, which resolves that mod's text patches through
+    // the same slot, and before the guest reads user_language at all.
+    eternalsonata::ApplyBootLanguageDonorSlot();
+
+    // The F7 achievements overlay and the unlock toast draw the catalogue the
+    // SDK read out of the guest XDBF, which has entries for the five shipped
+    // languages only. Overlay this language's translations onto it now that the
+    // mods have published them.
+    eternalsonata::ApplyAchievementTranslations(runtime());
 
     // Bind the window/settings file now rather than waiting for the F4 overlay
     // to be constructed, so the native Fullscreen row in the game's own Options

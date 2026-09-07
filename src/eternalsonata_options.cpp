@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <iterator>
@@ -19,6 +20,7 @@
 #include <rex/cvar.h>
 #include <rex/system/mod_plugin.h>
 
+#include "eternalsonata_asset_container.h"
 #include "eternalsonata_hooks_internal.h"
 #include "field_player_model_override.h"
 #include "party_system.h"
@@ -353,7 +355,21 @@ static_assert(kMaxRowValues + 2 <= kRowSidStride,
 // would render as two garbled glyphs instead of one accented one. Verify
 // in-game per language - this is the one part of the row that cannot be
 // cross-checked against a stock string the way the boolean values are.
+// Two different counts, and conflating them reads past the end of the tables
+// above.
+//
+// kGuestListCount is the game's: five display lists per page, one per shipped
+// language (kOptionsListByLang / kButtonsListByLang). It is fixed forever,
+// because the lists are addresses in the xex.
+//
+// kLanguageCount is ours: how many languages a row can carry a translated label
+// or value for, which now includes the ones mods add (see settings.h's
+// GetLanguageOptions). A mod-added language still *draws* through one of the
+// five guest lists, the one its donor BTX slot belongs to.
+constexpr int kGuestListCount = static_cast<int>(std::size(kOptionsListByLang));
 constexpr int kLanguageCount = ETERNALSONATA_LANG_COUNT;
+static_assert(kGuestListCount == ETERNALSONATA_LANG_BUILTIN_COUNT,
+              "the built-in language slots are the game's own display lists");
 
 struct LocalizedLabel {
   const char* text[kLanguageCount];
@@ -372,7 +388,7 @@ struct LocalizedLabel {
 // every other screen in the game, which is the overwhelming majority.
 bool ClassifyList(u32 list_addr, int* page, int* lang_idx) {
   for (int p = 0; p < kPageCount; ++p) {
-    for (int i = 0; i < kLanguageCount; ++i) {
+    for (int i = 0; i < kGuestListCount; ++i) {
       if (kPages[p].lists[i] == list_addr) {
         *page = p;
         *lang_idx = i;
@@ -675,6 +691,37 @@ void MakeLiteralRow(OptionRow& row, const LocalizedLabel& label,
   }
 }
 
+// Fills in a built-in row's label for every language a mod published a
+// "settings.native_string" translation for (see settings.h). The rows this
+// project synthesises carry app-authored English/EFIGS labels, so a mod-added
+// language would otherwise draw them in English next to its own translated
+// text; and a mod is free to retranslate a built-in language's label too.
+//
+// Runs once, from Rows()'s lazy initialiser, which is first reached when the
+// guest builds the Options screen, long after every mod has published.
+// Untranslated slots are left empty and fall back to slot 0, same as always.
+void TranslateBuiltinLabel(OptionRow& row, const char* key) {
+  const auto languages = eternalsonata::GetLanguageOptions();
+  for (int slot = 0; slot < kLanguageCount && slot < static_cast<int>(languages.size()); ++slot) {
+    const auto id = uint32_t(std::strtoul(languages[slot].id, nullptr, 10));
+    const char* utf8 = eternalsonata::FindNativeString(id, key);
+    if (!utf8) {
+      continue;
+    }
+    // The guest font draws one glyph per byte, so UTF-8 has to come down to the
+    // block's own single-byte encoding before it reaches a guest string. A
+    // character the encoding has no mapping for fails the whole label rather
+    // than turning into '?' halfway through a word.
+    const char* slot_fourcc = languages[slot].btx_slot ? languages[slot].btx_slot : "USA ";
+    std::string encoded, error;
+    if (!eternalsonata::assets::TranscodeToGameEncoding(utf8, slot_fourcc, encoded, &error)) {
+      REXLOG_WARN("[options] dropping the '{}' translation for language {}: {}", key, id, error);
+      continue;
+    }
+    row.label[slot] = std::move(encoded);
+  }
+}
+
 // Built-in rows are registered lazily rather than in a static initialiser:
 // ResolutionRowValueCount queries the display and the getters read cvars, and
 // neither is safe to touch before the app has finished starting. Lazy
@@ -742,6 +789,14 @@ std::vector<OptionRow>& Rows() {
     initial[3].get_index = &OverworldModelGetIndex;
     initial[3].set_index = &OverworldModelSetIndex;
     initial[3].page = kPageOptions;
+
+    // Mod-published translations for the four labels above, in every language
+    // including the ones mods added. The Text row's own *values* stay as they
+    // are: they are two-letter language codes, which are not translated.
+    TranslateBuiltinLabel(initial[0], "resolution_label");
+    TranslateBuiltinLabel(initial[1], "framerate_label");
+    TranslateBuiltinLabel(initial[2], "text_label");
+    TranslateBuiltinLabel(initial[3], "overworld_model_label");
     return initial;
   }();
   return rows;
