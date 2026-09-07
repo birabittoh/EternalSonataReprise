@@ -368,12 +368,12 @@ typedef EternalSonataAssetResult (*EternalSonataReplaceAnimationFromFileFn)(cons
 //
 // What this means in practice:
 //
-//   - Ship ordinary audio. WAV, FLAC and OGG are accepted, any sample rate and
-//     channel count; the host resamples and downmixes to what the stream the
+//   - Ship ordinary 16 bit PCM WAV audio, at any sample rate and channel
+//     count; the host resamples and downmixes to what the stream the
 //     clip belongs to expects. You never touch XMA.
-//   - Nothing about the container changes, so audio replacement never resizes
-//     anything, never rebuilds an .e, and cannot conflict with a text or
-//     texture patch in the same file.
+//   - The host tags the selected XMA payload without changing its size or
+//     metadata. Audio replacement never resizes anything and cannot conflict
+//     with a text or texture patch in the same file.
 //   - Length is yours for music and is NOT for anything the game times against.
 //     A .cxs track loops on the host's own loop points and can be any length.
 //     A voice clip whose duration the game uses to advance a text box (see the
@@ -390,7 +390,7 @@ typedef EternalSonataAssetResult (*EternalSonataReplaceAnimationFromFileFn)(cons
 
 typedef struct EternalSonataAudio {
   // Interleaved PCM. `sample_rate` and `channels` are the source's own; the
-  // host converts. Use EternalSonataReplaceAudioFromFile for encoded formats.
+  // host converts. Use EternalSonataReplaceAudioFromFile for a WAV on disk.
   const int16_t* samples;
   uint32_t frame_count;  // frames, not samples: channels are interleaved
   uint32_t sample_rate;
@@ -409,9 +409,8 @@ typedef EternalSonataAssetResult (*EternalSonataReplaceAudioFn)(const char* ref,
                                                                 const EternalSonataAudio* audio,
                                                                 uint32_t flags);
 
-// Same, from a .wav / .flac / .ogg on disk. Loop points are taken from the
-// file's own metadata when it carries any (a WAV 'smpl' chunk, an Ogg
-// LOOPSTART/LOOPLENGTH comment), otherwise from the shipped track.
+// Same, from a 16 bit PCM .wav on disk. Loop points are taken from a WAV
+// 'smpl' chunk when present, otherwise from the shipped track.
 typedef EternalSonataAssetResult (*EternalSonataReplaceAudioFromFileFn)(const char* ref,
                                                                         const char* host_path,
                                                                         uint32_t flags);

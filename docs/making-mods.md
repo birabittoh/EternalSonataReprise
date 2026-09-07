@@ -62,8 +62,8 @@ always writes that generation's matching `index.vmtoc` record with the codec
 set to stored and the size set to the new decoded length. The loader sizes its
 allocation from that record, so the two are never served apart.
 
-> **Implementation status.** Text, texture, and native NSHP, NBN2, and NMTN
-> patches are live. Audio is described here but is not substituted yet.
+> **Implementation status.** Text, texture, native NSHP, NBN2, NMTN, and audio
+> patches are live.
 > `scripts/es_asset.py` and the asset browser overlay do not exist yet either.
 
 ### Finding what to replace
@@ -112,7 +112,7 @@ The path under `assets/` *is* the reference, spelled as directories:
 | `map/nyaza.e#mesh:head` | `assets/map/nyaza.e/meshes/head.nshp` |
 | `e0020_020.e#skeleton:0` | `assets/e0020_020.e/skeletons/0.nbn2` |
 | `e0020_020.e#animation:walk` | `assets/e0020_020.e/animations/walk.nmtn` |
-| `sound/cxs/bgm042.cxs#music` | `assets/sound/cxs/bgm042.cxs/music.ogg` |
+| `sound/cxs/bgm042.cxs#music` | `assets/sound/cxs/bgm042.cxs/music.wav` |
 | `sound/spc001.csf#sfx:7` | `assets/sound/spc001.csf/sfx/7.wav` |
 | whole file `sound/vo/field01.wav` | `assets/sound/vo/field01.wav` |
 
@@ -221,26 +221,25 @@ your audio there instead:
 
 ```
 mods/<name>/assets/
-  sound/cxs/bgm042.cxs/music.ogg     replaces one music track
+  sound/cxs/bgm042.cxs/music.wav     replaces one music track
   sound/spc001.csf/sfx/7.wav         replaces clip 7 of a bank
   sound/vo/field01.wav               a plain PCM .wav, replaced whole
 ```
 
-Ship ordinary audio: WAV, FLAC or OGG, any sample rate, any channel count. The
+Ship ordinary 16 bit PCM WAV audio, at any sample rate and channel count. The
 host resamples and downmixes. You never touch XMA and you never need the XDK.
 
-Because the container itself is untouched, audio replacement never resizes
-anything, never rebuilds an `.e`, and can't collide with a text or texture
-patch in the same file. Replacing one effect in a bank of two hundred leaves
-the other 199 playing as shipped.
+The host tags the selected XMA payload without changing its size or metadata.
+Audio replacement never resizes anything and can't collide with a text or
+texture patch in the same file. Replacing one effect in a bank of two hundred
+leaves the other 199 playing as shipped.
 
 Two things follow from substituting rather than splicing:
 
 - **Music length is free, voice length isn't.** A `.cxs` track loops on its
   own loop points (47 of the 62 retail tracks have them) and can be any length;
-  put `loop_start`/`loop_end` in a WAV `smpl` chunk or an Ogg
-  `LOOPSTART`/`LOOPLENGTH` comment to override them, or inherit the shipped
-  track's. A voice clip that a text box waits on (the `<wv>` tag) should match
+  put `loop_start`/`loop_end` in a WAV `smpl` chunk to override them, or inherit
+  the shipped track's. A voice clip that a text box waits on (the `<wv>` tag) should match
   the original's duration: longer audio is cut off when the game moves on,
   not waited for.
 - **The `.wav` files under `assets/sound` are a separate, easier case.** They
