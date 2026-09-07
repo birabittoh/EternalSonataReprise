@@ -2,7 +2,7 @@
 //
 // See eternalsonata_asset_system.h for how patches reach the guest, and
 // eternalsonata_asset_api.h for the contract this implements. Text, textures,
-// model chunks, and audio are wired up.
+// model chunks, audio, and lip sync are wired up.
 
 #include "eternalsonata_asset_system.h"
 
@@ -110,6 +110,14 @@ struct AudioPatch {
   std::array<uint8_t, 16> tag{};
 };
 
+struct LipSyncPatch {
+  std::string selector;
+  std::filesystem::path host_file;
+  std::vector<EternalSonataLipEvent> events;
+  std::string owner;
+  int priority = 0;
+};
+
 struct Container {
   std::map<std::string, TextPatch> text;  // key: canonical reference suffix
   std::map<std::string, TexturePatch> textures;
@@ -117,6 +125,7 @@ struct Container {
   std::map<std::string, ModelChunkPatch> skeletons;
   std::map<std::string, ModelChunkPatch> animations;
   std::map<std::string, AudioPatch> audio;
+  std::map<std::string, LipSyncPatch> lipsync;
   std::optional<RawPatch> raw;
 };
 
@@ -138,13 +147,15 @@ State& state() {
 
 EternalSonataAssetResult RegisterAudio(const std::string& guest_path, AudioPatch patch,
                                        bool force);
+EternalSonataAssetResult RegisterLipSync(const std::string& guest_path, LipSyncPatch patch,
+                                         bool force);
 
 // ---------------------------------------------------------------------------
 // Reference parsing
 // ---------------------------------------------------------------------------
 struct Reference {
   std::string guest_path;
-  std::string kind;      // "text", "tex", "mesh", "music", "sfx", or empty
+  std::string kind;      // asset kind, or empty for a whole file
   std::string selector;  // everything after the ':'
 };
 
@@ -284,6 +295,22 @@ EternalSonataAssetResult RegisterModelChunk(const std::string& guest_path, const
     const bool wins = force || patch.priority < it->second.priority;
     REXLOG_WARN("assets: '{}' and '{}' both patch {}#{}; '{}' wins", it->second.owner, patch.owner,
                 guest_path, key, wins ? patch.owner : it->second.owner);
+    if (!wins)
+      return ETERNALSONATA_ASSET_CONFLICT;
+  }
+  patches[key] = std::move(patch);
+  return ETERNALSONATA_ASSET_OK;
+}
+
+EternalSonataAssetResult RegisterLipSync(const std::string& guest_path, LipSyncPatch patch,
+                                         bool force) {
+  auto& patches = state().containers[guest_path].lipsync;
+  const std::string key = "lipsync:" + patch.selector;
+  auto it = patches.find(key);
+  if (it != patches.end()) {
+    const bool wins = force || patch.priority < it->second.priority;
+    REXLOG_WARN("assets: '{}' and '{}' both patch {}#{}; '{}' wins", it->second.owner,
+                patch.owner, guest_path, key, wins ? patch.owner : it->second.owner);
     if (!wins)
       return ETERNALSONATA_ASSET_CONFLICT;
   }
@@ -631,6 +658,13 @@ void ScanModAssets(const std::string& mod_name, int priority,
       patch.owner = mod_name;
       patch.priority = priority;
       RegisterAudio(guest_path, std::move(patch), false);
+    } else if (kind == "lipsync" && tail.size() == 1) {
+      LipSyncPatch patch;
+      patch.selector = it->path().stem().string();
+      patch.host_file = it->path();
+      patch.owner = mod_name;
+      patch.priority = priority;
+      RegisterLipSync(guest_path, std::move(patch), false);
     } else {
       REXLOG_WARN("assets: mod '{}' ships {} for {}, which this build cannot patch yet", mod_name,
                   kind, guest_path);
@@ -718,6 +752,14 @@ uint64_t CacheKey(rex::Runtime* runtime) {
                                          sizeof(patch.loop_start)));
       h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(&patch.loop_end),
                                          sizeof(patch.loop_end)));
+    }
+    for (const auto& [key, patch] : container.lipsync) {
+      h = HashUpdate(h, key);
+      if (!patch.host_file.empty())
+        hash_file(patch.host_file);
+      else
+        h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(patch.events.data()),
+                                           patch.events.size() * sizeof(EternalSonataLipEvent)));
     }
     if (container.raw) {
       if (container.raw->host_file.empty())
@@ -903,6 +945,87 @@ uint32_t ReadLe32(const uint8_t* p) {
 }
 uint32_t ReadBe32(const uint8_t* p) {
   return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | uint32_t(p[3]);
+}
+
+struct LipSyncRef {
+  size_t events_offset = 0;
+  size_t capacity = 0;
+  size_t event_count = 0;
+};
+
+std::vector<LipSyncRef> FindLipSync(const std::vector<uint8_t>& bytes) {
+  std::vector<LipSyncRef> found;
+  for (size_t csf = 0; csf + 16 <= bytes.size(); ++csf) {
+    if (std::memcmp(bytes.data() + csf, "CSF ", 4) != 0)
+      continue;
+    const uint32_t header_size = ReadBe32(bytes.data() + csf + 8);
+    if (header_size < 16 || header_size > bytes.size() - csf)
+      continue;
+    const size_t header_end = csf + header_size;
+    for (size_t at = csf + 16; at + 16 <= header_end; ++at) {
+      if (std::memcmp(bytes.data() + at, "LIP ", 4) != 0)
+        continue;
+      const uint32_t chunk_size = ReadBe32(bytes.data() + at + 4);
+      if (chunk_size < 18 || chunk_size > header_end - at)
+        continue;
+      LipSyncRef ref;
+      ref.events_offset = at + 16;
+      ref.capacity = (chunk_size - 16) / 2;
+      while (ref.event_count < ref.capacity) {
+        const size_t event = ref.events_offset + ref.event_count * 2;
+        if (bytes[event] == 0 && bytes[event + 1] == 0)
+          break;
+        ++ref.event_count;
+      }
+      found.push_back(ref);
+      at += chunk_size - 1;
+    }
+    csf = header_end - 1;
+  }
+  return found;
+}
+
+bool LoadLipSync(const std::filesystem::path& path, LipSyncPatch& patch, std::string* error) {
+  std::ifstream in(path);
+  if (!in) {
+    *error = "is not readable";
+    return false;
+  }
+  patch.events.clear();
+  std::string line;
+  size_t line_number = 0;
+  while (std::getline(in, line)) {
+    ++line_number;
+    const size_t first = line.find_first_not_of(" \t\r");
+    if (first == std::string::npos || line[first] == '#')
+      continue;
+    const size_t comma = line.find(',', first);
+    if (comma == std::string::npos) {
+      *error = "has a line without a comma";
+      return false;
+    }
+    std::string left = line.substr(first, comma - first);
+    std::string right = line.substr(comma + 1);
+    if (left == "phoneme" && right.find("duration") != std::string::npos)
+      continue;
+    try {
+      size_t left_used = 0;
+      size_t right_used = 0;
+      const unsigned long phoneme = std::stoul(left, &left_used);
+      const unsigned long duration = std::stoul(right, &right_used);
+      if (left.find_first_not_of(" \t", left_used) != std::string::npos ||
+          right.find_first_not_of(" \t\r", right_used) != std::string::npos || phoneme > 5 ||
+          duration == 0 || duration > 255) {
+        *error = "has an invalid event on line " + std::to_string(line_number);
+        return false;
+      }
+      patch.events.push_back({uint8_t(phoneme), uint8_t(duration)});
+    } catch (...) {
+      *error = "has an invalid event on line " + std::to_string(line_number);
+      return false;
+    }
+  }
+  return true;
 }
 
 bool LoadPcmWav(const std::filesystem::path& path, AudioPatch& patch, std::string* error) {
@@ -1146,6 +1269,40 @@ void ApplyAudioPatches(const std::string& guest_path, Container& container,
   }
 }
 
+void ApplyLipSyncPatches(const std::string& guest_path, Container& container,
+                         PatchedContainer& result) {
+  for (auto& [key, patch] : container.lipsync) {
+    if (!patch.host_file.empty()) {
+      std::string error;
+      if (!LoadLipSync(patch.host_file, patch, &error)) {
+        REXLOG_WARN("assets: mod '{}' lip sync {}#{} {}", patch.owner, guest_path, key, error);
+        continue;
+      }
+    }
+    const auto refs = FindLipSync(result.bytes);
+    const size_t index =
+        IsAllDigits(patch.selector) ? size_t(std::stoul(patch.selector)) : size_t(-1);
+    if (index >= refs.size()) {
+      REXLOG_WARN("assets: mod '{}' patches {}#{}, which the container does not have",
+                  patch.owner, guest_path, key);
+      continue;
+    }
+    const LipSyncRef& ref = refs[index];
+    if (patch.events.size() + 1 > ref.capacity) {
+      REXLOG_WARN("assets: mod '{}' lip sync {}#{} has {} events but only {} fit", patch.owner,
+                  guest_path, key, patch.events.size(), ref.capacity - 1);
+      continue;
+    }
+    uint8_t* output = result.bytes.data() + ref.events_offset;
+    std::memset(output, 0, ref.capacity * 2);
+    for (size_t i = 0; i < patch.events.size(); ++i) {
+      output[i * 2] = patch.events[i].phoneme;
+      output[i * 2 + 1] = patch.events[i].duration;
+    }
+    ++result.patches_applied;
+  }
+}
+
 std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const assets::Toc& toc,
                                                const std::string& guest_path,
                                                Container& container) {
@@ -1166,7 +1323,8 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
     }
     result.patches_applied = 1;
     if (container.text.empty() && container.textures.empty() && container.meshes.empty() &&
-        container.skeletons.empty() && container.animations.empty() && container.audio.empty())
+        container.skeletons.empty() && container.animations.empty() && container.audio.empty() &&
+        container.lipsync.empty())
       return result;
   } else {
     const auto base = ResolveBaseFile(runtime, guest_path);
@@ -1231,6 +1389,7 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
   ApplyMeshPatches(guest_path, container, result);
   ApplyModelChunkPatches(guest_path, container, result);
   ApplyAudioPatches(guest_path, container, result);
+  ApplyLipSyncPatches(guest_path, container, result);
   if (!container.meshes.empty() || !container.skeletons.empty() || !container.animations.empty()) {
     std::string error;
     if (!assets::ValidateModelGraph(result.bytes, &error)) {
@@ -1598,6 +1757,13 @@ extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataEnumerate
       if (length >= 16)
         at += 7 + length;
     }
+    const auto lips = FindLipSync(data);
+    for (size_t i = 0; i < lips.size(); ++i) {
+      const std::string ref = path + "#lipsync:" + std::to_string(i);
+      if (!visitor(ref.c_str(), ETERNALSONATA_ASSET_KIND_LIPSYNC, "",
+                   uint32_t(lips[i].event_count), user))
+        break;
+    }
     return ETERNALSONATA_ASSET_OK;
   }
 
@@ -1644,6 +1810,13 @@ extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataEnumerate
                  animations[i].chunk_size, user))
       return ETERNALSONATA_ASSET_OK;
   }
+  const auto lips = FindLipSync(data);
+  for (size_t i = 0; i < lips.size(); ++i) {
+    const std::string ref = path + "#lipsync:" + std::to_string(i);
+    if (!visitor(ref.c_str(), ETERNALSONATA_ASSET_KIND_LIPSYNC, "",
+                 uint32_t(lips[i].event_count), user))
+      return ETERNALSONATA_ASSET_OK;
+  }
   return ETERNALSONATA_ASSET_OK;
 }
 
@@ -1653,7 +1826,7 @@ EternalSonataClearAssetPatch(const char* ref) {
   if (!ParseReference(ref, &parsed) ||
       (parsed.kind != "text" && parsed.kind != "tex" && parsed.kind != "mesh" &&
        parsed.kind != "skeleton" && parsed.kind != "animation" && parsed.kind != "music" &&
-       parsed.kind != "sfx" && !parsed.kind.empty()))
+       parsed.kind != "sfx" && parsed.kind != "lipsync" && !parsed.kind.empty()))
     return ETERNALSONATA_ASSET_BAD_REF;
   if (parsed.kind.empty()) {
     std::lock_guard<std::recursive_mutex> lock(state().mutex);
@@ -1703,6 +1876,15 @@ EternalSonataClearAssetPatch(const char* ref) {
     state().tagged_audio.erase(patch->second.tag);
     container->second.audio.erase(patch);
     return ETERNALSONATA_ASSET_OK;
+  }
+  if (parsed.kind == "lipsync") {
+    std::lock_guard<std::recursive_mutex> lock(state().mutex);
+    auto container = state().containers.find(parsed.guest_path);
+    if (container == state().containers.end())
+      return ETERNALSONATA_ASSET_NOT_FOUND;
+    return container->second.lipsync.erase("lipsync:" + parsed.selector)
+               ? ETERNALSONATA_ASSET_OK
+               : ETERNALSONATA_ASSET_NOT_FOUND;
   }
   size_t blob = 0;
   std::string lang;
@@ -1980,4 +2162,53 @@ EternalSonataReplaceAudioFromFile(const char* ref, const char* host_path, uint32
   std::lock_guard<std::recursive_mutex> lock(state().mutex);
   return RegisterAudio(parsed.guest_path, std::move(patch),
                        (flags & ETERNALSONATA_ASSET_FORCE) != 0);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceLipSync(
+    const char* ref, const EternalSonataLipEvent* events, uint32_t event_count, uint32_t flags) {
+  Reference parsed;
+  if (!ParseReference(ref, &parsed) || parsed.kind != "lipsync" ||
+      !IsAllDigits(parsed.selector))
+    return ETERNALSONATA_ASSET_BAD_REF;
+  if ((flags & ETERNALSONATA_ASSET_ALLOW_RESIZE) != 0)
+    return ETERNALSONATA_ASSET_UNSUPPORTED;
+  if (!events && event_count)
+    return ETERNALSONATA_ASSET_BAD_DATA;
+  LipSyncPatch patch;
+  patch.selector = parsed.selector;
+  patch.owner = "runtime";
+  patch.priority = kRuntimePriority;
+  if (event_count)
+    patch.events.assign(events, events + event_count);
+  for (const auto& event : patch.events) {
+    if (event.phoneme > 5 || event.duration == 0)
+      return ETERNALSONATA_ASSET_BAD_DATA;
+  }
+  std::lock_guard<std::recursive_mutex> lock(state().mutex);
+  return RegisterLipSync(parsed.guest_path, std::move(patch),
+                         (flags & ETERNALSONATA_ASSET_FORCE) != 0);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataReplaceLipSyncFromFile(
+    const char* ref, const char* host_path, uint32_t flags) {
+  Reference parsed;
+  if (!ParseReference(ref, &parsed) || parsed.kind != "lipsync" ||
+      !IsAllDigits(parsed.selector) || !host_path)
+    return ETERNALSONATA_ASSET_BAD_REF;
+  if ((flags & ETERNALSONATA_ASSET_ALLOW_RESIZE) != 0)
+    return ETERNALSONATA_ASSET_UNSUPPORTED;
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(host_path, ec))
+    return ETERNALSONATA_ASSET_IO_ERROR;
+  LipSyncPatch patch;
+  patch.selector = parsed.selector;
+  patch.host_file = host_path;
+  patch.owner = "runtime";
+  patch.priority = kRuntimePriority;
+  std::string error;
+  if (!LoadLipSync(patch.host_file, patch, &error))
+    return ETERNALSONATA_ASSET_BAD_DATA;
+  std::lock_guard<std::recursive_mutex> lock(state().mutex);
+  return RegisterLipSync(parsed.guest_path, std::move(patch),
+                         (flags & ETERNALSONATA_ASSET_FORCE) != 0);
 }

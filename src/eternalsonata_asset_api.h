@@ -222,6 +222,7 @@ typedef enum EternalSonataAssetKind {
   ETERNALSONATA_ASSET_KIND_SFX = 5,        // one clip of a .csf bank
   ETERNALSONATA_ASSET_KIND_SKELETON = 6,   // an NBN2 skeleton
   ETERNALSONATA_ASSET_KIND_ANIMATION = 7,  // an NMTN animation
+  ETERNALSONATA_ASSET_KIND_LIPSYNC = 8,    // one CSF LIP instruction track
 } EternalSonataAssetKind;
 
 // ---------------------------------------------------------------------------
@@ -414,6 +415,30 @@ typedef EternalSonataAssetResult (*EternalSonataReplaceAudioFn)(const char* ref,
 typedef EternalSonataAssetResult (*EternalSonataReplaceAudioFromFileFn)(const char* ref,
                                                                         const char* host_path,
                                                                         uint32_t flags);
+
+// ---------------------------------------------------------------------------
+// Lip sync
+// ---------------------------------------------------------------------------
+// A LIP track is a sequence of mouth shapes and durations stored beside a CSF
+// voice clip. `#lipsync:N` selects the Nth LIP chunk in container order.
+// Phonemes are 0 neutral, 1 A, 2 E, 3 O, 4 U, and 5 M. Durations are the
+// game's one-byte timing units. Zero duration is reserved for the terminator.
+//
+// LIP tracks are replaced in place. The event count may not exceed the
+// original track's capacity; ALLOW_RESIZE is not supported for this kind.
+typedef struct EternalSonataLipEvent {
+  uint8_t phoneme;
+  uint8_t duration;
+} EternalSonataLipEvent;
+
+typedef EternalSonataAssetResult (*EternalSonataReplaceLipSyncFn)(
+    const char* ref, const EternalSonataLipEvent* events, uint32_t event_count, uint32_t flags);
+
+// Reads a UTF-8 text file containing one `phoneme,duration` pair per line.
+// Empty lines, a `phoneme,duration` header, and lines beginning with '#' are
+// ignored.
+typedef EternalSonataAssetResult (*EternalSonataReplaceLipSyncFromFileFn)(
+    const char* ref, const char* host_path, uint32_t flags);
 
 // ---------------------------------------------------------------------------
 // Raw
