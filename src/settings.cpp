@@ -4,6 +4,7 @@
 #include "settings.h"
 
 #include "debug_area_overlay.h"
+#include "eternalsonata_options_api.h"
 #include "field_player_model_override.h"
 #include "host_timer_resolution.h"
 #include "native_renderer.h"
@@ -12,7 +13,9 @@
 #include <array>
 #include <cmath>
 #include <cstdlib>
+#include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <rex/cvar.h>
@@ -22,6 +25,7 @@
 #include <rex/platform/process.h>
 #include <rex/system/auto_updater.h>
 #include <rex/system/gpu_plugin.h>
+#include <rex/system/mod_registry.h>
 #include <rex/ui/imgui_widgets.h>
 #include <rex/ui/overlay/settings_overlay.h>
 #include <rex/ui/window.h>
@@ -246,24 +250,61 @@ int VolumePercentFromAmplitude(double amplitude) {
   return std::clamp(static_cast<int>(std::lround(100.0 - db * 100.0 / kMinVolumeDb)), 0, 100);
 }
 
-struct LanguageOption {
-  const char* id;  // stringified XLanguage value, as stored by the cvar
-  const char* label;
-  // Two-letter form for the native Options screen's Text row. That row draws
-  // its values side by side in one line, so full names do not fit: five
-  // columns have to share the width between the value column and the row
-  // rule, which is about 126px each against roughly 25px per character.
-  const char* code;
+// The languages the game shipped with. XLanguage IDs per the Xbox 360 kernel's
+// user_language cvar; `code` is the two-letter form the native Options screen's
+// Text row draws, since that row shares one line between all of its values and
+// full names do not fit (about 126px a column against roughly 25px a
+// character). `btx_slot` is the BTX block each one's text lives in; see
+// assets::kBtxLanguages, which is the authority for the seven fourccs.
+constexpr std::array kBuiltinLanguages = {
+    LanguageOption{"1", "English", "EN", "USA "},
+    LanguageOption{"3", "German", "DE", "DEU "},
+    LanguageOption{"4", "French", "FR", "FRA "},
+    LanguageOption{"5", "Spanish", "ES", "ESP "},
+    LanguageOption{"6", "Italian", "IT", "ITA "},
 };
 
-// XLanguage IDs per the Xbox 360 kernel's user_language cvar
-constexpr std::array kLanguageOptions = {
-    LanguageOption{"1", "English", "EN"},
-    LanguageOption{"3", "German", "DE"},
-    LanguageOption{"4", "French", "FR"},
-    LanguageOption{"5", "Spanish", "ES"},
-    LanguageOption{"6", "Italian", "IT"},
+// Entries mods added, through either the "settings.language_option" event or
+// assets.toml's [[language]] block. Owns its strings: the event's payload.bytes
+// only lives for the duration of Publish(), and GetLanguageOptions hands out
+// c_str() pointers that have to outlive the call. Only ever appended to and
+// never cleared, so those pointers stay valid for the process.
+struct ModLanguage {
+  std::string id;
+  std::string label;
+  std::string code;
+  std::string btx_slot;  // fourcc with its trailing space, or empty
 };
+std::vector<ModLanguage> g_mod_languages;
+
+// Strings mods published through "settings.native_string", keyed
+// "<XLanguage id>:<key>", value UTF-8. Owns its storage, same reason.
+std::map<std::string, std::string> g_native_strings;
+
+// What the config actually said at boot, and whether ApplyBootLanguageDonorSlot
+// has since pointed the live cvar somewhere else for the guest's benefit. Once
+// the player picks something this session the live cvar is authoritative again
+// (the guest has long since booted), which is what g_language_selection_changed
+// distinguishes. Comparing ids cannot: the player is free to select the donor
+// language itself.
+std::string g_boot_language_id;
+bool g_boot_language_latched = false;
+bool g_language_donor_applied = false;
+bool g_language_selection_changed = false;
+
+// Normalises a BTX fourcc to the four-byte, trailing-space form the container
+// code uses. Empty in, empty out.
+std::string NormalizeBtxSlot(std::string_view slot) {
+  std::string out(slot);
+  while (!out.empty() && out.back() == ' ')
+    out.pop_back();
+  if (out.empty())
+    return out;
+  for (char& c : out)
+    c = char(std::toupper(static_cast<unsigned char>(c)));
+  out.resize(4, ' ');
+  return out;
+}
 
 struct FrameRateOption {
   const char* id;  // value stored by the frame_rate cvar
@@ -437,6 +478,32 @@ std::vector<std::string> BasicCvarNames() {
   return std::vector<std::string>(kBasicCvarNames.begin(), kBasicCvarNames.end());
 }
 
+// Writes the basic subset, with user_language put back to what the player
+// actually chose for the duration of the write.
+//
+// user_language is in that subset, and while ApplyBootLanguageDonorSlot's
+// override is in force the live cvar holds the donor's id, not the player's.
+// Saving it as-is would quietly rewrite the config from "Pirate" to "Spanish",
+// so the next launch would come up in the donor language and the mod's language
+// would look like it had unselected itself. Any of the other basic settings
+// changing (frame rate, resolution, fullscreen) is enough to trigger that,
+// which is what makes it worth handling here rather than at each call site.
+void SaveBasicCvars(const std::filesystem::path& path) {
+  auto* entry = rex::cvar::GetFlagInfo("user_language");
+  const bool shadowed =
+      g_language_donor_applied && !g_language_selection_changed && entry && entry->setter;
+  std::string donor_id;
+  if (shadowed) {
+    donor_id = entry->getter();
+    entry->setter(g_boot_language_id);
+  }
+  rex::cvar::SaveConfigSubset(path, BasicCvarNames());
+  if (shadowed) {
+    // Straight back to the donor: the guest is running on it.
+    entry->setter(donor_id);
+  }
+}
+
 // Populated once by InitSettingsCaches() at startup; CuratedSettingsDialog
 // reads from these instead of re-enumerating GPU plugins/Vulkan devices
 // every time the F4 overlay is opened.
@@ -578,7 +645,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // "(Restart)" markers there can never disagree.
   bool AnyPendingRestart() { return AnyKnownPendingRestart(); }
 
-  void SaveBasic() { rex::cvar::SaveConfigSubset(user_settings_path_, BasicCvarNames()); }
+  void SaveBasic() { SaveBasicCvars(user_settings_path_); }
   // Advanced/gpu_plugin rows used to persist to app_config_path_ (<game>.toml).
   // That file is now read-only from the game's own UI (the "All Settings..."
   // browser saves to settings.toml too, see above); <game>.toml can still be
@@ -893,24 +960,22 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     const auto* entry = rex::cvar::GetFlagInfo("user_language");
     if (!entry)
       return;
-    std::string current = entry->getter();
-    int cur_idx = 0;
-    for (int i = 0; i < static_cast<int>(kLanguageOptions.size()); ++i) {
-      if (current == kLanguageOptions[i].id) {
-        cur_idx = i;
-        break;
-      }
-    }
+    // The registry, not a fixed array: a translation mod's language shows up
+    // here and in the game's own Options screen from the one registration.
+    const std::vector<LanguageOption> options = GetLanguageOptions();
+    const int cur_idx = UserLanguageIndex();
 
     ImGui::TextUnformatted("Language");
     ImGui::SameLine(180.0f);
     ImGui::SetNextItemWidth(160.0f);
     ImGui::PushID("user_language");
-    if (ImGui::BeginCombo("##v", kLanguageOptions[cur_idx].label)) {
-      for (int i = 0; i < static_cast<int>(kLanguageOptions.size()); ++i) {
+    if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
+      for (int i = 0; i < static_cast<int>(options.size()); ++i) {
         bool selected = (i == cur_idx);
-        if (ImGui::Selectable(kLanguageOptions[i].label, selected)) {
-          rex::cvar::SetFlagByName("user_language", kLanguageOptions[i].id, /*persist=*/true);
+        if (ImGui::Selectable(options[i].label, selected)) {
+          // Goes through SetUserLanguageSetting rather than the cvar directly,
+          // so the donor-slot override stops shadowing the selection.
+          SetUserLanguageSetting(i);
           SaveBasic();
         }
         if (selected)
@@ -1232,7 +1297,7 @@ void SaveUserSettings() {
   if (g_user_settings_path.empty()) {
     return;
   }
-  rex::cvar::SaveConfigSubset(g_user_settings_path, BasicCvarNames());
+  SaveBasicCvars(g_user_settings_path);
 }
 
 void SetFrameRateSetting(const char* value) {
@@ -1279,54 +1344,320 @@ void SetFrameRateOption(int index) {
   SetFrameRateSetting(kFrameRateOptions[index].id);
 }
 
+int MaxLanguageOptions() {
+  return ETERNALSONATA_MAX_ROW_VALUES;
+}
+
+std::vector<LanguageOption> GetLanguageOptions() {
+  std::vector<LanguageOption> options(kBuiltinLanguages.begin(), kBuiltinLanguages.end());
+  options.reserve(options.size() + g_mod_languages.size());
+  for (const auto& mod : g_mod_languages) {
+    options.push_back({mod.id.c_str(), mod.label.c_str(), mod.code.c_str(),
+                       mod.btx_slot.empty() ? nullptr : mod.btx_slot.c_str()});
+  }
+  return options;
+}
+
+bool RegisterModLanguage(std::string_view id, std::string_view label, std::string_view code,
+                         std::string_view slot) {
+  ModLanguage entry;
+  entry.id = std::string(id);
+  entry.label = std::string(label);
+  entry.code = std::string(code);
+  entry.btx_slot = NormalizeBtxSlot(slot);
+
+  if (entry.id.empty() || entry.label.empty()) {
+    REXLOG_WARN("[settings] ignoring a language with an empty id or label");
+    return false;
+  }
+  // The Text row draws the code, so it cannot be left blank; the label's first
+  // two characters are the obvious stand-in and match what the built-ins do.
+  if (entry.code.empty()) {
+    entry.code = entry.label.substr(0, 2);
+  }
+  for (char& c : entry.code)
+    c = char(std::toupper(static_cast<unsigned char>(c)));
+
+  for (const auto& opt : GetLanguageOptions()) {
+    if (entry.id == opt.id) {
+      REXLOG_WARN("[settings] ignoring duplicate language id {} ('{}'); '{}' registered it first",
+                  entry.id, entry.label, opt.label);
+      return false;
+    }
+  }
+  // Sharing a slot with a *built-in* language is the whole point: there are
+  // seven BTX blocks and no eighth to add, so a new language borrows one and
+  // the built-in that owns it becomes unselectable. Only another mod-added
+  // language is a real conflict, because then neither could say which of them
+  // the block's text belongs to.
+  if (!entry.btx_slot.empty()) {
+    for (const auto& mod : g_mod_languages) {
+      if (mod.btx_slot != entry.btx_slot)
+        continue;
+      REXLOG_WARN(
+          "[settings] '{}' cannot claim BTX slot '{}': '{}' already borrowed it, so its text "
+          "patches are dropped (its other patches still apply)",
+          entry.label, entry.btx_slot, mod.label);
+      return false;
+    }
+  }
+  if (static_cast<int>(kBuiltinLanguages.size() + g_mod_languages.size()) >= MaxLanguageOptions()) {
+    REXLOG_WARN("[settings] ignoring language '{}': the list is full at {} entries", entry.label,
+                MaxLanguageOptions());
+    return false;
+  }
+
+  REXLOG_INFO("[settings] language '{}' added as id {} ({}), BTX slot '{}'", entry.label, entry.id,
+              entry.code, entry.btx_slot.empty() ? "none" : entry.btx_slot);
+  g_mod_languages.push_back(std::move(entry));
+  return true;
+}
+
+void RegisterLanguageListeners(rex::system::ModRegistry* registry) {
+  if (!registry)
+    return;
+
+  registry->Subscribe(
+      "settings.language_option", [](const rex::system::ModRegistry::EventPayload& payload) {
+        // "Label", or "Label|CODE|SLOT" for a mod that wants to pick both
+        // without a second publish.
+        std::string spec(reinterpret_cast<const char*>(payload.bytes.data()),
+                         payload.bytes.size());
+        std::string fields[3];
+        size_t field = 0, start = 0;
+        for (size_t i = 0; i <= spec.size() && field < 3; ++i) {
+          if (i == spec.size() || spec[i] == '|') {
+            fields[field++] = spec.substr(start, i - start);
+            start = i + 1;
+          }
+        }
+        RegisterModLanguage(std::to_string(payload.u64), fields[0], fields[1], fields[2]);
+      });
+
+  registry->Subscribe(
+      "settings.language_slot", [](const rex::system::ModRegistry::EventPayload& payload) {
+        const std::string id = std::to_string(payload.u64);
+        const std::string slot = NormalizeBtxSlot(std::string_view(
+            reinterpret_cast<const char*>(payload.bytes.data()), payload.bytes.size()));
+        if (slot.empty()) {
+          REXLOG_WARN("[settings] ignoring settings.language_slot for id {} with an empty fourcc",
+                      id);
+          return;
+        }
+        ModLanguage* target = nullptr;
+        for (auto& mod : g_mod_languages) {
+          if (mod.id == id)
+            target = &mod;
+        }
+        if (!target) {
+          REXLOG_WARN(
+              "[settings] ignoring settings.language_slot '{}' for id {}: no such language was "
+              "registered (publish settings.language_option first)",
+              slot, id);
+          return;
+        }
+        if (!target->btx_slot.empty()) {
+          REXLOG_WARN("[settings] '{}' already owns BTX slot '{}'; ignoring '{}'", target->label,
+                      target->btx_slot, slot);
+          return;
+        }
+        // Built-ins are excluded on purpose; borrowing one is the mechanism.
+        // See the matching note in RegisterModLanguage.
+        for (const auto& mod : g_mod_languages) {
+          if (mod.btx_slot == slot) {
+            REXLOG_WARN("[settings] '{}' cannot claim BTX slot '{}': '{}' already borrowed it",
+                        target->label, slot, mod.label);
+            return;
+          }
+        }
+        target->btx_slot = slot;
+        REXLOG_INFO("[settings] language '{}' claimed BTX slot '{}'", target->label, slot);
+      });
+
+  registry->Subscribe(
+      "settings.native_string", [](const rex::system::ModRegistry::EventPayload& payload) {
+        const std::string_view kv(reinterpret_cast<const char*>(payload.bytes.data()),
+                                  payload.bytes.size());
+        const size_t eq = kv.find('=');
+        if (eq == std::string_view::npos) {
+          REXLOG_WARN("[settings] ignoring a settings.native_string payload with no '='");
+          return;
+        }
+        RegisterNativeString(uint32_t(payload.u64), kv.substr(0, eq), kv.substr(eq + 1));
+      });
+}
+
+bool RegisterNativeString(uint32_t language_id, std::string_view key, std::string_view value) {
+  if (key.empty() || value.empty()) {
+    REXLOG_WARN("[settings] ignoring a translated string for language {} with an empty {}",
+                language_id, key.empty() ? "key" : "value");
+    return false;
+  }
+  std::string map_key = std::to_string(language_id) + ":" + std::string(key);
+  if (g_native_strings.contains(map_key)) {
+    REXLOG_WARN("[settings] ignoring duplicate translation of '{}' for language {}", key,
+                language_id);
+    return false;
+  }
+  g_native_strings.emplace(std::move(map_key), std::string(value));
+  return true;
+}
+
+const char* FindNativeString(uint32_t language_id, std::string_view key) {
+  const auto it = g_native_strings.find(std::to_string(language_id) + ":" + std::string(key));
+  return it != g_native_strings.end() ? it->second.c_str() : nullptr;
+}
+
 int UserLanguageCount() {
-  return static_cast<int>(kLanguageOptions.size());
+  return static_cast<int>(GetLanguageOptions().size());
 }
 
 const char* UserLanguageCode(int index) {
-  if (index < 0 || index >= static_cast<int>(kLanguageOptions.size())) {
+  const auto options = GetLanguageOptions();
+  if (index < 0 || index >= static_cast<int>(options.size())) {
     return nullptr;
   }
-  return kLanguageOptions[index].code;
+  return options[index].code;
+}
+
+const char* UserLanguageLabel(int index) {
+  const auto options = GetLanguageOptions();
+  if (index < 0 || index >= static_cast<int>(options.size())) {
+    return nullptr;
+  }
+  return options[index].label;
+}
+
+// What the player has selected, which is not always what the cvar holds:
+// ApplyBootLanguageDonorSlot may have pointed the live cvar at a donor language
+// so the guest boots into the right BTX block. Until the player changes the
+// setting this session, the boot selection is the honest answer.
+std::string SelectedLanguageId() {
+  if (g_language_donor_applied && !g_language_selection_changed) {
+    return g_boot_language_id;
+  }
+  const auto* entry = rex::cvar::GetFlagInfo("user_language");
+  return entry ? entry->getter() : std::string();
 }
 
 int UserLanguageIndex() {
-  const auto* entry = rex::cvar::GetFlagInfo("user_language");
-  if (!entry) {
-    return 0;
-  }
-  const std::string current = entry->getter();
-  for (int i = 0; i < static_cast<int>(kLanguageOptions.size()); ++i) {
-    if (current == kLanguageOptions[i].id) {
+  const std::string current = SelectedLanguageId();
+  const auto options = GetLanguageOptions();
+  for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+    if (current == options[i].id) {
       return i;
     }
   }
+  // Unrecognised, which is the normal state after a mod that added a language
+  // is disabled with its id still saved: fall back to the first entry rather
+  // than clamping to the last, or the player ends up in a language they never
+  // chose.
   return 0;
 }
 
+uint32_t BootUserLanguageId() {
+  const auto options = GetLanguageOptions();
+  const int index = BootUserLanguageIndex();
+  if (index < 0 || index >= static_cast<int>(options.size()))
+    return 0;
+  return uint32_t(std::strtoul(options[index].id, nullptr, 10));
+}
+
+const char* BootBtxSlot() {
+  const auto options = GetLanguageOptions();
+  const int index = BootUserLanguageIndex();
+  if (index < 0 || index >= static_cast<int>(options.size()))
+    return nullptr;
+  // options[] holds pointers into kBuiltinLanguages or into g_mod_languages,
+  // both of which outlive this call, so returning one is safe.
+  return options[index].btx_slot;
+}
+
+void ApplyBootLanguageDonorSlot() {
+  BootUserLanguageIndex();  // Latch first: the write below moves the cvar.
+  const auto options = GetLanguageOptions();
+  const int index = BootUserLanguageIndex();
+  if (index < static_cast<int>(kBuiltinLanguages.size())) {
+    return;  // A built-in language; the guest already understands its id.
+  }
+  const char* slot = options[index].btx_slot;
+  if (!slot) {
+    REXLOG_WARN(
+        "[settings] language '{}' claimed no BTX slot, so the guest keeps its own text; only "
+        "the labels this host draws will be translated",
+        options[index].label);
+    return;
+  }
+  // The donor is the built-in language that owns the same block. Booting the
+  // guest as that language is what makes it read the block the mod patched.
+  for (const auto& builtin : kBuiltinLanguages) {
+    if (std::string_view(builtin.btx_slot) != slot)
+      continue;
+    // entry->setter, not SetFlagByName: SetFlagByName is what records a change
+    // with MarkPendingRestart, and this is not a change the player made. Left
+    // on the pending list it would read as "user_language was just edited"
+    // forever, and leaving the main-menu Options screen relaunches the process
+    // whenever anything is pending (see eternalsonata_options.cpp's
+    // OnLeaveMainMenuOptions), so the game would restart every time the player
+    // so much as opened Options. It also must not persist: the config has to
+    // keep naming the language the player actually chose.
+    auto* entry = rex::cvar::GetFlagInfo("user_language");
+    if (!entry || !entry->setter || !entry->setter(builtin.id)) {
+      REXLOG_WARN("[settings] could not point the guest at BTX slot '{}' for '{}'", slot,
+                  options[index].label);
+      return;
+    }
+    g_language_donor_applied = true;
+    REXLOG_INFO(
+        "[settings] booting the guest as {} (id {}) so '{}' reads BTX slot '{}'; {} is not "
+        "selectable while that mod is enabled",
+        builtin.label, builtin.id, options[index].label, slot, builtin.label);
+    return;
+  }
+  REXLOG_WARN("[settings] language '{}' claims BTX slot '{}', which no built-in language owns",
+              options[index].label, slot);
+}
+
 int BootUserLanguageIndex() {
-  // Captured on the first call and never again. user_language is
-  // kRequiresRestart: the guest reads its language once at boot, so everything
-  // already on screen - and every label we draw next to it - has to keep
-  // speaking the language the process started in, not the one the player has
-  // queued up for the next launch. InitSettingsCaches calls this at startup so
-  // the latch happens before the overlay (or the native Text row) can move the
-  // cvar; the lazy form here is only a safety net for callers that run earlier.
-  static const int boot = UserLanguageIndex();
-  return boot;
+  // The *id* is captured on the first call and never again; the index is worked
+  // out fresh each time, since a mod-added language only joins the list once
+  // that mod has registered and an index latched before then would be stale.
+  // user_language is kRequiresRestart: the guest reads its language once at
+  // boot, so everything already on screen (and every label we draw next to it)
+  // has to keep speaking the language the process started in, not the one the
+  // player has queued up for the next launch. InitSettingsCaches calls this at
+  // startup so the latch happens before the overlay (or the native Text row)
+  // can move the cvar; the lazy form here is only a safety net for callers that
+  // run earlier.
+  if (!g_boot_language_latched) {
+    g_boot_language_latched = true;
+    const auto* entry = rex::cvar::GetFlagInfo("user_language");
+    g_boot_language_id = entry ? entry->getter() : std::string();
+  }
+  const auto options = GetLanguageOptions();
+  for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+    if (g_boot_language_id == options[i].id) {
+      return i;
+    }
+  }
+  return 0;  // Same unknown-id fallback as UserLanguageIndex.
 }
 
 void SetUserLanguageSetting(int index) {
-  if (index < 0 || index >= static_cast<int>(kLanguageOptions.size())) {
+  const auto options = GetLanguageOptions();
+  if (index < 0 || index >= static_cast<int>(options.size())) {
     return;
   }
+  // From here on the live cvar is what the player picked, donor override or
+  // not: the guest booted long ago and nothing it reads changes again.
+  g_language_selection_changed = true;
   // user_language is kRequiresRestart: the guest reads its language once at
   // boot (it ends up in dword_8243D370, which is what picks the display list
   // for every screen), so nothing on screen changes until the game is
   // restarted. Going through SetFlagByName rather than entry->setter is what
   // records that with MarkPendingRestart, so the overlay's "restart to apply"
   // banner notices a change made from the native Options row too.
-  rex::cvar::SetFlagByName("user_language", kLanguageOptions[index].id,
+  rex::cvar::SetFlagByName("user_language", options[index].id,
                            /*persist=*/true);
   SaveUserSettings();
 }

@@ -229,6 +229,7 @@ set(ETERNALSONATA_SOURCES
     src/party_system.cpp
     src/battle_system.cpp
     src/save_system.cpp
+    src/achievement_translation.cpp
     src/eternalsonata_asset_container.cpp
     src/eternalsonata_asset_mesh.cpp
     src/eternalsonata_asset_texture.cpp
