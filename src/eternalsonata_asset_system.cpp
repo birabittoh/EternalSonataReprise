@@ -2,17 +2,19 @@
 //
 // See eternalsonata_asset_system.h for how patches reach the guest, and
 // eternalsonata_asset_api.h for the contract this implements. Text, textures,
-// and model chunks are wired up. Audio reports UNSUPPORTED.
+// model chunks, and audio are wired up.
 
 #include "eternalsonata_asset_system.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -20,6 +22,8 @@
 
 #include <rex/filesystem/devices/host_path_device.h>
 #include <rex/filesystem/devices/null_device.h>
+#include <rex/audio/audio_system.h>
+#include <rex/audio/xma/decoder.h>
 #include <rex/filesystem/vfs.h>
 #include <rex/logging.h>
 #include <rex/system/mod_plugin.h>
@@ -90,12 +94,29 @@ struct ModelChunkPatch {
   int priority = 0;
 };
 
+struct AudioPatch {
+  std::string kind;
+  std::string selector;
+  std::filesystem::path host_file;
+  std::vector<int16_t> samples;
+  uint32_t frame_count = 0;
+  uint32_t sample_rate = 0;
+  uint16_t channels = 0;
+  uint32_t loop_start = 0;
+  uint32_t loop_end = 0;
+  bool inherit_loop_points = true;
+  std::string owner;
+  int priority = 0;
+  std::array<uint8_t, 16> tag{};
+};
+
 struct Container {
   std::map<std::string, TextPatch> text;  // key: canonical reference suffix
   std::map<std::string, TexturePatch> textures;
   std::map<std::string, MeshPatch> meshes;
   std::map<std::string, ModelChunkPatch> skeletons;
   std::map<std::string, ModelChunkPatch> animations;
+  std::map<std::string, AudioPatch> audio;
   std::optional<RawPatch> raw;
 };
 
@@ -107,12 +128,16 @@ struct State {
   uint32_t next_provider_token = 1;
   std::filesystem::path cache_dir;
   bool bound = false;
+  std::map<std::array<uint8_t, 16>, AudioPatch*> tagged_audio;
 };
 
 State& state() {
   static State s;
   return s;
 }
+
+EternalSonataAssetResult RegisterAudio(const std::string& guest_path, AudioPatch patch,
+                                       bool force);
 
 // ---------------------------------------------------------------------------
 // Reference parsing
@@ -591,6 +616,21 @@ void ScanModAssets(const std::string& mod_name, int priority,
       patch.owner = mod_name;
       patch.priority = priority;
       RegisterModelChunk(guest_path, "animation", std::move(patch), false);
+    } else if (std::filesystem::path(kind).stem() == "music" && tail.empty()) {
+      AudioPatch patch;
+      patch.kind = "music";
+      patch.host_file = it->path();
+      patch.owner = mod_name;
+      patch.priority = priority;
+      RegisterAudio(guest_path, std::move(patch), false);
+    } else if (kind == "sfx" && tail.size() == 1) {
+      AudioPatch patch;
+      patch.kind = "sfx";
+      patch.selector = it->path().stem().string();
+      patch.host_file = it->path();
+      patch.owner = mod_name;
+      patch.priority = priority;
+      RegisterAudio(guest_path, std::move(patch), false);
     } else {
       REXLOG_WARN("assets: mod '{}' ships {} for {}, which this build cannot patch yet", mod_name,
                   kind, guest_path);
@@ -667,6 +707,18 @@ uint64_t CacheKey(rex::Runtime* runtime) {
     };
     hash_chunks(container.skeletons);
     hash_chunks(container.animations);
+    for (const auto& [key, patch] : container.audio) {
+      h = HashUpdate(h, key);
+      if (!patch.host_file.empty())
+        hash_file(patch.host_file);
+      else
+        h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(patch.samples.data()),
+                                           patch.samples.size() * sizeof(int16_t)));
+      h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(&patch.loop_start),
+                                         sizeof(patch.loop_start)));
+      h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(&patch.loop_end),
+                                         sizeof(patch.loop_end)));
+    }
     if (container.raw) {
       if (container.raw->host_file.empty())
         h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(container.raw->bytes.data()),
@@ -845,6 +897,133 @@ bool LoadModelChunk(const ModelChunkPatch& patch, const char magic[4], std::vect
   return true;
 }
 
+uint16_t ReadLe16(const uint8_t* p) { return uint16_t(p[0]) | uint16_t(p[1]) << 8; }
+uint32_t ReadLe32(const uint8_t* p) {
+  return uint32_t(p[0]) | uint32_t(p[1]) << 8 | uint32_t(p[2]) << 16 | uint32_t(p[3]) << 24;
+}
+uint32_t ReadBe32(const uint8_t* p) {
+  return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | uint32_t(p[3]);
+}
+
+bool LoadPcmWav(const std::filesystem::path& path, AudioPatch& patch, std::string* error) {
+  std::vector<uint8_t> bytes;
+  if (!ReadWholeFile(path, bytes) || bytes.size() < 12 ||
+      std::memcmp(bytes.data(), "RIFF", 4) != 0 || std::memcmp(bytes.data() + 8, "WAVE", 4) != 0) {
+    *error = "is not a readable little endian WAV";
+    return false;
+  }
+  const uint8_t* pcm = nullptr;
+  size_t pcm_size = 0;
+  uint16_t bits = 0;
+  for (size_t at = 12; at + 8 <= bytes.size();) {
+    const uint32_t size = ReadLe32(bytes.data() + at + 4);
+    if (size > bytes.size() - at - 8)
+      break;
+    const uint8_t* body = bytes.data() + at + 8;
+    if (std::memcmp(bytes.data() + at, "fmt ", 4) == 0 && size >= 16) {
+      if (ReadLe16(body) != 1) {
+        *error = "must contain uncompressed PCM";
+        return false;
+      }
+      patch.channels = ReadLe16(body + 2);
+      patch.sample_rate = ReadLe32(body + 4);
+      bits = ReadLe16(body + 14);
+    } else if (std::memcmp(bytes.data() + at, "data", 4) == 0) {
+      pcm = body;
+      pcm_size = size;
+    } else if (std::memcmp(bytes.data() + at, "smpl", 4) == 0 && size >= 60 &&
+               ReadLe32(body + 28) > 0) {
+      patch.loop_start = ReadLe32(body + 44);
+      patch.loop_end = ReadLe32(body + 48) + 1;
+      patch.inherit_loop_points = false;
+    }
+    at += 8 + size + (size & 1);
+  }
+  if (!pcm || !patch.channels || !patch.sample_rate || bits != 16 ||
+      pcm_size % (patch.channels * sizeof(int16_t)) != 0) {
+    *error = "must contain 16 bit PCM with a valid data chunk";
+    return false;
+  }
+  patch.samples.resize(pcm_size / 2);
+  for (size_t i = 0; i < patch.samples.size(); ++i)
+    patch.samples[i] = int16_t(ReadLe16(pcm + i * 2));
+  patch.frame_count = uint32_t(patch.samples.size() / patch.channels);
+  return true;
+}
+
+bool EnsureAudioLoaded(AudioPatch& patch, std::string* error) {
+  if (!patch.samples.empty())
+    return true;
+  std::string ext = patch.host_file.extension().string();
+  for (char& c : ext)
+    c = char(std::tolower(uint8_t(c)));
+  if (ext == ".wav")
+    return LoadPcmWav(patch.host_file, patch, error);
+  *error = "uses an encoded format this build cannot decode; convert it to 16 bit PCM WAV";
+  return false;
+}
+
+bool ConvertWavToGuestEndian(std::vector<uint8_t>& bytes) {
+  if (bytes.size() < 12 || std::memcmp(bytes.data(), "RIFF", 4) != 0 ||
+      std::memcmp(bytes.data() + 8, "WAVE", 4) != 0)
+    return false;
+  auto put_be16 = [&bytes](size_t at, uint16_t value) {
+    bytes[at] = uint8_t(value >> 8);
+    bytes[at + 1] = uint8_t(value);
+  };
+  auto put_be32 = [&bytes](size_t at, uint32_t value) {
+    bytes[at] = uint8_t(value >> 24);
+    bytes[at + 1] = uint8_t(value >> 16);
+    bytes[at + 2] = uint8_t(value >> 8);
+    bytes[at + 3] = uint8_t(value);
+  };
+  put_be32(4, uint32_t(bytes.size()));
+  for (size_t at = 12; at + 8 <= bytes.size();) {
+    const uint32_t size = ReadLe32(bytes.data() + at + 4);
+    if (size > bytes.size() - at - 8)
+      return false;
+    put_be32(at + 4, size);
+    if (std::memcmp(bytes.data() + at, "fmt ", 4) == 0 && size >= 16) {
+      put_be16(at + 8, ReadLe16(bytes.data() + at + 8));
+      put_be16(at + 10, ReadLe16(bytes.data() + at + 10));
+      put_be32(at + 12, ReadLe32(bytes.data() + at + 12));
+      put_be32(at + 16, ReadLe32(bytes.data() + at + 16));
+      put_be16(at + 20, ReadLe16(bytes.data() + at + 20));
+      put_be16(at + 22, ReadLe16(bytes.data() + at + 22));
+    } else if (std::memcmp(bytes.data() + at, "data", 4) == 0) {
+      for (size_t i = at + 8; i + 1 < at + 8 + size; i += 2)
+        std::swap(bytes[i], bytes[i + 1]);
+    }
+    at += 8 + size + (size & 1);
+  }
+  return true;
+}
+
+EternalSonataAssetResult RegisterAudio(const std::string& guest_path, AudioPatch patch,
+                                       bool force) {
+  auto& patches = state().containers[guest_path].audio;
+  const std::string key = patch.kind + ":" + patch.selector;
+  auto it = patches.find(key);
+  if (it != patches.end()) {
+    const bool wins = force || patch.priority < it->second.priority;
+    REXLOG_WARN("assets: '{}' and '{}' both patch {}#{}; '{}' wins", it->second.owner,
+                patch.owner, guest_path, key, wins ? patch.owner : it->second.owner);
+    if (!wins)
+      return ETERNALSONATA_ASSET_CONFLICT;
+  }
+  uint64_t token = 0xcbf29ce484222325ull;
+  for (char c : guest_path + "#" + key) {
+    token ^= uint8_t(c);
+    token *= 0x100000001b3ull;
+  }
+  std::memcpy(patch.tag.data(), "RXPcmSub", 8);
+  for (size_t i = 0; i < 8; ++i)
+    patch.tag[8 + i] = uint8_t(token >> (i * 8));
+  patches[key] = std::move(patch);
+  state().tagged_audio[patches[key].tag] = &patches[key];
+  return ETERNALSONATA_ASSET_OK;
+}
+
 void ApplyModelChunkPatches(const std::string& guest_path, const Container& container,
                             PatchedContainer& result) {
   for (const auto& [key, patch] : container.skeletons) {
@@ -920,9 +1099,56 @@ void ApplyModelChunkPatches(const std::string& guest_path, const Container& cont
   }
 }
 
+void ApplyAudioPatches(const std::string& guest_path, Container& container,
+                       PatchedContainer& result) {
+  for (auto& [key, patch] : container.audio) {
+    std::string error;
+    if (!EnsureAudioLoaded(patch, &error)) {
+      REXLOG_WARN("assets: mod '{}' audio {}#{} {}", patch.owner, guest_path, key, error);
+      continue;
+    }
+
+    size_t payload = size_t(-1);
+    if (patch.kind == "music" && result.bytes.size() >= 0x30 &&
+        std::memcmp(result.bytes.data(), "CXS ", 4) == 0) {
+      payload = ReadBe32(result.bytes.data() + 0x20);
+      if (patch.inherit_loop_points) {
+        patch.loop_start = ReadBe32(result.bytes.data() + 0x14);
+        patch.loop_end = ReadBe32(result.bytes.data() + 0x18);
+      }
+    } else if (patch.kind == "sfx" && result.bytes.size() >= 0x20 &&
+               std::memcmp(result.bytes.data(), "CSF ", 4) == 0 &&
+               IsAllDigits(patch.selector)) {
+      const uint32_t audio_start = ReadBe32(result.bytes.data() + 8);
+      const size_t wanted = size_t(std::stoul(patch.selector));
+      size_t ordinal = 0;
+      for (size_t at = 0x10; at + 24 <= std::min<size_t>(audio_start, result.bytes.size()); ++at) {
+        if (std::memcmp(result.bytes.data() + at, "TIM ", 4) != 0)
+          continue;
+        if (ordinal++ == wanted) {
+          payload = size_t(audio_start) + ReadBe32(result.bytes.data() + at + 16);
+          break;
+        }
+        const uint32_t length = ReadBe32(result.bytes.data() + at + 4);
+        if (length >= 16)
+          at += 7 + length;
+      }
+    }
+    if (payload == size_t(-1) || payload + patch.tag.size() > result.bytes.size()) {
+      REXLOG_WARN("assets: mod '{}' patches {}#{}, which the audio container does not have",
+                  patch.owner, guest_path, key);
+      continue;
+    }
+    std::memcpy(result.bytes.data() + payload, patch.tag.data(), patch.tag.size());
+    ++result.patches_applied;
+    REXLOG_INFO("assets: mod '{}' replaced {}#{} with {} PCM frames", patch.owner, guest_path,
+                key, patch.frame_count);
+  }
+}
+
 std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const assets::Toc& toc,
                                                const std::string& guest_path,
-                                               const Container& container) {
+                                               Container& container) {
   PatchedContainer result;
   result.guest_path = guest_path;
 
@@ -933,9 +1159,14 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
       REXLOG_ERROR("assets: could not read {}", container.raw->host_file.string());
       return std::nullopt;
     }
+    if (std::filesystem::path(guest_path).extension() == ".wav" &&
+        !ConvertWavToGuestEndian(result.bytes)) {
+      REXLOG_ERROR("assets: {} is not a supported PCM WAV", container.raw->host_file.string());
+      return std::nullopt;
+    }
     result.patches_applied = 1;
     if (container.text.empty() && container.textures.empty() && container.meshes.empty() &&
-        container.skeletons.empty() && container.animations.empty())
+        container.skeletons.empty() && container.animations.empty() && container.audio.empty())
       return result;
   } else {
     const auto base = ResolveBaseFile(runtime, guest_path);
@@ -999,6 +1230,7 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
   ApplyTexturePatches(guest_path, container, result);
   ApplyMeshPatches(guest_path, container, result);
   ApplyModelChunkPatches(guest_path, container, result);
+  ApplyAudioPatches(guest_path, container, result);
   if (!container.meshes.empty() || !container.skeletons.empty() || !container.animations.empty()) {
     std::string error;
     if (!assets::ValidateModelGraph(result.bytes, &error)) {
@@ -1040,7 +1272,7 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir) {
   std::filesystem::create_directories(dir, ec);
 
   size_t built = 0;
-  for (const auto& [guest_path, container] : state().containers) {
+  for (auto& [guest_path, container] : state().containers) {
     // Last chance for a lazy provider to register patches for this container.
     for (auto& entry : state().providers)
       entry.second.first(guest_path.c_str(), entry.second.second);
@@ -1184,6 +1416,57 @@ bool LoadDecodedContainer(const std::string& guest_path, std::vector<uint8_t>& o
   return assets::DecodeAsset(encoded.data(), encoded.size(), entry->size, entry->flag, out);
 }
 
+bool SupplyReplacementPcm(void*, const uint8_t tag[16], uint64_t* cursor, int sample_rate,
+                          uint32_t channels, int16_t* output, uint32_t frames, bool* finished) {
+  State& s = state();
+  std::lock_guard<std::recursive_mutex> lock(s.mutex);
+  std::array<uint8_t, 16> key;
+  std::memcpy(key.data(), tag, key.size());
+  auto found = s.tagged_audio.find(key);
+  if (found == s.tagged_audio.end())
+    return false;
+  const AudioPatch& patch = *found->second;
+  if (!patch.frame_count || !patch.channels || !patch.sample_rate || sample_rate <= 0)
+    return false;
+
+  const uint64_t step = (uint64_t(patch.sample_rate) << 32) / uint32_t(sample_rate);
+  const uint64_t loop_begin = uint64_t(patch.loop_start) << 32;
+  const uint64_t loop_end = uint64_t(std::min(patch.loop_end, patch.frame_count)) << 32;
+  const uint64_t end = uint64_t(patch.frame_count) << 32;
+  bool ended = false;
+  for (uint32_t frame = 0; frame < frames; ++frame) {
+    if (*cursor >= end) {
+      if (loop_end > loop_begin)
+        *cursor = loop_begin + (*cursor - loop_begin) % (loop_end - loop_begin);
+      else
+        ended = true;
+    } else if (loop_end > loop_begin && *cursor >= loop_end) {
+      *cursor = loop_begin + (*cursor - loop_begin) % (loop_end - loop_begin);
+    }
+    for (uint32_t channel = 0; channel < channels; ++channel) {
+      int32_t value = 0;
+      if (!ended) {
+        const size_t source_frame = size_t(*cursor >> 32);
+        if (patch.channels == 1) {
+          value = patch.samples[source_frame];
+        } else if (channels == 1) {
+          value = (int32_t(patch.samples[source_frame * patch.channels]) +
+                   patch.samples[source_frame * patch.channels + 1]) /
+                  2;
+        } else {
+          value = patch.samples[source_frame * patch.channels +
+                                std::min<uint32_t>(channel, patch.channels - 1)];
+        }
+      }
+      output[size_t(frame) * channels + channel] = int16_t(value);
+    }
+    if (!ended)
+      *cursor += step;
+  }
+  *finished = ended;
+  return true;
+}
+
 }  // namespace
 
 void BindAssetSystem(rex::Runtime* runtime) {
@@ -1194,6 +1477,18 @@ void BindAssetSystem(rex::Runtime* runtime) {
   int priority = 0;
   for (const auto& mod : runtime->EnabledModsInfo())
     ScanModAssets(mod.folder_name, priority++, mod.mod_root);
+
+  for (auto& [guest_path, container] : s.containers) {
+    for (auto& [key, patch] : container.audio) {
+      std::string error;
+      if (!EnsureAudioLoaded(patch, &error))
+        REXLOG_WARN("assets: mod '{}' audio {}#{} {}", patch.owner, guest_path, key, error);
+    }
+  }
+  if (auto* audio = static_cast<rex::audio::AudioSystem*>(runtime->audio_system())) {
+    if (audio->xma_decoder())
+      audio->xma_decoder()->SetPcmReplacementProvider(SupplyReplacementPcm, nullptr);
+  }
 
   s.bound = true;
   if (s.containers.empty())
@@ -1284,6 +1579,28 @@ extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataEnumerate
   if (!LoadDecodedContainer(path, data))
     return ETERNALSONATA_ASSET_IO_ERROR;
 
+  if (data.size() >= 0x30 && std::memcmp(data.data(), "CXS ", 4) == 0) {
+    const std::string ref = path + "#music";
+    visitor(ref.c_str(), ETERNALSONATA_ASSET_KIND_MUSIC, "", ReadBe32(data.data() + 0x10), user);
+    return ETERNALSONATA_ASSET_OK;
+  }
+  if (data.size() >= 0x20 && std::memcmp(data.data(), "CSF ", 4) == 0) {
+    const uint32_t audio_start = ReadBe32(data.data() + 8);
+    size_t ordinal = 0;
+    for (size_t at = 0x10; at + 24 <= std::min<size_t>(audio_start, data.size()); ++at) {
+      if (std::memcmp(data.data() + at, "TIM ", 4) != 0)
+        continue;
+      const std::string ref = path + "#sfx:" + std::to_string(ordinal++);
+      if (!visitor(ref.c_str(), ETERNALSONATA_ASSET_KIND_SFX, "", ReadBe32(data.data() + at + 20),
+                   user))
+        break;
+      const uint32_t length = ReadBe32(data.data() + at + 4);
+      if (length >= 16)
+        at += 7 + length;
+    }
+    return ETERNALSONATA_ASSET_OK;
+  }
+
   const auto blobs = assets::FindBtxBlobs(data);
   for (size_t bi = 0; bi < blobs.size(); ++bi) {
     for (const auto& lang : blobs[bi].langs) {
@@ -1335,7 +1652,8 @@ EternalSonataClearAssetPatch(const char* ref) {
   Reference parsed;
   if (!ParseReference(ref, &parsed) ||
       (parsed.kind != "text" && parsed.kind != "tex" && parsed.kind != "mesh" &&
-       parsed.kind != "skeleton" && parsed.kind != "animation" && !parsed.kind.empty()))
+       parsed.kind != "skeleton" && parsed.kind != "animation" && parsed.kind != "music" &&
+       parsed.kind != "sfx" && !parsed.kind.empty()))
     return ETERNALSONATA_ASSET_BAD_REF;
   if (parsed.kind.empty()) {
     std::lock_guard<std::recursive_mutex> lock(state().mutex);
@@ -1372,6 +1690,19 @@ EternalSonataClearAssetPatch(const char* ref) {
     return container->second.textures.erase("tex:" + parsed.selector)
                ? ETERNALSONATA_ASSET_OK
                : ETERNALSONATA_ASSET_NOT_FOUND;
+  }
+  if (parsed.kind == "music" || parsed.kind == "sfx") {
+    std::lock_guard<std::recursive_mutex> lock(state().mutex);
+    auto container = state().containers.find(parsed.guest_path);
+    if (container == state().containers.end())
+      return ETERNALSONATA_ASSET_NOT_FOUND;
+    const std::string key = parsed.kind + ":" + parsed.selector;
+    auto patch = container->second.audio.find(key);
+    if (patch == container->second.audio.end())
+      return ETERNALSONATA_ASSET_NOT_FOUND;
+    state().tagged_audio.erase(patch->second.tag);
+    container->second.audio.erase(patch);
+    return ETERNALSONATA_ASSET_OK;
   }
   size_t blob = 0;
   std::string lang;
@@ -1599,16 +1930,54 @@ EternalSonataReplaceAnimationFromFile(const char* ref, const char* host_path, ui
 
 extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
 EternalSonataReplaceAudio(const char* ref, const EternalSonataAudio* audio, uint32_t flags) {
-  (void)ref;
-  (void)audio;
-  (void)flags;
-  return ETERNALSONATA_ASSET_UNSUPPORTED;
+  Reference parsed;
+  if (!ParseReference(ref, &parsed) ||
+      (parsed.kind != "music" && parsed.kind != "sfx") ||
+      (parsed.kind == "sfx" && !IsAllDigits(parsed.selector)))
+    return ETERNALSONATA_ASSET_BAD_REF;
+  if (!audio || !audio->samples || !audio->frame_count || !audio->sample_rate ||
+      !audio->channels)
+    return ETERNALSONATA_ASSET_BAD_DATA;
+  const size_t sample_count = size_t(audio->frame_count) * audio->channels;
+  if (sample_count > std::numeric_limits<size_t>::max() / sizeof(int16_t))
+    return ETERNALSONATA_ASSET_BAD_DATA;
+  AudioPatch patch;
+  patch.kind = parsed.kind;
+  patch.selector = parsed.selector;
+  patch.samples.assign(audio->samples, audio->samples + sample_count);
+  patch.frame_count = audio->frame_count;
+  patch.sample_rate = audio->sample_rate;
+  patch.channels = audio->channels;
+  patch.loop_start = audio->loop_start;
+  patch.loop_end = audio->loop_end;
+  patch.inherit_loop_points = audio->inherit_loop_points != 0;
+  patch.owner = "runtime";
+  patch.priority = kRuntimePriority;
+  std::lock_guard<std::recursive_mutex> lock(state().mutex);
+  return RegisterAudio(parsed.guest_path, std::move(patch),
+                       (flags & ETERNALSONATA_ASSET_FORCE) != 0);
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult
 EternalSonataReplaceAudioFromFile(const char* ref, const char* host_path, uint32_t flags) {
-  (void)ref;
-  (void)host_path;
-  (void)flags;
-  return ETERNALSONATA_ASSET_UNSUPPORTED;
+  Reference parsed;
+  if (!ParseReference(ref, &parsed) ||
+      (parsed.kind != "music" && parsed.kind != "sfx") ||
+      (parsed.kind == "sfx" && !IsAllDigits(parsed.selector)) || !host_path)
+    return ETERNALSONATA_ASSET_BAD_REF;
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(host_path, ec))
+    return ETERNALSONATA_ASSET_IO_ERROR;
+  AudioPatch patch;
+  patch.kind = parsed.kind;
+  patch.selector = parsed.selector;
+  patch.host_file = host_path;
+  patch.owner = "runtime";
+  patch.priority = kRuntimePriority;
+  std::string error;
+  if (!EnsureAudioLoaded(patch, &error))
+    return ETERNALSONATA_ASSET_UNSUPPORTED;
+  std::lock_guard<std::recursive_mutex> lock(state().mutex);
+  return RegisterAudio(parsed.guest_path, std::move(patch),
+                       (flags & ETERNALSONATA_ASSET_FORCE) != 0);
 }
