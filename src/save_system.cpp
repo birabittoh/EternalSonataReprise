@@ -440,11 +440,9 @@ REX_HOOK_RAW(sub_82241190) {
 REX_EXTERN(__imp__sub_82236678);
 REX_HOOK_RAW(sub_82236678) {
   if (eternalsonata::g_force_save_allowed.load(std::memory_order_relaxed)) {
-    // The menu's own copy, which is what the build below reads, and the flag
-    // it was latched from, so anything else that consults the save-point state
-    // during this menu agrees with it.
+    // The build reads only this menu-local latch. The source flag also drives
+    // field interaction, so changing it makes every A press open Save.
     REX_STORE_U8(eternalsonata::kMenuSaveEnabledAddr, 1);
-    REX_STORE_U8(eternalsonata::kAtSavePointAddr, 1);
   }
   __imp__sub_82236678(ctx, base);
 }
