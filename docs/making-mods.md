@@ -62,10 +62,6 @@ always writes that generation's matching `index.vmtoc` record with the codec
 set to stored and the size set to the new decoded length. The loader sizes its
 allocation from that record, so the two are never served apart.
 
-> **Implementation status.** Text, texture, native NSHP, NBN2, NMTN, and audio
-> patches are live.
-> `scripts/es_asset.py` and the asset browser overlay do not exist yet either.
-
 ### Finding what to replace
 
 Every asset has a **reference**, which is the guest path plus what to address
@@ -80,6 +76,7 @@ map/nyaza.e#mesh:head             mesh (NSHP chunk) by name
 map/nyaza.e#mesh:2                third mesh, in file order
 e0020_020.e#skeleton:0            first NBN2 skeleton
 e0020_020.e#animation:walk        NMTN animation by embedded name
+cfdata/e0020_050.e#lipsync:0      first embedded lip instruction track
 ```
 
 The guest path is the path as it appears in `index.vmtoc`: lowercase,
@@ -114,6 +111,7 @@ The path under `assets/` *is* the reference, spelled as directories:
 | `e0020_020.e#animation:walk` | `assets/e0020_020.e/animations/walk.nmtn` |
 | `sound/cxs/bgm042.cxs#music` | `assets/sound/cxs/bgm042.cxs/music.wav` |
 | `sound/spc001.csf#sfx:7` | `assets/sound/spc001.csf/sfx/7.wav` |
+| `cfdata/e0020_050.e#lipsync:0` | `assets/cfdata/e0020_050.e/lipsync/0.csv` |
 | whole file `sound/vo/field01.wav` | `assets/sound/vo/field01.wav` |
 
 Language folders are the game's own fourccs without the trailing space: `JPN`,
@@ -211,7 +209,7 @@ Model changes are constrained by the rest of the container:
 - Vertex, index, bone, track, and keyframe counts are otherwise free when
   `allow_resize` is enabled.
 
-### Music and sound effects
+### Music, voices, and sound effects
 
 Music (`.cxs`, one file per track) and sound and voice banks (`.csf`, many
 clips per file) both hold raw XMA2, the Xbox 360's codec, and no open encoder
@@ -222,12 +220,20 @@ your audio there instead:
 ```
 mods/<name>/assets/
   sound/cxs/bgm042.cxs/music.wav     replaces one music track
-  sound/spc001.csf/sfx/7.wav         replaces clip 7 of a bank
+  sound/spc001.csf/sfx/7.wav         replaces effect or voice clip 7
   sound/vo/field01.wav               a plain PCM .wav, replaced whole
 ```
 
-Ship ordinary 16 bit PCM WAV audio, at any sample rate and channel count. The
-host resamples and downmixes. You never touch XMA and you never need the XDK.
+Music uses the selector `#music`. Both voices and sound effects use `#sfx:N`,
+where `N` is the zero-based TIM clip ordinal inside the CSF bank. Replacing a
+voice therefore uses exactly the same folder shape as replacing an effect. Use
+the asset enumeration API or Eternal Sonata Studio's CSF viewer to identify the
+ordinal.
+
+Ship an ordinary little-endian, uncompressed, 16-bit PCM WAV at any sample rate
+and channel count. The host converts its sample rate and channel layout to the
+XMA stream requested by the game. Compressed WAV, Ogg, FLAC, and MP3 input are
+not currently accepted. You never touch XMA and you never need the XDK.
 
 The host tags the selected XMA payload without changing its size or metadata.
 Audio replacement never resizes anything and can't collide with a text or
@@ -236,16 +242,59 @@ leaves the other 199 playing as shipped.
 
 Two things follow from substituting rather than splicing:
 
-- **Music length is free, voice length isn't.** A `.cxs` track loops on its
-  own loop points (47 of the 62 retail tracks have them) and can be any length;
-  put `loop_start`/`loop_end` in a WAV `smpl` chunk to override them, or inherit
-  the shipped track's. A voice clip that a text box waits on (the `<wv>` tag) should match
-  the original's duration: longer audio is cut off when the game moves on,
-  not waited for.
+- **Music length is free, voice length isn't.** A `.cxs` track can be any
+  length. By default it uses the shipped track's sample-frame loop points, which
+  47 of the 62 retail tracks carry. A WAV `smpl` loop overrides them. A voice
+  clip that a text box waits on through the `<wv>` tag should match the
+  original's duration: longer audio is cut off when the game moves on, not
+  waited for. Shorter audio ends early.
 - **The `.wav` files under `assets/sound` are a separate, easier case.** They
   are plain big-endian PCM rather than XMA, so they are replaced as whole
   files with a byte swap and no decoder involvement at all. Drop a normal
-  little-endian WAV in and the host swaps it.
+  little-endian 16-bit PCM WAV at the same guest path and the host swaps its
+  RIFF fields and samples.
+
+The equivalent runtime calls are `EternalSonataReplaceAudio` for interleaved
+signed 16-bit PCM already in memory and `EternalSonataReplaceAudioFromFile` for
+a WAV on disk. Registering a runtime patch follows the same lifecycle as the
+other asset calls: invalidate the guest path when an already-running asset
+generation must be rebuilt.
+
+### Lip sync instructions
+
+Voice containers can carry `LIP ` chunks beside their CSF audio. Each chunk is
+an ordered list of a mouth shape and its duration. Address one as
+`#lipsync:N`, where `N` is the zero-based LIP chunk ordinal in the container,
+and place an editable CSV at the matching path:
+
+```text
+mods/<name>/assets/cfdata/e0020_050.e/lipsync/0.csv
+```
+
+```csv
+phoneme,duration
+1,5
+2,3
+0,2
+5,4
+```
+
+The phoneme values are `0` neutral, `1` A or ah, `2` E or ee, `3` O or oh,
+`4` U or oo, and `5` M or mm. Duration is the game's timing unit and must be
+between 1 and 255. Blank lines, the header shown above, and lines beginning
+with `#` are ignored.
+
+Lip sync replacement is independent of voice replacement. A mod can replace
+either one or both, and separate mods can replace them without shipping the
+surrounding container. The instructions are rewritten in place, so the CSV may
+contain at most as many events as the original LIP chunk has room for. The
+asset enumeration API reports each `#lipsync:` reference and its original
+event count. Lip sync does not support `allow_resize` because growing a LIP
+chunk would also require rebuilding its enclosing CSF and CSL offset tables.
+
+Runtime mods can pass `EternalSonataLipEvent` entries to
+`EternalSonataReplaceLipSync`, or load the same CSV format through
+`EternalSonataReplaceLipSyncFromFile`.
 
 ### Text encoding
 
