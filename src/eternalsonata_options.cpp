@@ -1239,6 +1239,231 @@ void HideAllPageBars(u8* base, int page) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Extra values on the game's own Voice row
+// ---------------------------------------------------------------------------
+//
+// Every other row on these screens is one we added. This one is the game's:
+// its label and its two values are stock display-list records, its highlight
+// bar is a stock object, and its input is handled by sub_82201620. A mod voice
+// language has to appear as a *third value on that row* rather than on a row of
+// our own, because the player must be able to mix it freely with the Text row -
+// mod voice with stock text, stock voice with mod text.
+//
+// Three things are therefore grafted onto a row we do not own:
+//
+//   1. a text record per extra value, spliced in with our own rows' records.
+//      Records carry absolute coordinates, so one authored at the Voice row's
+//      own y lands on the Voice row no matter where in the list it sits, and
+//      a type-200 record creates nothing in the screen's id array, so it cannot
+//      renumber the stock bars.
+//   2. the stock bar, re-placed onto the extra value every frame. The guest's
+//      selector byte is left at the donor's value while a mod voice language is
+//      active (it has to be: it is the guest's own bank-cache key), so
+//      sub_82201620 believes the donor is selected and parks the bar on the
+//      donor's column. Overriding the position per frame is what puts it back,
+//      and it is the same mechanism PlacePageBars already uses for our rows.
+//   3. left/right on the row, taken over only for the transitions the stock
+//      handler cannot make. It is not bypassed (it also drives navigation and
+//      cancel for the whole screen), so instead the two direction bits are
+//      masked out of the pad for the duration of the call it must not see.
+constexpr u32 kVoiceRowIndex = 1;         // group sub-index, right after Subtitles
+constexpr u32 kVoiceBarSlot = 92;         // screen +92, element 4 of the id array
+constexpr int32_t kVoiceRecordY = 335;    // the row's own record y (Subtitles is 285)
+constexpr u32 kVoiceByte = 0x8243FC06u;   // BYTE2(dword_8243FC04): 0 = Japanese
+constexpr int kVoiceStockValues = 2;
+// Synthetic BTX ids for the extra values, past the last id any row can claim so
+// the two ranges cannot collide however many rows are registered.
+constexpr u32 kVoiceSidBase = kRowSidBase + kRowSidStride * kMaxOptionRows;
+
+// The selected value, or -1 until the first Options build resolves it. Held
+// here rather than read from the cvar every frame because for values 0 and 1
+// the authority is the guest's byte, not the cvar: those two are the game's own
+// and the game's own handler moves them.
+int g_voice_index = -1;
+// One guest string per extra value, allocated on the first build that needs it.
+std::vector<u32> g_voice_addr;
+
+// How many values the row has in total. Two unless a mod added voice languages.
+int VoiceValueCount() {
+  return std::min(eternalsonata::VoiceLanguageCount(),
+                  static_cast<int>(kMaxRowValues));
+}
+
+bool VoiceRowExtended() { return VoiceValueCount() > kVoiceStockValues; }
+
+// What the guest itself thinks is selected, as a *column*. Only meaningful for
+// the stock two. Not the byte: the row is drawn English then Japanese while the
+// byte is 0 for Japanese, which is why the game's own placement reads
+// `200 * (byte ^ 1)`. The mapping lives in settings.cpp, so this cannot drift
+// from the list the row is drawn out of.
+int VoiceGuestIndex(u8* base) {
+  return eternalsonata::VoiceLanguageIndexForGuestByte(REX_LOAD_U8(kVoiceByte) ? 1 : 0);
+}
+
+// The row's current value. While it is one of the stock two the guest's byte is
+// the authority, so this follows it rather than caching: the player can move
+// that row through the game's own code path at any time.
+int VoiceIndex(u8* base) {
+  if (g_voice_index >= kVoiceStockValues) {
+    return g_voice_index;
+  }
+  return VoiceGuestIndex(base);
+}
+
+// Runtime x of the row's bar for value `index`. The stock two sit on the plain
+// 200px column pitch the row was authored with, so the extra ones simply
+// continue it. There is no squeezing to do, because the row keeps its stock
+// values' own widths whatever we add.
+int32_t VoiceBarX(int page, int index) {
+  return g_page[page].value_base_x + kRecordToRuntimeX + kBarColumnStride * index;
+}
+
+// The stock bar object's registry id, read out of the screen's id array at the
+// same offset sub_82201620 reads it from.
+u32 VoiceBarId(u8* base) {
+  const u32 screen = CurrentScreenObject(base);
+  if (!screen) {
+    return 0xFFFFFFFFu;
+  }
+  return REX_LOAD_U32(screen + kVoiceBarSlot);
+}
+
+// The bar object itself, or 0. Its width lives here rather than in the registry
+// the position goes through, so sizing it needs the object.
+u32 VoiceBarObject(u8* base) {
+  const u32 bar_id = VoiceBarId(base);
+  const u32 root = REX_LOAD_U32(kUiRoot);
+  if (bar_id == 0xFFFFFFFFu || !GuestPtr(root)) {
+    return 0;
+  }
+  const u32 obj = g_resolve_object(root, bar_id);
+  return GuestPtr(obj) ? obj : 0;
+}
+
+// The bar's width, as an x scale in the same thousandths a type-100-family
+// record carries at +0x10 (read back live at 0.45 from a 450-thousandths
+// record). This row's bar is a single object that its handler resizes as the
+// value changes, so the width is as much per-value state as the position is,
+// and on an extra value it would otherwise keep whatever the last stock value
+// left behind.
+float VoiceBarScale(u8* base) {
+  const u32 obj = VoiceBarObject(base);
+  if (!obj) {
+    return -1.0f;
+  }
+  const u32 bits = REX_LOAD_U32(obj + kBarObjScaleXOffset);
+  float scale;
+  std::memcpy(&scale, &bits, sizeof(scale));
+  return scale;
+}
+
+void SetVoiceBarScale(u8* base, float scale) {
+  const u32 obj = VoiceBarObject(base);
+  if (!obj || !(scale > 0.0f)) {
+    return;
+  }
+  u32 bits;
+  std::memcpy(&bits, &scale, sizeof(bits));
+  REX_STORE_U32(obj + kBarObjScaleXOffset, bits);
+}
+
+// The width the game itself gave each of its own two values, learned by
+// watching rather than assumed. Needed because returning from an extra value to
+// a stock one goes through our code, not the row handler's: the press that made
+// the move was hidden from it, so it never resizes the bar back and the stock
+// value would keep the extra value's width. Sampled while a stock value is
+// selected, which is the only time the number on the object is the game's.
+float g_voice_stock_scale[kVoiceStockValues] = {-1.0f, -1.0f};
+
+void CaptureVoiceBarScale(u8* base, int index) {
+  if (index < 0 || index >= kVoiceStockValues) {
+    return;
+  }
+  const float scale = VoiceBarScale(base);
+  if (scale > 0.0f) {
+    g_voice_stock_scale[index] = scale;
+  }
+}
+
+// Puts the row's bar on `index` and sizes it to the value under it. An extra
+// value is sized by the same per-character estimate every other row's bar uses,
+// applied to the label actually drawn; a stock value is put back to whatever the
+// game last had it at, and left alone until then.
+void PlaceVoiceBar(u8* base, int page, int index, bool move) {
+  PlaceBar(base, VoiceBarId(base), VoiceBarX(page, index),
+           kVoiceRecordY + kRecordToRuntimeY, move);
+  if (index >= kVoiceStockValues) {
+    const char* label = eternalsonata::VoiceLanguageLabel(index);
+    if (label) {
+      SetVoiceBarScale(base, static_cast<float>(BarWidthForText(label)) / 1000.0f);
+    }
+  } else {
+    SetVoiceBarScale(base, g_voice_stock_scale[index]);
+  }
+}
+
+// Writes the voice_language cvar to match `index`, through the accessor rather
+// than the cvar directly so the kRequiresRestart bookkeeping (and the persist)
+// happen exactly as they do from the F4 overlay. A no-op when it already says
+// so: this is reached from a per-press path, and rewriting settings.toml for a
+// value that did not change would be a file write per keypress.
+void VoiceSetIndex(int index) {
+  if (eternalsonata::VoiceLanguageIndex() != index) {
+    eternalsonata::SetVoiceLanguageSetting(index);
+  }
+}
+
+// The menu object the cursor hook below reads its group state out of.
+constexpr u32 kMenuRoot = 0x824400E8u;
+
+// Which item of `group_id` the cursor is parked on, or -1 when that group is
+// not the selected one. Same walk the cursor hook does for our own rows: nodes
+// are chained at +48, the group's id is at +0 and its current sub-index at
+// +0x2C.
+int CurrentGroupRow(u8* base, u32 group_id) {
+  const u32 menu = REX_LOAD_U32(kMenuRoot);
+  if (!GuestPtr(menu) || REX_LOAD_U32(menu + 396) != group_id) {
+    return -1;
+  }
+  for (u32 i = REX_LOAD_U32(menu + 392); GuestPtr(i); i = REX_LOAD_U32(i + 48)) {
+    if (REX_LOAD_U32(i) == group_id) {
+      return REX_LOAD_U8(i + 0x2C);
+    }
+  }
+  return -1;
+}
+
+// Hides a press from the stock handler for the duration of one call, by
+// clearing the direction bits in every pad word it could be reading.
+//
+// All four are masked, and that is a measured requirement rather than caution:
+// masking only the just-pressed (+428) and pressed-or-repeat (+432) words left
+// sub_82201620 still acting on the press. It reached it some other way (the
+// held word (+424) against the previous-frame word (+8) is the obvious
+// candidate), and the symptom was the bar creeping off the extra value as the
+// handler animated it toward the donor's column while the per-frame placement
+// snapped it back. Only the two direction bits are cleared, so nothing else the
+// handler does in that call is disturbed.
+struct MaskedDirections {
+  u8* base;
+  static constexpr u32 kOffsets[] = {8, 424, kPadPressed, 432};
+  u32 saved[std::size(kOffsets)];
+  explicit MaskedDirections(u8* b) : base(b) {
+    const u32 keep = ~(kLeftMask | kRightMask);
+    for (size_t i = 0; i < std::size(kOffsets); ++i) {
+      saved[i] = REX_LOAD_U32(kPad0 + kOffsets[i]);
+      REX_STORE_U32(kPad0 + kOffsets[i], saved[i] & keep);
+    }
+  }
+  ~MaskedDirections() {
+    u8* base = this->base;
+    for (size_t i = 0; i < std::size(kOffsets); ++i) {
+      REX_STORE_U32(kPad0 + kOffsets[i], saved[i]);
+    }
+  }
+};
+
 int FrameRateGetIndex() { return eternalsonata::FrameRateOptionIndex(); }
 
 void FrameRateSetIndex(u8* base, int idx) {
@@ -1450,6 +1675,14 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
              static_cast<u32>(all[r].values.size()) * kTextRecordBytes +
              kSepRecordBytes + BarsForRow(all[r], DrawLanguage()) * kBarRecordBytes;
   }
+  // One more text record per extra value on the game's own Voice row. Budgeted
+  // unconditionally on page 1 so enabling a voice mod cannot be what makes the
+  // buffer too small; it is a handful of bytes.
+  const u32 voice_extra =
+      page == kPageOptions
+          ? static_cast<u32>(std::max(0, VoiceValueCount() - kVoiceStockValues))
+          : 0;
+  bytes += voice_extra * kTextRecordBytes;
 
   // Allocate on the first build, and again if a late registration made the
   // list outgrow what we have.
@@ -1588,6 +1821,45 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     }
     WriteSeparatorRecord(base, at, tpl_list, y - kRowYStep + sep_dy);
     at += kSepRecordBytes;
+  }
+
+  // The extra values on the game's own Voice row. Written here, among our own
+  // rows' records, but addressed to the Voice row's own y: the interpreter
+  // positions every record absolutely, so where in the list it sits decides
+  // only its drawing state, which the splice point already settled.
+  //
+  // The label rather than the two-letter code: this row's stock values are
+  // whole words in the game's own text, so a code next to them would read as a
+  // different kind of thing. A mod is expected to keep it inside the 200px
+  // column, same budget the stock values sit in.
+  for (u32 v = 0; v < voice_extra; ++v) {
+    const int index = kVoiceStockValues + static_cast<int>(v);
+    const char* label = eternalsonata::VoiceLanguageLabel(index);
+    if (!label) {
+      continue;
+    }
+    if (g_voice_addr.size() <= v) {
+      g_voice_addr.resize(v + 1, 0);
+    }
+    if (!g_voice_addr[v]) {
+      g_voice_addr[v] = mem->SystemHeapAlloc(64, 0x20);
+    }
+    if (!g_voice_addr[v]) {
+      REXLOG_WARN("[options] voice row: guest allocation failed");
+      continue;
+    }
+    // Rewritten every build for the same reason the rows' strings are: a mod
+    // may have registered its voice language after this buffer was allocated.
+    WriteGuestString(base, g_voice_addr[v], label);
+    WriteTextRecord(base, at, kVoiceSidBase + v,
+                    st.value_base_x + kBarColumnStride * index, kVoiceRecordY);
+    at += kTextRecordBytes;
+  }
+
+  // Resolve the row's selection once, on the first build: past that the player
+  // owns it, and for the stock two values the guest's byte does.
+  if (g_voice_index < 0) {
+    g_voice_index = eternalsonata::BootVoiceLanguageIndex();
   }
 
   // Bars last. Both handlers index their screen's id array **positionally** -
@@ -1748,7 +2020,14 @@ void BtxLookupWithNameOverrides(PPCContext& ctx, u8* base) {
 
 REX_HOOK_RAW(sub_8223B780) {
   const u32 sid = ctx.r4.u32;
-  if (sid >= kRowSidBase) {
+  // Checked before the row range: the voice ids sit above it, so a plain
+  // `>= kRowSidBase` test would divide them into a row index past the end.
+  if (sid >= kVoiceSidBase && sid - kVoiceSidBase < g_voice_addr.size() &&
+      g_voice_addr[sid - kVoiceSidBase]) {
+    ctx.r3.u32 = g_voice_addr[sid - kVoiceSidBase];
+    return;
+  }
+  if (sid >= kRowSidBase && sid < kVoiceSidBase) {
     const u32 rel = sid - kRowSidBase;
     const u32 row = rel / kRowSidStride;
     const u32 sub = rel % kRowSidStride;
@@ -2278,6 +2557,23 @@ REX_HOOK_RAW(sub_821F62B8) {
     --s_replace_frames;
     PlacePageBars(base, page);
   }
+  // The stock Voice bar, whenever an extra value is selected. Every frame, not
+  // once: sub_82201620 believes the donor language is selected (the byte is
+  // left at the donor's value, since it is the guest's own bank-cache key) and
+  // parks the bar on the donor's column on any input it handles. Instant rather
+  // than animated, so a per-frame correction cannot fight its own slide; the
+  // one move that should animate is written by the input hook itself.
+  if (page == kPageOptions && VoiceRowExtended()) {
+    const int voice = VoiceIndex(base);
+    if (voice >= kVoiceStockValues) {
+      PlaceVoiceBar(base, page, voice, /*move=*/false);
+    } else {
+      // On one of the game's own values the bar is entirely the game's, which
+      // makes this the only moment its width can be read for what it is. Kept
+      // so returning here from an extra value can put that width back.
+      CaptureVoiceBarScale(base, voice);
+    }
+  }
   const u32 menu = REX_LOAD_U32(0x824400E8u);
   if (menu < 0x82000000u || menu >= 0xFB000000u) {
     return;
@@ -2423,6 +2719,88 @@ REX_HOOK_RAW(sub_821F62B8) {
     }
     return;
   }
+}
+
+// sub_82201620: page 1's row input handler, and the owner of the Voice row.
+// Hooked rather than bypassed (it also drives navigation and cancel for the
+// whole screen), so the only thing taken from it is the presses it cannot
+// answer: any left/right while the row is on a value the game does not have.
+//
+// It stays a no-op unless a mod actually added a voice language, which is the
+// normal case: with two values the row behaves exactly as it shipped.
+REX_EXTERN(__imp__sub_82201620);
+
+REX_HOOK_RAW(sub_82201620) {
+  if (!VoiceRowExtended() ||
+      CurrentGroupRow(base, kPages[kPageOptions].group_id) !=
+          static_cast<int>(kVoiceRowIndex)) {
+    __imp__sub_82201620(ctx, base);
+    return;
+  }
+
+  // A latch of our own rather than the cursor hook's: the two run at different
+  // points in the frame and sharing one would let whichever ran first eat the
+  // other's edge.
+  static u32 s_prev_pressed = 0;
+  const u32 pressed = REX_LOAD_U32(kPad0 + kPadPressed);
+  const u32 fresh = pressed & ~s_prev_pressed;
+  s_prev_pressed = pressed;
+
+  const int count = VoiceValueCount();
+  const int cur = VoiceIndex(base);
+  int next = cur;
+  // Left steps toward the first value, right toward the last, clamped at both
+  // ends, exactly how the row already behaves between its stock two.
+  if (fresh & kLeftMask) {
+    next = std::max(0, cur - 1);
+  } else if (fresh & kRightMask) {
+    next = std::min(count - 1, cur + 1);
+  }
+
+  // The stock handler may only see a move that stays inside its own two values.
+  // Anything else and it would drive the byte (and the bar) somewhere of its
+  // own: from an extra value it believes the donor is selected, so a left press
+  // it sees would take the row to Japanese rather than back one column.
+  const bool ours = cur >= kVoiceStockValues || next >= kVoiceStockValues;
+  if (ours) {
+    MaskedDirections masked(base);
+    __imp__sub_82201620(ctx, base);
+  } else {
+    __imp__sub_82201620(ctx, base);
+    // The handler owns this move; follow it rather than predicting it, and keep
+    // the cvar in step so the F4 overlay and the config agree with the row.
+    //
+    // Only on an actual press. A config naming one stock voice language while
+    // the guest's saved byte names the other is a harmless disagreement (both
+    // mean "no mod voice", and the path hook stands down either way), but
+    // "correcting" it just because the cursor passed over the row would mark
+    // voice_language pending, and anything pending relaunches the process on
+    // leaving the main-menu Options screen (see OnLeaveMainMenuOptions).
+    if (fresh & (kLeftMask | kRightMask)) {
+      g_voice_index = VoiceGuestIndex(base);
+      VoiceSetIndex(g_voice_index);
+    }
+    return;
+  }
+
+  if (next == cur) {
+    return;
+  }
+  g_voice_index = next;
+  if (next < kVoiceStockValues) {
+    // Back onto one of the game's own values. The byte has to be written here:
+    // while an extra value was selected it was left at the donor's, which is
+    // not necessarily the value being returned to (a session that *booted* into
+    // a mod voice language never went through Japanese to get there). Through
+    // the mapping, not the column index; the two count opposite ways.
+    const int byte = eternalsonata::VoiceLanguageGuestByte(next);
+    if (byte >= 0) {
+      REX_STORE_U8(kVoiceByte, static_cast<u8>(byte));
+    }
+  }
+  PlaceVoiceBar(base, kPageOptions, next, /*move=*/true);
+  VoiceSetIndex(next);
+  PlayMenuSfx(base, kPages[kPageOptions].change_sfx);
 }
 
 // ---------------------------------------------------------------------------

@@ -238,6 +238,31 @@ bool Toc::SetStored(std::string_view guest_path, uint32_t decoded_size) {
   return true;
 }
 
+bool Toc::AddStored(std::string_view guest_path, uint32_t decoded_size) {
+  const std::string path = NormalizeGuestPath(guest_path);
+  if (path.empty() || path.size() > 32)
+    return false;
+  if (index_.count(path))
+    return SetStored(path, decoded_size);
+
+  const size_t at = raw_.size();
+  raw_.resize(at + 48, 0);
+  // strnlen(rec, 32) is how Load reads it back, so a path that fills the field
+  // exactly is stored without a terminator, which is why the check above is
+  // `> 32` and not `>= 32`.
+  std::memcpy(raw_.data() + at, path.data(), path.size());
+  WriteBE32(raw_.data() + at + 32, decoded_size);
+  raw_[at + 36] = 0;
+
+  TocEntry e;
+  e.path = path;
+  e.size = decoded_size;
+  e.flag = 0;
+  index_.emplace(e.path, entries_.size());
+  entries_.push_back(std::move(e));
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // BTX
 // ---------------------------------------------------------------------------

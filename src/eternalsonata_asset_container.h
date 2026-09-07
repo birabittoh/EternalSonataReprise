@@ -45,6 +45,18 @@ class Toc {
   // many bytes". Only PatchedContainer's writer calls this.
   bool SetStored(std::string_view guest_path, uint32_t decoded_size);
 
+  // Appends a record for a path the shipped game does not have, so a container
+  // this host synthesizes (a mod voice language's bank) is served under the
+  // same invariant as every patched one. The format makes this trivial: 48-byte
+  // records, no header and no count field, so a new one is a plain append.
+  //
+  // The one way it can fail is a path that does not fit the 32-byte field; the
+  // caller must treat that as fatal for the path rather than serving a
+  // truncated record, which would name a file nothing ever asks for. Adding a
+  // path that already has a record is a caller error and rewrites it in place
+  // instead (SetStored's behaviour), so the index can never hold two.
+  bool AddStored(std::string_view guest_path, uint32_t decoded_size);
+
   const std::vector<uint8_t>& bytes() const { return raw_; }
 
  private:

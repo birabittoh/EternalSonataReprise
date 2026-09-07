@@ -119,7 +119,23 @@ struct LipSyncPatch {
   int priority = 0;
 };
 
+// What a mod's [[voice_language]] means for its voice patches: which suffix its
+// synthesized banks are written under, and which shipped bank each one is
+// cloned from. Keyed on the mod's folder name, filled by ScanModLanguages and
+// read by ScanModAssets, which runs later (OnPostSetup, then BindAssetSystem).
+struct ModVoiceBanks {
+  std::string suffix;        // "_ptbr", already normalised by settings.cpp
+  std::string donor_suffix;  // "" (Japanese) or "_usa" (English)
+  std::string label;
+};
+
 struct Container {
+  // Set only on a bank this host synthesizes for a mod voice language: the
+  // guest path of the shipped container whose framing it clones. The game has
+  // no file at this container's own path, so that is where BuildContainer reads
+  // its base bytes from, and it is why BuildCache has to *append* an
+  // index.vmtoc record rather than rewrite one.
+  std::string donor_path;
   std::map<std::string, TextPatch> text;  // key: canonical reference suffix
   std::map<std::string, TexturePatch> textures;
   std::map<std::string, MeshPatch> meshes;
@@ -137,6 +153,7 @@ struct State {
   std::vector<std::pair<uint32_t, std::pair<EternalSonataAssetProviderFn, void*>>> providers;
   uint32_t next_provider_token = 1;
   std::filesystem::path cache_dir;
+  std::map<std::string, ModVoiceBanks> mod_voice;  // mod folder name -> its banks
   bool bound = false;
   std::map<std::array<uint8_t, 16>, AudioPatch*> tagged_audio;
 };
@@ -476,7 +493,25 @@ struct DeclaredLanguage {
   std::vector<std::pair<std::string, std::string>> strings;
 };
 
-std::vector<DeclaredLanguage> ReadDeclaredLanguages(const std::filesystem::path& path) {
+// The voice half, from the same file and the same parser:
+//
+//   [[voice_language]]
+//   id = "ptbr"         # what the voice_language cvar stores
+//   label = "Portugues"
+//   code = "PT"         # what the Options screen's Voice row draws
+//   suffix = "_ptbr"    # the bank filename suffix; defaults to the id
+//   donor = "usa"       # which shipped bank the clips are timed against
+//
+// Deliberately not the same list as [[language]]: text and voice are selected
+// independently, so a mod may declare either or both. `donor` is per mod rather
+// than global because 27 of the 45 shipped banks have no English twin to
+// inherit from. See the inventory in HANDOFF_voice_languages.md.
+struct DeclaredVoiceLanguage {
+  std::string id, label, code, suffix, donor;
+};
+
+std::vector<DeclaredLanguage> ReadDeclaredLanguages(
+    const std::filesystem::path& path, std::vector<DeclaredVoiceLanguage>* voices = nullptr) {
   std::vector<DeclaredLanguage> languages;
   std::ifstream in(path);
   if (!in)
@@ -484,6 +519,8 @@ std::vector<DeclaredLanguage> ReadDeclaredLanguages(const std::filesystem::path&
   std::string line;
   bool in_language = false;  // inside a [[language]] table
   bool in_strings = false;   // inside its [language.strings] table
+  bool in_voice = false;     // inside a [[voice_language]] table
+  std::vector<DeclaredVoiceLanguage> local_voices;
   while (std::getline(in, line)) {
     bool quoted = false;
     for (size_t i = 0; i < line.size(); ++i) {
@@ -505,11 +542,14 @@ std::vector<DeclaredLanguage> ReadDeclaredLanguages(const std::filesystem::path&
       // Attaches to the language above it, so a mod declaring two languages
       // gets one strings table each.
       in_strings = (line == "[language.strings]") && !languages.empty();
+      in_voice = (line == "[[voice_language]]");
       if (in_language)
         languages.emplace_back();
+      if (in_voice)
+        local_voices.emplace_back();
       continue;
     }
-    if (!in_language && !in_strings)
+    if (!in_language && !in_strings && !in_voice)
       continue;
     const size_t eq = line.find('=');
     if (eq == std::string::npos)
@@ -521,6 +561,20 @@ std::vector<DeclaredLanguage> ReadDeclaredLanguages(const std::filesystem::path&
     value = vstart == std::string::npos ? std::string() : value.substr(vstart);
     if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
       value = value.substr(1, value.size() - 2);
+    if (in_voice) {
+      DeclaredVoiceLanguage& voice = local_voices.back();
+      if (key == "id")
+        voice.id = value;
+      else if (key == "label")
+        voice.label = value;
+      else if (key == "code")
+        voice.code = value;
+      else if (key == "suffix")
+        voice.suffix = value;
+      else if (key == "donor")
+        voice.donor = value;
+      continue;
+    }
     DeclaredLanguage& current = languages.back();
     if (in_strings)
       current.strings.emplace_back(std::move(key), std::move(value));
@@ -533,6 +587,8 @@ std::vector<DeclaredLanguage> ReadDeclaredLanguages(const std::filesystem::path&
     else if (key == "slot")
       current.slot = value;
   }
+  if (voices)
+    *voices = std::move(local_voices);
   return languages;
 }
 
@@ -658,6 +714,28 @@ void AddTextTable(const std::string& mod_name, int priority, const std::string& 
               file.filename().string());
 }
 
+// True for the guest paths the two voice path builders resolve:
+// `btldata\voice\<bank>.csf`, and nothing else. The hook in
+// eternalsonata_hooks.cpp filters on exactly the same two ends, since
+// sub_8210D380 is the file-existence probe for every file in the game.
+constexpr const char* kVoiceDir = "btldata\\voice\\";
+
+bool IsVoiceBankPath(const std::string& guest_path) {
+  return guest_path.size() > std::strlen(kVoiceDir) + 4 &&
+         guest_path.compare(0, std::strlen(kVoiceDir), kVoiceDir) == 0 &&
+         guest_path.compare(guest_path.size() - 4, 4, ".csf") == 0;
+}
+
+// `btldata\voice\pc001.csf` -> `btldata\voice\pc001_ptbr.csf`, stripping the
+// donor's own suffix first if the mod addressed the English bank directly. The
+// same rewrite the path hook performs at runtime, so the two cannot drift.
+std::string VoiceBankWithSuffix(const std::string& guest_path, const std::string& suffix) {
+  std::string stem = guest_path.substr(0, guest_path.size() - 4);
+  if (stem.size() > 4 && stem.compare(stem.size() - 4, 4, "_usa") == 0)
+    stem.resize(stem.size() - 4);
+  return stem + suffix + ".csf";
+}
+
 void ScanModAssets(const std::string& mod_name, int priority,
                    const std::filesystem::path& mod_root) {
   const std::filesystem::path assets_root = mod_root / "assets";
@@ -718,6 +796,22 @@ void ScanModAssets(const std::string& mod_name, int priority,
     for (size_t i = 0; i < split; ++i)
       guest_path += (i ? "/" : "") + parts[i];
     guest_path = NormalizeGuestPath(guest_path);
+
+    // A mod that declared a [[voice_language]] addresses the *shipped* bank -
+    // `assets/btldata/voice/pc001.csf/sfx/3.wav`, because that is the container
+    // whose clip ordinals its selectors mean. Its patches go to a bank of the
+    // mod's own instead, so both shipped voice languages stay selectable and
+    // two voice mods cannot collide. Everything downstream sees an ordinary
+    // container that happens to name a donor.
+    if (IsVoiceBankPath(guest_path)) {
+      const auto voice = state().mod_voice.find(mod_name);
+      if (voice != state().mod_voice.end()) {
+        const std::string donor =
+            VoiceBankWithSuffix(guest_path, voice->second.donor_suffix);
+        guest_path = VoiceBankWithSuffix(guest_path, voice->second.suffix);
+        state().containers[guest_path].donor_path = donor;
+      }
+    }
 
     const std::string& kind = parts[split];
     std::vector<std::string> tail(parts.begin() + ptrdiff_t(split) + 1, parts.end());
@@ -806,6 +900,9 @@ uint64_t CacheKey(rex::Runtime* runtime) {
   }
   for (const auto& [path, container] : state().containers) {
     h = HashUpdate(h, path);
+    // A synthesized bank's bytes are mostly its donor's, so changing which
+    // donor a mod clones is as much a content change as swapping a clip.
+    h = HashUpdate(h, container.donor_path);
     for (const auto& [key, patch] : container.text) {
       h = HashUpdate(h, key);
       h = HashUpdate(h, patch.value);
@@ -1439,13 +1536,31 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
         container.lipsync.empty())
       return result;
   } else {
-    const auto base = ResolveBaseFile(runtime, guest_path);
+    // A synthesized bank has no file of its own; its bytes start as the donor's,
+    // framing and all, and the clips the mod did not replace stay the donor's
+    // XMA2, so a partial voice mod is a mix rather than silence.
+    const std::string& source =
+        container.donor_path.empty() ? guest_path : container.donor_path;
+    const auto base = ResolveBaseFile(runtime, source);
     std::vector<uint8_t> encoded;
     if (!ReadWholeFile(base, encoded)) {
-      REXLOG_ERROR("assets: {} names {}, which is not in the game data", guest_path, base.string());
-      return std::nullopt;
+      // A voice bank with no `_usa` twin (27 of the 45) falls back to the
+      // bare Japanese name, which is exactly what the guest's own probe does.
+      const size_t usa = source.size() > 8 ? source.size() - 8 : std::string::npos;
+      if (!container.donor_path.empty() && usa != std::string::npos &&
+          source.compare(usa, 8, "_usa.csf") == 0 &&
+          ReadWholeFile(ResolveBaseFile(runtime, source.substr(0, usa) + ".csf"), encoded)) {
+        container.donor_path = source.substr(0, usa) + ".csf";
+        REXLOG_INFO("assets: {} has no English twin; {} is cloned from {} instead", source,
+                    guest_path, container.donor_path);
+      } else {
+        REXLOG_ERROR("assets: {} names {}, which is not in the game data", guest_path,
+                     base.string());
+        return std::nullopt;
+      }
     }
-    const assets::TocEntry* entry = toc.Find(guest_path);
+    const assets::TocEntry* entry = toc.Find(container.donor_path.empty() ? guest_path
+                                                                         : container.donor_path);
     if (entry && entry->flag != 0) {
       if (!assets::DecodeAsset(encoded.data(), encoded.size(), entry->size, entry->flag,
                                result.bytes)) {
@@ -1566,8 +1681,19 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir) {
       continue;
     }
     // The record and the bytes are one unit: this is the only writer of the
-    // served TOC, and it only ever runs on what BuildContainer returned.
-    if (!toc.SetStored(guest_path, uint32_t(patched->bytes.size()))) {
+    // served TOC, and it only ever runs on what BuildContainer returned. A
+    // synthesized bank has no record to rewrite, so it gets one appended -
+    // AddStored is the only way a new served path comes into existence, which
+    // is what keeps the vmtoc invariant true by construction.
+    if (!container.donor_path.empty()) {
+      if (!toc.AddStored(guest_path, uint32_t(patched->bytes.size()))) {
+        // Only reachable on a path too long for the 32-byte field, which the
+        // suffix check at registration is supposed to have made impossible.
+        REXLOG_ERROR("assets: {} does not fit an index.vmtoc record, so it cannot be served",
+                     guest_path);
+        continue;
+      }
+    } else if (!toc.SetStored(guest_path, uint32_t(patched->bytes.size()))) {
       REXLOG_WARN(
           "assets: {} has no TOC record; it will load raw, sized by "
           "the file itself",
@@ -1747,7 +1873,8 @@ bool SupplyReplacementPcm(void*, const uint8_t tag[16], uint64_t* cursor, int sa
 
 void ScanModLanguages(rex::Runtime* runtime) {
   for (const auto& mod : runtime->EnabledModsInfo()) {
-    for (const auto& declared : ReadDeclaredLanguages(mod.mod_root / "assets.toml")) {
+    std::vector<DeclaredVoiceLanguage> voices;
+    for (const auto& declared : ReadDeclaredLanguages(mod.mod_root / "assets.toml", &voices)) {
       if (declared.id.empty() || declared.label.empty()) {
         REXLOG_WARN("assets: mod '{}' declares a [[language]] with no id or label",
                     mod.folder_name);
@@ -1765,6 +1892,47 @@ void ScanModLanguages(rex::Runtime* runtime) {
       const auto id = uint32_t(std::strtoul(declared.id.c_str(), nullptr, 10));
       for (const auto& [key, value] : declared.strings)
         RegisterNativeString(id, key, value);
+    }
+
+    // Voice languages, from the same file but a separate list and a separate
+    // registry. Only the first one a mod declares gets its voice patches
+    // redirected: the redirect is keyed on the mod, and a mod shipping clips
+    // for two voice languages at once has no way to say which set is which.
+    for (const auto& voice : voices) {
+      if (voice.id.empty() || voice.label.empty()) {
+        REXLOG_WARN("assets: mod '{}' declares a [[voice_language]] with no id or label",
+                    mod.folder_name);
+        continue;
+      }
+      if (!RegisterModVoiceLanguage(voice.id, voice.label, voice.code, voice.suffix)) {
+        REXLOG_WARN(
+            "assets: mod '{}' could not register voice language '{}'; its voice clips will not "
+            "be served, but its other patches still apply",
+            mod.folder_name, voice.label);
+        continue;
+      }
+      if (state().mod_voice.count(mod.folder_name)) {
+        REXLOG_WARN(
+            "assets: mod '{}' declares more than one [[voice_language]]; '{}' is registered but "
+            "its clips under assets/btldata/voice/ still go to '{}'",
+            mod.folder_name, voice.label, state().mod_voice[mod.folder_name].label);
+        continue;
+      }
+      ModVoiceBanks banks;
+      banks.label = voice.label;
+      // Defaults to English: it is what a mod is most likely timing against,
+      // and the fall-back below covers the 27 banks that have no English twin.
+      banks.donor_suffix = voice.donor == "jpn" || voice.donor == "jp" ? "" : "_usa";
+      // The registry lowercases ids and normalises suffixes, so the entry it
+      // just created is the authority for both, not the raw toml fields.
+      std::string id = voice.id;
+      for (char& c : id)
+        c = char(std::tolower(uint8_t(c)));
+      for (const auto& opt : GetVoiceLanguageOptions()) {
+        if (id == opt.id)
+          banks.suffix = opt.suffix;
+      }
+      state().mod_voice[mod.folder_name] = std::move(banks);
     }
   }
 }
