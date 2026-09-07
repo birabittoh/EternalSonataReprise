@@ -112,6 +112,7 @@ The path under `assets/` *is* the reference, spelled as directories:
 | `sound/cxs/bgm042.cxs#music` | `assets/sound/cxs/bgm042.cxs/music.wav` |
 | `sound/spc001.csf#sfx:7` | `assets/sound/spc001.csf/sfx/7.wav` |
 | `cfdata/e0020_050.e#lipsync:0` | `assets/cfdata/e0020_050.e/lipsync/0.csv` |
+| `default.xex#text:2/ESP/137` | `assets/default.xex/text/2/ESP/137.txt` |
 | whole file `sound/vo/field01.wav` | `assets/sound/vo/field01.wav` |
 
 Language folders are the game's own fourccs without the trailing space: `JPN`,
@@ -309,6 +310,103 @@ A newline inside a string is the literal two-character sequence `\` `n`, not
 `0x0A`. Markup tags (`<w>`, `<w1500>`, `<c Allegretto>`, …) pass through
 untouched; [asset-formats.md](asset-formats.md) §3.5 lists the set. `JPN ` is
 Shift-JIS; the six western blocks are single-byte.
+
+### The game's own menu chrome (`default.xex`)
+
+"Player Controls", "Player 1", "Next", "ON"/"OFF" and about 2850 other strings
+per language are not in any `.e` file, which is why translating every container
+still leaves the menus reading in the original language. They are baked into
+the executable image, but in **23 ordinary `BTX ` blobs**, the same format
+every container uses, so they are patched the same way:
+
+```
+mods/<name>/assets/default.xex/text/2/ESP/137.txt      -> "Controles del jugador"
+```
+
+`default.xex` is a container name like any other. The blob index is required
+here (it is not almost always `0` the way it is in a container), and the string
+ids are the game's own, shared across all seven languages. Blob `2` is the main
+menu chrome; use `EternalSonataEnumerateAssets` to list the rest.
+
+Two differences from a container patch, both consequences of the blob living
+inside the executable rather than in a file:
+
+- **`allow_resize` does nothing here and the patch can never grow the blob.**
+  It is pinned in the image with unrelated data on both sides. What must fit is
+  not the individual string but *the whole language block*: rewrite all of a
+  block's strings and the total just has to come in under the original total,
+  and identical strings are automatically stored once to buy a little more
+  room. A patch that does not fit is dropped with a `TOO_LARGE` warning naming
+  your mod and the string, and the rest of your patches still apply.
+- **Nothing is written to disk.** Container patches are materialised into the
+  asset cache; these are written straight into guest memory at launch. There is
+  no patched file to diff, so the log line is the confirmation.
+
+Spanish and German are the wordiest shipped languages, which makes them the
+most comfortable donor slots for a translation that needs the room.
+
+### Adding a new language
+
+A translation mod can add a language of its own. It appears in the F4 settings
+overlay's Language row and in the game's own Options screen Text row, both from
+one registration, and every text patch above can then target it.
+
+The catch the game imposes: BTX has a **fixed table of seven language blocks**
+(`JPN USA GBR FRA ITA DEU ESP `) and the guest picks its block by an index
+latched at boot, not by name. There is no eighth block to add. So a new language
+**piggybacks on an existing one**: it claims a `slot`, the host boots the guest
+into that slot's language so it reads the block your mod patched, and both menus
+show your label in place of the donor's. `ESP ` and `DEU ` are the conventional
+donors. While your mod is enabled the donor language is not selectable, and two
+translation mods claiming the same slot conflict (first in `mods.toml` wins, the
+loser is named in a warning and keeps all of its non-text patches).
+
+A pure translation needs no C++ at all. One `[[language]]` block in
+`assets.toml`, plus text files:
+
+```toml
+# mods/<name>/assets.toml
+[[language]]
+id = 9              # any XLanguage id the built-in five (1, 3, 4, 5, 6) don't use
+label = "Portugues" # shown in the F4 overlay's Language combo
+code = "PT"         # the two letters the native Options screen's Text row draws
+slot = "ESP"        # the BTX block this language's text lives in
+```
+
+```
+mods/<name>/assets/cfdata/adg01.e/text/PT/1234.txt
+mods/<name>/assets/text/PT.csv
+```
+
+The folder is named after your `code`, and the host routes it to the donor block
+for you. Everything in [Size rules](#size-rules) and
+[Text encoding](#text-encoding) applies unchanged.
+
+To do the same from a code mod, publish three mod-registry events from
+`OnCreateDialogs` (see `src/settings.h`). `settings.language_option` adds the
+entry (`payload.u64` is the id, `payload.bytes` is `"Label"` or
+`"Label|CODE|SLOT"`), `settings.language_slot` claims the block on its own, and
+`settings.native_string` translates one of the rows this project synthesises
+into the game's Options screen (`payload.u64` is the id, `payload.bytes` is
+UTF-8 `"key=value"`). The keys are `resolution_label`, `framerate_label`,
+`text_label` and `overworld_model_label`; rows you registered yourself translate
+through `EternalSonataSetOptionRowLabel` instead, whose `language` argument is
+an index into the same list your language just joined.
+
+Three limits worth knowing before you start:
+
+* **The font is the game's, and it is fixed.** One glyph per byte out of a
+  shipped atlas, so a language needing glyphs the atlas lacks renders as
+  mojibake no matter how correct the text is. Check yours before translating
+  anything at length.
+* **Keep labels ASCII.** They are drawn by the guest, under the same one-byte
+  rule.
+* **Language changes need a restart.** `user_language` is read once at guest
+  boot, so both menus mark the row accordingly.
+
+The list holds nine languages in total, five built in and four added, which is
+where the Options screen's Text row runs out of width for its two-letter codes.
+Registrations past that are dropped with a warning.
 
 ### Layering and conflicts
 
@@ -1046,7 +1144,14 @@ startup by the same loader that runs the game's code. Byte layout, text
 encoding, and the AES/compression format `default.xex` ships in on disk
 are documented in `extracted/README.md`.
 
-Two ways to change one of these strings:
+**Check first whether the string you want is actually one of these.** The
+menu chrome, and about 2850 strings per language, live in `BTX ` blobs inside
+the image and are patched declaratively with no code at all; see
+[The game's own menu chrome](#the-games-own-menu-chrome-defaultxex). What is
+left for this section is the flat static data that is not in a blob, such as
+item and enemy name/description fields.
+
+Two ways to change one of those strings:
 
 **Replace `default.xex` itself** (`mods/<name>/game/default.xex`).
 `XexModule::ReadImage` in the SDK doesn't verify a signature on the base

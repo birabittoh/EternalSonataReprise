@@ -32,6 +32,7 @@
 #include "eternalsonata_asset_container.h"
 #include "eternalsonata_asset_mesh.h"
 #include "eternalsonata_asset_texture.h"
+#include "settings.h"
 
 namespace eternalsonata {
 namespace {
@@ -219,12 +220,25 @@ bool ParseTextSelector(const std::string& selector, size_t* blob, std::string* l
     lang->clear();
     return true;
   }
+  const std::string code = want;  // "PT", "ESP", ... before the fourcc padding
   want.resize(4, ' ');
   for (const char* known : assets::kBtxLanguages) {
     if (want == known) {
       *lang = want;
       return true;
     }
+  }
+
+  // Not one of the seven shipped fourccs, so try the language registry: a mod
+  // that added Portuguese writes text/PT/1234.txt, and its text belongs in
+  // whichever BTX block that language claimed as its donor. Matching on the
+  // registry's two-letter code is what makes the mod's own folder name work
+  // without it having to know which block it landed on.
+  for (const auto& option : GetLanguageOptions()) {
+    if (!option.btx_slot || code != option.code)
+      continue;
+    *lang = option.btx_slot;
+    return true;
   }
   return false;
 }
@@ -354,8 +368,18 @@ bool MeshMatches(const assets::MeshRef& ref, size_t index, const std::string& se
 // ---------------------------------------------------------------------------
 // Declarative discovery: mods/<name>/assets/
 // ---------------------------------------------------------------------------
+// The executable is not a guest file the VFS serves, but its image holds 23
+// ordinary BTX blobs (the whole UI chrome), so it is addressed as a container
+// like any other: assets/default.xex/text/<blob>/<LANG>/<id>.txt. Everything
+// downstream of discovery has to keep it out of the cache directory, since
+// there is nothing to serve and no vmtoc record to update -- it is written
+// straight into guest memory instead. See ApplyXexTextPatches.
+const char kXexContainer[] = "default.xex";
+
+bool IsXexContainer(const std::string& guest_path) { return guest_path == kXexContainer; }
+
 bool LooksLikeContainer(const std::string& component) {
-  static const char* kExtensions[] = {".e", ".bmd", ".bop", ".csf", ".cxs"};
+  static const char* kExtensions[] = {".e", ".bmd", ".bop", ".csf", ".cxs", ".xex"};
   for (const char* ext : kExtensions) {
     const size_t n = std::strlen(ext);
     if (component.size() > n && component.compare(component.size() - n, n, ext) == 0)
@@ -422,6 +446,94 @@ std::map<std::string, bool> ReadAssetsToml(const std::filesystem::path& path) {
       allow_resize[section] = value.rfind("true", 0) == 0;
   }
   return allow_resize;
+}
+
+// mods/<name>/assets.toml, the `[[language]]` tables only:
+//
+//   [[language]]
+//   id = 9          # XLanguage id, any value the five built-ins do not use
+//   label = "Portugues"
+//   code = "PT"     # what the native Options screen's Text row draws
+//   slot = "ESP"    # the BTX block this language's text lives in
+//
+//   [language.strings]
+//   resolution_label = "Spyglass Size"
+//   achv_name_1 = "First Blood"
+//
+// A `[language.strings]` table translates the strings this host authors itself
+// (the option rows it adds to the game's own screens, and the achievements
+// overlay) for the `[[language]]` most recently declared above it. It is what
+// lets a translation ship without any C++: the same strings a code mod would
+// publish through "settings.native_string".
+//
+// Hand-parsed like ReadAssetsToml above, and for the same reason. A mod may
+// declare more than one language. Everything is validated by
+// RegisterModLanguage and RegisterNativeString, which own the first-wins rules
+// shared with the mod-registry event route, so this only has to get the fields
+// out.
+struct DeclaredLanguage {
+  std::string id, label, code, slot;
+  std::vector<std::pair<std::string, std::string>> strings;
+};
+
+std::vector<DeclaredLanguage> ReadDeclaredLanguages(const std::filesystem::path& path) {
+  std::vector<DeclaredLanguage> languages;
+  std::ifstream in(path);
+  if (!in)
+    return languages;
+  std::string line;
+  bool in_language = false;  // inside a [[language]] table
+  bool in_strings = false;   // inside its [language.strings] table
+  while (std::getline(in, line)) {
+    bool quoted = false;
+    for (size_t i = 0; i < line.size(); ++i) {
+      if (line[i] == '"')
+        quoted = !quoted;
+      else if (line[i] == '#' && !quoted) {
+        line = line.substr(0, i);
+        break;
+      }
+    }
+    const size_t first = line.find_first_not_of(" \t\r");
+    if (first == std::string::npos)
+      continue;
+    line = line.substr(first, line.find_last_not_of(" \t\r") - first + 1);
+    if (line.empty())
+      continue;
+    if (line.front() == '[') {
+      in_language = (line == "[[language]]");
+      // Attaches to the language above it, so a mod declaring two languages
+      // gets one strings table each.
+      in_strings = (line == "[language.strings]") && !languages.empty();
+      if (in_language)
+        languages.emplace_back();
+      continue;
+    }
+    if (!in_language && !in_strings)
+      continue;
+    const size_t eq = line.find('=');
+    if (eq == std::string::npos)
+      continue;
+    std::string key = line.substr(0, eq);
+    std::string value = line.substr(eq + 1);
+    key.erase(key.find_last_not_of(" \t") + 1);
+    const size_t vstart = value.find_first_not_of(" \t");
+    value = vstart == std::string::npos ? std::string() : value.substr(vstart);
+    if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+      value = value.substr(1, value.size() - 2);
+    DeclaredLanguage& current = languages.back();
+    if (in_strings)
+      current.strings.emplace_back(std::move(key), std::move(value));
+    else if (key == "id")
+      current.id = value;
+    else if (key == "label")
+      current.label = value;
+    else if (key == "code")
+      current.code = value;
+    else if (key == "slot")
+      current.slot = value;
+  }
+  return languages;
 }
 
 bool AllowResizeFor(const std::map<std::string, bool>& table, const std::string& guest_path,
@@ -1432,6 +1544,11 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir) {
 
   size_t built = 0;
   for (auto& [guest_path, container] : state().containers) {
+    // The executable's blobs are patched in guest memory at launch, not served
+    // from the cache directory: there is no file here to write and no TOC
+    // record to keep in sync with one.
+    if (IsXexContainer(guest_path))
+      continue;
     // Last chance for a lazy provider to register patches for this container.
     for (auto& entry : state().providers)
       entry.second.first(guest_path.c_str(), entry.second.second);
@@ -1628,6 +1745,30 @@ bool SupplyReplacementPcm(void*, const uint8_t tag[16], uint64_t* cursor, int sa
 
 }  // namespace
 
+void ScanModLanguages(rex::Runtime* runtime) {
+  for (const auto& mod : runtime->EnabledModsInfo()) {
+    for (const auto& declared : ReadDeclaredLanguages(mod.mod_root / "assets.toml")) {
+      if (declared.id.empty() || declared.label.empty()) {
+        REXLOG_WARN("assets: mod '{}' declares a [[language]] with no id or label",
+                    mod.folder_name);
+        continue;
+      }
+      if (!RegisterModLanguage(declared.id, declared.label, declared.code, declared.slot)) {
+        REXLOG_WARN("assets: mod '{}' could not register language '{}'; its text patches for it "
+                    "will not resolve, but its other patches still apply",
+                    mod.folder_name, declared.label);
+        continue;
+      }
+      // The [language.strings] table, if it had one. Registered against the id
+      // rather than the list position, so it survives another mod being
+      // enabled ahead of this one.
+      const auto id = uint32_t(std::strtoul(declared.id.c_str(), nullptr, 10));
+      for (const auto& [key, value] : declared.strings)
+        RegisterNativeString(id, key, value);
+    }
+  }
+}
+
 void BindAssetSystem(rex::Runtime* runtime) {
   State& s = state();
   std::lock_guard<std::recursive_mutex> lock(s.mutex);
@@ -1653,6 +1794,137 @@ void BindAssetSystem(rex::Runtime* runtime) {
   if (s.containers.empty())
     return;
   RebuildAndServe();
+}
+
+// ---------------------------------------------------------------------------
+// The executable's own BTX blobs
+// ---------------------------------------------------------------------------
+namespace {
+
+// The image always loads here for this title. The *size* is deliberately not
+// hardcoded: a title update extends the image, so the committed run is walked
+// instead. Reading one contiguous run is what keeps `guest = kImageBase +
+// offset` true, which the blob offsets depend on.
+constexpr uint32_t kImageBase = 0x82000000u;
+constexpr uint32_t kImageScanLimit = 0x83000000u;
+
+// The contiguous committed run starting at the image base, copied out so the
+// container code can scan it as an ordinary buffer.
+bool ReadGuestImage(rex::Runtime* runtime, std::vector<uint8_t>* out, uint32_t* base) {
+  auto* memory = runtime ? runtime->memory() : nullptr;
+  if (!memory)
+    return false;
+  auto* heap = memory->LookupHeap(kImageBase);
+  if (!heap)
+    return false;
+  const uint32_t page = heap->page_size();
+  uint32_t end = kImageBase;
+  for (uint32_t p = kImageBase; p < kImageScanLimit; p += page) {
+    auto* h = memory->LookupHeap(p);
+    uint32_t protect = 0;
+    if (!h || !h->QueryProtect(p, &protect) || protect == 0)
+      break;
+    end = p + page;
+  }
+  if (end == kImageBase)
+    return false;
+  auto* host = memory->TranslateVirtual<uint8_t*>(kImageBase);
+  if (!host)
+    return false;
+  out->assign(host, host + (end - kImageBase));
+  *base = kImageBase;
+  return true;
+}
+
+}  // namespace
+
+void ApplyXexTextPatches(rex::Runtime* runtime) {
+  auto& s = state();
+  auto it = s.containers.find(kXexContainer);
+  if (it == s.containers.end() || it->second.text.empty())
+    return;
+  const Container& container = it->second;
+
+  std::vector<uint8_t> image;
+  uint32_t base = 0;
+  if (!ReadGuestImage(runtime, &image, &base)) {
+    REXLOG_ERROR("assets: could not read the executable image, {} text patches dropped",
+                 container.text.size());
+    return;
+  }
+
+  std::vector<assets::TextEdit> edits;
+  std::vector<const TextPatch*> owners;
+  edits.reserve(container.text.size());
+  for (const auto& [key, patch] : container.text) {
+    assets::TextEdit edit;
+    edit.blob = patch.blob;
+    edit.lang = patch.lang;
+    edit.id = patch.id;
+    edit.value = patch.value;
+    // The blob cannot grow: it is pinned in the image with unrelated data
+    // either side. Refused rather than honoured, however the mod asked.
+    edit.allow_resize = false;
+    edits.push_back(std::move(edit));
+    owners.push_back(&patch);
+  }
+
+  std::vector<assets::InPlaceWrite> writes;
+  assets::ApplyTextEditsInPlace(image, edits, &writes);
+
+  size_t applied = 0;
+  for (size_t i = 0; i < edits.size(); ++i) {
+    switch (edits[i].status) {
+      case EditStatus::kOk:
+        ++applied;
+        break;
+      case EditStatus::kNotFound:
+        REXLOG_WARN("assets: mod '{}' patches {}#text:{}/{}/{}, which the image does not have",
+                    owners[i]->owner, kXexContainer, owners[i]->blob, owners[i]->lang,
+                    owners[i]->id);
+        break;
+      case EditStatus::kTooLarge:
+        REXLOG_WARN(
+            "assets: mod '{}' text {}#text:{}/{}/{} does not fit; the executable's blobs are "
+            "preserve-size only, so the whole language block must come in under the original",
+            owners[i]->owner, kXexContainer, owners[i]->blob, owners[i]->lang, owners[i]->id);
+        break;
+      case EditStatus::kBadData:
+        REXLOG_WARN("assets: mod '{}' patch for {} was rejected as malformed", owners[i]->owner,
+                    kXexContainer);
+        break;
+    }
+  }
+  if (writes.empty())
+    return;
+
+  // The pool is read-only, so a naive write access-violates. Unprotect only the
+  // sub-blocks actually rebuilt, and put the original protection back.
+  auto* memory = runtime->memory();
+  size_t written = 0;
+  for (const auto& w : writes) {
+    const uint32_t addr = base + uint32_t(w.offset);
+    auto* heap = memory->LookupHeap(addr);
+    if (!heap) {
+      REXLOG_ERROR("assets: no heap covers {:#010x}, sub-block skipped", addr);
+      continue;
+    }
+    uint32_t old_protect = 0;
+    if (!heap->Protect(addr, uint32_t(w.bytes.size()),
+                       rex::memory::kMemoryProtectRead | rex::memory::kMemoryProtectWrite,
+                       &old_protect)) {
+      REXLOG_ERROR("assets: could not unprotect {:#010x}, sub-block skipped", addr);
+      continue;
+    }
+    auto* host = memory->TranslateVirtual<uint8_t*>(addr);
+    if (host) {
+      std::memcpy(host, w.bytes.data(), w.bytes.size());
+      ++written;
+    }
+    heap->Protect(addr, uint32_t(w.bytes.size()), old_protect, nullptr);
+  }
+  REXLOG_INFO("assets: patched {} strings across {} language blocks in {}", applied, written,
+              kXexContainer);
 }
 
 }  // namespace eternalsonata
@@ -1735,6 +2007,27 @@ extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataEnumerate
 
   std::lock_guard<std::recursive_mutex> lock(state().mutex);
   std::vector<uint8_t> data;
+  if (IsXexContainer(path)) {
+    // Not a file the VFS can open: the executable's blobs are read back out of
+    // the loaded image. Text is all it has, so it returns before the texture
+    // and mesh scans, which would otherwise walk several megabytes for nothing.
+    uint32_t base = 0;
+    if (!ReadGuestImage(state().runtime, &data, &base))
+      return ETERNALSONATA_ASSET_IO_ERROR;
+    const auto image_blobs = assets::FindBtxBlobs(data);
+    for (size_t bi = 0; bi < image_blobs.size(); ++bi) {
+      for (const auto& lang : image_blobs[bi].langs) {
+        for (const auto& [id, value] : lang.entries) {
+          const std::string ref = path + "#text:" + std::to_string(bi) + "/" +
+                                  lang.fourcc.substr(0, 3) + "/" + std::to_string(id);
+          if (!visitor(ref.c_str(), ETERNALSONATA_ASSET_KIND_TEXT, value.c_str(),
+                       uint32_t(value.size()), user))
+            return ETERNALSONATA_ASSET_OK;
+        }
+      }
+    }
+    return ETERNALSONATA_ASSET_OK;
+  }
   if (!LoadDecodedContainer(path, data))
     return ETERNALSONATA_ASSET_IO_ERROR;
 

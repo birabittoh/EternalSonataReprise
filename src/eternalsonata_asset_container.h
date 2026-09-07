@@ -110,6 +110,24 @@ struct TextEdit {
 // marked in `edits` and leave the container untouched.
 bool ApplyTextEdits(std::vector<uint8_t>& data, std::vector<TextEdit>& edits);
 
+// One rebuilt sub-block, to be written back over the bytes it came from.
+struct InPlaceWrite {
+  size_t offset = 0;  // absolute offset of the sub-block in the buffer
+  std::string bytes;  // exactly the sub-block's original length
+};
+
+// The preserve-size half of ApplyTextEdits, for BTX blobs that are NOT inside a
+// .e container: the 23 blobs baked into default.xex's image. Those sit at fixed
+// addresses with unrelated data on both sides, so nothing may move. There is
+// no container header, no relocation list and no vmtoc record to keep in sync,
+// and `allow_resize` is refused with kTooLarge rather than honoured.
+//
+// `data` is not modified. The caller gets the rebuilt sub-blocks and writes
+// them back itself, which is what lets the guest-memory caller unprotect only
+// the pages it actually touches.
+bool ApplyTextEditsInPlace(const std::vector<uint8_t>& data, std::vector<TextEdit>& edits,
+                           std::vector<InPlaceWrite>* writes);
+
 // Replaces one range in the bulk section and adjusts the container header and
 // list B relocation values that point beyond it.
 bool ReplaceContainerRange(std::vector<uint8_t>& data, size_t offset, size_t old_size,

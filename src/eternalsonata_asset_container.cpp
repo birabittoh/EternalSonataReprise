@@ -453,6 +453,69 @@ void FixRelocations(std::vector<uint8_t>& out, size_t blob_base, uint32_t old_bl
   }
 }
 
+// The half of a blob's edit pass that never moves a byte: assign each edit to
+// the languages it names, apply them, and rebuild every touched sub-block at
+// exactly its original length. Shared by the .e path (which can fall back to a
+// resizing rebuild) and the xex path (which cannot).
+//
+// Returns false when an edit that asked for ALLOW_RESIZE did not fit, leaving
+// `entries` holding the edited strings so the caller can rebuild from them.
+// Edits that did not fit and did not ask are marked kTooLarge and rolled back
+// individually: the dedup pool is shared between mods, so one mod's overflow
+// must not corrupt the block for the others.
+bool BuildPreserved(const std::vector<uint8_t>& data, const BtxBlob& blob,
+                    const std::vector<TextEdit*>& mine,
+                    std::vector<std::map<uint32_t, std::string>>* entries, bool* any_applied,
+                    std::vector<InPlaceWrite>* preserved) {
+  entries->clear();
+  entries->reserve(blob.langs.size());
+  for (const auto& l : blob.langs)
+    entries->push_back(l.entries);
+
+  std::vector<std::vector<TextEdit*>> per_lang(blob.langs.size());
+  *any_applied = false;
+  for (TextEdit* e : mine) {
+    bool hit = false;
+    for (size_t li = 0; li < blob.langs.size(); ++li) {
+      if (!e->lang.empty() && blob.langs[li].fourcc != e->lang)
+        continue;
+      auto it = (*entries)[li].find(e->id);
+      if (it == (*entries)[li].end())
+        continue;
+      it->second = e->value;
+      per_lang[li].push_back(e);
+      hit = true;
+    }
+    e->status = hit ? EditStatus::kOk : EditStatus::kNotFound;
+    *any_applied |= hit;
+  }
+  if (!*any_applied)
+    return true;
+
+  for (size_t li = 0; li < blob.langs.size(); ++li) {
+    if (per_lang[li].empty())
+      continue;
+    const BtxLang& lang = blob.langs[li];
+    uint32_t next = 0;
+    ReadBE32At(data, lang.sub_offset + 8, &next);
+    std::string built;
+    if (BuildSubBlock(lang, (*entries)[li], next, lang.sub_length, &built)) {
+      preserved->push_back(InPlaceWrite{lang.sub_offset, std::move(built)});
+      continue;
+    }
+    if (std::any_of(per_lang[li].begin(), per_lang[li].end(),
+                    [](const TextEdit* e) { return e->allow_resize; })) {
+      return false;
+    }
+    for (TextEdit* e : per_lang[li]) {
+      e->status = EditStatus::kTooLarge;
+      (*entries)[li][e->id] = lang.entries.at(e->id);
+    }
+    per_lang[li].clear();
+  }
+  return true;
+}
+
 void ShiftHeader(std::vector<uint8_t>& data, int64_t delta) {
   uint32_t total = 0, reloc_off = 0;
   if (ReadBE32At(data, 0x0C, &total))
@@ -502,65 +565,18 @@ bool ApplyTextEdits(std::vector<uint8_t>& data, std::vector<TextEdit>& edits) {
       continue;
 
     const BtxBlob& blob = blobs[bi];
+    // Preserve-size first: rebuild only the touched sub-blocks at exactly their
+    // original length, so nothing outside them moves.
     std::vector<std::map<uint32_t, std::string>> entries;
-    entries.reserve(blob.langs.size());
-    for (const auto& l : blob.langs)
-      entries.push_back(l.entries);
-
-    // Which language indices an edit touches, and whether it wants a resize.
-    std::vector<std::vector<TextEdit*>> per_lang(blob.langs.size());
+    std::vector<InPlaceWrite> preserved;
     bool any_applied = false;
-    for (TextEdit* e : mine) {
-      bool hit = false;
-      for (size_t li = 0; li < blob.langs.size(); ++li) {
-        if (!e->lang.empty() && blob.langs[li].fourcc != e->lang)
-          continue;
-        auto it = entries[li].find(e->id);
-        if (it == entries[li].end())
-          continue;
-        it->second = e->value;
-        per_lang[li].push_back(e);
-        hit = true;
-      }
-      e->status = hit ? EditStatus::kOk : EditStatus::kNotFound;
-      any_applied |= hit;
-    }
+    const bool fits = BuildPreserved(data, blob, mine, &entries, &any_applied, &preserved);
     if (!any_applied)
       continue;
 
-    // Preserve-size first: rebuild only the touched sub-blocks at exactly their
-    // original length, so nothing outside them moves.
-    bool need_resize = false;
-    std::vector<std::pair<size_t, std::string>> preserved;  // (offset, bytes)
-    for (size_t li = 0; li < blob.langs.size() && !need_resize; ++li) {
-      if (per_lang[li].empty())
-        continue;
-      const BtxLang& lang = blob.langs[li];
-      uint32_t next = 0;
-      ReadBE32At(data, lang.sub_offset + 8, &next);
-      std::string built;
-      if (!BuildSubBlock(lang, entries[li], next, lang.sub_length, &built)) {
-        // The dedup pool is shared between mods, so attribute the overflow to
-        // the specific patches rather than letting one corrupt the block.
-        if (std::any_of(per_lang[li].begin(), per_lang[li].end(),
-                        [](const TextEdit* e) { return e->allow_resize; })) {
-          need_resize = true;
-        } else {
-          for (TextEdit* e : per_lang[li]) {
-            e->status = EditStatus::kTooLarge;
-            entries[li][e->id] = lang.entries.at(e->id);
-          }
-          per_lang[li].clear();
-        }
-        continue;
-      }
-      if (!need_resize && !per_lang[li].empty())
-        preserved.emplace_back(lang.sub_offset, std::move(built));
-    }
-
-    if (!need_resize) {
-      for (auto& [off, bytes] : preserved) {
-        std::memcpy(data.data() + off, bytes.data(), bytes.size());
+    if (fits) {
+      for (auto& w : preserved) {
+        std::memcpy(data.data() + w.offset, w.bytes.data(), w.bytes.size());
         modified = true;
       }
       continue;
@@ -586,6 +602,47 @@ bool ApplyTextEdits(std::vector<uint8_t>& data, std::vector<TextEdit>& edits) {
     modified = true;
   }
   return modified;
+}
+
+bool ApplyTextEditsInPlace(const std::vector<uint8_t>& data, std::vector<TextEdit>& edits,
+                           std::vector<InPlaceWrite>* writes) {
+  writes->clear();
+  auto blobs = FindBtxBlobs(data);
+  if (blobs.empty()) {
+    for (auto& e : edits)
+      e.status = EditStatus::kNotFound;
+    return false;
+  }
+
+  // Nothing here moves, so unlike the .e path the blobs can be walked in any
+  // order and every offset stays valid throughout.
+  for (size_t bi = 0; bi < blobs.size(); ++bi) {
+    std::vector<TextEdit*> mine;
+    for (auto& e : edits)
+      if (e.blob == bi)
+        mine.push_back(&e);
+    if (mine.empty())
+      continue;
+
+    std::vector<std::map<uint32_t, std::string>> entries;
+    std::vector<InPlaceWrite> preserved;
+    bool any_applied = false;
+    if (!BuildPreserved(data, blobs[bi], mine, &entries, &any_applied, &preserved)) {
+      // Only reachable when an edit asked for ALLOW_RESIZE, which this path
+      // cannot honour: the blob is pinned inside the executable image. Report
+      // it as the size failure it is rather than silently doing nothing.
+      for (TextEdit* e : mine) {
+        if (e->status == EditStatus::kOk)
+          e->status = EditStatus::kTooLarge;
+      }
+      continue;
+    }
+    if (!any_applied)
+      continue;
+    for (auto& w : preserved)
+      writes->push_back(std::move(w));
+  }
+  return !writes->empty();
 }
 
 bool ReplaceContainerRange(std::vector<uint8_t>& data, size_t offset, size_t old_size,
