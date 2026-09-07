@@ -223,6 +223,7 @@ set(ETERNALSONATA_SOURCES
     src/eternalsonata_hooks.cpp
     src/eternalsonata_framerate.cpp
     src/eternalsonata_lipsync.cpp
+    src/eternalsonata_voice.cpp
     src/eternalsonata_options.cpp
     src/eternalsonata_presence.cpp
     src/room_presence.cpp
