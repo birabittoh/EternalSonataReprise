@@ -27,6 +27,42 @@ Fields inside a record, each confirmed against a routine that reads it:
 | `+0x0C` | u32 | sell price | `sub_8222E9C0` |
 | `+0x36` | u16 | Item Set cost in party-level points | `sub_821E6740` |
 
+### Validity and real items
+
+A record is **real** (not a character or unused slot) if:
+1. The id is not in the character range (1..10)
+2. The id is in the base game range 11..402, OR
+3. The id has been registered as a custom item by a mod via `EternalSonataRegisterCustomItem`
+
+### Custom items (mod registration)
+
+Records **403..510** ship blank: each carries its own id at `+0x00` and zero
+everywhere else, and no shipped text block has an entry for it. Records 511 and
+512 run into the float table that follows, so they are left alone.
+
+`EternalSonataRegisterCustomItem` takes one of those slots and fills it in, so
+the item is real to the game rather than to the API only. Two things make that
+work:
+
+* The master record is written in place. The xex image is mapped read-only, so
+  `item_system.cpp` reprotects the record's pages first. Everything the game
+  reads about an item then answers from the table it already reads: the icon
+  (`+0x02`, clamped to the 68 entries `word_8202C9C8` has), the category
+  (`+0x03`) that buckets the item screen's tabs, the prices and the Item Set
+  cost.
+* The name and description come from the `sub_8223B780` hook in
+  `eternalsonata_options.cpp`, which answers ids 402..509 on the two item text
+  blocks from guest string buffers instead of letting the stock lookup return
+  null. Returning null is what used to crash the item screen: `sub_8220EEE0`
+  hands the result straight to the string painter.
+
+`EternalSonataUnregisterCustomItem` puts the record back to blank and frees the
+id for the next registration.
+
+Ids are allocated at runtime and the save file stores them like any other, so a
+save made while a mod's items were in the inventory needs that mod present, and
+registering in a stable order, to read back as the same items.
+
 The category byte is what buckets the item screen's four tabs: `sub_821FC5C8`
 walks the inventory and copies each entry into one of four parallel lists,
 `0x8256362C` (cat 0), `0x82563E2C` (1), `0x8256462C` (2), `0x82564E2C` (3),
@@ -145,6 +181,17 @@ Two things to know before writing to any of this.
 | `sub_82224490` | the screen itself; `sub_82225578` repaints its rows |
 | `sub_821E5D68` | new game: clears everything, sets the budget to the level cap, then gives and registers the starting set from `word_8202CA7C` (four copies of id 209, Floral Powder, costing 8 of the 10 points party level 1 allows) |
 | `sub_8222C190(shop, ...)` | opens a shop: fills `word_82560114` (32 records of `{u16 id, u16}`) from the 68-byte-per-shop stock table at `0x82015CE4` |
+
+## The item catalog
+
+Mods can enumerate all real items in the game without a host change:
+`EternalSonataGetItemCatalog` fills an array with real items in ascending id
+order and optionally filters by category. `EternalSonataGetItemCatalogCount`
+returns the total count. `EternalSonataIsRealItem` checks a single id.
+
+All three are read-only and answer from the master table immediately (guarded by
+`ItemsReadable()`, which checks that the tables are mapped). None of them queue
+work onto the guest thread.
 
 ## Saving
 
