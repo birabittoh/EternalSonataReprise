@@ -4,6 +4,8 @@
 // small internal surface the rest of the exe needs.
 #pragma once
 
+#include <cstdint>
+
 namespace rex {
 class Runtime;
 }  // namespace rex
@@ -21,5 +23,13 @@ void BindItemSystem(rex::Runtime* runtime);
 // of changes. The hook on sub_82240AF8 lives in photo_system.cpp, because a
 // guest routine can only be hooked once, and forwards here.
 void NotifyItemSaveLoaded();
+
+// Resolves `text_id` in the BTX block at guest address `block`, in the language
+// the game is running in, and caches the result for the life of the process.
+// Never null; a block that has nothing for the id answers "". This is the item
+// system's own text reader, shared so that other systems on other text blocks
+// (the magic half of equipment_system.cpp) do not have to duplicate it or
+// queue sub_8223B780 onto the guest thread.
+const char* LookupBtxString(uint32_t block, int text_id);
 
 }  // namespace eternalsonata

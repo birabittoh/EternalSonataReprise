@@ -238,6 +238,7 @@ set(ETERNALSONATA_SOURCES
     src/photo_system.cpp
     src/piano_music_system.cpp
     src/item_system.cpp
+    src/equipment_system.cpp
     src/guest_main_thread.cpp
     src/guest_profiler.cpp
     src/host_timer_resolution.cpp

@@ -31,6 +31,7 @@
 #include "force_load_area.h"
 #include "guest_profiler.h"
 #include "host_menu.h"
+#include "equipment_system.h"
 #include "item_system.h"
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
@@ -410,6 +411,10 @@ class EternalsonataApp : public rex::ReXApp {
     // Inventory and Item Set for mods: src/eternalsonata_item_api.h answers
     // "unavailable" and publishes no event until this runs.
     eternalsonata::BindItemSystem(runtime());
+
+    // Equipment for mods: src/eternalsonata_equipment_api.h answers
+    // "unavailable" and publishes no event until this runs.
+    eternalsonata::BindEquipmentSystem(runtime());
 
     // Debug tool: force-loads a field area via the F4 settings overlay's
     // "Force Load Area..." button. See force_load_area.h.

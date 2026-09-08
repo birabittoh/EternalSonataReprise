@@ -94,13 +94,15 @@ Two parallel arrays of 48-byte structs, both indexed by character number - 1:
 | `0x8243FD08` | the same with equipment folded in, what the screens draw |
 
 `sub_821E7898(c, 0x8243FD08 + 48*(c-1))` recomputes the second from the first:
-it copies the struct across, walks the character's five equipment ids through
+it copies the struct across, walks the character's four equipment ids through
 the master entity table at `0x82017630` (stride 100, id at +0, party-level cost
 at +0x36, table ends at `0x82023DCC`) adding each item's bonuses, clamps, and
 finally rescales current HP by however much maximum HP moved.
 
-Struct layout, confirmed against the equipment screen's own painter
-`sub_822352F8`, which draws `+0x10`, `+0x0C`, then `+0x14/+0x16/+0x18/+0x1A`:
+Struct layout, confirmed against `sub_822352F8`, which draws `+0x10`, `+0x0C`,
+then `+0x14/+0x16/+0x18/+0x1A`. That routine is the equipment screen's
+**unequip** action, not merely its painter; it repaints as its last step. See
+[equipment.md](equipment.md).
 
 | Offset | Type | Field |
 |---|---|---|
@@ -111,7 +113,8 @@ Struct layout, confirmed against the equipment screen's own painter
 | `+0x16` | u16 | magic |
 | `+0x18` | u16 | defense |
 | `+0x1A` | u16 | speed |
-| `+0x1C`..`+0x25` | u16[5] | equipment ids |
+| `+0x1C`..`+0x23` | u16[4] | equipment ids (see [equipment.md](equipment.md)) |
+| `+0x24`..`+0x2B` | u16[4] | Score Piece ids, a separate system |
 | `+0x2C`, `+0x2E` | u16 | two further capped stats, not drawn by the equipment screen |
 
 The four u16 stats are clamped to 999 by the game itself, so writes clamp the
