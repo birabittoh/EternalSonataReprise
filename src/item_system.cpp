@@ -14,7 +14,8 @@
 //     512 records of 100 bytes indexed by id - 1: category at +0x03, buy and
 //     sell price at +0x08 and +0x0C, and the Item Set cost at +0x36. It is the
 //     same table the party code reads, because characters and items share one
-//     id space.
+//     id space. Characters occupy ids 1..10; other ids are real items if the
+//     record's id field at +0x00 matches the record's index.
 //
 //   * The Item Set is word_8243FC3E, 32 u16 item ids kept compacted. It is
 //     what the battle item menu is built from: sub_82189BA0 asks sub_821E6AF8
@@ -43,11 +44,13 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -94,6 +97,31 @@ constexpr uint32_t kMasterCategory = 0x03u;   // u8
 constexpr uint32_t kMasterBuyPrice = 0x08u;   // u32
 constexpr uint32_t kMasterSellPrice = 0x0Cu;  // u32
 constexpr uint32_t kMasterCost = 0x36u;       // u16
+
+// Character id range: characters occupy 1..10 in the shared id space.
+constexpr int kCharacterIdMin = 1;
+constexpr int kCharacterIdMax = 10;
+
+// Base game items: 11..402. Item 402 is the last named entry ("Empty").
+constexpr int kBaseItemMin = 11;
+constexpr int kBaseItemMax = 402;
+
+// Custom items registered by mods take the master table's blank tail. Records
+// 403..510 already carry their own id at +0x00 and nothing else, so the game
+// treats them as real entities the moment the rest of the record is filled in;
+// 511 and 512 are left alone because they run into the table's end.
+constexpr int kCustomItemIdMin = 403;
+constexpr int kCustomItemIdMax = 510;
+constexpr int kCustomItemCount = kCustomItemIdMax - kCustomItemIdMin + 1;
+
+// word_8202C9C8, the icon table sub_8220EEE0 indexes with the record's +0x02,
+// holds 68 entries. Past that it reads a neighbouring float table.
+constexpr int kIconIdMax = 67;
+
+// Room for a custom name and description in guest memory. Names are drawn in a
+// fixed-width row, descriptions in a two-line box.
+constexpr uint32_t kCustomNameBytes = 64u;
+constexpr uint32_t kCustomDescriptionBytes = 256u;
 
 // The Item Set: 32 u16 item ids, kept compacted.
 constexpr uint32_t kItemSetAddr = 0x8243FC3Eu;
@@ -148,6 +176,27 @@ bool g_have_snapshot = false;
 std::array<uint8_t, kMasterCount + 1> g_held{};      // count per item id
 std::array<uint8_t, kMasterCount + 1> g_in_set{};    // set entries per item id
 
+// Custom items registered by mods. The host copy is the authority; the guest
+// only ever sees what PublishCustomItemLocked writes into the master table and
+// into the two string buffers.
+struct CustomItemData {
+  std::string name;
+  std::string description;
+  int32_t icon_id;
+  int32_t category;
+  int32_t buy_price;
+  int32_t sell_price;
+  int32_t cost;
+  bool published = false;
+};
+std::map<int, CustomItemData> g_custom_items;
+
+// Guest addresses of the name and description strings, indexed by
+// id - kCustomItemIdMin. Read without g_mutex by the BTX lookup hook, which
+// runs on the guest thread for every string the game draws.
+std::array<std::atomic<uint32_t>, kCustomItemCount> g_custom_name_addr{};
+std::array<std::atomic<uint32_t>, kCustomItemCount> g_custom_description_addr{};
+
 // Resolved BTX strings, keyed by {block, text id}. Populated on demand and
 // never evicted: the API hands out the char* and promises it stays valid.
 std::mutex g_text_mutex;
@@ -189,6 +238,53 @@ void WriteGuest(uint32_t address, T value) {
   if (host) {
     rex::memory::store_and_swap<T>(host, value);
   }
+}
+
+// The master table lives in the xex image, which is mapped read-only, so the
+// blank tail records have to be opened up before a custom item can be written
+// into one.
+bool EnsureWritable(uint32_t address, uint32_t span) {
+  auto* memory = Mem();
+  if (!memory) {
+    return false;
+  }
+  auto* heap = memory->LookupHeap(address);
+  if (!heap) {
+    return false;
+  }
+  const auto access = heap->QueryRangeAccess(address, address + span - 1);
+  if (access == rex::memory::PageAccess::kReadWrite ||
+      access == rex::memory::PageAccess::kExecuteReadWrite) {
+    return true;
+  }
+  return heap->Protect(address, span,
+                       rex::memory::kMemoryProtectRead | rex::memory::kMemoryProtectWrite);
+}
+
+void WriteGuestByte(uint32_t address, uint8_t value) {
+  auto* memory = Mem();
+  if (!memory) {
+    return;
+  }
+  auto* host = memory->TranslateVirtual<uint8_t*>(address);
+  if (host) {
+    *host = value;
+  }
+}
+
+// Writes `text` plus its terminator, truncated to fit `capacity`.
+void WriteGuestString(uint32_t address, const std::string& text, uint32_t capacity) {
+  auto* memory = Mem();
+  if (!memory || !address || capacity == 0) {
+    return;
+  }
+  auto* host = memory->TranslateVirtual<char*>(address);
+  if (!host) {
+    return;
+  }
+  const size_t length = std::min<size_t>(text.size(), capacity - 1);
+  std::memcpy(host, text.data(), length);
+  host[length] = '\0';
 }
 
 uint8_t ReadGuestByte(uint32_t address) {
@@ -351,6 +447,94 @@ int ItemCost(int item_id) {
   return ReadGuest<uint16_t>(MasterRecord(item_id) + kMasterCost);
 }
 
+bool IsCharacterIdLocked(int item_id) {
+  return item_id >= kCharacterIdMin && item_id <= kCharacterIdMax;
+}
+
+bool IsCustomItemId(int item_id) {
+  return item_id >= kCustomItemIdMin && item_id <= kCustomItemIdMax;
+}
+
+bool IsRealItemLocked(int item_id) {
+  if (!ValidId(item_id)) {
+    return false;
+  }
+  if (IsCharacterIdLocked(item_id)) {
+    return false;
+  }
+  // Base game items: 11..402
+  if (item_id >= kBaseItemMin && item_id <= kBaseItemMax) {
+    return true;
+  }
+  // Custom items registered by mods
+  return g_custom_items.find(item_id) != g_custom_items.end();
+}
+
+// Fills in the blank master record and the two guest string buffers, which is
+// everything the game needs to treat a custom item like any other: the record
+// answers the icon, category, price and cost readers directly, and the strings
+// are what the BTX lookup hook hands back for this id.
+//
+// Guest thread only (SystemHeapAlloc), g_mutex held by the caller.
+void PublishCustomItemLocked(int item_id) {
+  auto* memory = Mem();
+  const auto it = g_custom_items.find(item_id);
+  if (!memory || it == g_custom_items.end() || !IsCustomItemId(item_id)) {
+    return;
+  }
+  CustomItemData& item = it->second;
+  const size_t index = static_cast<size_t>(item_id - kCustomItemIdMin);
+
+  if (!g_custom_name_addr[index].load()) {
+    g_custom_name_addr[index].store(memory->SystemHeapAlloc(kCustomNameBytes, 0x20));
+  }
+  if (!g_custom_description_addr[index].load()) {
+    g_custom_description_addr[index].store(
+        memory->SystemHeapAlloc(kCustomDescriptionBytes, 0x20));
+  }
+  WriteGuestString(g_custom_name_addr[index].load(), item.name, kCustomNameBytes);
+  WriteGuestString(g_custom_description_addr[index].load(), item.description,
+                   kCustomDescriptionBytes);
+
+  const uint32_t record = MasterRecord(item_id);
+  if (!EnsureWritable(record, kMasterStride)) {
+    return;
+  }
+  WriteGuest<uint16_t>(record + kMasterId, static_cast<uint16_t>(item_id));
+  WriteGuestByte(record + kMasterIcon,
+                 static_cast<uint8_t>(std::clamp(item.icon_id, 0, kIconIdMax)));
+  WriteGuestByte(record + kMasterCategory, static_cast<uint8_t>(item.category));
+  WriteGuest<uint32_t>(record + kMasterBuyPrice,
+                       static_cast<uint32_t>(std::max(0, item.buy_price)));
+  WriteGuest<uint32_t>(record + kMasterSellPrice,
+                       static_cast<uint32_t>(std::max(0, item.sell_price)));
+  WriteGuest<uint16_t>(record + kMasterCost,
+                       static_cast<uint16_t>(std::clamp(item.cost, 0, 0xFFFF)));
+  item.published = true;
+}
+
+// Puts the record back the way the retail image had it: the id alone, with
+// every field the game reads left at zero. The string buffers stay allocated
+// and are cleared, so a later registration reuses them.
+void UnpublishCustomItemLocked(int item_id) {
+  if (!IsCustomItemId(item_id)) {
+    return;
+  }
+  const size_t index = static_cast<size_t>(item_id - kCustomItemIdMin);
+  WriteGuestString(g_custom_name_addr[index].load(), "", kCustomNameBytes);
+  WriteGuestString(g_custom_description_addr[index].load(), "", kCustomDescriptionBytes);
+
+  const uint32_t record = MasterRecord(item_id);
+  if (!EnsureWritable(record, kMasterStride)) {
+    return;
+  }
+  WriteGuestByte(record + kMasterIcon, 0);
+  WriteGuestByte(record + kMasterCategory, 0);
+  WriteGuest<uint32_t>(record + kMasterBuyPrice, 0);
+  WriteGuest<uint32_t>(record + kMasterSellPrice, 0);
+  WriteGuest<uint16_t>(record + kMasterCost, 0);
+}
+
 // How many entries of the set name `item_id`.
 int SetEntryCount(int item_id) {
   int found = 0;
@@ -384,9 +568,7 @@ int BudgetTotal() {
 void ReadItem(int item_id, EternalSonataItem* out) {
   std::memset(out, 0, sizeof(*out));
 
-  const uint32_t record = MasterRecord(item_id);
   const int slot = SlotOf(item_id);
-
   out->id = item_id;
   out->slot = slot;
   out->count = slot < 0 ? 0 : ReadGuestByte(InventoryRecord(slot) + 2u);
@@ -394,14 +576,32 @@ void ReadItem(int item_id, EternalSonataItem* out) {
   out->free_count = std::max(0, out->count - out->reserved_count);
   out->set_entry_count = SetEntryCount(item_id);
 
-  out->category = ReadGuestByte(record + kMasterCategory);
-  out->cost = ReadGuest<uint16_t>(record + kMasterCost);
-  out->buy_price = static_cast<int32_t>(ReadGuest<uint32_t>(record + kMasterBuyPrice));
-  out->sell_price = static_cast<int32_t>(ReadGuest<uint32_t>(record + kMasterSellPrice));
-  out->icon_id = ReadGuestByte(record + kMasterIcon);
+  // Check if this is a custom item registered by a mod
+  const auto custom = g_custom_items.find(item_id);
+  if (custom != g_custom_items.end()) {
+    out->category = custom->second.category;
+    out->cost = custom->second.cost;
+    out->buy_price = custom->second.buy_price;
+    out->sell_price = custom->second.sell_price;
+    out->icon_id = custom->second.icon_id;
+    // Same keying as a stock item: the BTX lookup hook answers these ids from
+    // the guest string buffers rather than from the shipped text blocks.
+    out->name_text_id = item_id - 1;
+    out->description_text_id = item_id - 1;
+  } else {
+    // Base game item: read from master table
+    const uint32_t record = MasterRecord(item_id);
+    out->category = ReadGuestByte(record + kMasterCategory);
+    out->cost = ReadGuest<uint16_t>(record + kMasterCost);
+    out->buy_price = static_cast<int32_t>(ReadGuest<uint32_t>(record + kMasterBuyPrice));
+    out->sell_price = static_cast<int32_t>(ReadGuest<uint32_t>(record + kMasterSellPrice));
+    out->icon_id = ReadGuestByte(record + kMasterIcon);
+    out->name_text_id = item_id - 1;
+    out->description_text_id = item_id - 1;
+  }
 
-  out->name_text_id = item_id - 1;
-  out->description_text_id = item_id - 1;
+  out->is_character = IsCharacterIdLocked(item_id) ? 1 : 0;
+  out->is_real = IsRealItemLocked(item_id) ? 1 : 0;
 }
 
 // The check sub_821E6740 makes, made up front so a mod gets a real answer
@@ -497,6 +697,15 @@ int ClearSetOnGuestThread() {
 }
 
 int GiveItemOnGuestThread(int item_id, int count) {
+  // sub_821FC1E8 rebuilds the screens' category lists from the master record,
+  // so a custom item has to be in the table before it reaches the inventory.
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    const auto custom = g_custom_items.find(item_id);
+    if (custom != g_custom_items.end() && !custom->second.published) {
+      PublishCustomItemLocked(item_id);
+    }
+  }
   g_acquire_item(kInventoryObject, static_cast<u32>(item_id), static_cast<u32>(count));
   return ETERNALSONATA_ITEM_OK;
 }
@@ -631,6 +840,19 @@ const char* LookupBtxString(uint32_t block, int text_id) {
   return CachedBtxString(block, text_id);
 }
 
+uint32_t CustomItemTextOverrideFor(uint32_t block, uint32_t text_id) {
+  if (block != kNameBlockAddr && block != kDescriptionBlockAddr) {
+    return 0;
+  }
+  const auto item_id = static_cast<int>(text_id) + 1;
+  if (!IsCustomItemId(item_id)) {
+    return 0;
+  }
+  const size_t index = static_cast<size_t>(item_id - kCustomItemIdMin);
+  return block == kNameBlockAddr ? g_custom_name_addr[index].load()
+                                 : g_custom_description_addr[index].load();
+}
+
 void BindItemSystem(rex::Runtime* runtime) {
   {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -747,6 +969,12 @@ extern "C" REX_MOD_PLUGIN_EXPORT const char* EternalSonataGetItemName(int item_i
   if (!Bound()) {
     return "";
   }
+  // Check if it's a custom item registered by a mod
+  const auto custom = g_custom_items.find(item_id);
+  if (custom != g_custom_items.end()) {
+    return custom->second.name.c_str();
+  }
+  // Base game item: read from BTX text blocks
   return CachedBtxString(kNameBlockAddr, item_id - 1);
 }
 
@@ -759,7 +987,147 @@ extern "C" REX_MOD_PLUGIN_EXPORT const char* EternalSonataGetItemDescription(int
   if (!Bound()) {
     return "";
   }
+  // Check if it's a custom item registered by a mod
+  const auto custom = g_custom_items.find(item_id);
+  if (custom != g_custom_items.end()) {
+    return custom->second.description.c_str();
+  }
+  // Base game item: read from BTX text blocks
   return CachedBtxString(kDescriptionBlockAddr, item_id - 1);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsRealItem(int item_id) {
+  using namespace eternalsonata;
+  if (!ValidId(item_id)) {
+    return ETERNALSONATA_ITEM_ERR_INVALID_ITEM;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!ItemsReadable()) {
+    return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
+  }
+  return IsRealItemLocked(item_id) ? 1 : 0;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetItemCatalogCount(void) {
+  using namespace eternalsonata;
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!ItemsReadable()) {
+    return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
+  }
+  int count = 0;
+  for (int id = ETERNALSONATA_ITEM_ID_MIN; id <= ETERNALSONATA_ITEM_ID_MAX; ++id) {
+    if (IsRealItemLocked(id)) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetItemCatalog(EternalSonataItem* out,
+                                                                  int max, int category) {
+  using namespace eternalsonata;
+  if (max < 0 || (max > 0 && !out)) {
+    return ETERNALSONATA_ITEM_ERR_INVALID_ARGUMENT;
+  }
+  if (category != -1 && (category < ETERNALSONATA_ITEM_CATEGORY_CONSUMABLE ||
+                         category > ETERNALSONATA_ITEM_CATEGORY_ACCESSORY)) {
+    return ETERNALSONATA_ITEM_ERR_INVALID_ARGUMENT;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!ItemsReadable()) {
+    return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
+  }
+  int written = 0;
+  for (int id = ETERNALSONATA_ITEM_ID_MIN; id <= ETERNALSONATA_ITEM_ID_MAX; ++id) {
+    if (!IsRealItemLocked(id)) {
+      continue;
+    }
+    if (category != -1) {
+      const uint32_t record = MasterRecord(id);
+      const auto item_category =
+          static_cast<int>(ReadGuestByte(record + kMasterCategory));
+      if (item_category != category) {
+        continue;
+      }
+    }
+    if (max == 0) {
+      ++written;
+      continue;
+    }
+    if (written >= max) {
+      break;
+    }
+    ReadItem(id, &out[written]);
+    ++written;
+  }
+  return written;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterCustomItem(
+    const EternalSonataCustomItemData* data) {
+  using namespace eternalsonata;
+  if (!data) {
+    return ETERNALSONATA_ITEM_ERR_INVALID_ARGUMENT;
+  }
+  if (data->category < ETERNALSONATA_ITEM_CATEGORY_CONSUMABLE ||
+      data->category > ETERNALSONATA_ITEM_CATEGORY_ACCESSORY) {
+    return ETERNALSONATA_ITEM_ERR_INVALID_ARGUMENT;
+  }
+  int item_id = 0;
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (!ItemsReadable()) {
+      return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
+    }
+    // Lowest free slot, so unregistering hands the id back.
+    for (int id = kCustomItemIdMin; id <= kCustomItemIdMax; ++id) {
+      if (g_custom_items.find(id) == g_custom_items.end()) {
+        item_id = id;
+        break;
+      }
+    }
+    if (!item_id) {
+      return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
+    }
+
+    CustomItemData custom;
+    custom.name = data->name ? data->name : "";
+    custom.description = data->description ? data->description : "";
+    custom.icon_id = data->icon_id;
+    custom.category = data->category;
+    custom.buy_price = data->buy_price;
+    custom.sell_price = data->sell_price;
+    custom.cost = data->cost;
+    g_custom_items[item_id] = custom;
+  }
+
+  // The master record and the guest strings need the guest thread; the id is
+  // already reserved, so a mod can return it to the player right away.
+  RunOnGuestThread([item_id] {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    PublishCustomItemLocked(item_id);
+    return ETERNALSONATA_ITEM_OK;
+  });
+  return item_id;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataUnregisterCustomItem(int item_id) {
+  using namespace eternalsonata;
+  if (!ValidId(item_id)) {
+    return ETERNALSONATA_ITEM_ERR_INVALID_ITEM;
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_custom_items.erase(item_id) == 0) {
+      return ETERNALSONATA_ITEM_OK;
+    }
+  }
+  RunOnGuestThread([item_id] {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    UnpublishCustomItemLocked(item_id);
+    return ETERNALSONATA_ITEM_OK;
+  });
+  return ETERNALSONATA_ITEM_OK;
 }
 
 // --- Giving and taking -------------------------------------------------------
