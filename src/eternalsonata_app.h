@@ -44,6 +44,7 @@
 #include "room_presence.h"
 #include "save_system.h"
 #include "settings.h"
+#include "piano_music_system.h"
 #include "touch_layout.h"
 
 #if REX_PLATFORM_ANDROID
@@ -400,6 +401,10 @@ class EternalsonataApp : public rex::ReXApp {
     // Photo album for mods: src/eternalsonata_photo_api.h answers
     // "unavailable" and publishes no photo event until this runs.
     eternalsonata::BindPhotoSystem(runtime());
+
+    // Piano Music unlock state for mods: src/eternalsonata_piano_music_api.h
+    // answers "unavailable" and publishes no event until this runs.
+    eternalsonata::BindPianoMusicSystem(runtime());
 
     // Debug tool: force-loads a field area via the F4 settings overlay's
     // "Force Load Area..." button. See force_load_area.h.
