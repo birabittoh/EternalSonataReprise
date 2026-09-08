@@ -17,7 +17,7 @@ seven-entry id table and lays the rows out from that same walk.
 | `0x8255EE70` | u8[100]  | Collectible flags, 1 for "obtained". Entries 80..86 are the seven pieces; the rest belong to other collectibles. Saved and restored whole. |
 | `0x82016134` | u32[7]   | Flag id per piece in menu order: 80, 81, ... 86. Ends at `0x82016150`. |
 | `0x82029D30` | u8[7]    | History page count per piece: 8, 5, 5, 6, 7, 7, 9. |
-| `0x8243F35C` | u32      | Session-only "available anyway" bitmask, bit *i* per piece. Not saved. |
+| `0x8243F35C` | u32      | Session-only "available anyway" bitmask, bit *i* per piece. Not saved, and see the note below. |
 | `0x8243F360` | u32      | The piece the player has opened, 0..6. |
 | `0x8243F364` | u32      | Current history page, 1-based. |
 
@@ -49,10 +49,22 @@ saves it, `src/piano_music_system.cpp` reports the two halves separately as
 `unlocked_saved` and `unlocked_session`, and clears the session bit as well as
 the saved flag when a mod locks a piece.
 
+`0x8243F35C` is not the piano music's own storage: it is one slot of the
+eight-dword scratch block at `0x8243F358` that every status menu screen reuses
+and zeroes on entry. `sub_82229FC0` (this screen's init) zeroes it before
+`sub_8222B348` builds the list, and the Music screen parks a row index of -1
+there instead (`music.md`). A mod reading the guest dword at an arbitrary
+moment would therefore see another screen's value, so
+`src/piano_music_system.cpp` mirrors the mask host side from those two
+routines and writes the guest copy back only while it still agrees with the
+mirror.
+
 ## Text
 
 The menu's strings live in the packed UI text block at `0x8203DD60`, reached by
-numeric id through `sub_8223B780("BTX ", id)`. The blob is a `BTX ` header
+numeric id through `sub_8223B780(0x8203DD60, id)`; the first argument is a
+pointer to the blob, which IDA renders as the string `"BTX "` only because the
+blob starts with that magic. The blob is a `BTX ` header
 (offset to the first language block at +4, block count at +0xC) followed by
 per-language blocks chained through their own +8; each block has its entry
 count at +0x10 and its entry table of `{u32 id, u32 offset from the block's
