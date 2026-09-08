@@ -1144,6 +1144,69 @@ Things worth knowing before you use it:
 `docs/party-system.md` documents the guest-side structures the API sits on, if
 you need to know what a call actually does.
 
+## Rebalancing enemies
+
+A mod can change what a monster hits for, what it takes to kill one, and what
+killing it is worth. Copy `src/eternalsonata_enemy_api.h` from this repo into
+your mod for the signatures and the full contract, then resolve the entry points
+out of the host executable as with the other APIs:
+
+```cpp
+#include "eternalsonata_enemy_api.h"
+
+auto set = reinterpret_cast<EternalSonataSetEnemyTypeStatMultiplierFn>(
+    GetProcAddress(GetModuleHandle(nullptr),
+                   "EternalSonataSetEnemyTypeStatMultiplier"));
+if (set) {
+  // every enemy hits 50% harder, for the rest of the session
+  set(ETERNALSONATA_ENEMY_TYPE_ANY, ETERNALSONATA_ENEMY_STAT_ATTACK, 1.5f);
+}
+```
+
+The settable stats are level, current and maximum HP, attack, defense, speed,
+physical and magic resistance, critical rate, EXP, gold, two drop slots with
+their chances, and move range, chase range and model scale as percentages.
+
+Things worth knowing before you use it:
+
+- **Per-type is the rebalance; per-instance is the escape hatch.** An override
+  is a rule keyed by enemy type, held by the host and reapplied to every
+  matching enemy in every battle from now on.
+  `EternalSonataSetEnemyStat(slot, ...)` writes one live enemy's record instead;
+  it lasts as long as the encounter does, and an override on the same stat
+  overwrites it on the next frame.
+- **Types are keyed by name id**, the same id `EternalSonataGetBattleEnemyName`
+  turns into a display name and that `EternalSonataGetEnemyType(slot)` returns.
+  Pass `ETERNALSONATA_ENEMY_TYPE_ANY` to hit every enemy in the game; a type's
+  own override wins over it, so "everything ×1.5 except this boss" needs no
+  ordering.
+- **Multipliers apply to the shipped value, not the current one.** The host
+  snapshots each enemy's untouched stats, so calling `set(..., 1.5f)` twice is
+  still ×1.5, and clearing an override restores the original number. Prefer a
+  multiplier to an absolute value: the game scales an encounter's enemies with
+  the story, so ×1.5 keeps its meaning at every point in the game while `= 240`
+  does not.
+- **To remove an override use `EternalSonataClearEnemyTypeStat`**, not a
+  multiplier of 1.0. The latter keeps reasserting the original value over any
+  per-instance write.
+- **Nothing here queues.** Unlike the party and item APIs, no entry point runs
+  guest code, so reads, writes and override changes all return a real result
+  immediately and are safe from any thread including the ImGui draw thread.
+- **Overrides are memory-only.** Nothing touches the save; reapply your
+  rebalance on load if you want it to survive a restart.
+- **A battle yields at most three drops in total**, however many enemies it
+  holds, so raising every drop rate to 100 does not hand out one per enemy.
+- **There is no enemy magic attack stat.** An enemy's spell power comes from the
+  ability rather than a stat, so `ATTACK` is the only offensive number to touch;
+  the two resistances are what separate incoming physical from magical damage.
+
+Changes are published on the shared mod registry bus as
+`eternalsonata.enemy.override.set` and `.cleared`, with the type in the
+payload's high 32 bits, the stat id in its low 32, and the multiplier or value
+in `f64`.
+
+`docs/enemies.md` documents the guest-side record the API sits on.
+
 ## Watching saves
 
 A mod can ask whether the game would let the player save right now, list what

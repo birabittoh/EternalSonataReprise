@@ -128,6 +128,98 @@ inline constexpr uint32_t kEnemyLevelOffset = 302u;   // i16
 inline constexpr uint32_t kEnemyHpCurOffset = 304u;   // i32
 inline constexpr uint32_t kEnemyHpMaxOffset = 308u;   // i32
 
+// The rest of the 168-byte block. Everything below is a
+// displacement off `part`, i.e. inside the same block the four fields above
+// open. The enemy side has no separate stat table anywhere else: this block is
+// the whole of what an encounter knows about one monster, so it is also the
+// whole surface a rebalance mod needs (src/eternalsonata_enemy_api.h).
+//
+// The decisive function is sub_821AFF40, the damage formula. It reads the
+// attacker's and the defender's stats side by side for both sides at once, so
+// every enemy field it touches is pinned to the party field in the same slot
+// of the expression, and party_system.cpp already names those:
+//
+//   enemy part+312 <-> party stats+0x14 (attack)
+//   enemy part+324 <-> party stats+0x18 (defense)
+//
+// Attack, defense and speed are the three stats the game lets an ability buff,
+// and each has a pristine copy exactly 168 bytes further on, i.e. at
+// part+kEnemyBaseStatsOffset + the same in-block displacement. sub_821AFD08 /
+// sub_821AFD80 / sub_821AFDF8 read the base copies (part+480/492/482) and
+// sub_821B7E30 / sub_821B8090 / sub_821B7F60 clamp the live value to
+// base * [0.7, 1.3] before sub_821B8368 adds a buff into the live field. So
+// anything rewriting one of the three has to rewrite the base copy too, or the
+// game's own clamp drags the value back within 30% of the original.
+inline constexpr uint32_t kEnemyAttackOffset = 312u;   // i16
+inline constexpr uint32_t kEnemySpeedOffset = 314u;    // i16
+inline constexpr uint32_t kEnemyDefenseOffset = 324u;  // i16
+// Distance from a live field to its pristine copy. Only the three buffable
+// stats above are known to have one.
+inline constexpr uint32_t kEnemyBaseStatsOffset = 168u;
+
+// The AI's reaction cone, in degrees, and the percent chance of reacting at
+// all (that one is part+636, outside the block). sub_821AA7E0 turns the pair
+// into the angular window an approaching attacker has to be inside for the
+// enemy to turn and guard.
+inline constexpr uint32_t kEnemyReactAngleMinOffset = 326u;  // i16, degrees
+inline constexpr uint32_t kEnemyReactAngleMaxOffset = 328u;  // i16, degrees
+
+// Percent damage reduction against the two damage components the party's
+// attack is built from. sub_821AFF40 scales the party's stats+0x16 term by
+// (1 - part+330/100) and its stats+0x18 (magic) term by (1 - part+331/100).
+// The enemy's own plain attack term is not reduced by either, which is why
+// there is no third one.
+inline constexpr uint32_t kEnemyPhysicalResistOffset = 330u;  // i8, percent
+inline constexpr uint32_t kEnemyMagicResistOffset = 331u;     // i8, percent
+
+// Percent chance, rolled by sub_821AF7D0 against rand() % 100, of the hit
+// landing as a critical; sub_821AFF40 multiplies the final damage by 1.5 when
+// it does. Read off the DEFENDER, not the attacker.
+inline constexpr uint32_t kEnemyCritRateOffset = 339u;  // i8, percent
+
+// Per-enemy flag bits. Bit 10 makes the unit targetable even at zero health
+// (sub_821C48D0) and bit 17 selects the alternate ability list
+// (sub_821AED48). This is the same field the flags below name; both spellings
+// are kept because 0x154 is what earlier code already used.
+inline constexpr uint32_t kEnemyFlagBitsOffset = 340u;  // u32
+
+// The battle rewards, both summed over every live enemy by sub_8218B6B8 as it
+// builds the results screen. EXP goes into the results record and is what the
+// equipment effect id 47 bonus scales; gold is added straight into the party's
+// money global dword_8243F3F0 and saturates at 99999999.
+inline constexpr uint32_t kEnemyExpOffset = 344u;   // i32
+inline constexpr uint32_t kEnemyGoldOffset = 348u;  // i32
+
+// The drop table, rolled by sub_8218BA70: two item ids, each with its own
+// percent chance, plus a flag word whose bit 0 (item 1) and bit 1 (item 2,
+// inverted) restrict the drop to the one enemy the battle picked as the
+// "featured" one. The whole battle yields at most three items, the encounter
+// record contributing the third. Item ids are the master entity ids the item
+// API documents (1..512).
+inline constexpr uint32_t kEnemyDropItem1Offset = 352u;  // i16, item id
+inline constexpr uint32_t kEnemyDropItem2Offset = 354u;  // i16, item id
+inline constexpr uint32_t kEnemyDropRate1Offset = 356u;  // i8, percent
+inline constexpr uint32_t kEnemyDropRate2Offset = 357u;  // i8, percent
+inline constexpr uint32_t kEnemyDropFlagsOffset = 358u;  // i16
+
+// Presentation and movement, all floats.
+//   +320  how far the AI will chase (sub_82191EC8 hands it to the target
+//         search as a radius; the party's counterpart is stats+0x24).
+//   +360  the model's scale (sub_821B24C0).
+//   +364  how far one move step carries the unit: sub_82196C58 places the
+//         destination at start + (target - start) * this, so it is the closest
+//         thing the record has to a movement speed.
+inline constexpr uint32_t kEnemyChaseRangeOffset = 320u;  // float
+inline constexpr uint32_t kEnemyScaleOffset = 360u;       // float
+inline constexpr uint32_t kEnemyMoveRangeOffset = 364u;   // float
+
+// part+0 is the enemy type's own name, a NUL-terminated string, one per part:
+// sub_8219F698 formats btldata\script\ai\<name>.e out of it. It identifies the
+// type where the name id identifies the display name, and the two agree.
+inline constexpr uint32_t kEnemyTypeNameOffset = 0u;
+// record+32450: set when the record's second part is in use at all.
+inline constexpr uint32_t kEnemyHasSecondPartOffset = 32450u;  // u8
+
 // The BTX text block enemy names are resolved from, via the game's own text
 // lookup sub_8223B780(block, name_id - 1). Party names come from the block at
 // 0x823857D0 instead, but nothing here needs those: the party API already

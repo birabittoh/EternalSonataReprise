@@ -13,6 +13,7 @@
 #include <imgui.h>
 #include <rex/cvar.h>
 
+#include "enemy_system.h"
 #include "eternalsonata_hooks_internal.h"
 #include "guest_main_thread.h"
 #include "guest_profiler.h"
@@ -667,6 +668,9 @@ REX_HOOK_RAW(sub_8210AAD8) {
   // Debug tools queue guest calls that are only safe on this thread; see
   // guest_main_thread.h for why the mod-registry tick will not do.
   eternalsonata::DrainGuestMainThread();
+  // Reasserts the enemy rebalance overrides; see src/enemy_system.h for why it
+  // has to happen every frame rather than once when a battle starts.
+  eternalsonata::EnemySystemTick();
   // These live in eternalsonata_options.cpp (the value-highlight memory
   // differ), polled here so the F9-F12 hotkeys work from anywhere.
   eternalsonata_hooks::ScanPollKeys(base);
