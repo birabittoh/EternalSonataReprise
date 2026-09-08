@@ -123,13 +123,61 @@ count of zero" pass in front.
 | `sub_821FC1E8(db, id, count)` | the game's own acquire: `sub_821FBFC0` with `refresh` set, then push the id to the front of the recently-acquired list |
 | `sub_821FC330(db, id, count)` | take: returns what is left, releases the slot at zero, returns -1 if the player held none |
 
-Ids **350..381** are score pieces and are not in this table at all: both
-`sub_821FBFC0` and `sub_821FBF20` special-case that range onto the bitmask
-`dword_8243FCD0` and the 32-byte list `byte_8243FCD4`.
+Ids **350..381** are score pieces and are not in this table at all; see the
+section below.
 
 `word_825600D4` is a separate 32-entry u16 list, the recently-acquired items,
 maintained by `sub_821FC1E8` and pruned by `sub_821FC330`. It is *not* the Item
 Set.
+
+## Score pieces
+
+The 32 score pieces are items with real master records (id 350..381, icon 21,
+category 0, no prices and no Item Set cost) that never enter the inventory.
+`sub_821FBFC0` (give) and `sub_821FBE88` / `sub_821FBF20` (how many held / how
+many free) all branch that id range onto a collection of their own:
+
+| Address | Type | Meaning |
+| --- | --- | --- |
+| `0x8243FCD0` | u32 | Bit *number - 1* per piece, set when the piece is found. Written by the give path and saved, but nothing ever reads it back. |
+| `0x8243FCD4` | u8[32] | The piece numbers 1..32 in the order they were found, 0 for a free slot. This is the real ownership record and the order the menu lists them in. |
+| `0x8243FCF4` | u8 | The menu's Mark: a piece number, or 0 for nothing marked. |
+
+Piece **number** is 1..32 and item id is number + 349. `sub_821FBFC0` sets the
+bit with `1 << (id - 94)`; PowerPC `slw` takes the shift modulo 64, so that is
+bit `id - 350` and not an out-of-range shift.
+
+All three fields sit inside the 2324 bytes `sub_82241190` writes from
+`0x8243F3E8`, so the collection and the Mark both survive a save.
+
+Two asymmetries worth knowing:
+
+* **A score piece can never be taken away by the game.** `sub_821FC330` has no
+  branch for the range at all, so it just fails to find one and returns -1.
+  `EternalSonataTakeItem` removes it from the list in host code instead, closing
+  the gap so the give path's "first zero is the end" scan stays right.
+* **A score piece must not go in the Item Set.** `sub_821E6740` would accept
+  one, because `sub_821FBF20` reports a collected piece as owned, but there is
+  no inventory record behind it to reserve. `EternalSonataCanAddItemToSet`
+  refuses the range up front.
+
+### The Score Pieces menu
+
+`sub_8220A588` builds it. It copies `byte_8243FCF4` into its own state at
+`+0x184`, then fills a row list at `+0x190` from `byte_8243FCD4` (storing
+`number - 1` per row) with the count at `+0x210`. A row is highlighted when
+`state[0x184] - 1` equals it. With no pieces collected the screen draws text id
+168 instead of a list.
+
+Rows are sheet music images out of the resource table at `dword_824409DC+376`,
+not text, which is why the pieces look nameless in game; the shipped item name
+for id 350 is only the placeholder "Score Piece 01".
+
+`sub_8220E550(screen, index)` is Mark: it sets `state[0x184]` to `index + 1`, or
+back to 0 when the same row was already marked, which is the press-again-to-
+unmark behaviour. The state is only written back to `byte_8243FCF4` when the
+screen closes (`sub_8220DEC8`), so a mod that moves the Mark while the menu is
+open has its change overwritten on exit.
 
 ## The Item Set
 
