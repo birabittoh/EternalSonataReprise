@@ -25,6 +25,7 @@
 
 #include "achievement_translation.h"
 #include "battle_system.h"
+#include "enemy_system.h"
 #include "eternalsonata_asset_system.h"
 #include "field_player_model_override.h"
 #include "fonts.generated.h"
@@ -389,6 +390,10 @@ class EternalsonataApp : public rex::ReXApp {
     // Battle state for mods: src/eternalsonata_battle_api.h answers
     // "unavailable" until this runs.
     eternalsonata::BindBattleSystem(runtime());
+
+    // Enemy stats and the rebalance overrides for mods:
+    // src/eternalsonata_enemy_api.h answers "unavailable" until this runs.
+    eternalsonata::BindEnemySystem(runtime());
 
     // Save state for mods: src/eternalsonata_save_api.h answers "unavailable"
     // and publishes no save event until this runs.
