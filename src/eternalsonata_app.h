@@ -36,6 +36,7 @@
 #include "item_system.h"
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
+#include "music_system.h"
 #include "native_renderer.h"
 #include "native_renderer_overlay.h"
 #include "input_overlay.h"
@@ -412,6 +413,10 @@ class EternalsonataApp : public rex::ReXApp {
     // Piano Music unlock state for mods: src/eternalsonata_piano_music_api.h
     // answers "unavailable" and publishes no event until this runs.
     eternalsonata::BindPianoMusicSystem(runtime());
+
+    // Music menu (OST gallery) for mods: src/eternalsonata_music_api.h answers
+    // "unavailable" and publishes no event until this runs.
+    eternalsonata::BindMusicSystem(runtime());
 
     // Inventory and Item Set for mods: src/eternalsonata_item_api.h answers
     // "unavailable" and publishes no event until this runs.
