@@ -65,6 +65,7 @@
 
 #include "eternalsonata_photo_api.h"
 #include "photo_system.h"
+#include "piano_music_system.h"
 
 namespace eternalsonata {
 namespace {
@@ -536,14 +537,22 @@ REX_HOOK_RAW(sub_82209478) {
 // sub_82240AF8(save) -> void: restore the live globals from a loaded save,
 // album included. The album that comes back is whatever the save held, so the
 // poll adopts it instead of reporting a dozen additions.
+//
+// The same routine also restores the collectible flags the Piano Music menu
+// reads, and piano_music_system.cpp wants the same "adopt, do not announce"
+// treatment. A guest routine can only be hooked once, so this hook forwards to
+// it rather than there being a second one.
 REX_EXTERN(__imp__sub_82240AF8);
 REX_HOOK_RAW(sub_82240AF8) {
   __imp__sub_82240AF8(ctx, base);
 
   using namespace eternalsonata;
-  std::lock_guard<std::mutex> lock(g_mutex);
-  g_have_snapshot = false;
-  g_forced.fill(false);
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_have_snapshot = false;
+    g_forced.fill(false);
+  }
+  NotifyPianoMusicSaveLoaded();
 }
 
 // ---------------------------------------------------------------------------
