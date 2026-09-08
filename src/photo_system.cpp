@@ -66,6 +66,7 @@
 #include "eternalsonata_photo_api.h"
 #include "photo_system.h"
 #include "equipment_system.h"
+#include "game_settings.h"
 #include "item_system.h"
 #include "music_system.h"
 #include "piano_music_system.h"
@@ -560,6 +561,7 @@ REX_HOOK_RAW(sub_82240AF8) {
   NotifyMusicSaveLoaded();
   NotifyItemSaveLoaded();
   NotifyEquipmentSaveLoaded();
+  NotifyGameSettingsSaveLoaded();
 }
 
 // ---------------------------------------------------------------------------

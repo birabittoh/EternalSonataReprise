@@ -241,6 +241,7 @@ set(ETERNALSONATA_SOURCES
     src/music_system.cpp
     src/item_system.cpp
     src/equipment_system.cpp
+    src/game_settings.cpp
     src/guest_main_thread.cpp
     src/guest_profiler.cpp
     src/host_timer_resolution.cpp
