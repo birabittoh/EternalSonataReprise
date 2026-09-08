@@ -23,6 +23,15 @@
 //     available without having been collected. Nothing saves it, so it is
 //     reported separately from the flag the save carries.
 //
+//     That dword is not the piano music's own storage, though: it is one slot
+//     of the eight-dword scratch block at 0x8243F358 that every status menu
+//     screen reuses, and each of them zeroes the block on entry. The Music menu
+//     (music_system.cpp) parks a row index of -1 there, which as a bitmask
+//     would read as every piece unlocked. So the mask is mirrored host side
+//     from the two guest routines that own it and the mirror is what this file
+//     reports; the guest dword is only written back while it still agrees with
+//     the mirror, i.e. while the piano screen still owns the slot.
+//
 //   * Text ids into the packed UI blob at 0x8203DD60: the piece titles are ids
 //     0..6 and the "???" placeholder is id 9. sub_8222B8D8 reads history page
 //     p (1-based) of piece i as id 10 * i + 9 + p, so the pages run from
@@ -90,6 +99,11 @@ rex::Runtime* g_runtime = nullptr;
 // adopt silently instead of republishing everything it holds.
 bool g_have_snapshot = false;
 std::array<bool, kCount> g_snapshot{};
+
+// Host mirror of the session-only mask. See the note at the top: the guest
+// dword is shared scratch, so it is only trustworthy while the piano screen
+// owns it.
+uint32_t g_session_mask = 0;
 
 rex::memory::Memory* Mem() { return g_runtime ? g_runtime->memory() : nullptr; }
 
@@ -173,10 +187,7 @@ bool UnlockedSaved(int index) {
   return flag >= 0 && ReadGuestByte(kFlagsAddr + static_cast<uint32_t>(flag)) != 0;
 }
 
-bool UnlockedSession(int index) {
-  const uint32_t mask = ReadGuest<uint32_t>(kSessionMaskAddr);
-  return (mask & (1u << index)) != 0;
-}
+bool UnlockedSession(int index) { return (g_session_mask & (1u << index)) != 0; }
 
 // What the menu itself tests: either half is enough to draw the real title.
 bool Unlocked(int index) {
@@ -219,8 +230,13 @@ bool SetUnlockedLocked(int index, bool unlocked) {
   if (!unlocked) {
     // The saved flag alone is not enough to hide a piece again: the menu also
     // takes the session bit, and nothing clears that until the title screen.
-    const uint32_t mask = ReadGuest<uint32_t>(kSessionMaskAddr);
-    WriteGuest<uint32_t>(kSessionMaskAddr, mask & ~(1u << index));
+    // Only write the guest copy back while it still matches the mirror, so a
+    // screen that has since taken the scratch slot over is left alone.
+    const bool owned = ReadGuest<uint32_t>(kSessionMaskAddr) == g_session_mask;
+    g_session_mask &= ~(1u << index);
+    if (owned) {
+      WriteGuest<uint32_t>(kSessionMaskAddr, g_session_mask);
+    }
   }
   return true;
 }
@@ -315,6 +331,33 @@ void NotifyPianoMusicSaveLoaded() {
 }
 
 }  // namespace eternalsonata
+
+// ---------------------------------------------------------------------------
+// Session mask mirror
+// ---------------------------------------------------------------------------
+
+// The Piano Music screen's init, which zeroes the scratch block the mask lives
+// in before rebuilding the list.
+REX_EXTERN(__imp__sub_82229FC0);
+REX_HOOK_RAW(sub_82229FC0) {
+  __imp__sub_82229FC0(ctx, base);
+  using namespace eternalsonata;
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_session_mask = 0;
+}
+
+// The only routine that adds to the mask, from what the PIANO_CHECK screen
+// found.
+REX_EXTERN(__imp__sub_8222B260);
+REX_HOOK_RAW(sub_8222B260) {
+  const u32 added = ctx.r3.u32;
+  __imp__sub_8222B260(ctx, base);
+  if (added) {
+    using namespace eternalsonata;
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_session_mask |= added;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Public C ABI (eternalsonata_piano_music_api.h)
