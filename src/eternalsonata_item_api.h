@@ -35,6 +35,11 @@
 // Loading a save republishes nothing: whatever the save restores is adopted
 // silently.
 //
+// Score pieces publish one more, ETERNALSONATA_SCORE_PIECE_EVENT_MARKED, whose
+// `u64` is the piece number now marked (0 when the mark was cleared) and whose
+// `f64` is the matching item id (0 when cleared). Collecting one is a normal
+// item.gained.
+//
 // Threading. Every entry point here is safe to call from any thread, including
 // the ImGui draw thread. Reads answer from guest memory immediately. Writes
 // have to run guest code, so they are queued onto the guest main thread and
@@ -65,6 +70,7 @@ extern "C" {
 #define ETERNALSONATA_ITEM_EVENT_LOST "eternalsonata.item.lost"
 #define ETERNALSONATA_ITEM_EVENT_SET_ADDED "eternalsonata.itemset.added"
 #define ETERNALSONATA_ITEM_EVENT_SET_REMOVED "eternalsonata.itemset.removed"
+#define ETERNALSONATA_SCORE_PIECE_EVENT_MARKED "eternalsonata.scorepiece.marked"
 
 // Item ids are 1-based and index the game's master entity table, which has
 // exactly 512 records. Characters share this id space with items.
@@ -78,6 +84,15 @@ extern "C" {
 // The Item Set has 32 slots and the game offers no way to grow it. In practice
 // the point budget runs out long before the slots do.
 #define ETERNALSONATA_ITEM_SET_CAPACITY 32
+
+// Score pieces. There are exactly 32 and they take item ids 350..381, but they
+// never enter the inventory: the game keeps them in a collection of their own,
+// so they cannot be sold, cannot stack, and the Score Pieces menu lists them by
+// the order they were found in. Piece numbers below are 1..32, which is what
+// the game stores and what the Mark state names; item id is number + 349.
+#define ETERNALSONATA_SCORE_PIECE_COUNT 32
+#define ETERNALSONATA_SCORE_PIECE_ITEM_ID_MIN 350
+#define ETERNALSONATA_SCORE_PIECE_ITEM_ID_MAX 381
 
 // EternalSonataItem::category, the master table's own grouping. It is what
 // decides which tab of the item screen an item appears under.
@@ -166,8 +181,42 @@ typedef struct EternalSonataItem {
   // 1 if this id names a character (1..10), 0 otherwise.
   int32_t is_character;
 
-  int32_t reserved[6];  // zero-filled; room for later additions
+  // 1 if this id is one of the 32 score pieces, 0 otherwise. A score piece is
+  // a real item with a real master record, but it lives outside the inventory,
+  // so `slot` is always -1, `count` is 0 or 1, and it can never be in the
+  // Item Set. Use the score piece calls below for the rest of its state.
+  int32_t is_score_piece;
+  // 1..32 for a score piece, 0 otherwise.
+  int32_t score_piece_number;
+
+  int32_t reserved[4];  // zero-filled; room for later additions
 } EternalSonataItem;
+
+// One of the 32 score pieces.
+typedef struct EternalSonataScorePiece {
+  // 1..32, the number the game stores and the Score Pieces menu marks by.
+  int32_t number;
+  // 350..381, the same piece as an item id. Everything in the item half of
+  // this API accepts it.
+  int32_t item_id;
+
+  // 1 once the player has found it, 0 while it is still missing.
+  int32_t unlocked;
+  // 1 if this is the piece the menu's Mark is on. At most one piece is marked.
+  int32_t marked;
+
+  // Where the piece sits in the collected list, which is the order the Score
+  // Pieces menu lists them in: 0 for the first one found, and -1 when the piece
+  // has not been found. Not stable across a lock.
+  int32_t order;
+
+  // Id into the item name text block, equal to item_id - 1. The shipped name is
+  // the placeholder "Score Piece NN"; the menu draws sheet music rather than a
+  // title, which is why the pieces look nameless in game.
+  int32_t name_text_id;
+
+  int32_t reserved[6];  // zero-filled; room for later additions
+} EternalSonataScorePiece;
 
 // Custom item data: the static properties a mod provides when registering a new item.
 // The game handles id assignment and allocation, so mods don't provide the id.
@@ -331,6 +380,57 @@ typedef int (*EternalSonataRemoveItemSetSlotFn)(int slot);
 // Empties the set, refunding the whole budget. Returns
 // ETERNALSONATA_ITEM_QUEUED, or a negative error decided up front.
 typedef int (*EternalSonataClearItemSetFn)(void);
+
+// ---------------------------------------------------------------------------
+// Score pieces
+// ---------------------------------------------------------------------------
+//
+// Score pieces are stored outside the inventory, so none of these has to run
+// guest code: they all take effect immediately and none of them can return
+// ETERNALSONATA_ITEM_QUEUED. EternalSonataGiveItem and EternalSonataTakeItem
+// accept a score piece id too and route to the same storage.
+
+// Whether `item_id` is one of the 32 score pieces. Returns 1, 0, or a negative
+// error.
+typedef int (*EternalSonataIsScorePieceFn)(int item_id);
+
+// Fills `out` for piece `number` (1..32). Returns ETERNALSONATA_ITEM_OK or a
+// negative error.
+typedef int (*EternalSonataGetScorePieceFn)(int number, EternalSonataScorePiece* out);
+
+// Fills `out` with up to `max` pieces and returns how many were written, or a
+// negative error. Pass max = 0 to just count. `collected_order` picks the
+// order: 0 lists all 32 by piece number, 1 lists only the ones the player has
+// found, in the order the Score Pieces menu shows them.
+typedef int (*EternalSonataGetAllScorePiecesFn)(EternalSonataScorePiece* out, int max,
+                                                int collected_order);
+
+// How many of the 32 the player has found, or a negative error.
+typedef int (*EternalSonataGetScorePieceCountFn)(void);
+
+// Whether piece `number` has been found. Returns 1, 0, or a negative error.
+typedef int (*EternalSonataIsScorePieceUnlockedFn)(int number);
+
+// Gives or takes away piece `number`. Locking a piece also clears the Mark if
+// it was on that piece. Returns ETERNALSONATA_ITEM_OK or a negative error.
+typedef int (*EternalSonataSetScorePieceUnlockedFn)(int number, int unlocked);
+
+// The same for all 32 at once. Returns how many pieces actually changed, or a
+// negative error.
+typedef int (*EternalSonataSetAllScorePiecesUnlockedFn)(int unlocked);
+
+// The piece the Mark is on, 1..32, or 0 when nothing is marked. Negative on
+// error.
+typedef int (*EternalSonataGetMarkedScorePieceFn)(void);
+
+// Moves the Mark to piece `number`, or clears it when `number` is 0. The piece
+// has to have been found, otherwise ETERNALSONATA_ITEM_ERR_NOT_OWNED. Returns
+// ETERNALSONATA_ITEM_OK or a negative error.
+//
+// The Score Pieces menu copies the Mark into its own state when it opens and
+// writes it back when it closes, so a change made while that menu is on screen
+// is overwritten on exit.
+typedef int (*EternalSonataSetMarkedScorePieceFn)(int number);
 
 #ifdef __cplusplus
 }  // extern "C"
