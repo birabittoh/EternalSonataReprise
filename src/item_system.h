@@ -32,4 +32,11 @@ void NotifyItemSaveLoaded();
 // queue sub_8223B780 onto the guest thread.
 const char* LookupBtxString(uint32_t block, int text_id);
 
+// The guest address of a custom item's name or description string, or 0 if
+// `block`/`text_id` do not name one. Custom items have no entry in the shipped
+// text blocks, so the sub_8223B780 hook in eternalsonata_options.cpp (a guest
+// routine can only be hooked once) asks this first and returns the answer in
+// place of the stock lookup's null.
+uint32_t CustomItemTextOverrideFor(uint32_t block, uint32_t text_id);
+
 }  // namespace eternalsonata

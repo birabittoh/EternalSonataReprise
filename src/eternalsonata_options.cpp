@@ -23,6 +23,7 @@
 #include "eternalsonata_asset_container.h"
 #include "eternalsonata_hooks_internal.h"
 #include "field_player_model_override.h"
+#include "item_system.h"
 #include "party_system.h"
 #include "settings.h"
 
@@ -2020,6 +2021,12 @@ void BtxLookupWithNameOverrides(PPCContext& ctx, u8* base) {
 
 REX_HOOK_RAW(sub_8223B780) {
   const u32 sid = ctx.r4.u32;
+  // A mod's custom item: it has no entry in the shipped text blocks, so the
+  // stock lookup would return null and the row painter would dereference it.
+  if (const u32 custom = eternalsonata::CustomItemTextOverrideFor(ctx.r3.u32, sid)) {
+    ctx.r3.u32 = custom;
+    return;
+  }
   // Checked before the row range: the voice ids sit above it, so a plain
   // `>= kRowSidBase` test would divide them into a row index past the end.
   if (sid >= kVoiceSidBase && sid - kVoiceSidBase < g_voice_addr.size() &&

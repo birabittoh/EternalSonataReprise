@@ -161,8 +161,30 @@ typedef struct EternalSonataItem {
   int32_t name_text_id;
   int32_t description_text_id;
 
-  int32_t reserved[8];  // zero-filled; room for later additions
+  // 1 if this id names a real item (not a character or unused slot), 0 otherwise.
+  int32_t is_real;
+  // 1 if this id names a character (1..10), 0 otherwise.
+  int32_t is_character;
+
+  int32_t reserved[6];  // zero-filled; room for later additions
 } EternalSonataItem;
+
+// Custom item data: the static properties a mod provides when registering a new item.
+// The game handles id assignment and allocation, so mods don't provide the id.
+typedef struct EternalSonataCustomItemData {
+  // Item name and description (copies are made, caller retains ownership).
+  const char* name;
+  const char* description;
+
+  // Master table fields (icon, category, prices, cost).
+  // `icon_id` indexes the game's own icon table and is clamped to 0..67;
+  // easiest is to copy it from an existing item of the same kind.
+  int32_t icon_id;
+  int32_t category;
+  int32_t buy_price;
+  int32_t sell_price;
+  int32_t cost;
+} EternalSonataCustomItemData;
 
 // The Item Set: the list of items usable in battle, and the party-level point
 // budget that pays for it.
@@ -222,6 +244,32 @@ typedef int (*EternalSonataGetItemCountFn)(int item_id);
 // process, so it can be held on to.
 typedef const char* (*EternalSonataGetItemNameFn)(int item_id);
 typedef const char* (*EternalSonataGetItemDescriptionFn)(int item_id);
+
+// Whether `item_id` is a real item (as opposed to a character or an unused
+// slot in the master table). Returns 1, 0, or a negative error.
+typedef int (*EternalSonataIsRealItemFn)(int item_id);
+
+// How many real items the master table holds (excluding characters and unused
+// records), or a negative error.
+typedef int (*EternalSonataGetItemCatalogCountFn)(void);
+
+// Fills `out` with up to `max` real items in ascending id order and returns
+// how many were written, or a negative error. Pass max = 0 to just count.
+// Pass category = -1 to include every category, or an ETERNALSONATA_ITEM_CATEGORY_*
+// value to filter to just that category.
+typedef int (*EternalSonataGetItemCatalogFn)(EternalSonataItem* out, int max, int category);
+
+// Registers a new custom item, which then behaves like any other item: it can
+// be given, held, sold, listed under its category and put in the Item Set.
+// An id is allocated from the master table's blank tail (403..510, so 108 at
+// once) and returned, so mods do not have to worry about conflicts. Returns
+// the allocated item id (> 0), or a negative error if registration fails.
+typedef int (*EternalSonataRegisterCustomItemFn)(const EternalSonataCustomItemData* data);
+
+// Unregisters a custom item, removing it from the catalog and making it
+// unavailable for giving to the player. Returns ETERNALSONATA_ITEM_OK or a
+// negative error.
+typedef int (*EternalSonataUnregisterCustomItemFn)(int item_id);
 
 // ---------------------------------------------------------------------------
 // Giving and taking items
