@@ -65,6 +65,7 @@
 
 #include "eternalsonata_photo_api.h"
 #include "photo_system.h"
+#include "item_system.h"
 #include "piano_music_system.h"
 
 namespace eternalsonata {
@@ -539,9 +540,9 @@ REX_HOOK_RAW(sub_82209478) {
 // poll adopts it instead of reporting a dozen additions.
 //
 // The same routine also restores the collectible flags the Piano Music menu
-// reads, and piano_music_system.cpp wants the same "adopt, do not announce"
-// treatment. A guest routine can only be hooked once, so this hook forwards to
-// it rather than there being a second one.
+// reads, and the inventory and Item Set that item_system.cpp watches, and both
+// want the same "adopt, do not announce" treatment. A guest routine can only be
+// hooked once, so this hook forwards to them rather than there being three.
 REX_EXTERN(__imp__sub_82240AF8);
 REX_HOOK_RAW(sub_82240AF8) {
   __imp__sub_82240AF8(ctx, base);
@@ -553,6 +554,7 @@ REX_HOOK_RAW(sub_82240AF8) {
     g_forced.fill(false);
   }
   NotifyPianoMusicSaveLoaded();
+  NotifyItemSaveLoaded();
 }
 
 // ---------------------------------------------------------------------------
