@@ -623,6 +623,14 @@ void Tick() {
 // Internal interface
 // ---------------------------------------------------------------------------
 
+const char* LookupBtxString(uint32_t block, int text_id) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!Bound()) {
+    return "";
+  }
+  return CachedBtxString(block, text_id);
+}
+
 void BindItemSystem(rex::Runtime* runtime) {
   {
     std::lock_guard<std::mutex> lock(g_mutex);
