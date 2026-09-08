@@ -88,6 +88,7 @@ python scripts/build.py
 ## Credits
 
 - [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk)
+- [Eternal Sonata Studio](https://github.com/mimofixe/eternal-sonata-studio)
 
 ## License
 
