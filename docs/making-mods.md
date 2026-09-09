@@ -382,6 +382,25 @@ The folder is named after your `code`, and the host routes it to the donor block
 for you. Everything in [Size rules](#size-rules) and
 [Text encoding](#text-encoding) applies unchanged.
 
+Text the *host* authors rather than the game is translated by a
+`[language.strings]` table under the `[[language]]` it belongs to. That covers
+the option rows this project adds to the game's own screens, the achievements
+this project ships (`achv_name_<id>`, `achv_desc_<id>`,
+`achv_desc_locked_<id>`), and achievements another mod added, which are keyed by
+that mod's name instead of by an id (see
+[Adding achievements](#adding-achievements)):
+
+```toml
+[language.strings]
+resolution_label = "Spyglass Size"
+achv_name_1 = "First Blood"
+achv_name_shutterbug_five_photos = "Fotoreporter"
+```
+
+Achievement strings reach both the ImGui overlay and the status menu's
+Achievements screen; the latter is drawn with the guest font, so it folds them
+to Latin-1 and anything outside that draws as `?`.
+
 To do the same from a code mod, publish three mod-registry events from
 `OnCreateDialogs` (see `src/settings.h`). `settings.language_option` adds the
 entry (`payload.u64` is the id, `payload.bytes` is `"Label"` or
@@ -1280,6 +1299,8 @@ auto unlock = reinterpret_cast<EternalSonataUnlockAchievementFn>(
     GetProcAddress(GetModuleHandle(nullptr), "EternalSonataUnlockAchievement"));
 
 EternalSonataCustomAchievementData data = {};
+data.mod_id = "my_mod";        // your folder name under mods/
+data.key = "flawless";         // stable name, so others can translate it
 data.name = "Perfect Pitch";
 data.description = "Win a battle without taking damage.";
 data.gamerscore = 50;
@@ -1309,15 +1330,31 @@ Things worth knowing before you use it:
   matching the title's own secret achievements: the row reads `???` until the
   player earns it or reveals it with the Y prompt. Leave it 0 and a locked row
   shows both, which is what an achievement the player is meant to aim for wants.
-- **Translations come in with the registration.** Fill `translations` with one
-  `EternalSonataAchievementTranslation` per language you have strings for; the
-  host keeps the entry matching the language the game booted in and drops the
-  rest, falling back to `name`/`description` for anything untranslated. The
-  `achv_name_<id>` table the title's own achievements use is no help, since its
-  keys are ids and a mod does not choose its id. To pick the strings yourself
-  instead, `EternalSonataGetAchievementLanguage()` answers the boot language.
-  The status menu folds them to Latin-1, so stay inside that (accents are fine,
-  anything else draws as `?`).
+- **Your own translations come in with the registration.** Fill `translations`
+  with one `EternalSonataAchievementTranslation` per language you have strings
+  for; the host keeps the entry matching the language the game booted in and
+  drops the rest, falling back to `name`/`description` for anything
+  untranslated. To pick the strings yourself instead,
+  `EternalSonataGetAchievementLanguage()` answers the boot language. The status
+  menu folds them to Latin-1, so stay inside that (accents are fine, anything
+  else draws as `?`).
+- **Set `mod_id` and `key` so other people can translate it.** The
+  `achv_name_<id>` table the title's own achievements use is no help on its own,
+  since its keys are ids and a mod does not choose its id. Name your mod and the
+  achievement instead (`mod_id = "shutterbug"`, the folder name under `mods/`,
+  and `key = "five_photos"`); the host joins the two, so a translation mod
+  addresses it from its `[language.strings]` as
+  `achv_name_shutterbug_five_photos`, `achv_desc_shutterbug_five_photos` and
+  `achv_desc_locked_shutterbug_five_photos`. Those win over the `translations`
+  array, so a translator can also correct a language you did ship. Leave `key`
+  null and the host numbers your achievements in registration order instead
+  (`shutterbug_0`), which is fine until you reorder or conditionally skip a
+  registration and every existing translation shifts onto the wrong one.
+- **A language a mod added works for achievements too.** Both routes match on
+  the id of the language the game booted in, and for a mod-added language that
+  is whatever id the language mod declared, so `[language.strings]` entries
+  under it reach achievements exactly as they reach anything else this project
+  draws.
 - **`gamerscore` is drawn in the row's left column**, which has room for four
   characters, so it reads well up to `100G`.
 - **`icon_path` is for the toast and the overlay only.** The status menu draws
