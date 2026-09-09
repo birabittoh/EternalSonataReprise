@@ -20,10 +20,12 @@
 #include <rex/system/game_data_selector.h>
 #include <rex/system/kernel_state.h>
 #include <rex/ui/imgui_theme.h>
+#include <rex/ui/keybinds.h>
 #include <rex/ui/window.h>
 #include <rex/version.h>
 
 #include "achievement_translation.h"
+#include "achievements_menu.h"
 #include "battle_system.h"
 #include "enemy_system.h"
 #include "eternalsonata_asset_system.h"
@@ -259,6 +261,12 @@ class EternalsonataApp : public rex::ReXApp {
   // see settings.h.
   void OnPostLoadXexImage() override {
     eternalsonata::RegisterLanguageListeners(runtime()->mod_registry());
+
+    // The achievements are a status menu screen now, so the SDK's imgui overlay
+    // does not need a key of its own. Dropped here because it is the last point
+    // before mod plugins load: a mod asking for F7 after this gets it, instead
+    // of being reassigned around a bind nothing reaches.
+    rex::ui::UnregisterBind("bind_achievements");
   }
 
   void OnPreLaunchModule() override {
@@ -406,6 +414,10 @@ class EternalsonataApp : public rex::ReXApp {
     // builds one patched image per container and serves it ahead of the mods'
     // own game/ overlays. Before the guest starts, because it remounts the game
     // data partition. See eternalsonata_asset_system.h.
+    // The status menu's Trophies entry draws over the old Status icon, which is
+    // an appkeep.bmd texture: register the patch before the cache is built.
+    achievements_menu::RegisterTrophyIcon();
+
     eternalsonata::BindAssetSystem(runtime());
 
     // Photo album for mods: src/eternalsonata_photo_api.h answers
