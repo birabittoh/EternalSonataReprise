@@ -1127,6 +1127,14 @@ void LogSurfaceMirrorSummary() {
       g_sampled_resolve_count, g_resolved_texture_binds);
 }
 
+namespace {
+std::function<void()> g_guest_frame_callback;
+}  // namespace
+
+void SetGuestFrameCallback(std::function<void()> callback) {
+  g_guest_frame_callback = std::move(callback);
+}
+
 }  // namespace eternalsonata
 
 // The draw entry points. Each records the pipeline the draw runs with; see the
@@ -1619,6 +1627,12 @@ REX_HOOK_RAW(D3DDevice__Swap) {
   // After the present, so this frame's fence wait and the GPU timestamps of the
   // frame that just retired are already in the accumulators it reads.
   eternalsonata::ProfileEndFrame();
+
+  // With no GPU plugin there is no swap packet, so this is the only guest frame
+  // boundary the host has; see SetGuestFrameCallback.
+  if (eternalsonata::g_guest_frame_callback) {
+    eternalsonata::g_guest_frame_callback();
+  }
 
   static uint64_t swaps = 0;
   if (++swaps % 300 == 0) {
