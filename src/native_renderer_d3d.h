@@ -221,6 +221,12 @@ bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out,
 // It never wraps in practice and a wrap would only cost one stale frame anyway.
 uint64_t TextureContentEpoch();
 
+// Invalidate the binding cache. The texture mirror calls this when a guest
+// write lands on a texture it holds, so the draw that follows the write goes
+// back through TextureMirrorLookup instead of reusing a descriptor set built
+// before it.
+void BumpTextureContentEpoch();
+
 // A value equal exactly when the fetch constants of every slot in `mask` hold
 // the same six dwords as they did last time. Zero when they could not be read
 // at all, which callers must treat as "no answer" rather than as a value, since

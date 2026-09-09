@@ -62,10 +62,6 @@ std::atomic<uint32_t> g_device{0};
 // read is on the guest thread.
 std::atomic<uint64_t> g_texture_content_epoch{1};
 
-void BumpTextureContentEpoch() {
-  g_texture_content_epoch.fetch_add(1, std::memory_order_relaxed);
-}
-
 // Bound state, guest pointers. Written from the guest thread only.
 uint32_t g_vertex_shader = 0;
 uint32_t g_pixel_shader = 0;
@@ -1016,6 +1012,10 @@ bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out,
 
 uint64_t TextureContentEpoch() {
   return g_texture_content_epoch.load(std::memory_order_relaxed);
+}
+
+void BumpTextureContentEpoch() {
+  g_texture_content_epoch.fetch_add(1, std::memory_order_relaxed);
 }
 
 uint64_t BoundTextureFetchSignature(uint8_t* base, uint32_t mask) {
