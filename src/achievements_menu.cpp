@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -70,6 +71,11 @@ namespace {
 // container, in file order, which for section 185 is 245. NTEX chunks carry no
 // name, so an ordinal is the only way to name one.
 constexpr const char* kTrophyIconRef = "appkeep.bmd#tex:245";
+
+// The row crystal a locked achievement gets. sub_821FEBC8 picks 288, 289 or 290
+// by tab and falls back to icon 230 for a tab of 3 and up, which this screen is
+// the only caller ever to pass.
+constexpr std::uint32_t kLockedCrystalTab = 3u;
 
 // Screen state, all in the block every status menu screen zeroes on entry.
 constexpr std::uint32_t kScratchAddr = 0x8243F358u;      // the tag being opened
@@ -209,11 +215,18 @@ struct Row {
 // ever addressed this way, and each of those was recorded by the build that put
 // it there.
 constexpr std::uint32_t kRowTitleObjectOffset = 20u;
+// The sprite group everything in a row hangs off, and the row's crystal.
+constexpr std::uint32_t kRowGroupOffset = 16u;
+constexpr std::uint32_t kRowIconOffset = 32u;
 std::uint32_t g_row_object[kTabCount][kMaxRowsPerTab] = {};
 
-std::mutex g_mutex;         // guards g_tabs and g_built
+std::mutex g_mutex;         // guards g_tabs, g_built and g_revealed
 bool g_built = false;
 std::vector<Row> g_tabs[kTabCount];
+
+// Reveals are per session and are not in the catalogue, so they are kept by id
+// and reapplied whenever the rows are rebuilt.
+std::set<std::uint32_t> g_revealed;
 
 bool g_active = false;
 
@@ -271,6 +284,9 @@ void EnsureRows() {
     return;
   }
   g_built = true;
+  for (auto& tab : g_tabs) {
+    tab.clear();
+  }
 
   auto* kernel = rex::system::kernel_state();
   if (!kernel) {
@@ -297,7 +313,7 @@ void EnsureRows() {
             ToLatin1(!unlocked && !info.unachieved_description.empty()
                          ? info.unachieved_description : info.description),
             std::to_string(info.gamerscore) + "G",
-            unlocked, secret, false});
+            unlocked, secret, g_revealed.count(info.id) != 0});
   }
   REXLOG_INFO("[achievements] menu rows: {} / {} / {}", g_tabs[0].size(),
               g_tabs[1].size(), g_tabs[2].size());
@@ -306,8 +322,18 @@ void EnsureRows() {
 // A row reads as itself once it is earned, or once the player asked for it with
 // the Reveal prompt. Locked rows otherwise read the way the gallery's own
 // locked tracks do, and a secret one keeps its description hidden as well.
+// A row past the end of the tab has no title at all: it is one of the four the
+// layout always builds, and HideRow paints the rest of it out.
 std::string RowTitle(const Row* row) {
-  return row && (row->unlocked || row->revealed) ? row->label : std::string("???");
+  if (!row) {
+    return std::string();
+  }
+  // Only a secret keeps its name back; an ordinary locked row reads as itself,
+  // the same way its description is already shown.
+  if (row->unlocked || row->revealed || !row->secret) {
+    return row->label;
+  }
+  return std::string("???");
 }
 
 std::string RowDescription(const Row* row) {
@@ -431,6 +457,38 @@ void HideCustomTab(PPCContext& ctx, std::uint8_t* base) {
   ctx.r7.u32 = saved_r7;
 }
 
+// Four rows are laid out whatever the tab holds, so a tab with fewer than four
+// achievements has spare ones. They cannot be refused: sub_821FEBC8's own "no
+// row" exit hands the caller a -1 that sub_822273A0 then looks up and writes
+// through. So the row is built and painted out instead, group and crystal both,
+// which with the empty title RowTitleOverride gives it leaves nothing on screen.
+void HideRow(PPCContext& ctx, std::uint8_t* base, std::uint32_t row_object) {
+  const std::uint32_t saved_r3 = ctx.r3.u32;
+  const std::uint32_t saved_r4 = ctx.r4.u32;
+  const std::uint32_t saved_r5 = ctx.r5.u32;
+  const std::uint32_t saved_r6 = ctx.r6.u32;
+  const std::uint32_t saved_r7 = ctx.r7.u32;
+
+  for (const std::uint32_t field : {kRowGroupOffset, kRowIconOffset}) {
+    const std::uint32_t handle = REX_LOAD_U32(row_object + field);
+    if (!handle || handle == 0xFFFFFFFFu) {
+      continue;
+    }
+    ctx.r3.u32 = kObjectManagerAddr;
+    ctx.r4.u32 = handle;
+    ctx.r5.u32 = 0u;  // ARGB, so alpha 0
+    ctx.r6.u32 = 0u;
+    ctx.r7.u32 = 0u;
+    __imp__sub_82179160(ctx, base);
+  }
+
+  ctx.r3.u32 = saved_r3;
+  ctx.r4.u32 = saved_r4;
+  ctx.r5.u32 = saved_r5;
+  ctx.r6.u32 = saved_r6;
+  ctx.r7.u32 = saved_r7;
+}
+
 // The row under the cursor: the tab's scroll position plus the cursor's slot in
 // the selectable group, which handlers read as the byte at group + 44.
 bool HighlightedRow(std::uint8_t* base, int* tab, int* index) {
@@ -479,6 +537,7 @@ void RevealHighlighted(PPCContext& ctx, std::uint8_t* base) {
       return;
     }
     row.revealed = true;
+    g_revealed.insert(row.id);
     title = RowTitle(&row);
   }
 
@@ -562,14 +621,20 @@ void UpdateDescription(PPCContext& ctx, std::uint8_t* base) {
 
 bool Active() { return g_active; }
 
-void RegisterTrophyIcon() {
+void InvalidateRows() {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_built = false;
+}
+
+namespace {
+
+void RegisterIcon(const char* ref, const unsigned char* png, unsigned int size,
+                  const char* what) {
   int width = 0;
   int height = 0;
-  auto pixels = rex::ui::DecodeImageRGBA(eternalsonata::kIconTrophiesPNG,
-                                         eternalsonata::kIconTrophiesPNGSize,
-                                         width, height);
+  auto pixels = rex::ui::DecodeImageRGBA(png, size, width, height);
   if (pixels.empty() || width <= 0 || height <= 0) {
-    REXLOG_WARN("[achievements] trophy icon did not decode");
+    REXLOG_WARN("[achievements] {} did not decode", what);
     return;
   }
 
@@ -579,11 +644,18 @@ void RegisterTrophyIcon() {
   image.height = static_cast<std::uint32_t>(height);
   image.mip_levels = 1;
 
-  const auto result = EternalSonataReplaceTexture(kTrophyIconRef, &image, 0);
+  const auto result = EternalSonataReplaceTexture(ref, &image, 0);
   if (result != ETERNALSONATA_ASSET_OK) {
-    REXLOG_WARN("[achievements] trophy icon patch {} failed: {}", kTrophyIconRef,
+    REXLOG_WARN("[achievements] {} patch {} failed: {}", what, ref,
                 static_cast<int>(result));
   }
+}
+
+}  // namespace
+
+void RegisterIcons() {
+  RegisterIcon(kTrophyIconRef, eternalsonata::kIconTrophiesPNG,
+               eternalsonata::kIconTrophiesPNGSize, "trophy icon");
 }
 
 std::uint32_t RowTitleOverride(std::uint8_t* base, std::uint32_t blob,
@@ -1012,9 +1084,24 @@ REX_EXTERN(__imp__sub_821FEBC8);
 REX_HOOK_RAW(sub_821FEBC8) {
   using namespace achievements_menu;
   const std::uint32_t row_object = ctx.r3.u32;
+  // r6 is the tab, and the tab only picks the row crystal. A row nobody has
+  // earned yet asks for a tab of 3, the fallback icon, so it reads differently
+  // from an earned one. Revealing a row does not earn it, so it keeps that icon.
+  const bool ours = g_active && t_building_row;
+  const Row* row = ours ? FindRow(t_row_tab, t_row_index) : nullptr;
+  if (row && !row->unlocked) {
+    ctx.r6.u32 = kLockedCrystalTab;
+  }
   __imp__sub_821FEBC8(ctx, base);
-  if (g_active && t_building_row && t_row_tab >= 0 && t_row_tab < kTabCount &&
-      t_row_index >= 0 && t_row_index < kMaxRowsPerTab) {
+  if (!ours) {
+    return;
+  }
+  if (!row) {
+    HideRow(ctx, base, row_object);
+    return;
+  }
+  if (t_row_tab >= 0 && t_row_tab < kTabCount && t_row_index >= 0 &&
+      t_row_index < kMaxRowsPerTab) {
     g_row_object[t_row_tab][t_row_index] = row_object;
   }
 }
