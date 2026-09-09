@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <mutex>
@@ -81,6 +82,10 @@ constexpr uint32_t kStatsStride = 48u;
 // own painter sub_822352F8 (which draws +0x10, +0x0C, then +0x14/+0x16/+0x18/
 // +0x1A) and against sub_821E7898's equipment maths.
 constexpr uint32_t kStatLevel = 0x00u;   // u32
+// u32 total EXP. sub_821E7F18, the battle award, writes it in both structs
+// and clamps it here, and sub_821E8308 reads it to answer the status screen's
+// "next".
+constexpr uint32_t kStatExp = 0x04u;
 constexpr uint32_t kStatHp = 0x0Cu;      // u32, current
 constexpr uint32_t kStatHpMax = 0x10u;   // u32
 constexpr uint32_t kStatAttack = 0x14u;  // u16
@@ -90,6 +95,8 @@ constexpr uint32_t kStatSpeed = 0x1Au;   // u16
 // The game clamps all four u16 stats here, so writes clamp the same way rather
 // than storing a number the next recompute would immediately cut down.
 constexpr uint32_t kStatMax = 999u;
+constexpr int32_t kExpMax = ETERNALSONATA_EXP_MAX;
+constexpr int32_t kLevelMax = ETERNALSONATA_LEVEL_MAX;
 
 // The owned-entity table sub_821FBFC0 fills and sub_821FBF20 queries: 512
 // records of {u16 id, u8 count, u8 spoken for}, keyed by the same id space the
@@ -495,10 +502,69 @@ int RefreshStatsOnGuestThread(int slot) {
 // Stats
 // ---------------------------------------------------------------------------
 
+// The EXP curve, lifted from sub_821E8308 (the status screen's "next") and
+// sub_821E7F18 (the battle award). One shared progression covers every
+// character: the cost of a level starts at 200 and grows by a step that itself
+// grows by 45, 54, 63 ... The three running values are floats in the guest and
+// the cost is truncated from one, so they are floats here too; doing the sum in
+// integers drifts from the game by a point or two at high levels.
+//
+// `steps` is how many level costs to pay for at most, and the walk stops early
+// once `total` passes `stop_at`. Returns the number of costs paid, with the
+// cumulative EXP in `total`.
+int WalkExpCurve(int steps, int32_t stop_at, int32_t* total) {
+  float cost = 200.0f;
+  float step = 10.0f;
+  float step_step = 45.0f;
+  int32_t sum = 0;
+  int paid = 0;
+  while (paid < steps && sum <= stop_at) {
+    sum += static_cast<int32_t>(cost);
+    cost += step;
+    step += step_step;
+    step_step += 9.0f;
+    ++paid;
+  }
+  *total = sum;
+  return paid;
+}
+
+// Total EXP a character needs to be `level`, i.e. the sum of the costs of the
+// levels below it. 0 at level 1.
+int32_t TotalExpForLevel(int level) {
+  int32_t total = 0;
+  WalkExpCurve(level - 1, INT32_MAX, &total);
+  return total;
+}
+
+// The level `exp` buys, 1..kLevelMax. This is the game's own reading of the
+// character: sub_821E7F18 derives the level from the total the same way and
+// writes the level field to match, so the stored level is only ever a cache of
+// this.
+int LevelForExp(int32_t exp) {
+  int32_t total = 0;
+  const int paid = WalkExpCurve(kLevelMax, exp, &total);
+  return paid < 1 ? 1 : paid;
+}
+
+// What the status screen prints as "next". The guest gates on the stored level
+// rather than on the one the total buys, so this does too: a save whose two
+// have been made to disagree shows what the game would show.
+int32_t ExpToNextLevel(int32_t exp, int32_t stored_level) {
+  if (stored_level >= kLevelMax) {
+    return 0;
+  }
+  int32_t total = 0;
+  WalkExpCurve(kLevelMax, exp, &total);
+  return total - exp;
+}
+
 void ReadStats(uint32_t base_address, int slot, EternalSonataCharacterStats* out) {
   const uint32_t at = base_address + kStatsStride * (slot - 1);
   std::memset(out, 0, sizeof(*out));
   out->level = static_cast<int32_t>(ReadGuest<uint32_t>(at + kStatLevel));
+  out->exp = static_cast<int32_t>(ReadGuest<uint32_t>(at + kStatExp));
+  out->exp_to_next = ExpToNextLevel(out->exp, out->level);
   out->hp = static_cast<int32_t>(ReadGuest<uint32_t>(at + kStatHp));
   out->hp_max = static_cast<int32_t>(ReadGuest<uint32_t>(at + kStatHpMax));
   out->attack = ReadGuest<uint16_t>(at + kStatAttack);
@@ -516,6 +582,14 @@ uint16_t ClampStat(int32_t value) {
   return static_cast<uint16_t>(std::min<uint32_t>(static_cast<uint32_t>(value), kStatMax));
 }
 
+int32_t ClampExp(int32_t value) {
+  return value < 0 ? 0 : std::min(value, kExpMax);
+}
+
+// EXP is deliberately not written here. The stats struct grew its `exp` field
+// out of the reserved space, which a mod built against version 1 of the ABI
+// zero-fills, so honouring it would wipe the character's EXP on any write from
+// such a mod. WriteExp below is the way to set it.
 void WriteStats(uint32_t base_address, int slot, const EternalSonataCharacterStats& stats) {
   const uint32_t at = base_address + kStatsStride * (slot - 1);
   WriteGuest<uint32_t>(at + kStatLevel, ClampU32(stats.level));
@@ -536,6 +610,26 @@ void ApplyStats(int slot, const EternalSonataCharacterStats& stats) {
   WriteStats(kBaseStatsAddr, slot, stats);
   WriteStats(kLiveStatsAddr, slot, stats);
   RunOnGuestThread([slot] { return RefreshStatsOnGuestThread(slot); });
+}
+
+int32_t ReadExp(int slot) {
+  return static_cast<int32_t>(
+      ReadGuest<uint32_t>(kBaseStatsAddr + kStatsStride * (slot - 1) + kStatExp));
+}
+
+// Both stat structs carry the total, and sub_821E7F18 keeps them equal, so a
+// write that touched only one would be undone by the next recompute. The level
+// follows, because it is a cache of what the total buys.
+int32_t WriteExp(int slot, int32_t exp) {
+  const int32_t clamped = ClampExp(exp);
+  const auto level = static_cast<uint32_t>(LevelForExp(clamped));
+  for (uint32_t base : {kBaseStatsAddr, kLiveStatsAddr}) {
+    const uint32_t at = base + kStatsStride * (slot - 1);
+    WriteGuest<uint32_t>(at + kStatExp, static_cast<uint32_t>(clamped));
+    WriteGuest<uint32_t>(at + kStatLevel, level);
+  }
+  RunOnGuestThread([slot] { return RefreshStatsOnGuestThread(slot); });
+  return clamped;
 }
 
 }  // namespace
@@ -778,6 +872,70 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCharacterStats(
   }
   ApplyStats(slot, *stats);
   return ETERNALSONATA_PARTY_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetCharacterExp(int character) {
+  const int slot = ResolveSlot(character);
+  if (slot < 0) {
+    return slot;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!Available()) {
+    return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
+  }
+  return ReadExp(slot);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetCharacterExpToNextLevel(int character) {
+  const int slot = ResolveSlot(character);
+  if (slot < 0) {
+    return slot;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!Available()) {
+    return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
+  }
+  const auto level =
+      static_cast<int32_t>(ReadGuest<uint32_t>(kBaseStatsAddr + kStatsStride * (slot - 1)));
+  return ExpToNextLevel(ReadExp(slot), level);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCharacterExp(int character, int exp) {
+  const int slot = ResolveSlot(character);
+  if (slot < 0) {
+    return slot;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!Available()) {
+    return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
+  }
+  WriteExp(slot, exp);
+  return ETERNALSONATA_PARTY_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataAddCharacterExp(int character, int exp) {
+  const int slot = ResolveSlot(character);
+  if (slot < 0) {
+    return slot;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!Available()) {
+    return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
+  }
+  const int64_t total = static_cast<int64_t>(ReadExp(slot)) + exp;
+  return WriteExp(slot, static_cast<int32_t>(
+                            std::clamp<int64_t>(total, 0, ETERNALSONATA_EXP_MAX)));
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetTotalExpForLevel(int level) {
+  if (level < 1 || level > ETERNALSONATA_LEVEL_MAX) {
+    return ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT;
+  }
+  return TotalExpForLevel(level);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetLevelForExp(int exp) {
+  return LevelForExp(exp < 0 ? 0 : exp);
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataHealCharacter(int character) {

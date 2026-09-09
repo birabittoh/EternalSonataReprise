@@ -1142,6 +1142,15 @@ Things worth knowing before you use it:
 - **Always null-check the `GetProcAddress` result**, and call
   `EternalSonataPartyAbiVersion()` if you need to branch on host capability. A
   mod built against a newer host has to keep loading on an older one.
+- **Character stats include progression in ABI version 2.** The `exp` field is
+  total earned EXP and `exp_to_next` is the status screen's derived Next value.
+  `EternalSonataGetCharacterExp` and
+  `EternalSonataGetCharacterExpToNextLevel` expose the same values directly;
+  the curve lookup functions work without a loaded save.
+- **Change EXP through the dedicated functions.** Stat writes deliberately
+  leave EXP alone so a mod built against ABI version 1 cannot erase it through
+  what used to be reserved space. Setting or adding EXP also updates the
+  character's cached level, but does not apply the game's per-level stat gains.
 - **Reads answer immediately; writes are queued.** Anything that has to run
   guest code (add, remove, reorder, stat writes) is queued onto the guest main
   thread and returns `ETERNALSONATA_PARTY_QUEUED`, because a guest call from
@@ -1164,6 +1173,30 @@ Things worth knowing before you use it:
 
 `docs/party-system.md` documents the guest-side structures the API sits on, if
 you need to know what a call actually does.
+
+## Reading and changing items and gold
+
+The item API covers inventory stacks, the battle Item Set, score pieces,
+static item data, custom items, and the party's gold. Copy
+`src/eternalsonata_item_api.h` into your mod and resolve its entry points as
+with the party API.
+
+```cpp
+#include "eternalsonata_item_api.h"
+
+auto add_gold = reinterpret_cast<EternalSonataAddGoldFn>(
+    GetProcAddress(GetModuleHandle(nullptr), "EternalSonataAddGold"));
+if (add_gold) {
+  add_gold(500);
+}
+```
+
+`EternalSonataGetGold` reads the shared purse. `EternalSonataSetGold` and
+`EternalSonataAddGold` clamp it to `0..ETERNALSONATA_GOLD_MAX`, matching the
+game's battle reward cap. A negative add charges the party and floors at zero.
+These calls are immediate guest-memory accesses and do not queue.
+
+See `docs/items.md` for the inventory, Item Set, score-piece, and gold layouts.
 
 ## Rebalancing enemies
 
@@ -1230,8 +1263,9 @@ in `f64`.
 
 ## Watching saves
 
-A mod can ask whether the game would let the player save right now, list what
-is in each save slot, and be told when a save starts, finishes, or fails. Copy
+A mod can ask whether the game would let the player save right now, read or
+change play time, list what is in each save slot, and be told when a save
+starts, finishes, or fails. Copy
 `src/eternalsonata_save_api.h` from this repo into your mod for the signatures
 and the full contract; the entry points resolve out of the host executable the
 same way as the Options and party APIs.
@@ -1277,8 +1311,11 @@ Things worth knowing before you use it:
   immediately before the menu build reads it, which a mod writing guest memory
   from a per-frame tick cannot do reliably. Patching the branch is not an
   option either, since a recompilation translates the guest code at build time.
-- **There is no save/load call.** Apart from that toggle the API is read-only
-  plus events; making the game save or load a slot on demand is not exposed.
+- **Play time is exposed in whole seconds.** `EternalSonataGetPlayTime`,
+  `EternalSonataSetPlayTime`, and `EternalSonataAddPlayTime` convert the game's
+  saved 300 Hz clock and clamp it at `99:59:59`, the status screen's maximum.
+- **There is no save/load call.** The gate and play clock are writable, but
+  making the game save or load a slot on demand is not exposed.
 
 ## Adding achievements
 
