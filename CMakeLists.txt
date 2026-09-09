@@ -255,6 +255,7 @@ set(ETERNALSONATA_SOURCES
     src/music_system.cpp
     src/option_strip.cpp
     src/achievements_menu.cpp
+    src/achievement_system.cpp
     src/item_system.cpp
     src/equipment_system.cpp
     src/game_settings.cpp
