@@ -649,8 +649,9 @@ Everything else is display metadata shown in the F1 mod manager overlay.
 not read by it; leave it empty in a fresh mod.toml. After a successful build
 it's (re)set to a comma-separated list of whichever platform(s)
 `mods/<name>/code/` currently ships a binary for (e.g. `"windows-x64"` after
-a `--target windows-x64`-only build, `"windows-x64,linux-x64,linux-arm64"`
-once all three have been built into the same tree). It's purely a record of
+a `--target windows-x64`-only build,
+`"windows-x64,linux-x64,linux-arm64,mac-x64,mac-arm64,android-arm64"` once
+every platform has been built into the same tree). It's purely a record of
 what's actually on disk, not something you set by hand.
 
 ### 2. Implement the plugin ABI
@@ -757,7 +758,8 @@ every `src/<name>/` project and assembles the result into
 `mods/<name>/code/<platform>/` (`<name>.dll` / `lib<name>.so`, plus
 `mod.toml` and `icon.png` at the mod root). See that repo's README and the
 script's own `--help`/docstring for flags (`--mod`, `--target
-{windows-x64,linux-x64,linux-arm64}`, `--package`, `--sdk-dir`) and
+{windows-x64,linux-x64,linux-arm64,mac-x64,mac-arm64,android-arm64}`,
+`--package`, `--sdk-dir`) and
 cross-build details. Once built, copy `mods/<name>/` into this repo's
 `mods/` as-is: `LoadModPlugin` checks `code/<platform>/<stem>...` (matching
 the running host) before falling back to a flat `code/<stem>...`, so a mod
@@ -766,7 +768,7 @@ distribution from that repo's releases does) loads correctly with no
 flattening step needed. A locally-built, single-platform mod's flat
 `code/<stem>...` still works too.
 
-Prebuilt mods (all three platforms, already zipped one-per-mod) are
+Prebuilt mods (every platform, already zipped one-per-mod) are
 attached to that repo's [releases](https://github.com/birabittoh/NocturneRecomp-Mods/releases)
 if you just want to install one rather than build it yourself.
 
