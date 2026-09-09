@@ -1252,6 +1252,42 @@ Critical hits and parries are also repeated on
 `eternalsonata.battle.critical` and `eternalsonata.battle.parry` with the same
 payload. Area abilities publish one result for each affected target.
 
+### Deaths, status ailments and stat buffs
+
+Five more events report what a battle does to a unit rather than what a unit
+does. `eternalsonata.battle.down` fires when a party member is knocked out or
+an enemy dies, and `eternalsonata.battle.revived` on the way back. Both carry
+an `EternalSonataBattleDown` with the target descriptor, its HP pair, and its
+status mask; `payload.u64` is the slot and `payload.f64` the current HP. The
+liveness test is the same one `EternalSonataBattleUnit::alive` reports, so a
+listener that also polls the unit will never see the two disagree.
+
+`eternalsonata.battle.status_gained` and `.status_lost` carry an
+`EternalSonataBattleStatus`. `status` is the game's own status id, 0 through 9,
+repeated in `payload.u64`, and `status_mask` is the target's whole mask after
+the change. `EternalSonataBattleUnit` now carries the same mask, so a mod can
+read the current condition of any unit without waiting for an edge.
+
+The header deliberately does not name the ten ids: which one is poison and
+which is darkness has not been established from the executable, and a guessed
+table would be wrong in a way nothing would catch. It does document what the
+game's code does establish, including that ids 0 to 3 are mutually exclusive
+and that every status expires after four of the afflicted unit's turns unless
+equipment grants immunity.
+
+`eternalsonata.battle.stat_changed` covers the three stats an ability is
+allowed to buff or debuff, as an `EternalSonataBattleStatChange` with the stat
+id, the previous and current values, and the signed delta (`payload.u64` is the
+stat, `payload.f64` the delta). The game clamps each stat to within 30% of the
+unit's pristine value, so the reported value always sits inside that band.
+
+These five are sampled once per battle frame rather than intercepted at the
+point of application, which is what lets one mechanism cover ailments, buffs,
+deaths and the game's own end-of-turn expiry passes alike. A change a mod makes
+itself is therefore reported too. The cost is attribution: `source_kind` and
+`source_slot` name whoever held the turn on the frame the change was seen, and
+report `ETERNALSONATA_BATTLE_ACTOR_NONE` with a slot of `-1` when nobody did.
+
 The byte span is valid only until the callback returns. Copy it as above if the
 mod needs to retain the action. These events are published from the guest
 battle thread, so a callback must be thread-safe and must not touch ImGui.

@@ -431,6 +431,8 @@ bool FillUnit(int kind, int slot, EternalSonataBattleUnit* out) {
 
   if (kind == ETERNALSONATA_BATTLE_ACTOR_PARTY) {
     const uint32_t record = battle::PartyRecord(static_cast<uint32_t>(slot));
+    out->status_mask =
+        static_cast<int32_t>(ReadGuest<uint32_t>(record + battle::kPartyStatusMaskOffset));
     out->character =
         static_cast<int32_t>(ReadGuest<uint32_t>(record + battle::kPartyCharacterIdOffset));
     out->level = static_cast<int32_t>(ReadGuest<uint32_t>(record + battle::kPartyLevelOffset));
@@ -446,6 +448,8 @@ bool FillUnit(int kind, int slot, EternalSonataBattleUnit* out) {
     }
   } else {
     const uint32_t record = battle::EnemyRecord(static_cast<uint32_t>(slot));
+    out->status_mask =
+        static_cast<int32_t>(ReadGuest<uint32_t>(record + battle::kEnemyStatusMaskOffset));
     const uint32_t bits = ReadGuest<uint32_t>(record + battle::kEnemyHpRatioOffset);
     float ratio = 0.0f;
     std::memcpy(&ratio, &bits, sizeof(ratio));
@@ -598,6 +602,187 @@ void PublishBattleEffect(int target_kind, int target_slot, int signed_amount) {
   g_last_critical = false;
 }
 
+// --- Per-unit condition watch --------------------------------------------
+//
+// Statuses, buffs and deaths are all reported by sampling rather than by
+// hooking the routines that cause them. The apply and clear paths are clean
+// enough to hook (sub_8218CEF8 / sub_8218D140), but the expiry passes, the
+// stat buffs and death itself each land somewhere different, and several of
+// them only reach the fields through a register-passed unit descriptor that
+// would have to be decoded by hand. Reading the fields the game has already
+// settled on costs a few dozen loads a frame and cannot disagree with what
+// EternalSonataGetBattlePartyUnit reports, because it is the same read.
+//
+// The cost is attribution: a sampled change knows the frame it happened on,
+// not the ability that caused it. See EternalSonataBattleStatus::source_kind.
+struct UnitWatch {
+  bool valid = false;
+  // Party: character id. Enemy: name id, which also moves when a boss changes
+  // form, and a form change swaps in a whole new stat block. A slot whose
+  // identity changed is re-baselined instead of being diffed against a unit
+  // that is no longer there.
+  int32_t identity = 0;
+  uint32_t status_mask = 0;
+  int32_t alive = 0;
+  int32_t stats[3] = {0, 0, 0};
+};
+
+UnitWatch g_party_watch[ETERNALSONATA_BATTLE_MAX_PARTY];
+UnitWatch g_enemy_watch[ETERNALSONATA_BATTLE_MAX_ENEMIES];
+
+// The live buffable stats, in ETERNALSONATA_BATTLE_STAT_* order. Both sides
+// store them as 16-bit; the enemy's are inside the live part record, so an
+// out-of-range part index leaves the sample untouched rather than reading
+// outside the record.
+void ReadUnitStats(int kind, int slot, int32_t* out) {
+  if (kind == ETERNALSONATA_BATTLE_ACTOR_PARTY) {
+    const uint32_t record = battle::PartyRecord(static_cast<uint32_t>(slot));
+    out[ETERNALSONATA_BATTLE_STAT_ATTACK] =
+        ReadGuest<uint16_t>(record + battle::kPartyAttackOffset);
+    out[ETERNALSONATA_BATTLE_STAT_DEFENSE] =
+        ReadGuest<uint16_t>(record + battle::kPartyDefenseOffset);
+    out[ETERNALSONATA_BATTLE_STAT_SPEED] =
+        ReadGuest<uint16_t>(record + battle::kPartySpeedOffset);
+    return;
+  }
+  const uint32_t record = battle::EnemyRecord(static_cast<uint32_t>(slot));
+  const uint32_t part_index = ReadGuest<uint32_t>(record + battle::kEnemyPartIndexOffset);
+  if (part_index >= battle::kEnemyPartCount) {
+    return;
+  }
+  const uint32_t part = battle::EnemyPart(static_cast<uint32_t>(slot), part_index);
+  out[ETERNALSONATA_BATTLE_STAT_ATTACK] =
+      static_cast<int16_t>(ReadGuest<uint16_t>(part + battle::kEnemyAttackOffset));
+  out[ETERNALSONATA_BATTLE_STAT_DEFENSE] =
+      static_cast<int16_t>(ReadGuest<uint16_t>(part + battle::kEnemyDefenseOffset));
+  out[ETERNALSONATA_BATTLE_STAT_SPEED] =
+      static_cast<int16_t>(ReadGuest<uint16_t>(part + battle::kEnemySpeedOffset));
+}
+
+uint32_t ReadStatusMask(int kind, int slot) {
+  if (kind == ETERNALSONATA_BATTLE_ACTOR_PARTY) {
+    return ReadGuest<uint32_t>(battle::PartyRecord(static_cast<uint32_t>(slot)) +
+                               battle::kPartyStatusMaskOffset);
+  }
+  return ReadGuest<uint32_t>(battle::EnemyRecord(static_cast<uint32_t>(slot)) +
+                             battle::kEnemyStatusMaskOffset);
+}
+
+template <typename T>
+void PublishStruct(const char* name, const T& event, uint64_t u64, double f64) {
+  rex::system::ModRegistry::EventPayload payload;
+  payload.u64 = u64;
+  payload.f64 = f64;
+  payload.bytes = std::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(&event), sizeof(event));
+  g_runtime->mod_registry()->Publish(name, payload);
+}
+
+void PublishUnitChanges(int kind, int slot, const UnitWatch& before,
+                        const UnitWatch& now, const EternalSonataBattleUnit& unit) {
+  const Actor source = CurrentActor();
+  const int32_t target_character =
+      kind == ETERNALSONATA_BATTLE_ACTOR_PARTY ? unit.character : 0;
+
+  if (before.alive != now.alive) {
+    EternalSonataBattleDown event{};
+    event.target_kind = kind;
+    event.target_slot = slot;
+    event.target_character = target_character;
+    event.hp = unit.hp;
+    event.hp_max = unit.hp_max;
+    event.status_mask = static_cast<int32_t>(now.status_mask);
+    event.source_kind = source.kind;
+    event.source_slot = source.slot;
+    event.source_character = CharacterFor(source);
+    PublishStruct(now.alive ? ETERNALSONATA_BATTLE_EVENT_REVIVED
+                            : ETERNALSONATA_BATTLE_EVENT_DOWN,
+                  event, static_cast<uint64_t>(slot),
+                  static_cast<double>(unit.hp));
+  }
+
+  const uint32_t changed = before.status_mask ^ now.status_mask;
+  for (uint32_t id = 0; changed && id < battle::kStatusIdCount; ++id) {
+    if ((changed & (1u << id)) == 0) {
+      continue;
+    }
+    const bool gained = (now.status_mask & (1u << id)) != 0;
+    EternalSonataBattleStatus event{};
+    event.target_kind = kind;
+    event.target_slot = slot;
+    event.target_character = target_character;
+    event.status = static_cast<int32_t>(id);
+    event.status_mask = static_cast<int32_t>(now.status_mask);
+    event.gained = gained ? 1 : 0;
+    event.source_kind = source.kind;
+    event.source_slot = source.slot;
+    event.source_character = CharacterFor(source);
+    PublishStruct(gained ? ETERNALSONATA_BATTLE_EVENT_STATUS_GAINED
+                         : ETERNALSONATA_BATTLE_EVENT_STATUS_LOST,
+                  event, id, 0.0);
+  }
+
+  for (int stat = 0; stat < 3; ++stat) {
+    if (before.stats[stat] == now.stats[stat]) {
+      continue;
+    }
+    EternalSonataBattleStatChange event{};
+    event.target_kind = kind;
+    event.target_slot = slot;
+    event.target_character = target_character;
+    event.stat = stat;
+    event.previous = before.stats[stat];
+    event.current = now.stats[stat];
+    event.delta = now.stats[stat] - before.stats[stat];
+    event.source_kind = source.kind;
+    event.source_slot = source.slot;
+    event.source_character = CharacterFor(source);
+    PublishStruct(ETERNALSONATA_BATTLE_EVENT_STAT_CHANGED, event,
+                  static_cast<uint64_t>(stat), static_cast<double>(event.delta));
+  }
+}
+
+void PollSide(int kind, UnitWatch* watch, int capacity) {
+  const int live = kind == ETERNALSONATA_BATTLE_ACTOR_PARTY ? PartyCount() : EnemyCount();
+  for (int slot = 0; slot < capacity; ++slot) {
+    EternalSonataBattleUnit unit{};
+    if (slot >= live || !FillUnit(kind, slot, &unit)) {
+      watch[slot].valid = false;
+      continue;
+    }
+    UnitWatch now;
+    now.valid = true;
+    now.identity = kind == ETERNALSONATA_BATTLE_ACTOR_PARTY ? unit.character : unit.name_id;
+    now.status_mask = ReadStatusMask(kind, slot);
+    now.alive = unit.alive;
+    ReadUnitStats(kind, slot, now.stats);
+
+    const UnitWatch before = watch[slot];
+    watch[slot] = now;
+    if (before.valid && before.identity == now.identity) {
+      PublishUnitChanges(kind, slot, before, now, unit);
+    }
+  }
+}
+
+// Runs once per battle frame, off the back of the battle FSM. Sampling from
+// the FSM rather than from the host's frame callback keeps this on the guest
+// thread that owns the fields, and gives it a natural off switch: the FSM only
+// runs while there is a battle.
+void PollBattleUnits() {
+  if (!Available() || !g_runtime || !g_runtime->mod_registry()) {
+    for (auto& watch : g_party_watch) {
+      watch.valid = false;
+    }
+    for (auto& watch : g_enemy_watch) {
+      watch.valid = false;
+    }
+    return;
+  }
+  PollSide(ETERNALSONATA_BATTLE_ACTOR_PARTY, g_party_watch, ETERNALSONATA_BATTLE_MAX_PARTY);
+  PollSide(ETERNALSONATA_BATTLE_ACTOR_ENEMY, g_enemy_watch, ETERNALSONATA_BATTLE_MAX_ENEMIES);
+}
+
 uint32_t AbilityIdFromRecord(uint32_t record) {
   if (!record) {
     return 0;
@@ -671,6 +856,15 @@ REX_HOOK_RAW(sub_821B0A58) {
   const int amount = static_cast<int32_t>(ctx.r6.u32);
   __imp__sub_821B0A58(ctx, base);
   eternalsonata::PublishBattleEffect(target_kind, target_slot, amount);
+}
+
+// The battle state machine (battle_layout.h "Battle FSM"), which runs once per
+// frame for as long as a battle is live. Sampling after it means the frame's
+// status expiries, buffs and deaths have all already landed.
+REX_EXTERN(__imp__sub_821ACBF8);
+REX_HOOK_RAW(sub_821ACBF8) {
+  __imp__sub_821ACBF8(ctx, base);
+  eternalsonata::PollBattleUnits();
 }
 
 // ---------------------------------------------------------------------------
