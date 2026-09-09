@@ -53,6 +53,9 @@ guest_shaders_debug.bin
 # Embedded overlay font, rebuilt from src/fonts/*.ttf by scripts/gen-fonts.py
 /src/fonts.generated.h
 
+# Embedded UI art, rebuilt from src/images/*.png by scripts/gen-images.py
+/src/images.generated.h
+
 # Windows exe-icon resource script, rewritten by CMake with an absolute path
 # to src/icon.generated.ico (see CMakeLists.txt)
 /src/eternalsonata.generated.rc
