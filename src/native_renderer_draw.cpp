@@ -18,6 +18,7 @@
 #include <rex/cvar.h>
 #include <rex/logging.h>
 
+#include "guest_shaders.h"
 #include "native_renderer_frame.h"
 #include "native_renderer_pipeline_internal.h"
 #include "native_renderer_plume.h"
@@ -2373,11 +2374,21 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // read.
   const bool point_list = call.primitive_type == 1;
   const float ndc_y_sign = PlumeShaderFormat() == RenderShaderFormat::SPIRV ? -1.0f : 1.0f;
-  uint32_t draw_state[8] = {};
+  uint32_t draw_state[12] = {};
   const uint32_t alpha_func = alpha_enabled ? uint32_t(call.state.alpha_func) : 7u;  // 7 is ALWAYS
   const uint32_t param_gen = point_list && call.state.param_gen_enabled ? 1u : 0u;
   const float point_scale = float(target_scale);
   const float point_ndc[2] = {point_scale / width, ndc_y_sign * point_scale / height};
+  // Which of the two point sizes the geometry shader reads. A vertex shader
+  // with no e63 export leaves the varying at its sentinel, and a real export
+  // can be negative, so the choice cannot be made from the value.
+  uint32_t point_size_from_vertex = 0u;
+  if (point_list) {
+    int point_vs = -1, point_ps = -1;
+    GuestPipelineShaderSlots(call.pipeline, &point_vs, &point_ps);
+    if (point_vs >= 0 && GuestVertexShader(uint32_t(point_vs)).exports_point_size)
+      point_size_from_vertex = 1u;
+  }
   draw_state[0] = alpha_func;
   std::memcpy(&draw_state[1], &call.state.alpha_ref, 4);
   draw_state[2] = call.state.param_gen_pos;
@@ -2386,6 +2397,9 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   std::memcpy(&draw_state[5], &call.state.point_diameter_y, 4);
   std::memcpy(&draw_state[6], &point_ndc[0], 4);
   std::memcpy(&draw_state[7], &point_ndc[1], 4);
+  std::memcpy(&draw_state[8], &call.state.point_diameter_min, 4);
+  std::memcpy(&draw_state[9], &call.state.point_diameter_max, 4);
+  draw_state[10] = point_size_from_vertex;  // 11 is the cbuffer's tail padding
   if (!g_draw_state_cache.valid ||
       std::memcmp(g_draw_state_cache.words, draw_state, sizeof(draw_state)) != 0) {
     const Allocation allocation = ArenaAllocate(device, kUploadAlignment);

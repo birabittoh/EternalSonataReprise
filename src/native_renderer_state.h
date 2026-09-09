@@ -132,6 +132,13 @@ struct GuestRenderState {
   float point_diameter_x = 0.0f;
   float point_diameter_y = 0.0f;
 
+  // PA_SU_POINT_MINMAX (0x2281, shadow device+10472), the same 12.4 fixed point
+  // units. Rasterisation clamps a vertex shader's e63 diameter to this range,
+  // which is the only thing bounding a particle shader that sizes its sprites
+  // by 1/w as one crosses the near plane.
+  float point_diameter_min = 0.0f;
+  float point_diameter_max = 0.0f;
+
   bool valid = false;
 };
 

@@ -144,6 +144,11 @@ cbuffer XeDrawState : register(b%(cb_alpha)d, space%(cb_space)d) {
     // shader for why the y half can arrive negative.
     float2 xe_point_constant_diameter;
     float2 xe_point_screen_to_ndc;
+    // PA_SU_POINT_MINMAX, the range rasterisation clamps an e63 diameter to,
+    // and whether the bound vertex shader exports one at all.
+    float2 xe_point_size_minmax;
+    uint xe_point_size_from_vertex;
+    uint xe_draw_state_pad;
 };
 """
 
@@ -960,9 +965,9 @@ class VertexShader(Shader):
         out.append("    float4 out_position = 0.0f.xxxx;")
         for name in names:
             out.append("    float4 out_%s = 0.0f.xxxx;" % name)
-        # Negative means "this shader does not size its points"; the geometry
-        # shader falls back to PA_SU_POINT_SIZE, which is what the hardware does
-        # for a vertex shader with no e63 export.
+        # Only read when the shader exports e63; the geometry shader is told
+        # which by xe_point_size_from_vertex, since a real export can be
+        # negative and the hardware clamps that to PA_SU_POINT_MINMAX's min.
         out.append("    float out_point_size = -1.0f;")
         out.append("")
 
@@ -1156,8 +1161,14 @@ def point_sprite_gs(layout, source_name="point_sprite"):
     out.append("    if (any(isnan(v.out_position))) {")
     out.append("        return;")
     out.append("    }")
-    out.append("    float2 diameter = v.out_point_size >= 0.0f")
-    out.append("        ? v.out_point_size.xx : xe_point_constant_diameter;")
+    # Rasterisation clamps an e63 diameter to PA_SU_POINT_MINMAX, negatives
+    # included (they go to min). Without it this title's petals, which size
+    # themselves by 1/w, export diameters in the hundreds of thousands as one
+    # crosses the near plane and a single sprite covers the target.
+    out.append("    float2 diameter = xe_point_size_from_vertex != 0u")
+    out.append("        ? clamp(v.out_point_size.xx, xe_point_size_minmax.x,")
+    out.append("                xe_point_size_minmax.y)")
+    out.append("        : xe_point_constant_diameter;")
     out.append("    if (diameter.x <= 0.0f || diameter.y <= 0.0f) {")
     out.append("        return;")
     out.append("    }")
