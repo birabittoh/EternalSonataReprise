@@ -18,7 +18,7 @@ class InputOverlay final : public rex::ui::ImGuiDialog {
  public:
   InputOverlay(rex::ui::ImGuiDrawer* drawer, rex::input::InputSystem* input_system)
       : rex::ui::ImGuiDialog(drawer), input_system_(input_system) {
-    rex::ui::RegisterBind(kBindName, "F8", "Toggle input overlay",
+    rex::ui::RegisterBind(kBindName, "F5", "Toggle input overlay",
                           [this] { visible_ = !visible_; }, [this] { return visible_; },
                           kWindowTitle);
   }
