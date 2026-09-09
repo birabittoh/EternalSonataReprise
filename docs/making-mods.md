@@ -1198,6 +1198,64 @@ These calls are immediate guest-memory accesses and do not queue.
 
 See `docs/items.md` for the inventory, Item Set, score-piece, and gold layouts.
 
+## Reacting to battle actions
+
+The battle API publishes an event when either side starts an attack or ability,
+and when a combatant consumes an item. Copy
+`src/eternalsonata_battle_api.h` into your mod for the event names and payload
+layout, then subscribe through the shared mod registry:
+
+```cpp
+runtime->mod_registry()->Subscribe(
+    ETERNALSONATA_BATTLE_EVENT_ABILITY,
+    [](const rex::system::ModRegistry::EventPayload& payload) {
+      if (payload.bytes.size() != sizeof(EternalSonataBattleAction)) {
+        return;
+      }
+      EternalSonataBattleAction action;
+      std::memcpy(&action, payload.bytes.data(), sizeof(action));
+      REXLOG_INFO("side {} slot {} used ability {}", action.actor_kind,
+                  action.actor_slot, action.action_id);
+    });
+```
+
+The names are `eternalsonata.battle.attack`, `.ability`, and `.item`. Each
+event carries an `EternalSonataBattleAction` in `payload.bytes`. Its actor kind
+and slot identify a unit on either side; `character` additionally gives the
+party character id and is zero for an enemy. `action_id` is the concrete move
+record chosen by the game for attacks and abilities, including distinct attack
+variants selected by distance. For an item event it is the item id. The same id
+is repeated in `payload.u64`.
+
+`ability_strength` is the live Echo total used to strengthen an ability. It is
+captured before the move changes that total. `harmony_chain` and
+`counterattack` identify moves launched by those battle paths. The same action
+is also published as `eternalsonata.battle.harmony_chain` or
+`eternalsonata.battle.counterattack`, which lets a listener subscribe without
+inspecting every ability.
+
+`light_state` records whether the selected party move is light or dark. For an
+enemy it records which of the enemy's two movesets was active. It is
+`ETERNALSONATA_BATTLE_LIGHT_UNKNOWN` when the action does not expose either
+answer, such as an item use. `range` and `distance` are reserved for actions
+whose target range can be recovered independently; they currently report
+`ETERNALSONATA_BATTLE_RANGE_UNKNOWN` and `-1.0f`. Use the concrete attack id to
+distinguish the game's near and far attack variants.
+
+Committed HP changes use `eternalsonata.battle.damage` and
+`eternalsonata.battle.heal`. Their `payload.bytes` contains an
+`EternalSonataBattleEffect`: source and target descriptors, the amount, the
+action id, the captured ability strength, and flags for a critical hit, parry,
+Harmony Chain, or counterattack. `amount` is positive for both event types and
+is repeated in `payload.u64` and `payload.f64`. A parry can carry zero damage.
+Critical hits and parries are also repeated on
+`eternalsonata.battle.critical` and `eternalsonata.battle.parry` with the same
+payload. Area abilities publish one result for each affected target.
+
+The byte span is valid only until the callback returns. Copy it as above if the
+mod needs to retain the action. These events are published from the guest
+battle thread, so a callback must be thread-safe and must not touch ImGui.
+
 ## Rebalancing enemies
 
 A mod can change what a monster hits for, what it takes to kill one, and what
