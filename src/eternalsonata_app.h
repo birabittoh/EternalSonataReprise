@@ -416,7 +416,7 @@ class EternalsonataApp : public rex::ReXApp {
     // data partition. See eternalsonata_asset_system.h.
     // The status menu's Trophies entry draws over the old Status icon, which is
     // an appkeep.bmd texture: register the patch before the cache is built.
-    achievements_menu::RegisterTrophyIcon();
+    achievements_menu::RegisterIcons();
 
     eternalsonata::BindAssetSystem(runtime());
 
