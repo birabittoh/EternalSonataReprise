@@ -758,6 +758,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       ImGui::PopStyleColor();
       ImGui::SameLine();
       if (ImGui::SmallButton("Restart & Apply##autoupdate")) {
+        // Guarded because the SDK builds no ApplyAndRestart on Android (see
+        // src/system/CMakeLists.txt); SupportsSelfUpdate() already gated this
+        // block off at runtime, but the reference alone breaks the link.
+#if !REX_PLATFORM_ANDROID
         // This install root contains the running executable itself,
         // which stays locked for this process's whole lifetime (see
         // AutoUpdater::ApplyAndRestart's contract). The spawned helper
@@ -771,6 +775,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
           rex::ui::Window* window = window_;
           window->app_context().CallInUIThread([window] { window->RequestClose(); });
         }
+#endif
       }
       ImGui::Separator();
       return;
