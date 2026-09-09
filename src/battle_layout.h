@@ -226,6 +226,38 @@ inline constexpr uint32_t kEnemyHasSecondPartOffset = 32450u;  // u8
 // answers them, and it honours per-character renames that this would not.
 inline constexpr uint32_t kEnemyNameBtxBlock = 0x82332D90u;
 
+// --- Status ailments -----------------------------------------------------
+//
+// One u32 bitmask per unit, one bit per status id. The three functions that
+// own it fix both the field and the id space: sub_8218CEF8 sets `1 << id`,
+// sub_8218D140 clears it, and sub_82190798 tests it, each reading the party
+// mask at manager+265188 and the enemy one at manager+461844.
+//
+// Ten ids exist. sub_8218D010's jump table is bounded at id <= 9 and maps the
+// ten onto six expiry counters, grouping {0,1,2,3} and {4,5}; the counters
+// themselves are the bytes at party record+kPartyStatusTurnsOffset and enemy
+// record+kEnemyStatusTurnsOffset, and the end-of-turn passes clear a status
+// once its counter reaches 4.
+inline constexpr uint32_t kPartyStatusMaskOffset = 265188u - 183648u;   // u32
+inline constexpr uint32_t kEnemyStatusMaskOffset = 461844u - 429568u;   // u32
+inline constexpr uint32_t kPartyStatusTurnsOffset = 265447u - 183648u;  // u8[6]
+inline constexpr uint32_t kEnemyStatusTurnsOffset = 461852u - 429568u;  // u8[6]
+inline constexpr uint32_t kStatusIdCount = 10u;
+
+// The party side's three buffable live stats, the counterparts of
+// kEnemyAttackOffset / kEnemyDefenseOffset / kEnemySpeedOffset. sub_821B8368
+// is what pairs them: its three cases each add a buff into one party field and
+// the enemy field of the same meaning, so attack/defense/speed here are fixed
+// by the enemy side's already-decoded names rather than assumed.
+//
+// Note that attack does NOT sit where the overworld character record puts it
+// (party_system.cpp's kStatAttack, +0x14 into its own stat block, i.e. two
+// fields further on). The battle records are a separate copy with a separate
+// layout; defense and speed happening to line up is a coincidence.
+inline constexpr uint32_t kPartyAttackOffset = 265144u - 183648u;   // u16
+inline constexpr uint32_t kPartyDefenseOffset = 265152u - 183648u;  // u16
+inline constexpr uint32_t kPartySpeedOffset = 265154u - 183648u;    // u16
+
 // Address helpers. Callers still have to bounds-check against the live counts.
 inline constexpr uint32_t PartyRecord(uint32_t slot) {
   return kPartyArrayBase + kPartyRecordStride * slot;
