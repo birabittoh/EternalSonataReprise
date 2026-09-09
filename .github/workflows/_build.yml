@@ -48,7 +48,9 @@ jobs:
           - platform: mac-amd64
             runner: macos-26-intel
             sdk_dir: mac-amd64
-            artifact_suffix: mac-amd64
+            # Not mac-amd64: the suffix has to be the id ModState::HostPlatformId()
+            # reports, which is what the auto updater asks GitHub for.
+            artifact_suffix: mac-x64
 
           - platform: mac-arm64
             runner: macos-26
