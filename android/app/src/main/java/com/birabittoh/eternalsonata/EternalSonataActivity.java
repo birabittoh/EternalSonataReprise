@@ -24,9 +24,24 @@ public class EternalSonataActivity extends SDLActivity {
     @Override
     protected String[] getLibraries() {
         return new String[] {
-            "rexruntime",
+            runtimeLibraryName(),
             "eternalsonata",
         };
+    }
+
+    /**
+     * The SDK installs its runtime as librexruntime.so in Release but
+     * librexruntimerd.so in RelWithDebInfo, so probe for the one that was
+     * actually staged. Loading it here is harmless: the caller loads the same
+     * name again straight after, which the linker treats as a no-op.
+     */
+    private static String runtimeLibraryName() {
+        try {
+            System.loadLibrary("rexruntime");
+            return "rexruntime";
+        } catch (UnsatisfiedLinkError e) {
+            return "rexruntimerd";
+        }
     }
 
     @Override
