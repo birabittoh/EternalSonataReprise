@@ -1261,6 +1261,74 @@ Things worth knowing before you use it:
 - **There is no save/load call.** Apart from that toggle the API is read-only
   plus events; making the game save or load a slot on demand is not exposed.
 
+## Adding achievements
+
+A mod can add achievements of its own. They behave like the title's twenty two
+everywhere: the unlock toast, the SDK's achievement overlay, and the status
+menu's Achievements screen, whose third tab (**Custom**) is drawn only when at
+least one mod registered something. Copy
+`src/eternalsonata_achievement_api.h` from this repo into your mod for the
+signatures and the full contract:
+
+```cpp
+#include "eternalsonata_achievement_api.h"
+
+auto reg = reinterpret_cast<EternalSonataRegisterCustomAchievementFn>(
+    GetProcAddress(GetModuleHandle(nullptr),
+                   "EternalSonataRegisterCustomAchievement"));
+auto unlock = reinterpret_cast<EternalSonataUnlockAchievementFn>(
+    GetProcAddress(GetModuleHandle(nullptr), "EternalSonataUnlockAchievement"));
+
+EternalSonataCustomAchievementData data = {};
+data.name = "Perfect Pitch";
+data.description = "Win a battle without taking damage.";
+data.gamerscore = 50;
+const int id = reg ? reg(&data) : -1;  // keep this for the session
+...
+if (id > 0 && unlock) {
+  unlock(id, /*show_toast=*/1);
+}
+```
+
+Things worth knowing before you use it:
+
+- **The host assigns the id**, like custom items: registration returns one from
+  a range reserved for mods (`0x10000` up, 32 of them across all mods), so two
+  mods cannot collide and nobody has to know what the title already uses. Hold
+  on to the returned id for the rest of the session and key everything else off
+  it.
+- **The id is not stable across runs.** It depends on how many mods registered
+  before yours, so never write it to a file. Unlock state is persisted by id in
+  the profile's achievement save, which means a mod that changes how many
+  achievements it registers can find old unlocks landing on the wrong entry; if
+  that matters, record your own unlock state and re-unlock on startup.
+- **Register once, early.** `OnModuleLaunched()` is the natural place.
+  Registering later is legal: the Achievements screen rebuilds its rows every
+  time it is opened, so a new entry appears the next time the player opens it.
+- **`secret = 1` hides the name and the description until it is unlocked**,
+  matching the title's own secret achievements: the row reads `???` until the
+  player earns it or reveals it with the Y prompt. Leave it 0 and a locked row
+  shows both, which is what an achievement the player is meant to aim for wants.
+- **Translations come in with the registration.** Fill `translations` with one
+  `EternalSonataAchievementTranslation` per language you have strings for; the
+  host keeps the entry matching the language the game booted in and drops the
+  rest, falling back to `name`/`description` for anything untranslated. The
+  `achv_name_<id>` table the title's own achievements use is no help, since its
+  keys are ids and a mod does not choose its id. To pick the strings yourself
+  instead, `EternalSonataGetAchievementLanguage()` answers the boot language.
+  The status menu folds them to Latin-1, so stay inside that (accents are fine,
+  anything else draws as `?`).
+- **`gamerscore` is drawn in the row's left column**, which has room for four
+  characters, so it reads well up to `100G`.
+- **`icon_path` is for the toast and the overlay only.** The status menu draws
+  its own icon art and ignores it.
+- **Nothing here queues.** No entry point runs guest code, so every call answers
+  immediately and is safe from any thread, including the ImGui draw thread.
+- **Unregistering frees the id** but leaves the unlock in the save, so
+  registering into the same id again restores it.
+- To be notified of *any* unlock, including the title's own, use the SDK
+  directly: `rex::system::kernel_state()->achievements().RegisterUnlockCallback()`.
+
 ## Patching static game text/data
 
 Item/enemy names, descriptions, and similar flavor text aren't loaded from
