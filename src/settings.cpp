@@ -736,6 +736,13 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // than the SDK's mod manager overlay (F1) since a player who never touches
   // mods should still be told about an available update
   void DrawUpdateSection() {
+    // Android has no ApplyAndRestart (its install is a store/APK affair), so
+    // there is nothing to offer; without this the check would match the
+    // linux-arm64 release asset and stage a build that can never be applied.
+    if (!rex::system::AutoUpdater::SupportsSelfUpdate()) {
+      return;
+    }
+
     if (!update_check_requested_) {
       update_check_requested_ = true;
       auto_updater_.CheckAsync();
@@ -743,10 +750,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
     // A previous session already downloaded and staged an update (whether or
     // not this one ever calls CheckAsync/InstallAsync again); offer the
-    // restart regardless of auto_updater_'s own in-memory state. The SDK only
-    // builds AutoUpdater::ApplyAndRestart for Windows and GNU Linux (the
-    // detached swap helper is a platform script); anywhere else there is no
-    // self-update path at all, so nothing is offered.
+    // restart regardless of auto_updater_'s own in-memory state. macOS is
+    // excluded on top of SupportsSelfUpdate(): the SDK builds a mac
+    // ApplyAndRestart, but the release ships a .dmg the installer cannot
+    // extract, so a staged update can never get this far there anyway.
 #if REX_PLATFORM_WIN32 || REX_PLATFORM_GNU_LINUX
     if (rex::system::AutoUpdater::HasPendingSelfUpdate(rex::filesystem::GetExecutableFolder())) {
       ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.85f, 0.55f, 1.0f));
