@@ -241,6 +241,13 @@ All three are read-only and answer from the master table immediately (guarded by
 `ItemsReadable()`, which checks that the tables are mapped). None of them queue
 work onto the guest thread.
 
+## Gold
+
+The party purse is the `u32` at `0x8243F3F0`. The shop routine
+`sub_8222E9C0` reads and writes it for purchases and sales. Battle results add
+enemy gold to the same field and saturate it at 99999999. It lies eight bytes
+into the saved party block.
+
 ## Saving
 
 `sub_82241190` writes and `sub_82240AF8` reads back:

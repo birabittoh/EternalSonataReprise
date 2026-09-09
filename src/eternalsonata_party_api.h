@@ -44,7 +44,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_PARTY_ABI_VERSION 1u
+#define ETERNALSONATA_PARTY_ABI_VERSION 2u
 
 // The game's cast. Character ids are 1-based and are the game's own numbering,
 // which is also the order of its internal name table.
@@ -65,6 +65,11 @@ enum {
 // The party's first three display positions are the ones that walk the field
 // and fight; everything past that is a reserve.
 #define ETERNALSONATA_ACTIVE_PARTY_SIZE 3
+
+// The highest level the game's own curve goes to, and the EXP ceiling it
+// clamps a character's total to.
+#define ETERNALSONATA_LEVEL_MAX 99
+#define ETERNALSONATA_EXP_MAX 99999999
 
 // Results. Everything >= 0 is success.
 enum {
@@ -103,7 +108,18 @@ typedef struct EternalSonataCharacterStats {
   int32_t magic;
   int32_t defense;
   int32_t speed;
-  int32_t reserved[9];  // zero-filled; room for later additions
+  // Added in ABI version 2, out of the reserved space, so the struct's size
+  // and the fields above it did not move.
+  //
+  // The game treats EXP as the source of truth during battle awards. For ABI
+  // compatibility EternalSonataSetCharacterStats leaves both EXP fields alone;
+  // use the dedicated EXP functions to change them.
+  int32_t exp;  // total EXP earned, 0..ETERNALSONATA_EXP_MAX
+  // How much more EXP this character needs to reach its next level, which is
+  // what the status screen prints as "next". Derived, so it is filled in on
+  // read and ignored on write. 0 at ETERNALSONATA_LEVEL_MAX.
+  int32_t exp_to_next;
+  int32_t reserved[7];  // zero-filled; room for later additions
 } EternalSonataCharacterStats;
 
 // ---------------------------------------------------------------------------
@@ -186,6 +202,43 @@ typedef int (*EternalSonataSetCharacterStatsFn)(int character,
 // Sets current HP to maximum for one character, or for the whole party.
 typedef int (*EternalSonataHealCharacterFn)(int character);
 typedef int (*EternalSonataHealPartyFn)(void);
+
+// ---------------------------------------------------------------------------
+// EXP (ABI version 2)
+// ---------------------------------------------------------------------------
+//
+// One curve covers the whole cast: the EXP a level costs starts at 200 and
+// grows by a second difference that itself grows by 9, and a character's level
+// is however many of those steps its total EXP has paid for. The four
+// functions below are the same numbers EternalSonataGetCharacterStats reports
+// in `exp` / `exp_to_next`, reachable without reading a whole stat block.
+
+// `character`'s total EXP, or a negative error.
+typedef int (*EternalSonataGetCharacterExpFn)(int character);
+
+// How much more EXP `character` needs to level, 0 at ETERNALSONATA_LEVEL_MAX,
+// or a negative error.
+typedef int (*EternalSonataGetCharacterExpToNextLevelFn)(int character);
+
+// Sets `character`'s total EXP, clamped to 0..ETERNALSONATA_EXP_MAX, and
+// updates its level to the one that total buys. Stats do not grow on their
+// own: the game's per-level gains are applied by its own level-up routine as
+// EXP is awarded in battle, so a mod that jumps a character forward this way
+// should follow with EternalSonataSetCharacterStats.
+typedef int (*EternalSonataSetCharacterExpFn)(int character, int exp);
+
+// Adds `exp` (negative to take it away) to `character`'s total, otherwise the
+// same as EternalSonataSetCharacterExp. Returns the new total, or a negative
+// error.
+typedef int (*EternalSonataAddCharacterExpFn)(int character, int exp);
+
+// Curve lookups, independent of any character and of whether a save is loaded.
+//
+//   ...TotalExpForLevel(level)  total EXP a character needs to be `level`;
+//                               0 for level 1, negative for out of range
+//   ...LevelForExp(exp)         the level that total buys, 1..99
+typedef int (*EternalSonataGetTotalExpForLevelFn)(int level);
+typedef int (*EternalSonataGetLevelForExpFn)(int exp);
 
 // ---------------------------------------------------------------------------
 // Changing the party

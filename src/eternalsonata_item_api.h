@@ -77,6 +77,11 @@ extern "C" {
 #define ETERNALSONATA_ITEM_ID_MIN 1
 #define ETERNALSONATA_ITEM_ID_MAX 512
 
+// The party's purse, which is what an item's buy and sell prices are paid in
+// and what the battle results screen adds an enemy's drop to. One number for
+// the whole party, capped by the game itself.
+#define ETERNALSONATA_GOLD_MAX 99999999
+
 // The inventory holds up to 512 distinct items, 99 of each.
 #define ETERNALSONATA_INVENTORY_CAPACITY 512
 #define ETERNALSONATA_ITEM_STACK_MAX 99
@@ -431,6 +436,27 @@ typedef int (*EternalSonataGetMarkedScorePieceFn)(void);
 // writes it back when it closes, so a change made while that menu is on screen
 // is overwritten on exit.
 typedef int (*EternalSonataSetMarkedScorePieceFn)(int number);
+
+// ---------------------------------------------------------------------------
+// Gold
+// ---------------------------------------------------------------------------
+//
+// The party's money lives here rather than in the party API because it is only
+// ever spent and earned through items: it pays an item's buy price, it is what
+// selling one returns, and the results screen adds an enemy's drop to it.
+
+// How much gold the party has, 0..ETERNALSONATA_GOLD_MAX, or a negative error.
+typedef int (*EternalSonataGetGoldFn)(void);
+
+// Sets it, clamped to 0..ETERNALSONATA_GOLD_MAX. Returns
+// ETERNALSONATA_ITEM_OK or a negative error.
+typedef int (*EternalSonataSetGoldFn)(int gold);
+
+// Adds `gold` (pass a negative amount to charge the party) and returns the new
+// total, clamped the same way, or a negative error. Charging more than the
+// party has leaves it at 0 rather than refusing, so check
+// EternalSonataGetGold first if a mod wants to price something.
+typedef int (*EternalSonataAddGoldFn)(int gold);
 
 #ifdef __cplusplus
 }  // extern "C"

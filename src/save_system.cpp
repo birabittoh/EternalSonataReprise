@@ -24,6 +24,10 @@
 //     run through it too - so a completion is only attributed to a save when
 //     this file knows a save is outstanding.
 //
+//   * The displayed play clock comes from the u32 at 0x82565780. It advances
+//     at 300 ticks per second. sub_8220F3E0 caps it at 107999700 ticks, divides
+//     by 300, and sub_8220F340 formats the result as HH:MM:SS.
+//
 // So the three events are: sub_82241190 entry (started), its own zero return
 // (failed, nothing was written), and the worker's result (completed/failed).
 //
@@ -73,6 +77,12 @@ constexpr uint32_t kAtSavePointAddr = 0x8243C360u;
 // and either one being set means the menu offers Save.
 constexpr uint32_t kMenuSaveEnabledAddr = 0x8243FBFBu;
 
+// u32 play clock in 300 Hz ticks. sub_8220F3E0 divides this by 300 before
+// sub_8220F340 formats HH:MM:SS, clamping at 99:59:59 first.
+constexpr uint32_t kPlayTimeTicksAddr = 0x82565780u;
+constexpr uint32_t kPlayTimeTicksPerSecond = 300u;
+constexpr uint32_t kPlayTimeMaxSeconds = ETERNALSONATA_PLAY_TIME_MAX_SECONDS;
+
 // The game's own save-slot count; sub_82241190 and sub_822404E8 both refuse a
 // slot above 9.
 constexpr int kSlotCount = ETERNALSONATA_SAVE_SLOT_COUNT;
@@ -113,6 +123,26 @@ uint8_t ReadGuestByte(uint32_t address) {
   }
   const auto* host = memory->TranslateVirtual<const uint8_t*>(address);
   return host ? *host : 0;
+}
+
+uint32_t ReadGuestU32(uint32_t address) {
+  auto* memory = Mem();
+  if (!memory) {
+    return 0;
+  }
+  const auto* host = memory->TranslateVirtual<const uint8_t*>(address);
+  return host ? rex::memory::load_and_swap<uint32_t>(host) : 0;
+}
+
+void WriteGuestU32(uint32_t address, uint32_t value) {
+  auto* memory = Mem();
+  if (!memory) {
+    return;
+  }
+  auto* host = memory->TranslateVirtual<uint8_t*>(address);
+  if (host) {
+    rex::memory::store_and_swap<uint32_t>(host, value);
+  }
 }
 
 bool GuestReadable(uint32_t address) {
@@ -487,6 +517,40 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetSaveAlwaysAllowed(int enabl
   }
   g_force_save_allowed.store(enabled != 0, std::memory_order_relaxed);
   return ETERNALSONATA_SAVE_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPlayTime(void) {
+  using namespace eternalsonata;
+  if (!Bound() || !GuestReadable(kPlayTimeTicksAddr)) {
+    return ETERNALSONATA_SAVE_ERR_UNAVAILABLE;
+  }
+  return static_cast<int>(
+      std::min(ReadGuestU32(kPlayTimeTicksAddr) / kPlayTimeTicksPerSecond,
+               kPlayTimeMaxSeconds));
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetPlayTime(int seconds) {
+  using namespace eternalsonata;
+  if (!Bound() || !GuestReadable(kPlayTimeTicksAddr)) {
+    return ETERNALSONATA_SAVE_ERR_UNAVAILABLE;
+  }
+  const uint32_t clamped =
+      static_cast<uint32_t>(std::clamp(seconds, 0, static_cast<int>(kPlayTimeMaxSeconds)));
+  WriteGuestU32(kPlayTimeTicksAddr, clamped * kPlayTimeTicksPerSecond);
+  return ETERNALSONATA_SAVE_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataAddPlayTime(int seconds) {
+  using namespace eternalsonata;
+  if (!Bound() || !GuestReadable(kPlayTimeTicksAddr)) {
+    return ETERNALSONATA_SAVE_ERR_UNAVAILABLE;
+  }
+  const int64_t current = ReadGuestU32(kPlayTimeTicksAddr) / kPlayTimeTicksPerSecond;
+  const int result = static_cast<int>(
+      std::clamp<int64_t>(current + seconds, 0, kPlayTimeMaxSeconds));
+  WriteGuestU32(kPlayTimeTicksAddr,
+                static_cast<uint32_t>(result) * kPlayTimeTicksPerSecond);
+  return result;
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsSaveAlwaysAllowed(void) {

@@ -69,6 +69,9 @@ extern "C" {
 // container each one lives in is named "savecontentNN" after that number.
 #define ETERNALSONATA_SAVE_SLOT_COUNT 10
 
+// The status screen displays play time as HH:MM:SS and caps it at 99:59:59.
+#define ETERNALSONATA_PLAY_TIME_MAX_SECONDS 359999u
+
 // Results. Everything >= 0 is success.
 enum {
   ETERNALSONATA_SAVE_OK = 0,
@@ -177,6 +180,22 @@ int EternalSonataListSaves(EternalSonataSaveSlot* out, int max);
 // Useful for backing up or inspecting a save from a mod.
 int EternalSonataGetSaveDirectory(char* out, int max);
 
+// ---------------------------------------------------------------------------
+// Play time
+// ---------------------------------------------------------------------------
+
+// Total play time in whole seconds, 0..ETERNALSONATA_PLAY_TIME_MAX_SECONDS,
+// or a negative error. The game stores this as ticks at 300 Hz.
+int EternalSonataGetPlayTime(void);
+
+// Sets total play time in seconds, clamped to the range above. Returns
+// ETERNALSONATA_SAVE_OK or a negative error.
+int EternalSonataSetPlayTime(int seconds);
+
+// Adds seconds, negative to subtract, and returns the new clamped total or a
+// negative error.
+int EternalSonataAddPlayTime(int seconds);
+
 typedef uint32_t (*EternalSonataSaveAbiVersionFn)(void);
 typedef int (*EternalSonataCanSaveFn)(void);
 typedef int (*EternalSonataSetSaveAlwaysAllowedFn)(int);
@@ -187,6 +206,9 @@ typedef int (*EternalSonataGetLastSaveSlotFn)(void);
 typedef int (*EternalSonataGetSaveSlotCountFn)(void);
 typedef int (*EternalSonataListSavesFn)(EternalSonataSaveSlot*, int);
 typedef int (*EternalSonataGetSaveDirectoryFn)(char*, int);
+typedef int (*EternalSonataGetPlayTimeFn)(void);
+typedef int (*EternalSonataSetPlayTimeFn)(int);
+typedef int (*EternalSonataAddPlayTimeFn)(int);
 
 #ifdef __cplusplus
 }  // extern "C"
