@@ -36,10 +36,13 @@
 // survive a change to its own catalogue, it should record that in its own
 // storage and re-unlock on startup.
 //
-// Localisation. A mod hands its translations in with the registration, as an
-// array keyed by language id, and the host keeps the one the game booted in.
-// The `achv_name_<id>` translation table the title's own achievements use is no
-// help here: its keys are ids, and a mod does not choose its id.
+// Localisation, two routes. A mod hands its own translations in with the
+// registration, as an array keyed by language id, and the host keeps the one the
+// game booted in. Anyone else translates it through the ordinary
+// [language.strings] table, addressed by the registering mod's id and the index
+// of the achievement within it (`mod_id` below), which is also how a mod-added
+// language reaches it: the ids there are whatever the language mod declared, and
+// the boot language's id is what both routes match on.
 //
 // Threading. Everything here is host state under a lock and is safe from any
 // thread, including the ImGui draw thread; nothing runs guest code, so there is
@@ -114,6 +117,30 @@ typedef struct EternalSonataAchievementTranslation {
 
 // What a mod provides when registering. The host assigns the id.
 typedef struct EternalSonataCustomAchievementData {
+  // The registering mod's id: its folder name under mods/, the same string
+  // mods.toml lists. Optional, but without it nobody else can translate this
+  // achievement, because the id it gets is handed out at runtime and moves with
+  // load order.
+  //
+  // The host joins it to `key` below, so an achievement "shutterbug" names
+  // `five_photos` is addressed from a translation mod's [language.strings] as
+  //     achv_name_shutterbug_five_photos,
+  //     achv_desc_shutterbug_five_photos,
+  //     achv_desc_locked_shutterbug_five_photos
+  // for the language it is translating into. Those are looked up when the
+  // achievement is registered and win over `translations` below, so a
+  // translation mod can correct or add a language the author never shipped.
+  const char* mod_id;
+
+  // A short stable name for this achievement within the mod, in the same spirit
+  // as `mod_id`: lower case, no spaces. Optional; leave it null and the host
+  // numbers the mod's achievements in registration order instead, giving
+  // `shutterbug_0`, `shutterbug_1`. A name is worth giving, since the numbering
+  // moves if the mod ever registers conditionally or reorders its calls, and a
+  // translation written against the old numbering then lands on the wrong
+  // achievement.
+  const char* key;
+
   // Shown as the achievement's title. Required; copies are made, caller retains
   // ownership of every string here.
   const char* name;

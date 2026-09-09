@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
@@ -81,6 +82,34 @@ const EternalSonataAchievementTranslation* BootTranslation(
   return nullptr;
 }
 
+// How many achievements each mod has registered, which is where the index in a
+// translation key comes from.
+std::map<std::string, int> g_mod_counts;  // under g_mutex
+
+// The translation key for a mod's next achievement, "<mod id>_<key>" or, for a
+// mod that named no key, "<mod id>_<index in registration order>". Empty when
+// the mod did not name itself either. See eternalsonata_achievement_api.h: the
+// achievement's own id cannot be used, being handed out at runtime.
+std::string NextTranslationKey(const char* mod_id, const char* key) {
+  if (!mod_id || !mod_id[0]) {
+    return std::string();
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  const int index = g_mod_counts[mod_id]++;
+  return std::string(mod_id) + "_" +
+         (key && key[0] ? std::string(key) : std::to_string(index));
+}
+
+// What a translation mod published for that key in the boot language, or null.
+// Mod-added languages come through here too, their declared id being what
+// BootUserLanguageId answers.
+const char* PublishedString(const char* prefix, const std::string& key) {
+  if (key.empty()) {
+    return nullptr;
+  }
+  return FindNativeString(BootUserLanguageId(), std::string(prefix) + key);
+}
+
 std::vector<rex::system::AchievementInfo> SortedCatalogue(
     rex::system::AchievementManager* manager) {
   std::vector<rex::system::AchievementInfo> catalogue = manager->ListAchievements();
@@ -132,14 +161,25 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterCustomAchievement(
     g_custom_ids.insert(id);
   }
 
+  // A translation mod's strings first, then the author's own for the boot
+  // language, then what was registered.
   const EternalSonataAchievementTranslation* translated = BootTranslation(data);
-  const char* name = translated && translated->name ? translated->name : data->name;
-  const char* description = translated && translated->description
-                                ? translated->description
-                                : data->description;
-  const char* locked = translated && translated->locked_description
-                           ? translated->locked_description
-                           : data->locked_description;
+  const std::string key = NextTranslationKey(data->mod_id, data->key);
+  const char* name = PublishedString("achv_name_", key);
+  if (!name) {
+    name = translated && translated->name ? translated->name : data->name;
+  }
+  const char* description = PublishedString("achv_desc_", key);
+  if (!description) {
+    description = translated && translated->description ? translated->description
+                                                        : data->description;
+  }
+  const char* locked = PublishedString("achv_desc_locked_", key);
+  if (!locked) {
+    locked = translated && translated->locked_description
+                 ? translated->locked_description
+                 : data->locked_description;
+  }
 
   rex::system::AchievementInfo info;
   info.id = id;
