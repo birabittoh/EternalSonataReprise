@@ -750,12 +750,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
     // A previous session already downloaded and staged an update (whether or
     // not this one ever calls CheckAsync/InstallAsync again); offer the
-    // restart regardless of auto_updater_'s own in-memory state. macOS is
-    // excluded on top of SupportsSelfUpdate(): the SDK builds a mac
-    // ApplyAndRestart, but the release ships a .dmg the installer cannot
-    // extract, so a staged update can never get this far there anyway.
-#if REX_PLATFORM_WIN32 || REX_PLATFORM_GNU_LINUX
-    if (rex::system::AutoUpdater::HasPendingSelfUpdate(rex::filesystem::GetExecutableFolder())) {
+    // restart regardless of auto_updater_'s own in-memory state.
+    if (rex::system::AutoUpdater::HasPendingSelfUpdate(
+            rex::system::AutoUpdater::InstallRoot())) {
       ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.85f, 0.55f, 1.0f));
       ImGui::TextWrapped("An update has been downloaded.");
       ImGui::PopStyleColor();
@@ -765,8 +762,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         // which stays locked for this process's whole lifetime (see
         // AutoUpdater::ApplyAndRestart's contract). The spawned helper
         // outlives this process, applies the swap, and launches the new exe.
-        if (rex::system::AutoUpdater::ApplyAndRestart(rex::filesystem::GetExecutableFolder(),
-                                                       rex::filesystem::GetExecutablePath()) &&
+        if (rex::system::AutoUpdater::ApplyAndRestart(rex::system::AutoUpdater::InstallRoot(),
+                                                      rex::filesystem::GetExecutablePath()) &&
             window_) {
           // Marshalled for the same reason as "Restart Now" above: the overlay
           // may be drawing on the guest render thread, and RequestClose has to
@@ -778,7 +775,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       ImGui::Separator();
       return;
     }
-#endif
 
     auto install = auto_updater_.InstallSnapshot();
     if (install.in_progress) {
@@ -812,7 +808,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopStyleColor();
     ImGui::SameLine();
     if (ImGui::SmallButton("Download Update")) {
-      auto_updater_.InstallAsync(*info, rex::filesystem::GetExecutableFolder());
+      auto_updater_.InstallAsync(*info, rex::system::AutoUpdater::InstallRoot());
     }
     ImGui::Separator();
   }
