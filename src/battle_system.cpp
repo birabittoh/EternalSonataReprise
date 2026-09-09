@@ -67,6 +67,7 @@
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
 #include <rex/system/mod_plugin.h>
+#include <rex/system/mod_registry.h>
 
 #include "battle_layout.h"
 #include "battle_system.h"
@@ -88,6 +89,21 @@ REX_IMPORT(__imp__sub_8223B780, g_lookup_text, u32(u32, u32));
 // Set in OnPostSetup. Null until then, which is what makes every entry point
 // answer "unavailable" during boot rather than dereferencing nothing.
 rex::Runtime* g_runtime = nullptr;
+
+constexpr uint32_t kMagicTableAddr = 0x82015380u;
+constexpr uint32_t kMagicStride = 12u;
+constexpr uint32_t kMagicKindOffset = 4u;
+constexpr uint32_t kPartyAbilityTableOffset = 80936u;
+constexpr uint32_t kEnemyAbilityTableAddr = 0x82550E98u;
+constexpr uint32_t kAbilityIdMax = 512u;
+constexpr uint32_t kEchoDisplayObjectOffset = 533072u;
+constexpr uint32_t kEchoCountOffset = 10224u;
+constexpr uint32_t kParryFlagOffset = 537177u;
+
+uint32_t g_last_action_id = 0;
+int g_last_action_strength = 0;
+int g_last_action_flags = 0;
+bool g_last_critical = false;
 
 // Give up rather than retry forever if the turn never comes back round, e.g.
 // because the player is wedged in something else. At 60fps this is ~15s, which
@@ -452,11 +468,210 @@ bool FillUnit(int kind, int slot, EternalSonataBattleUnit* out) {
   return true;
 }
 
+int LightStateFor(int kind, int slot, uint32_t ability) {
+  if (kind == ETERNALSONATA_BATTLE_ACTOR_ENEMY && slot >= 0 && slot < EnemyCount()) {
+    const uint32_t record = battle::EnemyRecord(static_cast<uint32_t>(slot));
+    const uint32_t part_index = ReadGuest<uint32_t>(record + battle::kEnemyPartIndexOffset);
+    if (part_index < battle::kEnemyPartCount) {
+      const uint32_t flags = ReadGuest<uint32_t>(
+          battle::EnemyPart(static_cast<uint32_t>(slot), part_index) +
+          battle::kEnemyFlagBitsOffset);
+      return (flags & (1u << 17)) ? ETERNALSONATA_BATTLE_DARK
+                                  : ETERNALSONATA_BATTLE_LIGHT;
+    }
+  }
+  if (kind == ETERNALSONATA_BATTLE_ACTOR_PARTY && ability > 0 && ability <= 512) {
+    const uint16_t magic_kind = ReadGuest<uint16_t>(
+        kMagicTableAddr + (ability - 1u) * kMagicStride + kMagicKindOffset);
+    if (magic_kind == 2) {
+      return ETERNALSONATA_BATTLE_LIGHT;
+    }
+    if (magic_kind == 3) {
+      return ETERNALSONATA_BATTLE_DARK;
+    }
+  }
+  return ETERNALSONATA_BATTLE_LIGHT_UNKNOWN;
+}
+
+int CharacterFor(const Actor& actor) {
+  if (actor.kind != ETERNALSONATA_BATTLE_ACTOR_PARTY || actor.slot < 0 ||
+      actor.slot >= PartyCount()) {
+    return 0;
+  }
+  return static_cast<int32_t>(ReadGuest<uint32_t>(
+      battle::PartyRecord(static_cast<uint32_t>(actor.slot)) +
+      battle::kPartyCharacterIdOffset));
+}
+
+int AbilityStrength() {
+  const uint32_t object =
+      ReadGuest<uint32_t>(battle::kManager + kEchoDisplayObjectOffset);
+  return object ? static_cast<int>(ReadGuest<uint32_t>(object + kEchoCountOffset)) : 0;
+}
+
+void PublishBattleAction(const char* name, uint32_t id, uint32_t action,
+                         uint32_t light_ability) {
+  if (!Available() || !g_runtime || !g_runtime->mod_registry()) {
+    return;
+  }
+  const Actor actor = CurrentActor();
+  if (actor.kind == ETERNALSONATA_BATTLE_ACTOR_NONE) {
+    return;
+  }
+  EternalSonataBattleAction event{};
+  event.actor_kind = actor.kind;
+  event.actor_slot = actor.slot;
+  event.action_id = static_cast<int32_t>(id);
+  event.light_state = LightStateFor(actor.kind, actor.slot, light_ability);
+  event.range = ETERNALSONATA_BATTLE_RANGE_UNKNOWN;
+  event.distance = -1.0f;
+  event.character = CharacterFor(actor);
+  event.ability_strength = AbilityStrength();
+  event.harmony_chain = action == 10 ? 1 : 0;
+  event.counterattack = action == 14 || action == 18 ? 1 : 0;
+  g_last_action_id = id;
+  g_last_action_strength = event.ability_strength;
+  g_last_action_flags = event.harmony_chain
+                            ? ETERNALSONATA_BATTLE_EFFECT_HARMONY_CHAIN
+                            : event.counterattack
+                                  ? ETERNALSONATA_BATTLE_EFFECT_COUNTERATTACK
+                                  : 0;
+  rex::system::ModRegistry::EventPayload payload;
+  payload.u64 = id;
+  payload.f64 = event.distance;
+  payload.bytes = std::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(&event), sizeof(event));
+  g_runtime->mod_registry()->Publish(name, payload);
+  if (event.harmony_chain) {
+    g_runtime->mod_registry()->Publish(ETERNALSONATA_BATTLE_EVENT_HARMONY_CHAIN, payload);
+  }
+  if (event.counterattack) {
+    g_runtime->mod_registry()->Publish(ETERNALSONATA_BATTLE_EVENT_COUNTERATTACK, payload);
+  }
+}
+
+void PublishBattleEffect(int target_kind, int target_slot, int signed_amount) {
+  if (!Available() || !g_runtime || !g_runtime->mod_registry()) {
+    return;
+  }
+  const bool parried = ReadGuestByte(battle::kManager + kParryFlagOffset) != 0;
+  if (signed_amount == 0 && !parried) {
+    g_last_critical = false;
+    return;
+  }
+  const Actor source = CurrentActor();
+  const Actor target{target_kind, target_slot};
+  EternalSonataBattleEffect event{};
+  event.source_kind = source.kind;
+  event.source_slot = source.slot;
+  event.source_character = CharacterFor(source);
+  event.target_kind = target.kind;
+  event.target_slot = target.slot;
+  event.target_character = CharacterFor(target);
+  event.action_id = static_cast<int32_t>(g_last_action_id);
+  event.amount = signed_amount < 0 ? -signed_amount : signed_amount;
+  event.flags = g_last_action_flags;
+  event.ability_strength = g_last_action_strength;
+  if (g_last_critical) {
+    event.flags |= ETERNALSONATA_BATTLE_EFFECT_CRITICAL;
+  }
+  if (parried) {
+    event.flags |= ETERNALSONATA_BATTLE_EFFECT_PARRIED;
+  }
+  rex::system::ModRegistry::EventPayload payload;
+  payload.u64 = static_cast<uint64_t>(event.amount);
+  payload.f64 = static_cast<double>(event.amount);
+  payload.bytes = std::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(&event), sizeof(event));
+  if (signed_amount != 0) {
+    g_runtime->mod_registry()->Publish(
+        signed_amount > 0 ? ETERNALSONATA_BATTLE_EVENT_DAMAGE
+                          : ETERNALSONATA_BATTLE_EVENT_HEAL,
+        payload);
+  }
+  if (event.flags & ETERNALSONATA_BATTLE_EFFECT_CRITICAL) {
+    g_runtime->mod_registry()->Publish(ETERNALSONATA_BATTLE_EVENT_CRITICAL, payload);
+  }
+  if (event.flags & ETERNALSONATA_BATTLE_EFFECT_PARRIED) {
+    g_runtime->mod_registry()->Publish(ETERNALSONATA_BATTLE_EVENT_PARRY, payload);
+  }
+  g_last_critical = false;
+}
+
+uint32_t AbilityIdFromRecord(uint32_t record) {
+  if (!record) {
+    return 0;
+  }
+  const Actor actor = CurrentActor();
+  uint32_t table = 0;
+  if (actor.kind == ETERNALSONATA_BATTLE_ACTOR_PARTY && actor.slot >= 0 &&
+      actor.slot < PartyCount()) {
+    table = battle::PartyRecord(static_cast<uint32_t>(actor.slot)) +
+            kPartyAbilityTableOffset;
+  } else if (actor.kind == ETERNALSONATA_BATTLE_ACTOR_ENEMY) {
+    table = kEnemyAbilityTableAddr;
+  }
+  for (uint32_t id = 1; table && id <= kAbilityIdMax; ++id) {
+    if (ReadGuest<uint32_t>(table + id * 4u) == record) {
+      return id;
+    }
+  }
+  return 0;
+}
+
 }  // namespace
 
 void BindBattleSystem(rex::Runtime* runtime) { g_runtime = runtime; }
 
+void NotifyBattleAbility(uint32_t ability, uint32_t action) {
+  const uint16_t kind = ability > 0 && ability <= 512
+                            ? ReadGuest<uint16_t>(kMagicTableAddr + (ability - 1u) *
+                                                                     kMagicStride +
+                                                 kMagicKindOffset)
+                            : 0;
+  PublishBattleAction(kind == 1 ? ETERNALSONATA_BATTLE_EVENT_ATTACK
+                                : ETERNALSONATA_BATTLE_EVENT_ABILITY,
+                      ability, action, ability);
+}
+
+void NotifyBattleItem(uint32_t item) {
+  PublishBattleAction(ETERNALSONATA_BATTLE_EVENT_ITEM, item, 0, 0);
+}
+
 }  // namespace eternalsonata
+
+REX_EXTERN(__imp__sub_8219CE70);
+REX_HOOK_RAW(sub_8219CE70) {
+  const u32 action = REX_LOAD_U32(ctx.r3.u32);
+  const u32 ability_record = ctx.r4.u32;
+  const u32 ability = eternalsonata::AbilityIdFromRecord(ability_record);
+  __imp__sub_8219CE70(ctx, base);
+  if (ability) {
+    eternalsonata::NotifyBattleAbility(ability, action);
+  }
+}
+
+REX_EXTERN(__imp__sub_821E6BA8);
+REX_HOOK_RAW(sub_821E6BA8) {
+  const u32 item = ctx.r3.u32;
+  __imp__sub_821E6BA8(ctx, base);
+  eternalsonata::NotifyBattleItem(item);
+}
+
+REX_EXTERN(__imp__sub_821AF7D0);
+REX_HOOK_RAW(sub_821AF7D0) {
+  __imp__sub_821AF7D0(ctx, base);
+  eternalsonata::g_last_critical = ctx.r3.u32 != 0;
+}
+
+REX_EXTERN(__imp__sub_821B0A58);
+REX_HOOK_RAW(sub_821B0A58) {
+  const int target_kind = static_cast<int>(ctx.r4.u32);
+  const int target_slot = static_cast<int>(ctx.r5.u32);
+  const int amount = static_cast<int32_t>(ctx.r6.u32);
+  __imp__sub_821B0A58(ctx, base);
+  eternalsonata::PublishBattleEffect(target_kind, target_slot, amount);
+}
 
 // ---------------------------------------------------------------------------
 // Public C ABI (see src/eternalsonata_battle_api.h)

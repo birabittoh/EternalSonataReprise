@@ -5,6 +5,8 @@
 // is battle_layout.h.
 #pragma once
 
+#include <cstdint>
+
 namespace rex {
 class Runtime;
 }  // namespace rex
@@ -14,5 +16,8 @@ namespace eternalsonata {
 // Binds the battle system to the runtime. Call once the runtime is live
 // (OnPostSetup). Until then every API entry point answers "unavailable".
 void BindBattleSystem(rex::Runtime* runtime);
+
+void NotifyBattleAbility(uint32_t ability, uint32_t action);
+void NotifyBattleItem(uint32_t item);
 
 }  // namespace eternalsonata
