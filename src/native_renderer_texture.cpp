@@ -5,15 +5,20 @@
 #include "native_renderer_texture.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <rex/logging.h>
 #include <rex/memory/utils.h>
+#include <rex/system/kernel_state.h>
+#include <rex/system/xmemory.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -389,6 +394,16 @@ struct MirroredTexture {
   // runs at most once per texture per frame; a texture bound two hundred times
   // in a frame is hashed once. See HashSource.
   uint64_t hashed_frame = ~0ull;
+
+  // Guest write notification state. See the watch section below.
+  //
+  // `mutable_source` is what selects a texture for watching: an asset uploaded
+  // once and never touched again would only pay the protection churn. Set the
+  // first time a refresh actually changes something.
+  bool mutable_source = false;
+  std::atomic<bool> watch_armed{false};
+  std::atomic<bool> watch_dirty{false};
+  std::atomic<bool> watch_proven{false};
 };
 
 // Bumped once per guest swap. Only ever compared for equality.
@@ -459,6 +474,121 @@ void CountRefusal(uint64_t& counter) {
 // Cached textures whose guest bytes changed under them and were re-uploaded.
 uint64_t g_refreshed = 0;
 
+// ---------------------------------------------------------------------------
+// Guest write watches
+//
+// Hashing the source is how a rewritten texture is noticed, and completeness
+// makes it expensive: the font atlas alone is 864x864, near three megabytes,
+// and hashing it proves nothing changed the overwhelming majority of the time.
+// Throttling that to once a frame is cheap but wrong, because the game
+// rasterises a glyph into the atlas *between* two draws of the same frame, so
+// the second draw samples a cell the mirror has already decided is current. On
+// screen that is a letter briefly showing whatever character was rasterised
+// into its cell before.
+//
+// The fix is to be told instead of asking. The physical heap already knows how
+// to write protect guest pages and report the first write to them, which is the
+// same mechanism Xenia invalidates its GPU copies with, so a watch over a
+// texture's source turns "hash three megabytes per bind" into "one page fault
+// per write burst".
+//
+// Two things keep this from being a regression if the notification never
+// arrives. Only textures that have already been seen to change are watched, so
+// the ~390 static assets are untouched, and the per frame hash stays in place
+// for any texture whose watch has not yet fired (`watch_proven`). A watch has
+// to earn the right to replace the hash by working once.
+struct TextureWatch {
+  uint32_t begin;  // physical address, inclusive
+  uint32_t end;    // physical address, exclusive
+  MirroredTexture* entry;
+};
+
+// Guards g_watches only. The notification arrives on whichever guest thread
+// took the fault, with the memory subsystem's global lock held, so this must
+// never be held across a call back into the memory subsystem.
+std::mutex g_watch_mutex;
+std::vector<TextureWatch> g_watches;
+
+void* g_watch_handle = nullptr;
+
+uint64_t g_watch_arms = 0;
+uint64_t g_watch_hits = 0;
+
+// A guest write landed on watched pages. The heap unprotects them before this
+// returns, so every entry reported here is disarmed and re-armed by the refresh
+// its dirty flag triggers.
+std::pair<uint32_t, uint32_t> TextureWatchCallback(void*, uint32_t physical_address_start,
+                                                   uint32_t length, bool exact_range) {
+  const uint32_t begin = physical_address_start;
+  const uint32_t end = physical_address_start + length;
+  uint32_t unwatch_begin = begin;
+  uint32_t unwatch_end = end;
+  bool hit = false;
+
+  {
+    std::lock_guard<std::mutex> lock(g_watch_mutex);
+    for (size_t i = 0; i < g_watches.size();) {
+      const TextureWatch& watch = g_watches[i];
+      if (watch.end <= begin || watch.begin >= end) {
+        ++i;
+        continue;
+      }
+      hit = true;
+      watch.entry->watch_dirty.store(true, std::memory_order_relaxed);
+      watch.entry->watch_proven.store(true, std::memory_order_relaxed);
+      watch.entry->watch_armed.store(false, std::memory_order_relaxed);
+      // Widen the range the heap unprotects to the whole texture. A glyph
+      // rasteriser walks rows, so unprotecting only the faulting page would
+      // fault again on the next one; the atlas is worth one fault, not 729.
+      if (!exact_range) {
+        unwatch_begin = std::min(unwatch_begin, watch.begin);
+        unwatch_end = std::max(unwatch_end, watch.end);
+      }
+      g_watches[i] = g_watches.back();
+      g_watches.pop_back();
+    }
+  }
+
+  if (hit) {
+    ++g_watch_hits;
+    // Otherwise a draw whose fetch constants did not move reuses the descriptor
+    // sets it built before the write and never asks the mirror again.
+    BumpTextureContentEpoch();
+  }
+  return {unwatch_begin, unwatch_end - unwatch_begin};
+}
+
+void ArmTextureWatch(MirroredTexture* entry) {
+  if (entry->watch_armed.load(std::memory_order_relaxed) || entry->source_bytes == 0 ||
+      entry->source_bytes > 0xFFFFFFFFull)
+    return;
+  rex::memory::Memory* memory = rex::system::kernel_memory();
+  if (memory == nullptr)
+    return;
+
+  const uint32_t begin = (entry->address + entry->level0_offset) & 0x1FFFFFFFu;
+  const uint32_t bytes = uint32_t(entry->source_bytes);
+  if (uint64_t(begin) + bytes > 0x20000000ull)
+    return;
+
+  if (g_watch_handle == nullptr) {
+    g_watch_handle = memory->RegisterPhysicalMemoryInvalidationCallback(TextureWatchCallback,
+                                                                       nullptr);
+    if (g_watch_handle == nullptr)
+      return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(g_watch_mutex);
+    g_watches.push_back({begin, begin + bytes, entry});
+    entry->watch_armed.store(true, std::memory_order_relaxed);
+  }
+  ++g_watch_arms;
+  // Outside the lock: this takes the memory subsystem's global lock, which the
+  // notification path already holds when it takes ours.
+  memory->EnablePhysicalMemoryAccessCallbacks(begin, bytes, true, false);
+}
+
 // Report each unhandled guest format once. There are only 64 of them, so a flat
 // array is cheaper than deciding whether it is worth being cleverer.
 bool g_format_reported[64] = {};
@@ -519,10 +649,11 @@ uint64_t Level0ByteOffset(const TextureFetch& fetch, const FormatInfo& info) {
 // rasterised into it earlier. On screen that is "Brani" reading as "trani":
 // correct quads, correct UVs, correct atlas *cell*, stale atlas *content*.
 //
-// Completeness costs, so the caller pays it at most once per texture per frame
-// (see MirroredTexture::hashed_frame) rather than on each of the ~700 binds a
-// frame contains. Within a frame the first bind decides, which means a glyph
-// the guest rasterises mid frame appears on the next one.
+// Completeness costs, so it is throttled to once per texture per frame (see
+// MirroredTexture::hashed_frame) rather than run on each of the ~700 binds a
+// frame contains. That throttle is too coarse on its own, since the guest
+// rasterises glyphs between draws of the same frame; a write watch supplies the
+// mid frame boundary and this stays as the discovery path. See TextureWatch.
 // Bytes fed through HashSource, so the cost of completeness is visible in the
 // summary instead of being guessed at.
 uint64_t g_hash_bytes = 0;
@@ -1056,10 +1187,21 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     // not. It also catches the font atlas being filled a glyph at a time, which
     // is why the hash has to be complete rather than sampled.
     //
-    // Once per frame: the hash reads the whole source, and this texture may be
-    // bound hundreds of times before the frame ends.
-    if (candidate->hashed_frame != g_frame) {
+    // Two ways in. A watch notification is precise and arrives between the
+    // write and the next bind, which is what the once per frame hash cannot do.
+    // The hash stays as the discovery path: it is what finds a texture worth
+    // watching in the first place, and it keeps covering any entry whose watch
+    // has not proven itself yet.
+    const bool dirty = candidate->watch_dirty.exchange(false, std::memory_order_relaxed);
+    const bool watched = candidate->watch_proven.load(std::memory_order_relaxed) &&
+                         candidate->watch_armed.load(std::memory_order_relaxed);
+    if (dirty || (!watched && candidate->hashed_frame != g_frame)) {
       candidate->hashed_frame = g_frame;
+      // Re-armed before the source is read rather than after it, so a write that
+      // lands while the hash is running sets the flag again instead of being
+      // swallowed by the hash that missed it.
+      if (candidate->mutable_source)
+        ArmTextureWatch(candidate);
       // Before the hash rather than before the decode the hash may trigger: the
       // hash is what decides whether the contents changed, so hashing memory the
       // readback has not filled in yet would conclude that a render target that
@@ -1071,6 +1213,10 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
         ++g_refreshed;
         DecodeAndUpload(memory_base, fetch, info, candidate->texture.get());
         candidate->content_hash = hash;
+        candidate->mutable_source = true;
+        // Armed from here on, so a texture only starts costing page protection
+        // once it has been seen to change.
+        ArmTextureWatch(candidate);
       }
     }
     return candidate->texture.get();
@@ -1111,6 +1257,14 @@ void LogTextureMirrorSummary() {
 
   REXLOG_INFO("native_renderer:   aperture walks={} reused={}", g_aperture_walks,
               g_aperture_reuses);
+
+  size_t armed = 0;
+  {
+    std::lock_guard<std::mutex> lock(g_watch_mutex);
+    armed = g_watches.size();
+  }
+  REXLOG_INFO("native_renderer:   write watches armed={} live={} notifications={}", g_watch_arms,
+              armed, g_watch_hits);
 }
 
 void TextureMirrorOccupiedRanges(uint32_t address, uint64_t bytes, uint32_t expected_address,
@@ -1182,6 +1336,17 @@ void TextureMirrorOccupiedRanges(uint32_t address, uint64_t bytes, uint32_t expe
 void TextureMirrorBeginFrame() { ++g_frame; }
 
 void ShutdownTextureMirror() {
+  // The watch records point at entries about to be destroyed, and the heap can
+  // still call back until the registration is dropped.
+  if (g_watch_handle != nullptr) {
+    if (rex::memory::Memory* memory = rex::system::kernel_memory())
+      memory->UnregisterPhysicalMemoryInvalidationCallback(g_watch_handle);
+    g_watch_handle = nullptr;
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_watch_mutex);
+    g_watches.clear();
+  }
   g_texture_index.clear();
   g_textures.clear();
 }
