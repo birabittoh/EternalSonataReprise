@@ -125,6 +125,18 @@ before asking for a recompute: with the new maximum already in the live struct
 the ratio is exactly 1, so the recompute only adds the equipment bonus back
 instead of moving current HP around.
 
+## Experience
+
+Both 48 byte character stat tables store total EXP as a `u32` at offset
+`0x04`, immediately after level. `sub_821E7F18` updates both copies when battle
+EXP is awarded and derives the cached level from the same total.
+
+`sub_821E8308`, used by the status screen's Next field, walks one shared curve
+for the whole cast. The first level costs 200 EXP. Its running cost increment
+starts at 10, the increment's own step starts at 45, and that step grows by 9
+after every level. The guest performs the accumulation as floats and truncates
+each cost to an integer. Level 99 and total EXP 99999999 are the two caps.
+
 ## Party level and its budget
 
 | Address | What |

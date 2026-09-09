@@ -140,6 +140,8 @@ constexpr uint32_t kItemSetCountAddr = 0x8243FCC0u;
 
 // The party level and its point budget.
 constexpr uint32_t kPartyLevelAddr = 0x8243F3ECu;  // u32, 1..6
+// u32 party purse. Battle rewards and the shop saturate it at 99999999.
+constexpr uint32_t kGoldAddr = 0x8243F3F0u;
 constexpr uint32_t kBudgetFreeAddr = 0x8243FCC4u;  // u8
 constexpr uint32_t kBudgetUsedAddr = 0x8243FCC5u;  // u8
 constexpr uint32_t kBudgetCapTableAddr = 0x8202CA70u;  // u16[6]
@@ -1017,6 +1019,39 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsItemSystemAvailable(void) {
   using namespace eternalsonata;
   std::lock_guard<std::mutex> lock(g_mutex);
   return ItemsReadable() ? 1 : 0;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetGold(void) {
+  using namespace eternalsonata;
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!ItemsReadable()) {
+    return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
+  }
+  return static_cast<int>(ReadGuest<uint32_t>(kGoldAddr));
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetGold(int gold) {
+  using namespace eternalsonata;
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!ItemsReadable()) {
+    return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
+  }
+  WriteGuest<uint32_t>(kGoldAddr,
+                       static_cast<uint32_t>(std::clamp(gold, 0, ETERNALSONATA_GOLD_MAX)));
+  return ETERNALSONATA_ITEM_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataAddGold(int gold) {
+  using namespace eternalsonata;
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!ItemsReadable()) {
+    return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
+  }
+  const int64_t total = static_cast<int64_t>(ReadGuest<uint32_t>(kGoldAddr)) + gold;
+  const int result =
+      static_cast<int>(std::clamp<int64_t>(total, 0, ETERNALSONATA_GOLD_MAX));
+  WriteGuest<uint32_t>(kGoldAddr, static_cast<uint32_t>(result));
+  return result;
 }
 
 // --- Reading -----------------------------------------------------------------
