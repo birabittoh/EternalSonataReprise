@@ -2014,6 +2014,12 @@ void BtxLookupWithNameOverrides(PPCContext& ctx, u8* base) {
   const u32 replacement = eternalsonata::PartyNameOverrideFor(ctx.r3.u32);
   if (replacement) {
     ctx.r3.u32 = replacement;
+    return;
+  }
+  const u32 console_text =
+      eternalsonata_hooks::ConsoleTextOverrideFor(base, ctx.r3.u32);
+  if (console_text) {
+    ctx.r3.u32 = console_text;
   }
 }
 
