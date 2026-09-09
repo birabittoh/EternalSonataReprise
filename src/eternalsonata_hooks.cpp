@@ -8,6 +8,7 @@
 #include <rex/system/kernel_state.h>
 
 #include "eternalsonata_hooks_internal.h"
+#include "overworld_system.h"
 
 // ---------------------------------------------------------------------------
 // Console references in the shipped text
@@ -185,6 +186,13 @@ REX_HOOK_RAW(sub_821D50A8) {
     // The original clobbers r3/r4, so capture the arguments up front.
     const u32 a1 = ctx.r3.u32;
     const u32 a2 = ctx.r4.u32;
+
+    if (a1 && a2) {
+        const u32 source =
+            (REX_LOAD_U32(a2) == REX_LOAD_U32(a1 + 36148)) ? (a1 + 35122) : (a2 + 8);
+        eternalsonata::NotifyOverworldDialogue(
+            reinterpret_cast<const char*>(base + source + REX_LOAD_U16(a2 + 420)));
+    }
 
     __imp__sub_821D50A8(ctx, base);
 

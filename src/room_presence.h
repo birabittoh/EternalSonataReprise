@@ -49,6 +49,11 @@ class KernelState;
 
 namespace eternalsonata {
 
+struct AreaDescription {
+  std::string id;
+  std::string name;
+};
+
 class RoomPresence {
  public:
   RoomPresence() = default;
@@ -85,6 +90,14 @@ class RoomPresence {
   // EternalSonataIsBattleActive so they need not re-derive it; deriving it
   // wrongly, from the scene mode, is what the mods did before it existed.
   bool IsBattleActive();
+
+  // Canonical id and display name shared by presence and overworld events.
+  AreaDescription CurrentArea();
+  AreaDescription DescribeArea(std::string area_id) const;
+
+  // True when object is the live player-controlled field object.
+  bool IsFieldLeader(uint32_t object) const;
+  bool IsFieldActive();
 
  private:
   rex::system::KernelState* kernel_state_ = nullptr;
