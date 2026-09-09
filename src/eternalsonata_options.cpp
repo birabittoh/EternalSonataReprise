@@ -2658,15 +2658,27 @@ REX_HOOK_RAW(sub_821F62B8) {
   // time. Writing past the array would run into whatever follows it in guest
   // memory, so the count below is clamped rather than trusted.
   //
-  // The count check also makes this idempotent: after patching, count no
-  // longer matches stock_rows, so it stops matching until the screen is
-  // rebuilt (which resets the count). Both pages' groups are walked from the
-  // same list, so the item-y check is what tells them apart - the group ids
-  // alone would not.
+  // A group is identified by its id *and* by where its stock items sit, never
+  // by its count byte. Both pages' groups are walked from the same list, so
+  // the item-y check is what tells them apart - the group ids alone would not.
+  //
+  // The count byte used to stand in for the item-y check as well, on the
+  // grounds that it also made the patch idempotent. That is what made the rows
+  // unreachable when Options was opened during play: a re-opened screen can
+  // hand back a group node still carrying the count a previous visit wrote
+  // into it, so the node stopped matching and was skipped for the whole visit.
+  // Idempotence comes from the write being by value instead - re-running it
+  // every frame writes the same numbers, and heals a stale node the first
+  // frame it is seen.
   for (u32 i = REX_LOAD_U32(menu + 392);
        i >= 0x82000000u && i < 0xFB000000u; i = REX_LOAD_U32(i + 48)) {
-    if (REX_LOAD_U32(i) != pl.group_id ||
-        REX_LOAD_U8(i + 0x0C) != pl.stock_rows) {
+    if (REX_LOAD_U32(i) != pl.group_id) {
+      continue;
+    }
+    // Only bounds the array walk below; a group of ours always sits inside it,
+    // patched or not.
+    const u32 count = REX_LOAD_U8(i + 0x0C);
+    if (count < pl.stock_rows || count > kSelectableSlots) {
       continue;
     }
     const u32 arr = REX_LOAD_U32(i + 8);
@@ -2712,10 +2724,19 @@ REX_HOOK_RAW(sub_821F62B8) {
       REX_STORE_U32(srow[r] + 4, opt_x);
       REX_STORE_U32(srow[r] + 8, static_cast<u32>(y));
     }
-    REX_STORE_U8(i + 0x0C, static_cast<u8>(pl.stock_rows + n));
-    REX_STORE_U8(i + 0x0D, static_cast<u8>(pl.stock_rows + n));
-    REXLOG_INFO("[options] page {}: {} native rows made selectable (node=0x{:08X})",
-                page, n, i);
+    const u8 want = static_cast<u8>(pl.stock_rows + n);
+    if (count != want) {
+      REX_STORE_U8(i + 0x0C, want);
+      REX_STORE_U8(i + 0x0D, want);
+      REXLOG_INFO("[options] page {}: {} native rows made selectable "
+                  "(node=0x{:08X}, count {} -> {})",
+                  page, n, i, count, want);
+    }
+    // A node carried over from a visit that had more rows can leave the cursor
+    // parked past the last item, where navigation has nothing to move to.
+    if (REX_LOAD_U8(i + 0x2C) >= want) {
+      REX_STORE_U8(i + 0x2C, static_cast<u8>(want - 1));
+    }
     break;
   }
 
