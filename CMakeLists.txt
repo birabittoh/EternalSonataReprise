@@ -243,6 +243,7 @@ set(ETERNALSONATA_SOURCES
     src/room_presence.cpp
     src/party_system.cpp
     src/battle_system.cpp
+    src/overworld_system.cpp
     src/enemy_system.cpp
     src/save_system.cpp
     src/achievement_translation.cpp

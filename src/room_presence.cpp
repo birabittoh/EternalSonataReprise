@@ -96,6 +96,8 @@ constexpr uint32_t kAreaIdMaxLength = 32;
 // earlier byte_8243FBFC guess was wrong -- its own logic only ever handles
 // 3 states, but Party Level goes 1-6.)
 constexpr uint32_t kPartyLevelGuestAddress = 0x8243F3EF;
+constexpr uint32_t kMapManagerGuestAddress = 0x8244B4B0u;
+constexpr uint32_t kFieldLeaderOffset = 1520u;
 
 std::string ReadGuestCString(rex::memory::Memory* memory, uint32_t guest_address,
                              size_t max_len) {
@@ -286,6 +288,34 @@ bool RoomPresence::IsBattleActive() {
     return false;
   }
   return battle::FsmStateIsInBattle(rex::memory::load_and_swap<uint32_t>(host));
+}
+
+AreaDescription RoomPresence::DescribeArea(std::string area_id) const {
+  AreaDescription result;
+  result.id = NormalizeAreaId(std::move(area_id));
+  const auto& table = AreaNameTable();
+  const auto it = table.find(result.id);
+  result.name = it != table.end() ? it->second : result.id;
+  return result;
+}
+
+AreaDescription RoomPresence::CurrentArea() {
+  std::lock_guard<std::mutex> lock(area_mutex_);
+  return DescribeArea(field_area_id_);
+}
+
+bool RoomPresence::IsFieldLeader(uint32_t object) const {
+  if (!kernel_state_ || !kernel_state_->memory()) {
+    return false;
+  }
+  const auto* leader = kernel_state_->memory()->TranslateVirtual<const uint32_t*>(
+      kMapManagerGuestAddress + kFieldLeaderOffset);
+  return leader && rex::memory::load_and_swap<uint32_t>(leader) == object;
+}
+
+bool RoomPresence::IsFieldActive() {
+  std::lock_guard<std::mutex> lock(area_mutex_);
+  return field_active_;
 }
 
 RoomPresence& GetRoomPresence() {

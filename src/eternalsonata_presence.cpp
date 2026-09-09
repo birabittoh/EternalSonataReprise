@@ -1,6 +1,7 @@
 #include "generated/eternalsonata_init.h"
 
 #include "room_presence.h"
+#include "overworld_system.h"
 
 // ---------------------------------------------------------------------------
 // Field area tracking (Discord Rich Presence)
@@ -45,6 +46,7 @@ void CaptureFieldArea(PPCContext& ctx, uint8_t* base) {
     return;
   }
   eternalsonata::GetRoomPresence().NotifyAreaLoad(id);
+  eternalsonata::NotifyOverworldAreaEntered(id);
 }
 
 }  // namespace
@@ -86,4 +88,15 @@ REX_HOOK_RAW(sub_820FD998) {
     eternalsonata::GetRoomPresence().NotifyFieldTeardown();
   }
   __imp__sub_820FD998(ctx, base);
+}
+
+REX_EXTERN(__imp__sub_820FDB80);
+
+REX_HOOK_RAW(sub_820FDB80) {
+  const u32 encounter = ctx.r4.u32;
+  const u32 music = ctx.r5.u32;
+  const u32 rule = ctx.r6.u32;
+  const u32 target = ctx.r10.u32;
+  __imp__sub_820FDB80(ctx, base);
+  eternalsonata::NotifyOverworldBattleStarted(encounter, music, rule, target);
 }

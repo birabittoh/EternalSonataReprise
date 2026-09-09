@@ -50,6 +50,7 @@
 #include "party_system.h"
 #include "photo_system.h"
 #include "room_presence.h"
+#include "overworld_system.h"
 #include "save_system.h"
 #include "settings.h"
 #include "piano_music_system.h"
@@ -406,6 +407,7 @@ class EternalsonataApp : public rex::ReXApp {
     // Battle state for mods: src/eternalsonata_battle_api.h answers
     // "unavailable" until this runs.
     eternalsonata::BindBattleSystem(runtime());
+    eternalsonata::BindOverworldSystem(runtime());
 
     // Enemy stats and the rebalance overrides for mods:
     // src/eternalsonata_enemy_api.h answers "unavailable" until this runs.

@@ -1256,6 +1256,67 @@ The byte span is valid only until the callback returns. Copy it as above if the
 mod needs to retain the action. These events are published from the guest
 battle thread, so a callback must be thread-safe and must not touch ImGui.
 
+## Overworld events
+
+The overworld surface reports four edges on the shared event bus. Copy
+`src/eternalsonata_overworld_api.h` into a mod for the event names, enums, and
+the `EternalSonataOverworldEvent` payload shared by all four:
+
+```cpp
+#include <cstring>
+
+#include <rex/runtime.h>
+#include <rex/system/mod_registry.h>
+
+#include "eternalsonata_overworld_api.h"
+
+void RegisterOverworldEvents(rex::Runtime* runtime) {
+  runtime->mod_registry()->Subscribe(
+      ETERNALSONATA_OVERWORLD_EVENT_ACTION,
+      [](const rex::system::ModRegistry::EventPayload& payload) {
+        if (payload.bytes.size() != sizeof(EternalSonataOverworldEvent)) {
+          return;
+        }
+        EternalSonataOverworldEvent event{};
+        std::memcpy(&event, payload.bytes.data(), sizeof(event));
+        // area_id, animation_id and position identify the map interaction.
+      });
+}
+```
+
+`eternalsonata.overworld.area_entered` fires for a real field transition. It
+does not fire for the speculative area preload performed when the player walks
+near a gate. `area_id` is the canonical lowercase cfdata id and `area_name` is
+the display name used by Discord presence. This pair distinguishes rooms that
+share a place name while still providing text suitable for a toast or log.
+
+`eternalsonata.overworld.action` fires when the field leader starts one of the
+game's authored interaction motions. `animation_id` is the exact slot from 16
+through 35, and `character` is the active party leader. The slots cover chest,
+door, climbing, jumping, dropping, and similar map actions. Use the tuple of
+`area_id`, `animation_id`, and position when a particular chest, vine, hole, or
+other map action matters. `field_object_id` also carries the live scene handle.
+The raw slot and coordinates are retained because several maps give the same
+motion different meanings.
+
+`eternalsonata.overworld.battle_started` fires after the game commits its field
+to battle transition. `encounter_id` identifies the encounter selected by the
+field script. `battle_target_id` is the map object id supplied for the enemy
+that initiated it, or zero for a scripted battle. The other two fields retain
+the game's music and transition rule arguments. `payload.u64` repeats the
+encounter id. For an action event it repeats the animation id, while the area
+event leaves it zero.
+
+`eternalsonata.overworld.dialogue_started` fires as an overworld dialogue line
+is prepared. `dialogue` contains the raw line, including its speaker and name
+markup, so a listener can distinguish the NPC and the precise conversation.
+Battle narration is excluded. Field cutscenes remain included because they use
+the same dialogue path as an NPC conversation.
+
+The byte span is valid only during the callback. These events run on the guest
+thread, so callbacks must be thread-safe and must not touch ImGui. Copy the
+payload before passing it to another thread.
+
 ## Rebalancing enemies
 
 A mod can change what a monster hits for, what it takes to kill one, and what
