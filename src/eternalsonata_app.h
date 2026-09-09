@@ -329,13 +329,18 @@ class EternalsonataApp : public rex::ReXApp {
     // keep that behavior while counting. The provider is only invoked while
     // the F3 overlay is open (ImGui draw thread), so the window below is
     // single-threaded; the swap counter itself is atomic.
+    auto on_guest_frame = [this] {
+      runtime()->mod_registry()->DispatchTick();
+      guest_swap_count_.fetch_add(1, std::memory_order_relaxed);
+    };
     auto* gs = runtime()->graphics_system();
     if (gs) {
-      gs->SetHostSwapCallback([this] {
-        runtime()->mod_registry()->DispatchTick();
-        guest_swap_count_.fetch_add(1, std::memory_order_relaxed);
-      });
+      gs->SetHostSwapCallback(on_guest_frame);
     }
+    // The native renderer loads no GPU plugin, so there is no graphics system to
+    // fire that callback and the same work is driven from its swap hook. Only
+    // one of the two is ever live.
+    eternalsonata::SetGuestFrameCallback(on_guest_frame);
     SetGuestFrameStats([this]() {
       rex::ui::FrameStats stats;
       const uint64_t count = guest_swap_count_.load(std::memory_order_relaxed);

@@ -30,6 +30,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 
 namespace rex::ui {
 class Window;
@@ -60,6 +61,17 @@ uint32_t NativeRenderScale();
 // decides whether to load a plugin (so the plugin, if one is loaded instead,
 // keeps sole ownership of the name). No-op unless NativeRendererEnabled().
 void RegisterNativeRendererCvars();
+
+// Called once per guest frame, from the swap hook, on the guest thread that
+// issued the swap. The SDK fires its own per frame callback from the emulated
+// GPU's swap packet, which this renderer does not have, so anything that would
+// have ridden on it (the mod registry's tick above all) has to come from here.
+//
+// The interval is a guest frame, not a fixed period: it moves with the frame
+// rate, and the framerate work makes that vary, so a callback must derive
+// elapsed time from a clock rather than counting calls. No-op unless
+// NativeRendererEnabled().
+void SetGuestFrameCallback(std::function<void()> callback);
 
 // Brings up the rendering backend. Call from OnPreLaunchModule, before the
 // guest starts executing and so before any guest D3D call can arrive.
