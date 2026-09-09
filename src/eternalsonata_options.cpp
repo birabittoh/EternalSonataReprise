@@ -24,6 +24,8 @@
 #include "eternalsonata_hooks_internal.h"
 #include "field_player_model_override.h"
 #include "item_system.h"
+#include "achievements_menu.h"
+#include "option_strip.h"
 #include "party_system.h"
 #include "settings.h"
 
@@ -2023,10 +2025,52 @@ void BtxLookupWithNameOverrides(PPCContext& ctx, u8* base) {
   }
 }
 
+// Runs the stock lookup for an unrelated id, leaving the caller's arguments as
+// they were. Goes straight to __imp__, so this cannot re-enter the hook.
+u32 StockBtxLookup(PPCContext& ctx, u8* base, u32 blob, u32 sid) {
+  const u32 saved_r3 = ctx.r3.u32;
+  const u32 saved_r4 = ctx.r4.u32;
+  ctx.r3.u32 = blob;
+  ctx.r4.u32 = sid;
+  __imp__sub_8223B780(ctx, base);
+  const u32 result = ctx.r3.u32;
+  ctx.r3.u32 = saved_r3;
+  ctx.r4.u32 = saved_r4;
+  return result;
+}
+
+// The BTX id of the Music option's label, which is also the word the Music
+// gallery heads itself with. See achievements_menu::TitleOverrideFor.
+constexpr u32 kMusicLabelSid = 39;
+
 }  // namespace
 
 REX_HOOK_RAW(sub_8223B780) {
+  const u32 blob = ctx.r3.u32;
   const u32 sid = ctx.r4.u32;
+  // The status menu's Achievements entry rides a stock string id, so this has
+  // to come before anything keyed on the id alone.
+  if (const u32 label = option_strip::AchievementsLabelOverride(base, sid)) {
+    ctx.r3.u32 = label;
+    return;
+  }
+  // A row of the Achievements screen: same reason, it rides the Music
+  // gallery's own title ids.
+  if (const u32 title = achievements_menu::RowTitleOverride(base, blob, sid)) {
+    ctx.r3.u32 = title;
+    return;
+  }
+  // The screen's own heading. Recognised by what it resolves to rather than by
+  // its id, so the reference string has to be looked up first.
+  if (achievements_menu::WantsTitleSwap(blob) && sid != kMusicLabelSid) {
+    const u32 music = StockBtxLookup(ctx, base, blob, kMusicLabelSid);
+    BtxLookupWithNameOverrides(ctx, base);
+    if (const u32 heading =
+            achievements_menu::TitleOverrideFor(base, ctx.r3.u32, music)) {
+      ctx.r3.u32 = heading;
+    }
+    return;
+  }
   // A mod's custom item: it has no entry in the shipped text blocks, so the
   // stock lookup would return null and the row painter would dereference it.
   if (const u32 custom = eternalsonata::CustomItemTextOverrideFor(ctx.r3.u32, sid)) {
@@ -2105,6 +2149,16 @@ REX_HOOK_RAW(sub_821F2F38) {
   // state byte instead.
   int page = 0;
   int lang_idx = 0;
+  // The status menu's option strip: a different screen, and its list is the
+  // stack copy sub_821EC050 made, so it is edited in place rather than swapped.
+  option_strip::MaybeEditOptionStrip(base, ctx.r4.u32);
+  // The Achievements screen borrows the Music gallery's list; this hands the
+  // interpreter an edited copy rather than the shipped, read-only one.
+  if (const u32 swapped =
+          achievements_menu::MaybeSwapScreenList(base, ctx.r4.u32)) {
+    ctx.r4.u32 = swapped;
+  }
+
   const bool ours = ClassifyList(ctx.r4.u32, &page, &lang_idx);
   if (ours) {
     EnsurePageRows(base, page, lang_idx);
