@@ -100,12 +100,39 @@ REX_HOOK_RAW(sub_821D50A8) {
 }
 
 // ---------------------------------------------------------------------------
-// Dead lead, kept as a note: sub_8223FB78
+// Storage-device textboxes
 // ---------------------------------------------------------------------------
 //
-// An earlier attempt hooked sub_8223FB78, believed to hold "the single FPS cap
-// in the whole image" (an `elapsed_us >= 30000` gate). That was wrong: IDA
-// reports exactly one xref to 0x8223FB78, at 0x820B2448, and that is a .pdata
-// unwind entry, not a dispatch-table slot. Nothing in the image references the
-// function as code or data, and a live breakpoint on it never hit. It is dead
-// code in this build. Do not resurrect that hook.
+// sub_8223FB78 drives the storage-device screen: a1[99] is the next state,
+// a1[100] selects state 7's message. Two states only narrate Xbox 360 storage
+// selection and are skipped straight to their successor:
+//
+//   state 6                 "Please select a storage device."   -> 4, opens
+//                                                                  the selector
+//   state 7 with a1[100]==4 "There is enough available space."  -> 1, commits
+//                                                                  the device
+//
+// Other a1[100] values are real errors ("not signed in", "insufficient
+// space") and are left alone.
+//
+// Rewriting the state in the driver rather than in sub_8223FC88's entry action
+// is required: the driver assigns a1[98] = a1[99] right after the action, so a
+// change made there is swallowed and the successor never starts.
+
+static constexpr u32 kStorageStateNext = 99 * 4;
+static constexpr u32 kStorageMessageId = 100 * 4;
+
+REX_EXTERN(__imp__sub_8223FB78);
+REX_HOOK_RAW(sub_8223FB78) {
+    const u32 a1 = ctx.r3.u32;
+    if (a1) {
+        const u32 state = REX_LOAD_U32(a1 + kStorageStateNext);
+        if (state == 6) {
+            REX_STORE_U32(a1 + kStorageStateNext, 4);
+        } else if (state == 7 && REX_LOAD_U32(a1 + kStorageMessageId) == 4) {
+            REX_STORE_U32(a1 + kStorageStateNext, 1);
+        }
+    }
+
+    __imp__sub_8223FB78(ctx, base);
+}
