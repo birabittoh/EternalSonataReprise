@@ -1,4 +1,113 @@
+#include <cstring>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+
 #include "generated/eternalsonata_init.h"
+
+#include <rex/system/kernel_state.h>
+
+#include "eternalsonata_hooks_internal.h"
+
+// ---------------------------------------------------------------------------
+// Console references in the shipped text
+// ---------------------------------------------------------------------------
+//
+// The BTX blobs baked into the image (0x8202B8A8, 0x822FDD00 and friends) warn
+// the player not to switch off the Xbox 360, which the save screens still show.
+// Each language gets its own rewrite so the sentence stays grammatical.
+//
+// The blobs sit in read-only guest pages, so the strings cannot be edited in
+// place; the fixed copies live on the guest heap and the BTX lookup hands them
+// out instead (see the sub_8223B780 hook in eternalsonata_options.cpp).
+
+namespace eternalsonata_hooks {
+namespace {
+
+struct ConsoleTextFix {
+    const char* warning;  // where the console warning starts, per language
+    const char* to;       // what to say instead, to the end of the string
+};
+
+// Neither half of the warning survives the port: there is no storage device to
+// remove and no console to switch off, only the game to keep open. So the whole
+// sentence is replaced, from the word each language opens it with, and whatever
+// comes before it (the "Checking save files..." line) is kept.
+//
+// Latin-1, the encoding the blobs use. Each opener is unique to its language,
+// and none of them appears in the line above the warning, so the first rule that
+// matches is the right one.
+constexpr ConsoleTextFix kConsoleTextFixes[] = {
+    {"Please do not remove", "Please do not close the game."},
+    {"Ne pas ", "Ne pas fermer le jeu."},
+    {"Non rimuovere", "Non chiudere il gioco."},
+    {"No retires", "No cierres el juego."},
+    {"Bitte das ", "Bitte das Spiel nicht beenden."},
+};
+
+// Longest blob string we are willing to copy.
+constexpr size_t kMaxBlobString = 1024;
+
+std::mutex g_console_text_mutex;
+// Looked-up string -> our copy, or 0 for "nothing to do". Keyed by address so
+// each string is examined once; the blobs are static, so the answer never
+// changes.
+std::unordered_map<u32, u32> g_console_text;
+
+// Our copy of `text`, on the guest heap, or 0 if it needs no fixing.
+u32 FixedCopyOf(u8* base, std::string text) {
+    bool fixed = false;
+    for (const ConsoleTextFix& fix : kConsoleTextFixes) {
+        const size_t pos = text.find(fix.warning);
+        if (pos != std::string::npos) {
+            text.replace(pos, std::string::npos, fix.to);
+            fixed = true;
+            break;
+        }
+    }
+    if (!fixed) {
+        REXLOG_WARN("[text] no rule for the Xbox 360 string \"{}\"", text);
+        return 0;
+    }
+    auto* mem = rex::system::kernel_memory();
+    const u32 copy = mem ? mem->SystemHeapAlloc(text.size() + 1, 0x20) : 0;
+    if (!copy) {
+        REXLOG_WARN("[text] guest allocation failed for \"{}\"", text);
+        return 0;
+    }
+    for (size_t i = 0; i <= text.size(); ++i) {
+        REX_STORE_U8(copy + i, static_cast<u8>(text[i]));
+    }
+    REXLOG_INFO("[text] rewrote \"{}\"", text);
+    return copy;
+}
+
+}  // namespace
+
+u32 ConsoleTextOverrideFor(u8* base, u32 text_address) {
+    if (!text_address) {
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(g_console_text_mutex);
+    const auto it = g_console_text.find(text_address);
+    if (it != g_console_text.end()) {
+        return it->second;
+    }
+
+    // Matching on the text rather than on the address: a blob string's start is
+    // only known from its block's offset table, and the first string of a block
+    // has no terminator in front of it to find it by.
+    const char* const s = reinterpret_cast<const char*>(base + text_address);
+    const size_t len = strnlen(s, kMaxBlobString);
+    u32 copy = 0;
+    if (len < kMaxBlobString && std::strstr(s, "Xbox 360")) {
+        copy = FixedCopyOf(base, std::string(s, len));
+    }
+    g_console_text[text_address] = copy;
+    return copy;
+}
+
+}  // namespace eternalsonata_hooks
 
 // ---------------------------------------------------------------------------
 // Debug hooks

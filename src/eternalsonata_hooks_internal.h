@@ -22,4 +22,10 @@ void ScanTick(u8* base);
 // main-menu Options screen.
 void OptionsTick();
 
+// Defined in eternalsonata_hooks.cpp. Given a string the BTX lookup returned,
+// yields our Xbox-360-free copy of it, or 0 to leave it alone. Called from the
+// sub_8223B780 hook, which lives in eternalsonata_options.cpp because a guest
+// function can only be hooked once.
+u32 ConsoleTextOverrideFor(u8* base, u32 text_address);
+
 }  // namespace eternalsonata_hooks
