@@ -137,7 +137,13 @@ REX_HOOK_RAW(sub_82254060) { ctx.r3.u64 = 0; }
 // Skippable message waits
 // ---------------------------------------------------------------------------
 
-// sub_821D50A8 is the dialogue markup preprocessor.  It walks a raw text entry
+// sub_821D50A8 is the text manager's markup preprocessor, shared by every
+// string the game draws.  It is not a "message started" signal: the render tick
+// (sub_821D4750) calls it lazily for any record whose formatted flag at +518 is
+// clear, and sub_821D4598/sub_821D4630 call it just to measure a string.  Use
+// SetText (sub_821D3890) for that.
+//
+// It walks a raw text entry
 // out of a .e file, expands the `<...>` tags into single-byte control codes in
 // a scratch buffer at a1+19104, stores each tag's numeric argument into the
 // parallel slot array at a2 + 8*(argidx+65) (argidx counter at a2+840), and
@@ -187,13 +193,6 @@ REX_HOOK_RAW(sub_821D50A8) {
     const u32 a1 = ctx.r3.u32;
     const u32 a2 = ctx.r4.u32;
 
-    if (a1 && a2) {
-        const u32 source =
-            (REX_LOAD_U32(a2) == REX_LOAD_U32(a1 + 36148)) ? (a1 + 35122) : (a2 + 8);
-        eternalsonata::NotifyOverworldDialogue(
-            reinterpret_cast<const char*>(base + source + REX_LOAD_U16(a2 + 420)));
-    }
-
     __imp__sub_821D50A8(ctx, base);
 
     if (!a2 || (!kSkippableVoiceWaits && !kSkippableTimedWaits)) {
@@ -214,6 +213,26 @@ REX_HOOK_RAW(sub_821D50A8) {
             REX_STORE_U8(p, kWaitForInput);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Text window content
+// ---------------------------------------------------------------------------
+
+// sub_821D3890 is SetText(mgr, window_id, text, tag) on the global text manager
+// (dword_82555690).  It copies the raw markup into the window record at +8, or
+// into the 1024 byte overflow buffer at 0x8255DFC2 for strings of 400 bytes or
+// more.  Hooked rather than the preprocessor because it fires exactly once per
+// "this window now shows this string".
+REX_EXTERN(__imp__sub_821D3890);
+REX_HOOK_RAW(sub_821D3890) {
+    const u32 window = ctx.r4.u32;
+    const u32 text = ctx.r5.u32;
+    if (text) {
+        eternalsonata::NotifyOverworldDialogue(
+            window, reinterpret_cast<const char*>(base + text));
+    }
+    __imp__sub_821D3890(ctx, base);
 }
 
 // ---------------------------------------------------------------------------

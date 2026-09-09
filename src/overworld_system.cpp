@@ -84,7 +84,10 @@ void NotifyOverworldFieldAction(uint32_t object, int32_t animation) {
           static_cast<uint64_t>(animation));
 }
 
-void NotifyOverworldDialogue(const char* text) {
+// A conversation line is just a SetText on the text manager window the field
+// script owns, so `window` is published to tell concurrent windows apart. That
+// box is reused, so object prompts arrive here too.
+void NotifyOverworldDialogue(uint32_t window, const char* text) {
   if (!text || !GetRoomPresence().IsFieldActive() ||
       GetRoomPresence().IsBattleActive()) {
     return;
@@ -93,7 +96,7 @@ void NotifyOverworldDialogue(const char* text) {
       ETERNALSONATA_OVERWORLD_ACTION_START_DIALOGUE);
   event.character = FieldPlayerModelOverride::PartyLeaderCharacter();
   CopyText(event.dialogue, sizeof(event.dialogue), text);
-  Publish(ETERNALSONATA_OVERWORLD_EVENT_DIALOGUE_STARTED, event, 0);
+  Publish(ETERNALSONATA_OVERWORLD_EVENT_DIALOGUE_STARTED, event, window);
 }
 
 void NotifyOverworldBattleStarted(uint32_t encounter, uint32_t music,
