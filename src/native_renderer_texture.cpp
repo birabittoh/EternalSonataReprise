@@ -394,10 +394,6 @@ struct MirroredTexture {
 // Bumped once per guest swap. Only ever compared for equality.
 uint64_t g_frame = 0;
 
-bool IsGlyphAtlas(const TextureFetch& fetch) {
-  return fetch.width == 864 && fetch.height == 864;
-}
-
 // How often a cached aperture choice is checked again.
 //
 // The three apertures alias the same physical pages, so a stale choice only
@@ -1062,7 +1058,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     //
     // Once per frame: the hash reads the whole source, and this texture may be
     // bound hundreds of times before the frame ends.
-    if (candidate->hashed_frame != g_frame || IsGlyphAtlas(fetch)) {
+    if (candidate->hashed_frame != g_frame) {
       candidate->hashed_frame = g_frame;
       // Before the hash rather than before the decode the hash may trigger: the
       // hash is what decides whether the contents changed, so hashing memory the
@@ -1184,8 +1180,6 @@ void TextureMirrorOccupiedRanges(uint32_t address, uint64_t bytes, uint32_t expe
 }
 
 void TextureMirrorBeginFrame() { ++g_frame; }
-
-bool TextureMirrorNeedsFrequentRefresh(const TextureFetch& fetch) { return IsGlyphAtlas(fetch); }
 
 void ShutdownTextureMirror() {
   g_texture_index.clear();
