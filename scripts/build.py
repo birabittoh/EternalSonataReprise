@@ -133,30 +133,6 @@ def lib_extension():
     return ".so"
 
 
-def copy_runtime_libs(is_windows, sdk_dir, build_type):
-    # The SDK ships all build variants of each shared lib side by side
-    # (e.g. rexruntime.dll, rexruntimed.dll, rexruntimerd.dll for release,
-    # debug, and relwithdebinfo respectively) — only copy the one matching
-    # the variant we just built, identified by its filename suffix.
-    variant_suffix = {"release": "", "debug": "d", "relwithdebinfo": "rd"}[build_type]
-
-    src_dir = os.path.join(sdk_dir, "bin" if is_windows else "lib")
-    ext = lib_extension()
-
-    if not os.path.isdir(src_dir):
-        return
-    for name in os.listdir(src_dir):
-        if not name.endswith(ext):
-            continue
-        stem = name[: -len(ext)]
-        stem_suffix = "rd" if stem.endswith("rd") else "d" if stem.endswith("d") else ""
-        if stem_suffix != variant_suffix:
-            continue
-        src = os.path.join(src_dir, name)
-        print(f"+ cp {src} {name}")
-        shutil.copy2(src, name)
-
-
 def do_package(name, project_name, is_windows):
     import zipfile
     import tarfile
@@ -324,7 +300,17 @@ def main():
         print(f"+ cp -r {staged_vulkan} {VULKAN_RUNTIME_DIR}")
         shutil.copytree(staged_vulkan, VULKAN_RUNTIME_DIR, dirs_exist_ok=True)
 
-    copy_runtime_libs(is_windows, sdk_dir, build_type)
+    # rexglue_configure_target() POST_BUILD-copies the SDK's runtime shared
+    # libs (rexruntime, TracyClient, ...) next to the exe inside the build
+    # dir on every platform, so they just need to follow the exe out like
+    # the shader packs above.
+    build_dir = os.path.join("out", "build", preset)
+    lib_suffix = lib_extension()
+    for name in os.listdir(build_dir):
+        if name.endswith(lib_suffix):
+            src = os.path.join(build_dir, name)
+            print(f"+ cp {src} {name}")
+            shutil.copy2(src, name)
 
 
 if __name__ == "__main__":
