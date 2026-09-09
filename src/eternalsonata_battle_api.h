@@ -43,6 +43,20 @@ extern "C" {
 // version; existing entry points keep their signature.
 #define ETERNALSONATA_BATTLE_ABI_VERSION 2u
 
+// Battle action events on the shared mod registry bus. Each carries an
+// EternalSonataBattleAction in payload.bytes. payload.u64 is action_id and
+// payload.f64 is distance, for listeners that only need the common value.
+// The byte span is valid only during the callback, so retain a copy if needed.
+#define ETERNALSONATA_BATTLE_EVENT_ATTACK "eternalsonata.battle.attack"
+#define ETERNALSONATA_BATTLE_EVENT_ABILITY "eternalsonata.battle.ability"
+#define ETERNALSONATA_BATTLE_EVENT_ITEM "eternalsonata.battle.item"
+#define ETERNALSONATA_BATTLE_EVENT_DAMAGE "eternalsonata.battle.damage"
+#define ETERNALSONATA_BATTLE_EVENT_HEAL "eternalsonata.battle.heal"
+#define ETERNALSONATA_BATTLE_EVENT_CRITICAL "eternalsonata.battle.critical"
+#define ETERNALSONATA_BATTLE_EVENT_PARRY "eternalsonata.battle.parry"
+#define ETERNALSONATA_BATTLE_EVENT_HARMONY_CHAIN "eternalsonata.battle.harmony_chain"
+#define ETERNALSONATA_BATTLE_EVENT_COUNTERATTACK "eternalsonata.battle.counterattack"
+
 // Results. Everything >= 0 is success.
 enum {
   ETERNALSONATA_BATTLE_OK = 0,
@@ -79,6 +93,57 @@ enum {
 
 // The per-unit FSM value the game returns for "no such unit".
 #define ETERNALSONATA_BATTLE_UNIT_STATE_NONE 101
+
+enum {
+  ETERNALSONATA_BATTLE_LIGHT_UNKNOWN = 0,
+  ETERNALSONATA_BATTLE_LIGHT = 1,
+  ETERNALSONATA_BATTLE_DARK = 2
+};
+
+enum {
+  ETERNALSONATA_BATTLE_RANGE_UNKNOWN = 0,
+  ETERNALSONATA_BATTLE_RANGE_NEAR = 1,
+  ETERNALSONATA_BATTLE_RANGE_FAR = 2
+};
+
+// Immutable action data copied into an event payload. action_id is the exact
+// move record selected by the game for ATTACK and ABILITY, so attacks selected
+// from different ranges remain distinct. It is an item id for ITEM. distance
+// is negative when the action does not expose a target distance.
+typedef struct EternalSonataBattleAction {
+  int32_t actor_kind;
+  int32_t actor_slot;
+  int32_t character;
+  int32_t action_id;
+  int32_t light_state;
+  int32_t range;
+  float distance;
+  int32_t ability_strength;
+  int32_t harmony_chain;
+  int32_t counterattack;
+  int32_t reserved[2];
+} EternalSonataBattleAction;
+
+enum {
+  ETERNALSONATA_BATTLE_EFFECT_CRITICAL = 1 << 0,
+  ETERNALSONATA_BATTLE_EFFECT_PARRIED = 1 << 1,
+  ETERNALSONATA_BATTLE_EFFECT_HARMONY_CHAIN = 1 << 2,
+  ETERNALSONATA_BATTLE_EFFECT_COUNTERATTACK = 1 << 3
+};
+
+typedef struct EternalSonataBattleEffect {
+  int32_t source_kind;
+  int32_t source_slot;
+  int32_t source_character;
+  int32_t target_kind;
+  int32_t target_slot;
+  int32_t target_character;
+  int32_t action_id;
+  int32_t amount;
+  int32_t flags;
+  int32_t ability_strength;
+  int32_t reserved[6];
+} EternalSonataBattleEffect;
 
 // The battle state machine's states run 1..23. The ones worth naming:
 //
