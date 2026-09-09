@@ -117,6 +117,11 @@ GuestRenderState ReadGuestRenderState(uint8_t* base, uint32_t device) {
   state.point_diameter_y = float(point_size & 0xFFFFu) * (2.0f / 16.0f);
   state.point_diameter_x = float((point_size >> 16) & 0xFFFFu) * (2.0f / 16.0f);
 
+  // PA_SU_POINT_MINMAX: min_size +0, max_size +16, same units.
+  const uint32_t point_minmax = REX_LOAD_U32(device + Reg2280(0x2281));
+  state.point_diameter_min = float(point_minmax & 0xFFFFu) * (2.0f / 16.0f);
+  state.point_diameter_max = float((point_minmax >> 16) & 0xFFFFu) * (2.0f / 16.0f);
+
   state.valid = true;
   return state;
 }
