@@ -8,9 +8,15 @@ namespace achievements_menu {
 // True while the Music gallery is standing in for the Achievements screen.
 bool Active();
 
-// Replaces the strip's icon art with the trophy icon in src/images/. Registers
-// an asset patch, so it must run before BindAssetSystem builds the cache.
-void RegisterTrophyIcon();
+// Drops the cached row tables, so the screen is rebuilt from the host
+// catalogue the next time it is opened. Called when a mod registers, removes or
+// unlocks an achievement.
+void InvalidateRows();
+
+// Replaces the strip's icon art with the trophy icon in src/images/, and the
+// row crystal a locked row draws with a grey one. Registers asset patches, so it
+// must run before BindAssetSystem builds the cache.
+void RegisterIcons();
 
 // Called from the sub_8223B780 hook in eternalsonata_options.cpp, which owns
 // that hook. While a row of the Achievements screen is being built, answers the
