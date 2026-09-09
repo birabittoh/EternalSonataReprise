@@ -4,6 +4,7 @@
 #include "generated/eternalsonata_init.h"
 
 #include "settings.h"
+#include "overworld_system.h"
 
 #include <atomic>
 #include <cstring>
@@ -526,6 +527,7 @@ REX_EXTERN(__imp__sub_820F1490);
 REX_HOOK_RAW(sub_820F1490) {
   const uint32_t object = ctx.r3.u32;
   const int32_t animation = ctx.r4.s32;
+  eternalsonata::NotifyOverworldFieldAction(object, animation);
   const uint32_t leader = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
   if (!g_action_model_respawn && object == leader &&
       eternalsonata::FieldPlayerModelOverride::DesiredCharacter() >= 1) {
