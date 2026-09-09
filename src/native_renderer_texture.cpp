@@ -396,14 +396,8 @@ struct MirroredTexture {
   uint64_t hashed_frame = ~0ull;
 
   // Guest write notification state. See the watch section below.
-  //
-  // `mutable_source` is what selects a texture for watching: an asset uploaded
-  // once and never touched again would only pay the protection churn. Set the
-  // first time a refresh actually changes something.
-  bool mutable_source = false;
   std::atomic<bool> watch_armed{false};
   std::atomic<bool> watch_dirty{false};
-  std::atomic<bool> watch_proven{false};
 };
 
 // Bumped once per guest swap. Only ever compared for equality.
@@ -492,11 +486,21 @@ uint64_t g_refreshed = 0;
 // texture's source turns "hash three megabytes per bind" into "one page fault
 // per write burst".
 //
-// Two things keep this from being a regression if the notification never
-// arrives. Only textures that have already been seen to change are watched, so
-// the ~390 static assets are untouched, and the per frame hash stays in place
-// for any texture whose watch has not yet fired (`watch_proven`). A watch has
-// to earn the right to replace the hash by working once.
+// Every mirrored texture is watched, not only the ones already seen to change.
+// Selecting them by mutability sounds thriftier and is not: it leaves the ~370
+// static assets on the per frame hash, which was still a gigabyte a second of
+// reads with the atlas already handled. Arming one is a single protection pass
+// over its pages and, for a texture nothing ever writes, costs nothing again.
+//
+// The hash stays as the safety net rather than as the mechanism. An armed
+// texture is revalidated every kWatchRevalidateFrames instead of every frame,
+// so a write the notification somehow misses still surfaces within about a
+// second, at a sixty fourth of the cost. An unarmed one keeps the per frame
+// hash unchanged.
+// How often an armed texture is hashed anyway. Entries were last hashed in
+// different frames, so this staggers itself.
+constexpr uint64_t kWatchRevalidateFrames = 64;
+
 struct TextureWatch {
   uint32_t begin;  // physical address, inclusive
   uint32_t end;    // physical address, exclusive
@@ -535,7 +539,6 @@ std::pair<uint32_t, uint32_t> TextureWatchCallback(void*, uint32_t physical_addr
       }
       hit = true;
       watch.entry->watch_dirty.store(true, std::memory_order_relaxed);
-      watch.entry->watch_proven.store(true, std::memory_order_relaxed);
       watch.entry->watch_armed.store(false, std::memory_order_relaxed);
       // Widen the range the heap unprotects to the whole texture. A glyph
       // rasteriser walks rows, so unprotecting only the faulting page would
@@ -1188,20 +1191,19 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     // is why the hash has to be complete rather than sampled.
     //
     // Two ways in. A watch notification is precise and arrives between the
-    // write and the next bind, which is what the once per frame hash cannot do.
-    // The hash stays as the discovery path: it is what finds a texture worth
-    // watching in the first place, and it keeps covering any entry whose watch
-    // has not proven itself yet.
+    // write and the next bind, which is what a per frame hash cannot do; the
+    // hash is the periodic safety net behind it. See TextureWatch.
     const bool dirty = candidate->watch_dirty.exchange(false, std::memory_order_relaxed);
-    const bool watched = candidate->watch_proven.load(std::memory_order_relaxed) &&
-                         candidate->watch_armed.load(std::memory_order_relaxed);
-    if (dirty || (!watched && candidate->hashed_frame != g_frame)) {
+    const uint64_t since_hash = g_frame - candidate->hashed_frame;
+    const bool due = candidate->watch_armed.load(std::memory_order_relaxed)
+                         ? since_hash >= kWatchRevalidateFrames
+                         : since_hash != 0;
+    if (dirty || due) {
       candidate->hashed_frame = g_frame;
       // Re-armed before the source is read rather than after it, so a write that
       // lands while the hash is running sets the flag again instead of being
       // swallowed by the hash that missed it.
-      if (candidate->mutable_source)
-        ArmTextureWatch(candidate);
+      ArmTextureWatch(candidate);
       // Before the hash rather than before the decode the hash may trigger: the
       // hash is what decides whether the contents changed, so hashing memory the
       // readback has not filled in yet would conclude that a render target that
@@ -1213,10 +1215,6 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
         ++g_refreshed;
         DecodeAndUpload(memory_base, fetch, info, candidate->texture.get());
         candidate->content_hash = hash;
-        candidate->mutable_source = true;
-        // Armed from here on, so a texture only starts costing page protection
-        // once it has been seen to change.
-        ArmTextureWatch(candidate);
       }
     }
     return candidate->texture.get();
@@ -1236,6 +1234,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   // already current.
   if (entry->texture) {
     entry->hashed_frame = g_frame;
+    ArmTextureWatch(entry.get());
     entry->content_hash =
         HashSource(EntrySourcePointer(entry.get(), memory_base, fetch), entry->source_bytes);
   }
