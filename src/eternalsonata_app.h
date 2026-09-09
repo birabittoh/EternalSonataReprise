@@ -33,6 +33,7 @@
 #include "guest_profiler.h"
 #include "host_menu.h"
 #include "equipment_system.h"
+#include "flag_system.h"
 #include "game_settings.h"
 #include "item_system.h"
 #include "host_timer_resolution.h"
@@ -430,6 +431,10 @@ class EternalsonataApp : public rex::ReXApp {
     // The game's own Options settings for mods: src/eternalsonata_settings_api.h
     // answers "unavailable" and publishes no event until this runs.
     eternalsonata::BindGameSettings(runtime());
+
+    // The script progress flags for mods: src/eternalsonata_flag_api.h answers
+    // "unavailable" and publishes no event until this runs.
+    eternalsonata::BindFlagSystem(runtime());
 
     // Debug tool: force-loads a field area via the F4 settings overlay's
     // "Force Load Area..." button. See force_load_area.h.
