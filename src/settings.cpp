@@ -114,6 +114,15 @@ REXCVAR_DEFINE_BOOL(native_profile_zones, false, "Eternal Sonata",
                     "etc.). Off skips every clock read those zones make, at the cost of the "
                     "frame time summary and CPU/GPU verdict going blank.");
 
+// Each mip chain adds a second source range to the texture cache, and the
+// aperture walk, content hash and write watch are all paid per range.
+REXCVAR_DEFINE_BOOL(native_texture_mips, false, "Eternal Sonata",
+                    "Upload full mip chains for guest textures. Off uploads only level 0, "
+                    "which halves the texture cache's source ranges and with them the "
+                    "aperture walks, content hashing and write watches. Toggling at runtime "
+                    "leaves the textures cached under the old setting behind, since the "
+                    "mirror never evicts.");
+
 // Which model the overworld leader wears. "party" tracks the active party's
 // first member (the game itself always spawns Allegretto regardless of party
 // order); a character name pins that character; "default" leaves the game's

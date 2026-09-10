@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include <rex/cvar.h>
 #include <rex/logging.h>
 #include <rex/memory/utils.h>
 #include <rex/system/kernel_state.h>
@@ -29,8 +30,14 @@
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_profile.h"
 
+REXCVAR_DECLARE(bool, native_texture_mips);
+
 namespace eternalsonata {
 namespace {
+
+// Sampled once per frame, because MipLevelCount runs per texture per draw and a
+// cvar read is a string map lookup. Same reasoning as g_profile_zones_enabled.
+std::atomic<bool> g_texture_mips_enabled{false};
 
 using namespace plume;
 
@@ -410,10 +417,12 @@ uint64_t g_frame = 0;
 //
 // The three apertures alias the same physical pages, so a stale choice only
 // matters if the one that was picked stops being committed while another still
-// spans the range. At 64 frames that window is about a second, and the walks it
-// costs are a rounding error: measured at 77 per 300 frames with a 256 frame
-// period, so a few hundred here against the 22,827 this replaced.
-constexpr uint64_t kApertureRevalidateFrames = 64;
+// spans the range, and the readability check on the resolved pointer catches
+// that anyway. Must stay well above kWatchRevalidateFrames: the cached pointer
+// is only ever consulted from HashSources, which a watch armed texture reaches
+// exactly once every kWatchRevalidateFrames, so equal periods meant the age was
+// always exactly at the limit and the cache never hit once.
+constexpr uint64_t kApertureRevalidateFrames = 512;
 
 // Walks behind the cache, so the saving is visible rather than assumed.
 uint64_t g_aperture_walks = 0;
@@ -448,7 +457,10 @@ uint64_t TextureKey(uint32_t address, uint32_t format, uint32_t width, uint32_t 
 }
 
 uint32_t TextureInterpretation(const TextureFetch& fetch) {
-  return (fetch.format == 10 ? fetch.swizzle : 0u) ^
+  // The mip setting belongs in the key: without it a toggle would keep matching
+  // entries built under the old setting and appear to do nothing.
+  return (g_texture_mips_enabled.load(std::memory_order_relaxed) ? 0u : 0x40000000u) ^
+         (fetch.format == 10 ? fetch.swizzle : 0u) ^
          (fetch.mip_address * 0x9E3779B9u) ^ (fetch.mip_min_level << 20) ^
          (fetch.mip_max_level << 24) ^ (uint32_t(fetch.packed_mips) << 28) ^
          (uint32_t(fetch.tiled) << 29);
@@ -672,6 +684,8 @@ uint64_t Level0ByteOffset(const TextureFetch& fetch, const FormatInfo& info) {
 }
 
 uint32_t MipLevelCount(const TextureFetch& fetch) {
+  if (!g_texture_mips_enabled.load(std::memory_order_relaxed))
+    return 1;
   uint32_t last = 0;
   for (uint32_t size = std::max(fetch.width, fetch.height); size > 1; size >>= 1)
     ++last;
@@ -1533,7 +1547,10 @@ uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
   return count;
 }
 
-void TextureMirrorBeginFrame() { ++g_frame; }
+void TextureMirrorBeginFrame() {
+  ++g_frame;
+  g_texture_mips_enabled.store(REXCVAR_GET(native_texture_mips), std::memory_order_relaxed);
+}
 
 void ShutdownTextureMirror() {
   // The watch records point at entries about to be destroyed, and the heap can
