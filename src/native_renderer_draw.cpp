@@ -600,10 +600,6 @@ RenderSampler* AcquireSampler(RenderDevice* device, const GuestSamplerState& sta
   desc.borderColor = state.border_color == 1 ? RenderBorderColor::OPAQUE_WHITE
                                              : RenderBorderColor::OPAQUE_BLACK;
 
-  // Only the base level is uploaded by the texture mirror, so there is nothing
-  // above LOD 0 to sample even when the guest asks for mipmapping. Left as the
-  // full range deliberately: a texture created with one level clamps by itself,
-  // and pinning maxLOD here would have to be undone the moment mips arrive.
   auto sampler = device->createSampler(desc);
   if (!sampler)
     return g_sampler.get();
