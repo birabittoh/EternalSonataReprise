@@ -989,16 +989,57 @@ bool ReadWholeFile(const std::filesystem::path& path, std::vector<uint8_t>& out)
   return true;
 }
 
+// Guest paths are lowercased for keying, but the shipped files keep their own
+// case ("AppKeep.bmd"), so on a case sensitive filesystem the plain join misses
+// and every patch on that container is dropped. Fall back to matching the
+// directory's entries case insensitively.
+bool EqualsIgnoringCase(const std::string& a, const std::string& b) {
+  return a.size() == b.size() &&
+         std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+           return std::tolower(uint8_t(x)) == std::tolower(uint8_t(y));
+         });
+}
+
+std::filesystem::path ResolveUnderRoot(const std::filesystem::path& root,
+                                       const std::string& guest_path) {
+  std::error_code ec;
+  const auto direct = root / std::filesystem::path(guest_path);
+  if (std::filesystem::is_regular_file(direct, ec))
+    return direct;
+
+  std::filesystem::path at = root;
+  for (const auto& part : std::filesystem::path(guest_path)) {
+    const std::string want = part.string();
+    if (want.empty())
+      continue;
+    auto next = at / part;
+    if (!std::filesystem::exists(next, ec)) {
+      bool found = false;
+      for (const auto& entry : std::filesystem::directory_iterator(at, ec)) {
+        if (!EqualsIgnoringCase(entry.path().filename().string(), want))
+          continue;
+        next = entry.path();
+        found = true;
+        break;
+      }
+      if (!found)
+        return direct;
+    }
+    at = std::move(next);
+  }
+  return std::filesystem::is_regular_file(at, ec) ? at : direct;
+}
+
 // A mod's game/ folder is the base image every granular patch applies on top
 // of, so look through the overlay roots before the shipped file.
 std::filesystem::path ResolveBaseFile(rex::Runtime* runtime, const std::string& guest_path) {
   std::error_code ec;
   for (const auto& root : runtime->ModOverlayRoots("game")) {
-    const auto candidate = root / std::filesystem::path(guest_path);
+    const auto candidate = ResolveUnderRoot(root, guest_path);
     if (std::filesystem::is_regular_file(candidate, ec))
       return candidate;
   }
-  return runtime->game_data_root() / std::filesystem::path(guest_path);
+  return ResolveUnderRoot(runtime->game_data_root(), guest_path);
 }
 
 // The one value the TOC writer consumes: patched bytes and the record they must
