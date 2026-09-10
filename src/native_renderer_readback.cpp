@@ -303,6 +303,10 @@ constexpr uint64_t kRearmPeriod = 64;
 // overwrite it on the strength of one read.
 constexpr uint64_t kMaxArmedExtentBytes = 1024 * 1024;
 
+// How many times a destination is resolved, with nothing ever reading it, before
+// its per resolve copy is dropped. See ReadbackPlanCopy.
+constexpr uint64_t kDemandProbePublishes = 16;
+
 // Does this publish describe the same destination, in the same place, as the
 // one that armed it?
 bool SameAsArmed(const Destination& destination, const TextureFetch& dest, const uint8_t* pixels,
@@ -340,12 +344,12 @@ uint64_t g_unanswered_flush = 0;
 // Reads answered by waiting for the recording thread's present rather than by
 // flushing. See WaitForCopy.
 uint64_t g_waited_copies = 0;
-// Fills that had to skip part of their extent because the mirror holds another
-// texture over it, and how many bytes went unwritten that way.
-uint64_t g_clipped_fills = 0;
-uint64_t g_clipped_bytes = 0;
-uint32_t g_clipped_reported = 0;
-constexpr uint32_t kMaxClippedReports = 8;
+// Cached textures whose source a fill overwrote, and which were re-baselined
+// against the new bytes rather than left to re-decode out of them.
+uint64_t g_rebaselined = 0;
+// Copies the frame layer was told not to record, split by the reason.
+uint64_t g_copies_skipped_large = 0;
+uint64_t g_copies_skipped_idle = 0;
 
 // The most recent frame any resolve was published in, i.e. what "now" means to
 // a fault, which arrives from guest code rather than from the frame loop.
@@ -544,32 +548,6 @@ bool RangeWritable(const uint8_t* start, uint64_t bytes) {
 
 // Lay the host image out the way the guest's own fetch constant describes it.
 // Called with the destination's pages accessible.
-// Write the parts of [offset, offset + bytes) that no cached texture owns.
-//
-// `occupied` is sorted and non-overlapping, so this walks it once. Empty is the
-// normal case and costs one comparison.
-void WriteClipped(uint8_t* guest, const std::vector<MirrorOccupiedRange>& occupied,
-                  uint64_t offset, const uint8_t* source, uint64_t bytes, uint64_t* skipped) {
-  uint64_t cursor = offset;
-  const uint64_t end = offset + bytes;
-  for (const MirrorOccupiedRange& range : occupied) {
-    if (range.end <= cursor)
-      continue;
-    if (range.begin >= end)
-      break;
-    if (range.begin > cursor) {
-      const uint64_t run = range.begin - cursor;
-      std::memcpy(guest + cursor, source + (cursor - offset), size_t(run));
-    }
-    *skipped += (range.end < end ? range.end : end) - (range.begin > cursor ? range.begin : cursor);
-    cursor = range.end;
-    if (cursor >= end)
-      return;
-  }
-  if (cursor < end)
-    std::memcpy(guest + cursor, source + (cursor - offset), size_t(end - cursor));
-}
-
 bool Fill(Destination& destination) {
   if (destination.pixels == nullptr || destination.guest == nullptr)
     return false;
@@ -589,19 +567,6 @@ bool Fill(Destination& destination) {
 
   const TextureFetch& fetch = destination.fetch;
 
-  // Which of these pages belong to somebody else by now.
-  //
-  // The guest frees a render target and streams an ordinary asset into the same
-  // pages; nothing arms a destination once it has been filled, so `Fresh` never
-  // hears about it. Refusing the whole fill on any overlap made save previews
-  // black, and filling regardless corrupted textures -- both are the fill being
-  // all-or-nothing over a range it does not need all of, so the overlap is cut
-  // out and the rest is written.
-  static thread_local std::vector<MirrorOccupiedRange> occupied;
-  occupied.clear();
-  TextureMirrorOccupiedRanges(destination.address, destination.extent, destination.address,
-                              fetch.width, fetch.height, &occupied);
-  uint64_t skipped = 0;
   const uint32_t texel_bytes = destination.texel_bytes;
   // Clamped to the buffer in both directions, texels as well as bytes: the loop
   // below indexes the scratch row by texel, so a width the buffer cannot back
@@ -699,21 +664,19 @@ bool Fill(Destination& destination) {
         const uint32_t offset = TiledBlockOffset(x, y, pitch_macro_tiles, texel_bytes_log2);
         if (uint64_t(offset) + 16 > destination.extent)
           continue;
-        WriteClipped(destination.guest, occupied, offset, row.data() + size_t(x) * texel_bytes, 16,
-                     &skipped);
+        std::memcpy(destination.guest + offset, row.data() + size_t(x) * texel_bytes, 16);
       }
       for (; x < row_texels; ++x) {
         const uint32_t offset = TiledBlockOffset(x, y, pitch_macro_tiles, texel_bytes_log2);
         if (uint64_t(offset) + texel_bytes > destination.extent)
           continue;
-        WriteClipped(destination.guest, occupied, offset, row.data() + size_t(x) * texel_bytes,
-                     texel_bytes, &skipped);
+        std::memcpy(destination.guest + offset, row.data() + size_t(x) * texel_bytes, texel_bytes);
       }
     } else {
       const uint64_t offset = uint64_t(y) * pitch_texels * texel_bytes;
       if (offset + row_source_bytes > destination.extent)
         break;
-      WriteClipped(destination.guest, occupied, offset, row.data(), row_source_bytes, &skipped);
+      std::memcpy(destination.guest + offset, row.data(), row_source_bytes);
     }
   }
 
@@ -721,18 +684,13 @@ bool Fill(Destination& destination) {
   ++destination.fills;
   ++g_fills;
   g_fill_bytes += uint64_t(row_source_bytes) * rows;
-  if (skipped != 0) {
-    ++g_clipped_fills;
-    g_clipped_bytes += skipped;
-    if (g_clipped_reported < kMaxClippedReports) {
-      ++g_clipped_reported;
-      REXLOG_WARN(
-          "native_renderer: readback clipped the fill of 0x{:08X} {}x{}: {} of {} guest byte(s) "
-          "belong to {} cached texture(s) now, the first at 0x{:08X}",
-          destination.address, fetch.width, fetch.height, skipped, destination.extent,
-          occupied.size(), uint32_t(destination.address + occupied.front().begin));
-    }
-  }
+
+  // The bytes just written were some cached texture's source, for as many of
+  // them as the mirror holds entries over. Those entries are told now, before
+  // anything binds them again; see TextureMirrorRebaselineSources for why this
+  // is what makes writing the whole extent safe.
+  g_rebaselined += TextureMirrorRebaselineSources(destination.address, destination.extent,
+                                                 destination.address, destination.memory_base);
   return true;
 }
 
@@ -1200,8 +1158,48 @@ Destination* Find(uint32_t address) {
 
 bool ReadbackEnabled() { return CurrentMode() != Mode::kOff; }
 
+ReadbackCopyPlan ReadbackPlanCopy(const TextureFetch& dest) {
+  const Mode mode = CurrentMode();
+  if (mode == Mode::kOff)
+    return ReadbackCopyPlan::kSkip;
+  if (mode == Mode::kEager)
+    return ReadbackCopyPlan::kCopy;
+
+  uint32_t texel_bytes = 0;
+  const uint64_t extent =
+      DestinationTexelBytes(dest.format, texel_bytes) ? ExtentBytes(dest, texel_bytes) : 0;
+
+  std::lock_guard<std::mutex> lock(g_mutex);
+  const Destination* destination = Find(dest.base_address);
+  // A destination something has actually been served out of keeps its copy for
+  // the rest of the run, whatever its size: demand measured beats every rule
+  // here. Fills and read faults, not pulls: a mirror pull is counted before the
+  // layout check that refuses almost all of them, and the 1280x720 screen
+  // destination collects dozens of refused pulls a second. Treating those as
+  // demand would hand it back the 3.7 MB copy this exists to avoid.
+  const bool demanded =
+      destination != nullptr && (destination->reads != 0 || destination->fills != 0);
+  if (demanded)
+    return ReadbackCopyPlan::kCopy;
+
+  if (extent > kMaxArmedExtentBytes) {
+    ++g_copies_skipped_large;
+    return ReadbackCopyPlan::kSkip;
+  }
+  // Resolved over and over with nothing ever asking for the result: the water
+  // simulation's 64x64 pair and its 256x256 buffers, which between them are most
+  // of a megabyte of copies a frame. The probe is generous because the one guest
+  // read known to happen early -- the 64x64 surface the game polls before the
+  // first frame ever presents -- has to land inside it.
+  if (destination != nullptr && destination->publishes >= kDemandProbePublishes) {
+    ++g_copies_skipped_idle;
+    return ReadbackCopyPlan::kArmOnly;
+  }
+  return ReadbackCopyPlan::kCopy;
+}
+
 void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8_t* pixels,
-                     uint32_t row_bytes, uint32_t pixel_rows, bool pixels_ready,
+                     uint32_t row_bytes, uint32_t pixel_rows, bool copy_recorded,
                      uint64_t frame) {
   const Mode mode = CurrentMode();
   if (mode == Mode::kOff || memory_base == nullptr || pixels == nullptr ||
@@ -1240,9 +1238,12 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   destination->last_publish_frame = frame;
   destination->guest_owns = false;
   // The caller records a copy into the buffer immediately after this, so this
-  // frame is the one that copy belongs to. `pixels_ready` says an earlier copy
-  // has already completed, which only matters for the log.
-  destination->copy_frame = frame;
+  // frame is the one that copy belongs to. When it is not recording one (see
+  // ReadbackPlanCopy) the newest copy is still whichever older frame made it, and
+  // claiming this frame instead would have a read wait for a copy that is never
+  // coming and then read it anyway.
+  if (copy_recorded) {
+    destination->copy_frame = frame;
   // Cleared, not carried: a *new* copy has just been recorded and has not run,
   // so a read later in this frame still has to make the GPU catch up. Leaving it
   // set once any flush had ever happened is what made the first save after a load
@@ -1252,8 +1253,8 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   // that soon after a load is the loading screen. Waiting a few seconds and
   // saving again worked because by then the copy had completed on its own, which
   // is exactly the shape of the report.
-  destination->flushed = false;
-  (void)pixels_ready;
+    destination->flushed = false;
+  }
   if (frame > g_now)
     g_now = frame;
   if (mode == Mode::kAuto && (destination->publishes % kRearmPeriod) != 0 &&
@@ -1464,13 +1465,14 @@ void LogReadbackSummary() {
       "disowned={} | mirror pulls={} | fills={} ({} MiB) | flushes={} waited={} "
       "unanswered={} (thread {}, flush {}) | "
       "refused format={} "
-      "extent={} unmapped={} stale={} untrapped={} | clipped fills={} ({} KiB) | layout disagreements={}",
+      "extent={} unmapped={} stale={} untrapped={} | re-baselined={} | copies skipped large={} "
+      "idle={} | layout disagreements={}",
       g_destinations.size(), g_arms, g_read_faults, g_write_faults, g_outside_faults,
       g_disowned_faults, g_pulls,
       g_fills, g_fill_bytes >> 20, g_flushes, g_waited_copies, g_unanswered, g_unanswered_thread,
       g_unanswered_flush, g_refused_format, g_refused_extent,
-      g_refused_unmapped, g_refused_stale, g_refused_large, g_clipped_fills,
-      g_clipped_bytes >> 10, g_layout_disagreements);
+      g_refused_unmapped, g_refused_stale, g_refused_large, g_rebaselined,
+      g_copies_skipped_large, g_copies_skipped_idle, g_layout_disagreements);
 
   // One line per destination anything has actually asked for, which is the
   // question this whole path exists to answer: who reads a resolved surface

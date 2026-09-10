@@ -395,6 +395,11 @@ struct MirroredTexture {
   // in a frame is hashed once. See HashSource.
   uint64_t hashed_frame = ~0ull;
 
+  // The frame this texture was last handed to a draw. Only read by
+  // TextureMirrorRebaselineSources, to say in the log whether a cached texture
+  // sharing a resolve destination's pages is one the game is still drawing.
+  uint64_t bound_frame = ~0ull;
+
   // Guest write notification state. See the watch section below.
   std::atomic<bool> watch_armed{false};
   std::atomic<bool> watch_dirty{false};
@@ -660,6 +665,11 @@ uint64_t Level0ByteOffset(const TextureFetch& fetch, const FormatInfo& info) {
 // Bytes fed through HashSource, so the cost of completeness is visible in the
 // summary instead of being guessed at.
 uint64_t g_hash_bytes = 0;
+
+// Cached textures re-baselined because a readback fill crossed them, reported a
+// few times so the overlap itself is visible without a line per save.
+uint32_t g_rebaselines_reported = 0;
+constexpr uint32_t kMaxRebaselineReports = 12;
 
 uint64_t HashSource(const uint8_t* source, uint64_t bytes) {
   ProfileZone zone(kPhaseTextureHash);
@@ -1157,6 +1167,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   if (found != g_texture_index.end()) {
     MirroredTexture* candidate = found->second;
     ++g_decode_hits;
+    candidate->bound_frame = g_frame;
 
     // A failed decode is remembered, but it is *not* final. The reason is
     // usually that the source was not readable yet, and the game streams a
@@ -1221,6 +1232,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   }
 
   auto entry = std::make_unique<MirroredTexture>();
+  entry->bound_frame = g_frame;
   entry->address = fetch.base_address;
   entry->format = fetch.format;
   entry->width = fetch.width;
@@ -1266,70 +1278,50 @@ void LogTextureMirrorSummary() {
               armed, g_watch_hits);
 }
 
-void TextureMirrorOccupiedRanges(uint32_t address, uint64_t bytes, uint32_t expected_address,
-                                 uint32_t expected_width, uint32_t expected_height,
-                                 std::vector<MirrorOccupiedRange>* out) {
-  if (out == nullptr || bytes == 0)
-    return;
+uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
+                                       uint32_t expected_address, uint8_t* memory_base) {
+  if (bytes == 0 || memory_base == nullptr)
+    return 0;
   const uint64_t end = uint64_t(address) + bytes;
+  uint32_t count = 0;
   for (const std::unique_ptr<MirroredTexture>& entry : g_textures) {
-    if (entry == nullptr || entry->source_bytes == 0)
+    if (entry == nullptr || entry->source_bytes == 0 || !entry->texture)
       continue;
     const uint64_t entry_end = uint64_t(entry->address) + entry->source_bytes;
     if (entry_end <= address || entry->address >= end)
       continue;
-    // Overlaps. The destination's own image is not a conflict with itself: the
-    // guest binds a resolved thumbnail as a texture, which is the whole reason
-    // a resolve destination is reachable from here at all.
-    //
-    // Matched on the base address alone. Requiring the extent to agree as well
-    // made the save preview black: an entry sat at exactly the destination's
-    // address at a different extent and clipped 204800 of 204800 bytes, so a
-    // faithful readback buffer was never written to guest memory. A bind that
-    // does agree is served by FrameResolveTextureByAddress and never reaches
-    // this cache (mirror pulls=0 for that destination), so an entry here is by
-    // construction one whose extent differs, and the resolve the guest just
-    // asked for is the authority on what those pixels are.
-    if (entry->address == expected_address) {
-      if (entry->width != expected_width || entry->height != expected_height) {
-        static uint32_t reported = 0;
-        if (reported < 8) {
-          ++reported;
-          REXLOG_INFO(
-              "native_renderer: readback fill overwrites cached texture 0x{:08X} {}x{} with the "
-              "{}x{} resolve destination at the same address",
-              entry->address, entry->width, entry->height, expected_width, expected_height);
-        }
-      }
+    // The destination's own image is not a conflict with itself: the guest binds
+    // a resolved thumbnail as a texture, which is the whole reason a resolve
+    // destination is reachable from here at all. Matched on the base address
+    // alone, because a bind whose extent also agrees is served by
+    // FrameResolveTextureByAddress and never reaches this cache.
+    if (entry->address == expected_address)
       continue;
-    }
-    // Nothing is asked about when the texture was decoded. That test used to be
-    // here -- a texture cached before the resolve was treated as stale -- and it
-    // is not true: a resolve writes the host render target and the readback
-    // buffer, never guest memory, so a cached texture overlapping a destination
-    // is live guest data whichever happened first.
-    const uint64_t begin = (uint64_t(entry->address) > address ? uint64_t(entry->address) : address)
-                           - address;
-    const uint64_t stop = (entry_end < end ? entry_end : end) - address;
-    out->push_back({begin, stop});
-  }
 
-  if (out->size() < 2)
-    return;
-  std::sort(out->begin(), out->end(),
-            [](const MirrorOccupiedRange& a, const MirrorOccupiedRange& b) {
-              return a.begin < b.begin;
-            });
-  size_t kept = 0;
-  for (size_t i = 1; i < out->size(); ++i) {
-    if ((*out)[i].begin <= (*out)[kept].end) {
-      if ((*out)[i].end > (*out)[kept].end)
-        (*out)[kept].end = (*out)[i].end;
-    } else {
-      (*out)[++kept] = (*out)[i];
+    ++count;
+    if (g_rebaselines_reported < kMaxRebaselineReports) {
+      ++g_rebaselines_reported;
+      REXLOG_INFO(
+          "native_renderer: readback re-baselined cached texture 0x{:08X} {}x{} fmt {} ({} byte(s), "
+          "last bound in frame {} of {}) under resolve destination 0x{:08X}",
+          entry->address, entry->width, entry->height, entry->format, entry->source_bytes,
+          entry->bound_frame, g_frame, expected_address);
     }
+
+    // Ours, so it says nothing about the guest having rewritten the texture.
+    entry->watch_dirty.store(false, std::memory_order_relaxed);
+    const uint8_t* source = GuestPhysicalPointer(
+        memory_base, entry->address + entry->level0_offset, entry->source_bytes);
+    if (source != nullptr && GuestRangeReadableBytes(source, entry->source_bytes) >=
+                                 entry->source_bytes) {
+      entry->content_hash = HashSource(source, entry->source_bytes);
+      entry->hashed_frame = g_frame;
+    }
+    // The fill's own writes tripped the watch, which disarms it. Re-armed here
+    // against the new baseline, so a genuine guest write still refreshes.
+    ArmTextureWatch(entry.get());
   }
-  out->resize(kept + 1);
+  return count;
 }
 
 void TextureMirrorBeginFrame() { ++g_frame; }
