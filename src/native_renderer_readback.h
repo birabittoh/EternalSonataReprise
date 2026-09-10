@@ -39,6 +39,28 @@ namespace eternalsonata {
 // nothing beyond the check.
 bool ReadbackEnabled();
 
+// What, if anything, is worth doing about this resolve destination.
+//
+// Asked by the frame layer before it allocates a readback buffer, rescales a
+// supersampled image down to guest size and records a copy of it, because that
+// work is what a readback costs per resolve and most of it is for destinations
+// nothing will ever read. Every colour resolve used to be copied: at 1280x720
+// that is 3.7 MB of DMA plus a full-screen downscale pass, several times a
+// frame, for a surface the guest's CPU has never once touched.
+//
+//  kCopy     - copy it, the usual answer for anything small.
+//  kArmOnly  - track and arm it, but do not copy this resolve. A destination
+//              resolved every frame that nothing has ever read: the guest still
+//              faults if it starts, and the fill then serves the last copy, one
+//              frame late, while demand turns copying back on.
+//  kSkip     - leave it alone entirely. Too large for the guest to be served
+//              from anyway (see kMaxArmedExtentBytes in the .cpp): the page trap
+//              refuses to stand over megabytes on the strength of one read, so a
+//              buffer for it could only ever feed a mirror pull, and those are
+//              refused on the layout check in every run measured.
+enum class ReadbackCopyPlan { kSkip, kArmOnly, kCopy };
+ReadbackCopyPlan ReadbackPlanCopy(const TextureFetch& dest);
+
 // Offer the guest the pixels the GPU last read back for a resolve destination.
 //
 // `dest` describes the guest side: where the destination texture lives, in what
@@ -48,11 +70,12 @@ bool ReadbackEnabled();
 //
 // Nothing is written to guest memory here. This arms the destination's pages;
 // the write happens if and when the guest reads them.
-// `pixels_ready` is false on the very first resolve into a destination, when a
-// copy has been recorded but none has ever completed. The destination is still
-// registered and armed: a read of it then means making the GPU catch up rather
-// than serving the buffer, which is the only way a surface that is resolved and
-// read in the same frame -- the save screenshot -- can be answered at all.
+// `copy_recorded` says the caller is about to record a copy into `pixels` for
+// this resolve, which is what makes the buffer this frame's rather than an older
+// frame's. A destination is registered and armed either way: a read of one whose
+// copy has not run yet means making the GPU catch up rather than serving the
+// buffer, which is the only way a surface that is resolved and read in the same
+// frame -- the save screenshot -- can be answered at all.
 // `frame` is the host frame this resolve belongs to. It bounds how long a
 // destination stays writable: guest memory stops being a render target when the
 // game frees the buffer and loads a texture into it, and only memory the GPU has
@@ -62,7 +85,7 @@ bool ReadbackEnabled();
 // alone and keeps the extent it was first created with, so a later, taller
 // resolve to the same address describes more rows than the buffer has.
 void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8_t* pixels,
-                     uint32_t row_bytes, uint32_t pixel_rows, bool pixels_ready, uint64_t frame);
+                     uint32_t row_bytes, uint32_t pixel_rows, bool copy_recorded, uint64_t frame);
 
 // This renderer is itself about to read guest memory at `address`, so if that
 // address is a resolve destination its bytes have to be there first.
