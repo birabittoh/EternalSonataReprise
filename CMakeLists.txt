@@ -318,7 +318,7 @@ else()
     )
 endif()
 
-rexglue_setup_target(eternalsonata)
+rexglue_setup_target(eternalsonata GPU_PLUGINS xenos)
 
 target_link_libraries(eternalsonata PRIVATE plume)
 
