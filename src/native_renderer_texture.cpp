@@ -349,6 +349,14 @@ uint32_t Log2Exact(uint32_t value) {
 // ---------------------------------------------------------------------------
 // The cache
 
+struct TextureSourceRange {
+  uint32_t address = 0;
+  uint32_t raw_address = 0;
+  uint64_t bytes = 0;
+  const uint8_t* pointer = nullptr;
+  uint64_t pointer_frame = ~0ull;
+};
+
 struct MirroredTexture {
   uint32_t address = 0;
   uint32_t format = 0;
@@ -363,17 +371,10 @@ struct MirroredTexture {
   // a new one, so a cutscene effect and a menu background can be the same
   // address at the same size and format. See CheckSourceChanged.
   uint64_t content_hash = 0;
-  uint64_t source_bytes = 0;
+  std::vector<TextureSourceRange> sources;
 
-  // Offset from the fetch constant's base to level 0; see Level0ByteOffset.
-  // Carried on the entry because the hash and the aperture walk both work from
-  // the entry alone, without the FormatInfo needed to recompute it, and they
-  // must cover the same bytes the upload reads or the cache would fingerprint
-  // the mip tail and never notice level 0 changing.
-  uint32_t level0_offset = 0;
-
-  // The aperture-resolved host pointer to this texture's source, and the frame
-  // the choice was last validated in.
+  // The aperture-resolved host pointer to each source, and the frame each
+  // choice was last validated in.
   //
   // Picking the aperture means asking which of the three spans the bytes, which
   // is a VirtualQuery walk over the whole source. That was measured at 73 us a
@@ -386,9 +387,6 @@ struct MirroredTexture {
   // walk never protected this path anyway: when no aperture spans the range it
   // returns the cached one regardless and lets the read proceed, which is what
   // the hash has always done.
-  const uint8_t* source_pointer = nullptr;
-  uint64_t source_pointer_frame = ~0ull;
-
   // The frame this texture's source was last hashed in. The hash covers the
   // whole source and is therefore too expensive to repeat on every bind, so it
   // runs at most once per texture per frame; a texture bound two hundred times
@@ -447,6 +445,13 @@ std::unordered_map<TextureCacheKey, MirroredTexture*, TextureCacheHash> g_textur
 uint64_t TextureKey(uint32_t address, uint32_t format, uint32_t width, uint32_t height) {
   return (uint64_t(address) << 32) | (uint64_t(format & 0x3F) << 26) |
          (uint64_t(width & 0x1FFF) << 13) | uint64_t(height & 0x1FFF);
+}
+
+uint32_t TextureInterpretation(const TextureFetch& fetch) {
+  return (fetch.format == 10 ? fetch.swizzle : 0u) ^
+         (fetch.mip_address * 0x9E3779B9u) ^ (fetch.mip_min_level << 20) ^
+         (fetch.mip_max_level << 24) ^ (uint32_t(fetch.packed_mips) << 28) ^
+         (uint32_t(fetch.tiled) << 29);
 }
 
 uint64_t g_resolve_hits = 0;
@@ -510,6 +515,7 @@ struct TextureWatch {
   uint32_t begin;  // physical address, inclusive
   uint32_t end;    // physical address, exclusive
   MirroredTexture* entry;
+  bool mip;
 };
 
 // Guards g_watches only. The notification arrives on whichever guest thread
@@ -522,12 +528,16 @@ void* g_watch_handle = nullptr;
 
 uint64_t g_watch_arms = 0;
 uint64_t g_watch_hits = 0;
+uint64_t g_mip_ranges_watched = 0;
+uint64_t g_mip_ranges_dirtied = 0;
+uint64_t g_mip_ranges_hashed = 0;
+uint64_t g_mip_ranges_refreshed = 0;
 
 // A guest write landed on watched pages. The heap unprotects them before this
 // returns, so every entry reported here is disarmed and re-armed by the refresh
 // its dirty flag triggers.
 std::pair<uint32_t, uint32_t> TextureWatchCallback(void*, uint32_t physical_address_start,
-                                                   uint32_t length, bool exact_range) {
+                                                   uint32_t length, bool) {
   const uint32_t begin = physical_address_start;
   const uint32_t end = physical_address_start + length;
   uint32_t unwatch_begin = begin;
@@ -536,9 +546,20 @@ std::pair<uint32_t, uint32_t> TextureWatchCallback(void*, uint32_t physical_addr
 
   {
     std::lock_guard<std::mutex> lock(g_watch_mutex);
+    std::vector<MirroredTexture*> dirty_entries;
+    for (const TextureWatch& watch : g_watches) {
+      if (watch.end <= begin || watch.begin >= end)
+        continue;
+      if (watch.mip)
+        ++g_mip_ranges_dirtied;
+      if (std::find(dirty_entries.begin(), dirty_entries.end(), watch.entry) ==
+          dirty_entries.end())
+        dirty_entries.push_back(watch.entry);
+    }
     for (size_t i = 0; i < g_watches.size();) {
       const TextureWatch& watch = g_watches[i];
-      if (watch.end <= begin || watch.begin >= end) {
+      if (std::find(dirty_entries.begin(), dirty_entries.end(), watch.entry) ==
+          dirty_entries.end()) {
         ++i;
         continue;
       }
@@ -548,10 +569,8 @@ std::pair<uint32_t, uint32_t> TextureWatchCallback(void*, uint32_t physical_addr
       // Widen the range the heap unprotects to the whole texture. A glyph
       // rasteriser walks rows, so unprotecting only the faulting page would
       // fault again on the next one; the atlas is worth one fault, not 729.
-      if (!exact_range) {
-        unwatch_begin = std::min(unwatch_begin, watch.begin);
-        unwatch_end = std::max(unwatch_end, watch.end);
-      }
+      unwatch_begin = std::min(unwatch_begin, watch.begin);
+      unwatch_end = std::max(unwatch_end, watch.end);
       g_watches[i] = g_watches.back();
       g_watches.pop_back();
     }
@@ -567,17 +586,17 @@ std::pair<uint32_t, uint32_t> TextureWatchCallback(void*, uint32_t physical_addr
 }
 
 void ArmTextureWatch(MirroredTexture* entry) {
-  if (entry->watch_armed.load(std::memory_order_relaxed) || entry->source_bytes == 0 ||
-      entry->source_bytes > 0xFFFFFFFFull)
+  if (entry->watch_armed.load(std::memory_order_relaxed) || entry->sources.empty())
     return;
   rex::memory::Memory* memory = rex::system::kernel_memory();
   if (memory == nullptr)
     return;
-
-  const uint32_t begin = (entry->address + entry->level0_offset) & 0x1FFFFFFFu;
-  const uint32_t bytes = uint32_t(entry->source_bytes);
-  if (uint64_t(begin) + bytes > 0x20000000ull)
-    return;
+  for (const TextureSourceRange& source : entry->sources) {
+    const uint64_t begin = source.address & 0x1FFFFFFFu;
+    if (source.bytes == 0 || source.bytes > 0xFFFFFFFFull ||
+        begin + source.bytes > 0x20000000ull)
+      return;
+  }
 
   if (g_watch_handle == nullptr) {
     g_watch_handle = memory->RegisterPhysicalMemoryInvalidationCallback(TextureWatchCallback,
@@ -588,13 +607,23 @@ void ArmTextureWatch(MirroredTexture* entry) {
 
   {
     std::lock_guard<std::mutex> lock(g_watch_mutex);
-    g_watches.push_back({begin, begin + bytes, entry});
+    for (size_t i = 0; i < entry->sources.size(); ++i) {
+      const TextureSourceRange& source = entry->sources[i];
+      const uint32_t begin = source.address & 0x1FFFFFFFu;
+      const uint32_t bytes = uint32_t(source.bytes);
+      g_watches.push_back({begin, begin + bytes, entry, i != 0});
+    }
     entry->watch_armed.store(true, std::memory_order_relaxed);
   }
-  ++g_watch_arms;
+  g_watch_arms += entry->sources.size();
+  if (entry->sources.size() > 1)
+    ++g_mip_ranges_watched;
   // Outside the lock: this takes the memory subsystem's global lock, which the
   // notification path already holds when it takes ours.
-  memory->EnablePhysicalMemoryAccessCallbacks(begin, bytes, true, false);
+  for (const TextureSourceRange& source : entry->sources) {
+    const uint32_t begin = source.address & 0x1FFFFFFFu;
+    memory->EnablePhysicalMemoryAccessCallbacks(begin, uint32_t(source.bytes), true, false);
+  }
 }
 
 // Report each unhandled guest format once. There are only 64 of them, so a flat
@@ -640,6 +669,70 @@ uint64_t Level0ByteOffset(const TextureFetch& fetch, const FormatInfo& info) {
     return uint64_t(offset_blocks) * info.block_bytes;
   }
   return SourceExtentBytes(fetch, info);
+}
+
+uint32_t MipLevelCount(const TextureFetch& fetch) {
+  uint32_t last = 0;
+  for (uint32_t size = std::max(fetch.width, fetch.height); size > 1; size >>= 1)
+    ++last;
+  return std::min(fetch.mip_max_level, last) + 1;
+}
+
+bool PackedMipOffset(uint32_t width, uint32_t height, uint32_t block, uint32_t mip,
+                     uint32_t& x, uint32_t& y) {
+  const uint32_t lw = Log2Ceil(width), lh = Log2Ceil(height), ls = std::min(lw, lh);
+  if (ls > 4 + mip)
+    return false;
+  const uint32_t base = ls > 4 ? ls - 4 : 0, packed = mip - base;
+  uint32_t offset = packed < 3 ? 16u >> packed
+                               : (1u << (std::max(lw, lh) - base)) >> (packed - 2);
+  const bool along_x = packed < 3 ? lw <= lh : lw > lh;
+  x = along_x ? offset / block : 0;
+  y = along_x ? 0 : offset / block;
+  return true;
+}
+
+uint32_t TexturePhysicalAddress(uint32_t raw_address) {
+  return (raw_address & 0x1FFFFFFFu) + (((raw_address >> 20) + 512u) & 0x1000u);
+}
+
+std::vector<TextureSourceRange> TextureSourceRanges(const TextureFetch& fetch,
+                                                    const FormatInfo& info) {
+  std::vector<TextureSourceRange> sources;
+  const uint32_t level0_offset = uint32_t(Level0ByteOffset(fetch, info));
+  sources.push_back({TexturePhysicalAddress(fetch.raw_base_address + level0_offset),
+                     fetch.raw_base_address + level0_offset,
+                     SourceExtentBytes(fetch, info)});
+
+  const uint32_t mip_levels = MipLevelCount(fetch);
+  if (mip_levels <= 1)
+    return sources;
+
+  const uint32_t pow2_width = 1u << Log2Ceil(fetch.width);
+  const uint32_t pow2_height = 1u << Log2Ceil(fetch.height);
+  uint64_t mip_offset = 0;
+  uint64_t mip_bytes = 0;
+  for (uint32_t mip = 1; mip < mip_levels; ++mip) {
+    TextureFetch level_fetch = fetch;
+    level_fetch.width = std::max(pow2_width >> mip, 1u);
+    level_fetch.height = std::max(pow2_height >> mip, 1u);
+    const uint32_t width_blocks = (level_fetch.width + info.block - 1) / info.block;
+    level_fetch.pitch = AlignUp(width_blocks, 32) * info.block;
+    uint32_t x = 0, y = 0;
+    uint64_t extent = SourceExtentBytes(level_fetch, info);
+    if (fetch.packed_mips &&
+        PackedMipOffset(pow2_width, pow2_height, info.block, mip, x, y)) {
+      extent = uint64_t(32 * 32) * info.block_bytes;
+      mip_bytes = std::max(mip_bytes, mip_offset + extent);
+    } else {
+      mip_bytes = std::max(mip_bytes, mip_offset + extent);
+      mip_offset += AlignUp(uint32_t(extent), 4096);
+    }
+  }
+  const uint32_t raw_address = fetch.mip_address ? fetch.mip_address : fetch.raw_base_address;
+  sources.push_back(
+      {TexturePhysicalAddress(raw_address), raw_address, mip_bytes});
+  return sources;
 }
 
 // A fingerprint of the guest bytes, used to notice that the game has replaced
@@ -711,7 +804,8 @@ uint64_t HashSource(const uint8_t* source, uint64_t bytes) {
 // False when the source would be read out of bounds, which is the check on the
 // extent and pitch the fetch constant claims.
 bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatInfo& info,
-                uint32_t dest_row_bytes, std::vector<uint8_t>& out) {
+                uint32_t dest_row_bytes, std::vector<uint8_t>& out, uint32_t origin_x = 0,
+                uint32_t origin_y = 0, uint64_t extent_override = 0) {
   const uint32_t width_blocks = (fetch.width + info.block - 1) / info.block;
   const uint32_t height_blocks = (fetch.height + info.block - 1) / info.block;
 
@@ -731,7 +825,7 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
     const uint32_t block_bytes_log2 = Log2Exact(info.block_bytes);
 
     // What the tiled layout can address, which is what bounds the read.
-    const uint64_t source_bytes = SourceExtentBytes(fetch, info);
+    const uint64_t source_bytes = extent_override ? extent_override : SourceExtentBytes(fetch, info);
     if (source_bytes > kMaxTextureBytes) {
       CountRefusal(g_refused_extent);
       return false;
@@ -744,7 +838,8 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
     for (uint32_t by = 0; by < height_blocks; ++by) {
       uint8_t* dest_row = out.data() + size_t(by) * dest_row_bytes;
       for (uint32_t bx = 0; bx < width_blocks; ++bx) {
-        const uint32_t offset = TiledBlockOffset(bx, by, pitch_macro_tiles, block_bytes_log2);
+        const uint32_t offset = TiledBlockOffset(bx + origin_x, by + origin_y, pitch_macro_tiles,
+                                                 block_bytes_log2);
         if (uint64_t(offset) + info.block_bytes > source_bytes)
           return false;
         std::memcpy(dest_row + size_t(bx) * info.block_bytes, source + offset, info.block_bytes);
@@ -752,7 +847,7 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
     }
   } else {
     const uint32_t source_row_bytes = pitch_blocks * info.block_bytes;
-    const uint64_t source_bytes = SourceExtentBytes(fetch, info);
+    const uint64_t source_bytes = extent_override ? extent_override : SourceExtentBytes(fetch, info);
     if (source_bytes > kMaxTextureBytes) {
       CountRefusal(g_refused_extent);
       return false;
@@ -765,7 +860,8 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
     const uint32_t copy_bytes = width_blocks * info.block_bytes;
     for (uint32_t by = 0; by < height_blocks; ++by) {
       std::memcpy(out.data() + size_t(by) * dest_row_bytes,
-                  source + size_t(by) * source_row_bytes, copy_bytes);
+                  source + size_t(by + origin_y) * source_row_bytes +
+                      size_t(origin_x) * info.block_bytes, copy_bytes);
     }
   }
 
@@ -959,6 +1055,99 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
   if (device == nullptr || queue == nullptr)
     return nullptr;
 
+  const uint32_t mip_levels = MipLevelCount(fetch);
+  if (mip_levels > 1) {
+    struct Level { uint32_t width, height, row_width; uint64_t offset; std::vector<uint8_t> data; };
+    std::vector<Level> levels;
+    uint64_t mip_offset = 0, staging_size = 0;
+    const uint32_t pow2_width = 1u << Log2Ceil(fetch.width);
+    const uint32_t pow2_height = 1u << Log2Ceil(fetch.height);
+    for (uint32_t mip = 0; mip < mip_levels; ++mip) {
+      TextureFetch level_fetch = fetch;
+      if (mip) {
+        level_fetch.width = std::max(pow2_width >> mip, 1u);
+        level_fetch.height = std::max(pow2_height >> mip, 1u);
+        const uint32_t width_blocks =
+            (level_fetch.width + info.block - 1) / info.block;
+        level_fetch.pitch = AlignUp(width_blocks, 32) * info.block;
+      }
+      const uint32_t wb = (level_fetch.width + info.block - 1) / info.block;
+      const uint32_t hb = (level_fetch.height + info.block - 1) / info.block;
+      const uint32_t host_bytes = HostBlockBytes(info);
+      const uint32_t row_bytes = AlignUp((IsBlockExpand(info.expand) ? wb * info.block : wb) *
+                                             host_bytes, kUploadRowAlignment);
+      const uint32_t row_width = (row_bytes / host_bytes) *
+                                 (IsBlockExpand(info.expand) ? 1 : info.block);
+      const uint32_t read_row = info.expand == Expand::kNone ? row_bytes : wb * info.block_bytes;
+      uint32_t x = 0, y = 0;
+      uint64_t extent = SourceExtentBytes(level_fetch, info);
+      uint32_t address = fetch.raw_base_address + uint32_t(Level0ByteOffset(fetch, info));
+      if (mip) {
+        address = (fetch.mip_address ? fetch.mip_address : fetch.raw_base_address) +
+                  uint32_t(mip_offset);
+        if (fetch.packed_mips && PackedMipOffset(pow2_width, pow2_height, info.block, mip, x, y))
+          extent = uint64_t(32 * 32) * info.block_bytes;
+        else
+          mip_offset += AlignUp(uint32_t(extent), 4096);
+      }
+      // Host APIs derive non-power-of-two mip extents from the actual base
+      // size, while Xenos lays their source rows out from the next power of
+      // two. Keep the Xenos row pitch, but bound the copied footprint to the
+      // host subresource so a 1280-wide base copies 640 texels into level 1.
+      const uint32_t host_width = mip ? std::max(fetch.width >> mip, 1u) : fetch.width;
+      const uint32_t host_height = mip ? std::max(fetch.height >> mip, 1u) : fetch.height;
+      Level level{host_width, host_height, row_width,
+                  AlignUp(uint32_t(staging_size), 512), {}};
+      if (!ReadTexels(GuestPhysicalPointer(memory_base, address, extent), level_fetch, info,
+                      read_row, level.data, x, y, extent))
+        return nullptr;
+      if (IsBlockExpand(info.expand)) {
+        std::vector<uint8_t> decoded;
+        DecodeBlockRows(level.data, read_row, wb, hb, info.expand, row_bytes, decoded);
+        level.data.swap(decoded);
+      } else if (info.expand != Expand::kNone) {
+        std::vector<uint8_t> expanded;
+        ExpandRows(level.data, read_row, wb, hb, info.expand, row_bytes, expanded, level_fetch);
+        level.data.swap(expanded);
+      }
+      staging_size = level.offset + level.data.size();
+      levels.push_back(std::move(level));
+    }
+    std::unique_ptr<RenderTexture> created;
+    if (!existing) {
+      created = device->createTexture(RenderTextureDesc::Texture2D(fetch.width, fetch.height,
+                                                                   mip_levels, info.host));
+      if (!created) return nullptr;
+      existing = created.get();
+    }
+    auto staging = device->createBuffer(RenderBufferDesc::UploadBuffer(staging_size));
+    if (!staging) return nullptr;
+    auto* mapped = static_cast<uint8_t*>(staging->map());
+    if (!mapped) return nullptr;
+    for (const Level& level : levels)
+      std::memcpy(mapped + level.offset, level.data.data(), level.data.size());
+    staging->unmap();
+    auto commands = queue->createCommandList();
+    auto fence = device->createCommandFence();
+    commands->begin();
+    commands->barriers(RenderBarrierStage::COPY,
+                       RenderTextureBarrier(existing, RenderTextureLayout::COPY_DEST));
+    for (uint32_t mip = 0; mip < levels.size(); ++mip) {
+      const Level& level = levels[mip];
+      commands->copyTextureRegion(RenderTextureCopyLocation::Subresource(existing, mip),
+          RenderTextureCopyLocation::PlacedFootprint(staging.get(), info.host, level.width,
+                                                     level.height, 1, level.row_width, level.offset));
+    }
+    commands->barriers(RenderBarrierStage::GRAPHICS,
+                       RenderTextureBarrier(existing, RenderTextureLayout::SHADER_READ));
+    commands->end();
+    const RenderCommandList* submit = commands.get();
+    queue->executeCommandLists(&submit, 1, nullptr, 0, nullptr, 0, fence.get());
+    queue->waitForCommandFence(fence.get());
+    ++g_decoded;
+    return created;
+  }
+
   const uint32_t width_blocks = (fetch.width + info.block - 1) / info.block;
   const uint32_t height_blocks = (fetch.height + info.block - 1) / info.block;
 
@@ -1115,20 +1304,29 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
 // The source pointer for an entry the mirror already holds, resolving the
 // aperture at most once every kApertureRevalidateFrames. See the fields on
 // MirroredTexture for why this is cached at all.
-const uint8_t* EntrySourcePointer(MirroredTexture* entry, uint8_t* memory_base,
-                                  const TextureFetch& fetch) {
-  const bool stale = entry->source_pointer == nullptr ||
-                     entry->source_pointer_frame == ~0ull ||
-                     g_frame - entry->source_pointer_frame >= kApertureRevalidateFrames;
+const uint8_t* EntrySourcePointer(TextureSourceRange& source, uint8_t* memory_base) {
+  const bool stale = source.pointer == nullptr || source.pointer_frame == ~0ull ||
+                     g_frame - source.pointer_frame >= kApertureRevalidateFrames;
   if (stale) {
     ++g_aperture_walks;
-    entry->source_pointer = GuestPhysicalPointer(
-        memory_base, fetch.base_address + entry->level0_offset, entry->source_bytes);
-    entry->source_pointer_frame = g_frame;
+    source.pointer = GuestPhysicalPointer(memory_base, source.raw_address, source.bytes);
+    source.pointer_frame = g_frame;
   } else {
     ++g_aperture_reuses;
   }
-  return entry->source_pointer;
+  return source.pointer;
+}
+
+uint64_t HashSources(MirroredTexture* entry, uint8_t* memory_base) {
+  uint64_t combined = 1469598103934665603ull;
+  for (size_t i = 0; i < entry->sources.size(); ++i) {
+    TextureSourceRange& source = entry->sources[i];
+    const uint64_t hash = HashSource(EntrySourcePointer(source, memory_base), source.bytes);
+    combined ^= hash + 0x9E3779B97F4A7C15ull + (combined << 6) + (combined >> 2);
+    if (i != 0)
+      ++g_mip_ranges_hashed;
+  }
+  return combined;
 }
 
 void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
@@ -1162,7 +1360,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   // Expanded texels depend on the fetch mapping even when the guest bytes match.
   const TextureCacheKey key{
       TextureKey(fetch.base_address, fetch.format, fetch.width, fetch.height),
-      fetch.format == 10 ? fetch.swizzle : 0u};
+      TextureInterpretation(fetch)};
   const auto found = g_texture_index.find(key);
   if (found != g_texture_index.end()) {
     MirroredTexture* candidate = found->second;
@@ -1189,8 +1387,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
         return nullptr;
       ++g_recovered;
       candidate->hashed_frame = g_frame;
-      candidate->content_hash = HashSource(EntrySourcePointer(candidate, memory_base, fetch),
-                                           candidate->source_bytes);
+      candidate->content_hash = HashSources(candidate, memory_base);
       return candidate->texture.get();
     }
 
@@ -1220,10 +1417,11 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
       // readback has not filled in yet would conclude that a render target that
       // changes every frame never changes at all.
       ReadbackFillForRead(fetch);
-      const uint64_t hash = HashSource(EntrySourcePointer(candidate, memory_base, fetch),
-                                       candidate->source_bytes);
+      const uint64_t hash = HashSources(candidate, memory_base);
       if (hash != candidate->content_hash) {
         ++g_refreshed;
+        if (candidate->sources.size() > 1)
+          ++g_mip_ranges_refreshed;
         DecodeAndUpload(memory_base, fetch, info, candidate->texture.get());
         candidate->content_hash = hash;
       }
@@ -1237,8 +1435,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   entry->format = fetch.format;
   entry->width = fetch.width;
   entry->height = fetch.height;
-  entry->source_bytes = SourceExtentBytes(fetch, info);
-  entry->level0_offset = uint32_t(Level0ByteOffset(fetch, info));
+  entry->sources = TextureSourceRanges(fetch, info);
   entry->texture = DecodeAndUpload(memory_base, fetch, info, nullptr);
 
   // Hashed after the upload rather than before, so a source that changed
@@ -1247,8 +1444,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   if (entry->texture) {
     entry->hashed_frame = g_frame;
     ArmTextureWatch(entry.get());
-    entry->content_hash =
-        HashSource(EntrySourcePointer(entry.get(), memory_base, fetch), entry->source_bytes);
+    entry->content_hash = HashSources(entry.get(), memory_base);
   }
 
   RenderTexture* result = entry->texture.get();
@@ -1276,6 +1472,9 @@ void LogTextureMirrorSummary() {
   }
   REXLOG_INFO("native_renderer:   write watches armed={} live={} notifications={}", g_watch_arms,
               armed, g_watch_hits);
+  REXLOG_INFO("native_renderer:   mip ranges hashed={} watched={} dirtied={} refreshed={}",
+              g_mip_ranges_hashed, g_mip_ranges_watched, g_mip_ranges_dirtied,
+              g_mip_ranges_refreshed);
 }
 
 uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
@@ -1285,10 +1484,16 @@ uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
   const uint64_t end = uint64_t(address) + bytes;
   uint32_t count = 0;
   for (const std::unique_ptr<MirroredTexture>& entry : g_textures) {
-    if (entry == nullptr || entry->source_bytes == 0 || !entry->texture)
+    if (entry == nullptr || entry->sources.empty() || !entry->texture)
       continue;
-    const uint64_t entry_end = uint64_t(entry->address) + entry->source_bytes;
-    if (entry_end <= address || entry->address >= end)
+    bool overlaps = false;
+    uint64_t source_bytes = 0;
+    for (const TextureSourceRange& source : entry->sources) {
+      source_bytes += source.bytes;
+      const uint64_t source_end = uint64_t(source.address) + source.bytes;
+      overlaps |= source_end > address && source.address < end;
+    }
+    if (!overlaps)
       continue;
     // The destination's own image is not a conflict with itself: the guest binds
     // a resolved thumbnail as a texture, which is the whole reason a resolve
@@ -1304,17 +1509,21 @@ uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
       REXLOG_INFO(
           "native_renderer: readback re-baselined cached texture 0x{:08X} {}x{} fmt {} ({} byte(s), "
           "last bound in frame {} of {}) under resolve destination 0x{:08X}",
-          entry->address, entry->width, entry->height, entry->format, entry->source_bytes,
+          entry->address, entry->width, entry->height, entry->format, source_bytes,
           entry->bound_frame, g_frame, expected_address);
     }
 
     // Ours, so it says nothing about the guest having rewritten the texture.
     entry->watch_dirty.store(false, std::memory_order_relaxed);
-    const uint8_t* source = GuestPhysicalPointer(
-        memory_base, entry->address + entry->level0_offset, entry->source_bytes);
-    if (source != nullptr && GuestRangeReadableBytes(source, entry->source_bytes) >=
-                                 entry->source_bytes) {
-      entry->content_hash = HashSource(source, entry->source_bytes);
+    bool readable = true;
+    for (TextureSourceRange& source : entry->sources) {
+      source.pointer = GuestPhysicalPointer(memory_base, source.raw_address, source.bytes);
+      source.pointer_frame = g_frame;
+      readable &= source.pointer != nullptr &&
+                  GuestRangeReadableBytes(source.pointer, source.bytes) >= source.bytes;
+    }
+    if (readable) {
+      entry->content_hash = HashSources(entry.get(), memory_base);
       entry->hashed_frame = g_frame;
     }
     // The fill's own writes tripped the watch, which disarms it. Re-armed here
