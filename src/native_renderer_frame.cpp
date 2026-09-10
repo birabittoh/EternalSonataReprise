@@ -157,9 +157,6 @@ struct ResolvedTexture {
   uint8_t* readback_mapped = nullptr;
   uint32_t readback_row_bytes = 0;
 
-  // Whether a copy into it has been recorded in an earlier frame, i.e. whether
-  // what it holds is an image rather than whatever the allocation came with.
-  bool readback_written = false;
   uint64_t published_frame = ~0ull;
 };
 
@@ -668,6 +665,12 @@ void ReadbackRecordCopy(RenderCommandList* commands, ResolvedTexture* destinatio
   if (!ReadbackEnabled() || destination->width == 0 || destination->height == 0)
     return;
 
+  // Most of what a readback costs per resolve is spent here, on destinations
+  // nothing ever reads. See ReadbackPlanCopy.
+  const ReadbackCopyPlan plan = ReadbackPlanCopy(dest_fetch);
+  if (plan == ReadbackCopyPlan::kSkip)
+    return;
+
   if (!destination->readback) {
     RenderDevice* device = PlumeDevice();
     if (device == nullptr)
@@ -687,14 +690,16 @@ void ReadbackRecordCopy(RenderCommandList* commands, ResolvedTexture* destinatio
   // Published even on the very first resolve into this destination, when the
   // buffer holds nothing yet. That case is the save screenshot: a destination
   // resolved once and read by the guest in the same frame. Registering it here
-  // is what arms its pages, and `pixels_ready` false is what tells the readback
-  // layer that answering a read means making the GPU catch up first.
+  // is what arms its pages, and the copy being this frame's is what tells the
+  // readback layer that answering a read means making the GPU catch up first.
   if (destination->published_frame != g_frame) {
     destination->published_frame = g_frame;
     ReadbackPublish(memory_base, dest_fetch, destination->readback_mapped,
                     destination->readback_row_bytes, destination->height,
-                    destination->readback_written, g_frame);
+                    plan == ReadbackCopyPlan::kCopy, g_frame);
   }
+  if (plan != ReadbackCopyPlan::kCopy)
+    return;
 
   // What the guest's buffer is filled from. At scale 1 that is the destination
   // image itself; above it, a guest-sized downscale of it, because the buffer's
@@ -716,7 +721,6 @@ void ReadbackRecordCopy(RenderCommandList* commands, ResolvedTexture* destinatio
                                                  destination->readback_row_bytes / 4),
       RenderTextureCopyLocation::Subresource(source), uint32_t(box.left), uint32_t(box.top), 0,
       &box);
-  destination->readback_written = true;
 }
 
 GuestTarget* AcquireTarget(const Surface& surface, bool depth) {

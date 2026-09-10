@@ -52,31 +52,31 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch);
 // Tick the frame counter the content hash is throttled against. Called once per
 // guest swap; without it every cached texture is hashed only once, ever, and a
 // texture the guest rewrites in place is never noticed.
-// A byte range of guest memory, as offsets from the address that was asked
-// about.
-struct MirrorOccupiedRange {
-  uint64_t begin;
-  uint64_t end;
-};
-
-// Which parts of [address, address + bytes) does the mirror hold cached
-// textures over, other than `expected` itself? Asked by the readback before it
-// scatters a resolve destination's pixels into guest memory: the guest reuses a
-// freed render target's pages for ordinary assets, and a fill landing on one is
-// a texture corrupting itself for no visible reason.
+// Guest memory in [address, address + bytes) has just been overwritten by a
+// resolve readback. Tell the mirror, so the cached textures living there keep
+// the pixels they already hold instead of re-reading bytes that now belong to a
+// render target.
 //
-// The answer is a set of ranges rather than a yes or no because the fill does
-// not need all of the extent it claims: refusing the whole fill on any overlap
-// blacks save previews, and waving it through corrupts textures. Both symptoms
-// are the fill being all-or-nothing, so it is clipped to the bytes nobody else
-// owns instead. Ranges come out sorted and non-overlapping, as offsets from
-// `address`.
+// This is the other half of filling a resolve destination, and without it the
+// fill has no safe shape. The guest allocates a screenshot buffer out of a heap
+// whose pages a cached texture still claims, so a faithful fill writes over
+// that texture's source; the mirror then notices the change -- by write watch or
+// by content hash, it has both -- and re-decodes the texture out of render
+// target pixels, which is "textures corrupt whenever the readback is read".
+// Clipping the fill around those ranges instead is what leaves a save preview
+// full of black boxes, since nothing else ever writes the holes.
 //
-// `expected_*` describe the destination doing the asking, so a texture that IS
-// that destination -- same base, same extent -- is not an occupant.
-void TextureMirrorOccupiedRanges(uint32_t address, uint64_t bytes, uint32_t expected_address,
-                                 uint32_t expected_width, uint32_t expected_height,
-                                 std::vector<MirrorOccupiedRange>* out);
+// So the fill writes everything and this re-baselines what it crossed: each
+// overlapping entry's content hash is recomputed from the bytes now in guest
+// memory and its write watch is re-armed. The entry is then self consistent
+// again, its host texture still holds its last good pixels, and a *genuine*
+// later write by the guest is still caught, because the hash it is compared
+// against is the one this left behind.
+//
+// `expected_address` is the destination doing the asking, so a texture that IS
+// that destination is not touched. Returns how many entries were re-baselined.
+uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
+                                        uint32_t expected_address, uint8_t* memory_base);
 
 void TextureMirrorBeginFrame();
 
