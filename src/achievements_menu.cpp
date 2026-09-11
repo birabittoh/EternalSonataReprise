@@ -93,6 +93,9 @@ constexpr std::uint32_t kHistoryAddr = 0x8243F378u;      // dword_8243F378[16]
 constexpr std::uint32_t kHistoryDepthAddr = 0x8243E8A3u; // byte_8243E8A3
 constexpr std::uint32_t kHistoryMax = 0x10u;
 
+// byte_824253A2: set while the gallery has the BGM faded out.
+constexpr std::uint32_t kMutedFlagAddr = 0x824253A2u;
+
 // dword_82440128: rows in the current tab, the scroll limit sub_82226858 tests.
 constexpr std::uint32_t kRowCountAddr = 0x82440128u;
 
@@ -240,6 +243,10 @@ bool g_active = false;
 
 // Set only for the duration of the one sub_821F2890 call that builds a row, so
 // the single title lookup that call makes is ours.
+// Set while the screen's close animation is running, because that animation
+// calls sub_82227F08 itself.
+thread_local bool t_exiting = false;
+
 thread_local bool t_building_row = false;
 thread_local int t_row_tab = 0;
 thread_local int t_row_index = 0;
@@ -915,12 +922,21 @@ REX_HOOK_RAW(sub_82236CD0) {
 
 // sub_822265C8(): the Music gallery's init. It lays out tab 0 and then takes
 // the scroll limit from byte_822FF594, so ours has to be restated after it.
+//
+// It also fades the BGM out, and byte_824253A2 records that it did so the exit
+// (sub_82226CC8) can fade it back in. Nothing plays on this screen, so the flag
+// is set up front to skip the fade, then cleared so the exit skips its own.
 REX_EXTERN(__imp__sub_822265C8);
 
 REX_HOOK_RAW(sub_822265C8) {
   achievements_menu::g_description_object = 0;
+  const bool keep_music = achievements_menu::Active();
+  if (keep_music) {
+    REX_STORE_U8(achievements_menu::kMutedFlagAddr, 1u);
+  }
   __imp__sub_822265C8(ctx, base);
-  if (achievements_menu::Active()) {
+  if (keep_music) {
+    REX_STORE_U8(achievements_menu::kMutedFlagAddr, 0u);
     achievements_menu::FixRowCount(base, 0);
   }
 }
@@ -1072,12 +1088,27 @@ REX_HOOK_RAW(sub_82226858) {
   REX_STORE_U8(kTabCursorAddr + current, REX_LOAD_U8(kTabCursorAddr + 2u));
 }
 
+// sub_82226CC8(frame): the screen's close animation. It stops playback on its
+// first frame, which on this screen means the reveal, so a row the cursor
+// happened to be on would give itself up on the way out.
+REX_EXTERN(__imp__sub_82226CC8);
+
+REX_HOOK_RAW(sub_82226CC8) {
+  achievements_menu::t_exiting = true;
+  __imp__sub_82226CC8(ctx, base);
+  achievements_menu::t_exiting = false;
+}
+
 // sub_82227F08(): what the Y button does on this screen. Nothing plays here, so
 // it reveals the highlighted row instead: its name and description are shown
 // for the rest of the session, without unlocking it or writing anything.
 REX_EXTERN(__imp__sub_82227F08);
 
 REX_HOOK_RAW(sub_82227F08) {
+  if (achievements_menu::Active() && achievements_menu::t_exiting) {
+    ctx.r3.u32 = 0;
+    return;
+  }
   if (!achievements_menu::Active()) {
     __imp__sub_82227F08(ctx, base);
     return;
