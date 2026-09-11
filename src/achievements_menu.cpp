@@ -72,6 +72,14 @@ namespace {
 // name, so an ordinal is the only way to name one.
 constexpr const char* kTrophyIconRef = "appkeep.bmd#tex:245";
 
+// The hover glow behind that icon. It is its own art, one 128x128 per option
+// cut to that option's silhouette, addressed by the type-110 records option_strip
+// permutes: the moved entry's glow id is 293, so section 292. The ordinal is not
+// section + 60 here, because the shift drifts across the container; the eleven
+// glows are the eleven consecutive 128x128 chunks at 349..359, so section 292 is
+// 351, which does hold the Status silhouette.
+constexpr const char* kTrophyGlowRef = "appkeep.bmd#tex:351";
+
 // The row crystal a locked achievement gets. sub_821FEBC8 picks 288, 289 or 290
 // by tab and falls back to icon 230 for a tab of 3 and up, which this screen is
 // the only caller ever to pass.
@@ -656,6 +664,8 @@ void RegisterIcon(const char* ref, const unsigned char* png, unsigned int size,
 void RegisterIcons() {
   RegisterIcon(kTrophyIconRef, eternalsonata::kIconTrophiesPNG,
                eternalsonata::kIconTrophiesPNGSize, "trophy icon");
+  RegisterIcon(kTrophyGlowRef, eternalsonata::kIconTrophiesGlowPNG,
+               eternalsonata::kIconTrophiesGlowPNGSize, "trophy glow");
 }
 
 std::uint32_t RowTitleOverride(std::uint8_t* base, std::uint32_t blob,
