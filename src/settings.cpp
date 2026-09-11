@@ -249,11 +249,14 @@ constexpr std::array kGameDefaults = {
 // live voice_language is always exactly what the player chose. There is no
 // donor rewrite for voice (a mod voice language gets a bank path of its own
 // rather than borrowing a built-in's), so nothing ever shadows it.
-constexpr std::array<const char*, 15> kBasicCvarNames = {
+// render_scale is listed for the same no-op reason as vsync: only the native
+// renderer registers it, and resolution_scale stays beside it so a settings.toml
+// still round-trips through Xenos.
+constexpr std::array<const char*, 16> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
-    "host_timer_resolution_ms", "vsync", "voice_language"};
+    "host_timer_resolution_ms", "vsync", "voice_language", "render_scale"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -993,6 +996,43 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
+  void DrawRenderScaleRow() {
+    // render_scale only exists under the native renderer, which sizes its
+    // targets from the window and so can render at any fraction of it. Under
+    // Xenos the only meaningful values are still the integer steps below.
+    if (rex::cvar::GetFlagInfo("render_scale")) {
+      DrawContinuousRenderScaleRow();
+      return;
+    }
+    DrawIntegerRenderScaleRow();
+  }
+
+  // A fraction of the window, live: the extent is republished every present, so
+  // moving this rebuilds the render targets a fraction of a second later the
+  // same way dragging the window's corner does. The floor is 30% because below
+  // that the resolve rectangle's rounding starts to show on the EDRAM band
+  // edges; the ceiling is supersampling, and costs what it sounds like.
+  void DrawContinuousRenderScaleRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("render_scale");
+    if (!entry)
+      return;
+    const double current = std::atof(entry->getter().c_str());
+    // Zero is the cvar's "no opinion", which renders at the window's own size.
+    int percent = static_cast<int>(std::lround((current > 0.0 ? current : 1.0) * 100.0));
+    percent = std::clamp(percent, 30, 200);
+
+    ImGui::PushID("render_scale");
+    ImGui::TextUnformatted("Render Resolution");
+    ImGui::SameLine(180.0f);
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::SliderInt("##v", &percent, 30, 200, "%d%%")) {
+      rex::cvar::SetFlagByName("render_scale", std::to_string(percent / 100.0),
+                               /*persist=*/true);
+      SaveBasic();
+    }
+    ImGui::PopID();
+  }
+
   // resolution_scale is an integer cvar (range 1-8) whose named-resolution
   // steps (1/2/3/4 for 720p/1080p/1440p/4K, per ResolutionScaleFor) are the
   // only meaningful values -- each option here renders at one of the named
@@ -1004,7 +1044,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // list of valid scales, so it's mechanically impossible to drag to
   // anything else. 720p's base of 1 has only one valid scale, so the
   // slider is disabled there instead of doing nothing.
-  void DrawRenderScaleRow() {
+  void DrawIntegerRenderScaleRow() {
     const auto* scale_entry = rex::cvar::GetFlagInfo("resolution_scale");
     const auto* res_entry = rex::cvar::GetFlagInfo("resolution");
     if (!scale_entry || !res_entry)

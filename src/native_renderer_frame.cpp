@@ -867,7 +867,7 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
       scale_x = float(double(g_render_extent_width) / double(extent_width));
       scale_y = float(double(g_render_extent_height) / double(extent_height));
     } else {
-      scale_x = scale_y = NativeRenderScale();
+      scale_x = scale_y = NativeRenderScaleAtBoot();
     }
   }
   host_width = ScaleExtent(host_width, scale_x);
@@ -1260,6 +1260,11 @@ void RippleProbeFlush() {
 
 }  // namespace
 
+void FrameRetireDescriptorSet(std::unique_ptr<RenderDescriptorSet> set) {
+  if (set)
+    g_retired_sets.push_back(std::move(set));
+}
+
 void FrameSetColorSurface(uint32_t index, const Surface* surface) {
   if (index >= d3d::kColorSurfaceCount)
     return;
@@ -1578,6 +1583,9 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     destination->depth_set_source = nullptr;
     destination->readback_source_layout = RenderTextureLayout::UNKNOWN;
     PresentBlitForgetTexture();
+    // The draw path caches its texture descriptor sets on raw texture pointers
+    // too, and a destination is exactly what a draw samples.
+    DrawForgetTextureBindings();
 
     destination->texture = std::move(rebuilt);
     destination->layout = RenderTextureLayout::UNKNOWN;
@@ -2036,6 +2044,12 @@ void ApplyPendingExtent() {
   g_render_extent_width = g_apply_extent_width;
   g_render_extent_height = g_apply_extent_height;
   ++g_extent_generation;
+
+  // Same reason as the per destination rebuild: the draw path's texture sets
+  // name these images by pointer and a new allocation lands on a freed one's
+  // address, which the cache reads as a hit.
+  DrawForgetTextureBindings();
+  PresentBlitForgetTexture();
 
   // Explicitly, rather than letting AcquireTarget's scan decide. The scan
   // matches on geometry, so targets built at the old extent would not be found
