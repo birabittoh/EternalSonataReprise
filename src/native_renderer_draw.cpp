@@ -1954,11 +1954,14 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   uint32_t target_height = 0;
   float target_scale_x = 1.0f;
   float target_scale_y = 1.0f;
+  int32_t target_offset_x = 0;
+  int32_t target_offset_y = 0;
   bool have_targets;
   {
     ProfileZone targets_zone(kPhaseBindTargets);
     have_targets = FrameBindDrawTargets(commands, &target_width, &target_height, &target_scale_x,
-                                        &target_scale_y) != nullptr;
+                                        &target_scale_y, &target_offset_x,
+                                        &target_offset_y) != nullptr;
   }
   if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
@@ -2390,6 +2393,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // resolution, since it is the viewport transform that decides how many host
   // pixels the same clip-space triangle covers. `target_scale_x`/`target_scale_y` rather than
   // NativeRenderScale, so a draw into a target that was not grown is untouched.
+  //
+  // `target_offset_x`/`target_offset_y` place it inside the attachment, which
+  // only the UI layer needs: its image is the window and the guest's 16:9
+  // rectangle is centred in it. Everything below stays relative to that
+  // rectangle's origin and the offset is added at the end, so the clamp keeps
+  // comparing like with like.
   float x = 0.0f, y = 0.0f;
   float width = float(target_width), height = float(target_height);
   if (g_viewport.set) {
@@ -2409,6 +2418,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     width = float(target_width);
     height = float(target_height);
   }
+  x += float(target_offset_x);
+  y += float(target_offset_y);
   // Shifted half a pixel down and right, because the two APIs disagree about
   // where a pixel's centre is. D3D9 and the Xenos put it on the integer
   // coordinate; D3D12 puts it at the half. Interpolants are evaluated at that
