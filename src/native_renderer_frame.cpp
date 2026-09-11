@@ -73,11 +73,24 @@ bool SameExtent(uint32_t a_w, uint32_t a_h, uint32_t b_w, uint32_t b_h) {
   return a_w == b_w && a_h == b_h;
 }
 
+// Which half of the frame a target belongs to.
+//
+// The guest draws the world and then the UI into the same EDRAM surface, so one
+// surface needs two host images once the two are to be rendered at different
+// resolutions. The boundary between them is a single marker draw the guest emits
+// once per frame; see FrameNoteLayerBoundary.
+//
+// kWorld is sized from the render scale, kComposite from the window, so the UI
+// is never resampled by the performance setting. Consecutive menu frames start
+// directly in the composite layer.
+enum class GuestLayer : uint32_t { kWorld = 0, kComposite = 1 };
+
 // A host image standing in for a region of EDRAM.
 //
-// Keyed by (base tile, size, multisampling, colour or depth) rather than by the
-// surface object's address, because the guest creates and destroys surface
-// objects freely over the same tiles and the image behind them is the same one.
+// Keyed by (base tile, size, multisampling, colour or depth, layer) rather than
+// by the surface object's address, because the guest creates and destroys
+// surface objects freely over the same tiles and the image behind them is the
+// same one.
 struct GuestTarget {
   uint32_t base_tile = 0;
   uint32_t tiles = 0;  // EDRAM footprint, so two targets can be asked to overlap
@@ -113,8 +126,23 @@ struct GuestTarget {
   float scale_x = 1.0f;
   float scale_y = 1.0f;
 
+  GuestLayer layer = GuestLayer::kWorld;
+
+  bool window_sized = false;
+
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
+
+  // Composite targets only: the set that samples the world image this one is
+  // composited from, and the pointer it names. Written once and rebuilt only
+  // when that pointer changes, for the reason the depth resolve set is; a set is
+  // read by the command list at execute time, so rewriting one mid frame
+  // corrupts a draw already recorded.
+  std::unique_ptr<RenderDescriptorSet> composite_set;
+  const RenderTexture* composite_source = nullptr;
+  // The frame this target was last composited into, so the blit happens once per
+  // frame however many draws follow the marker.
+  uint64_t composited_frame = ~0ull;
 };
 
 // Framebuffers are per (colour, depth) pair, which is the granularity Plume
@@ -132,6 +160,13 @@ struct FramebufferEntry {
 // bind recognises this as something the frame produced rather than an asset.
 struct ResolvedTexture {
   uint32_t address = 0;
+  // Which layer's targets resolve into this one. Part of its identity, not a
+  // note: the two layers render the same guest surface at different sizes and
+  // both resolve into the same guest address, so a single destination per
+  // address is sized by whichever layer is larger and then drops every resolve
+  // out of the other one. Measured before this existed: 29617 dropped resolves
+  // in a two minute run, which is every world resolve in the game.
+  GuestLayer layer = GuestLayer::kWorld;
   // The guest's extent, always. The image behind it is scale times bigger in
   // each axis, but this is what a texture bind is matched against
   // (FrameResolveTextureByAddress) and what the guest expects to read back, so
@@ -150,6 +185,7 @@ struct ResolvedTexture {
   // targets sharing an address from rebuilding it against each other every
   // frame; a resize is the one event allowed to shrink it again.
   uint64_t extent_generation = 0;
+  bool extent_pending = true;
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
 
@@ -239,6 +275,44 @@ uint32_t g_render_extent_width = 0;
 uint32_t g_render_extent_height = 0;
 uint64_t g_extent_generation = 0;
 
+// The same, for the composite layer: the window's own size, with no render scale
+// applied. Published and retired in lockstep with the pair above, because a
+// composite target and the world target it is blitted from have to belong to the
+// same generation or the blit reads an image that is about to be freed.
+uint32_t g_composite_extent_width = 0;
+uint32_t g_composite_extent_height = 0;
+
+// Which half of the guest's frame is being recorded. Reset once per guest swap
+// rather than per command list, because a mid frame readback flush opens a list
+// without ending the guest's frame.
+GuestLayer g_layer = GuestLayer::kWorld;
+
+// Whether the marker has been seen this frame, which is not the same question as
+// which layer is current. A menu frame has no 3D and so no marker, and starts in
+// the composite layer directly (see FrameResetLayer) so that a screen which is
+// entirely UI is rendered at the window's size rather than at the render scale.
+// The blit must not run in that case: there is no world image to bring across,
+// and blitting the previous frame's one would paint garbage over the menu.
+bool g_marker_seen = false;
+// What the previous frame did, which is how a frame knows before its first draw
+// whether it is a menu. A transition between the two is one frame late, and the
+// cost of being wrong is that frame rendered at the other layer's size.
+bool g_previous_frame_had_marker = false;
+
+// Frames in which the marker was seen, and composites actually issued. The first
+// should track the frame count in game and sit at zero in menus; a second that
+// lags it means the blit is failing.
+uint64_t g_layer_boundaries = 0;
+uint64_t g_layer_composites = 0;
+uint64_t g_layer_composites_failed = 0;
+
+// Keep the split opt in until UI framing and the readback crop are complete.
+// Set ES_UI_LAYER=1 to enable it.
+bool UiLayerDisabled() {
+  static const bool disabled = std::getenv("ES_UI_LAYER") == nullptr;
+  return disabled;
+}
+
 // A window dragged by its corner emits a new size every frame, and each one
 // would otherwise rebuild every target and every resolve destination. Hold a
 // candidate until it stops moving.
@@ -256,6 +330,8 @@ constexpr uint64_t kExtentSettleFrames = 30;
 // only run at the top of the next frame's command list, which is the one moment
 // the previous frame's work is known to be retired.
 bool g_extent_apply_pending = false;
+uint32_t g_apply_composite_width = 0;
+uint32_t g_apply_composite_height = 0;
 uint32_t g_apply_extent_width = 0;
 uint32_t g_apply_extent_height = 0;
 
@@ -287,21 +363,25 @@ bool g_bound_color_valid[d3d::kColorSurfaceCount] = {};
 Surface g_bound_depth_surface;
 bool g_bound_depth_valid = false;
 
-GuestTarget* AcquireTarget(const Surface& surface, bool depth);
+GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer);
 
 // See "The ripple probe" at the end of this namespace. Declared here because
 // the first thing it watches is a target being created.
 void RippleNoteTargetCreated(const GuestTarget* target);
 
-GuestTarget* BoundColorTarget(uint32_t index) {
+GuestTarget* BoundColorTarget(uint32_t index, GuestLayer layer) {
   if (index >= d3d::kColorSurfaceCount || !g_bound_color_valid[index])
     return nullptr;
-  return AcquireTarget(g_bound_color_surface[index], false);
+  return AcquireTarget(g_bound_color_surface[index], false, layer);
 }
 
-GuestTarget* BoundDepthTarget() {
-  return g_bound_depth_valid ? AcquireTarget(g_bound_depth_surface, true) : nullptr;
+GuestTarget* BoundColorTarget(uint32_t index) { return BoundColorTarget(index, g_layer); }
+
+GuestTarget* BoundDepthTarget(GuestLayer layer) {
+  return g_bound_depth_valid ? AcquireTarget(g_bound_depth_surface, true, layer) : nullptr;
 }
+
+GuestTarget* BoundDepthTarget() { return BoundDepthTarget(g_layer); }
 
 // The framebuffer the command list currently has bound, so a run of draws into
 // the same target does not re-set it. This is not just a saving: Plume's Vulkan
@@ -721,7 +801,7 @@ bool DownscaleToReadbackSource(RenderCommandList* commands, ResolvedTexture* des
 
     // One set per destination, written once and never rewritten, because a set
     // is a pointer into a heap that the command list reads at execute time
-    // (trap 2 in the handoff). It only ever points at this destination's own
+    // during GPU execution). It only ever points at this destination's own
     // image, so there is nothing to rebind.
     RenderDescriptorRange ranges[2];
     RenderDescriptorSetDesc set_desc = DownscaleSetDesc(ranges);
@@ -782,6 +862,19 @@ void ReadbackRecordCopy(RenderCommandList* commands, ResolvedTexture* destinatio
   if (plan == ReadbackCopyPlan::kSkip)
     return;
 
+  // One publisher per guest address. Both layers resolve into the same address,
+  // and ReadbackPublish is keyed on that address, so two of them would hand the
+  // readback layer a different pointer every frame; the arming cache would stop
+  // recognising it and re-protect the pages every frame, which is a measured
+  // 1.7 ms (see ResolvedTexture::readback). The composite wins because it is the
+  // image with the UI in it, which is what the save screenshot is of.
+  if (destination->layer != GuestLayer::kComposite) {
+    for (auto& other : g_resolved) {
+      if (other->address == destination->address && other->layer == GuestLayer::kComposite)
+        return;
+    }
+  }
+
   if (!destination->readback) {
     RenderDevice* device = PlumeDevice();
     if (device == nullptr)
@@ -835,7 +928,7 @@ void ReadbackRecordCopy(RenderCommandList* commands, ResolvedTexture* destinatio
       &box);
 }
 
-GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
+GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer) {
   // The host image covers the whole screen, not the band the EDRAM surface
   // holds; see GuestTarget::host_height. Before BeginTiling has ever run the
   // extent is zero and the surface is all there is to go on, which is correct
@@ -879,6 +972,7 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
   const uint64_t extent_area = uint64_t(extent_width) * extent_height;
   const uint64_t surface_area = uint64_t(surface.width) * surface.height;
   const bool is_resolution = extent_area != 0 && surface_area * 3 >= extent_area;
+  const bool window_sized = is_resolution && g_render_extent_width != 0;
   float scale_x = 1.0f;
   float scale_y = 1.0f;
   if (is_resolution) {
@@ -888,9 +982,15 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
     // 1280x720 destinations, and factors derived per surface would have them ask
     // that destination for two different sizes and rebuild it against each
     // other forever.
-    if (g_render_extent_width != 0 && g_render_extent_height != 0) {
-      scale_x = float(double(g_render_extent_width) / double(extent_width));
-      scale_y = float(double(g_render_extent_height) / double(extent_height));
+    // The composite layer is the window's own size: the render scale is a 3D
+    // performance setting, so resampling the UI by it is exactly what this
+    // split exists to stop.
+    const bool composite = layer == GuestLayer::kComposite;
+    const uint32_t want_width = composite ? g_composite_extent_width : g_render_extent_width;
+    const uint32_t want_height = composite ? g_composite_extent_height : g_render_extent_height;
+    if (want_width != 0 && want_height != 0) {
+      scale_x = float(double(want_width) / double(extent_width));
+      scale_y = float(double(want_height) / double(extent_height));
     } else {
       scale_x = scale_y = NativeRenderScaleAtBoot();
     }
@@ -901,8 +1001,9 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
   for (auto& candidate : g_targets) {
     if (candidate->base_tile == surface.base_tile && candidate->width == surface.width &&
         candidate->height == surface.height && candidate->msaa == surface.msaa &&
-        candidate->depth == depth && candidate->host_width == host_width &&
-        candidate->host_height == host_height) {
+        candidate->depth == depth && candidate->layer == layer &&
+        candidate->window_sized == window_sized &&
+        candidate->host_width == host_width && candidate->host_height == host_height) {
       return candidate.get();
     }
   }
@@ -923,6 +1024,8 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
   target->host_height = host_height;
   target->scale_x = scale_x;
   target->scale_y = scale_y;
+  target->layer = layer;
+  target->window_sized = window_sized;
 
   // Multisampling is recorded but the host image is single sampled for now.
   // Nothing draws yet, so the only thing this loses is edge quality on a target
@@ -937,10 +1040,11 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
     return nullptr;
 
   REXLOG_INFO(
-      "native_renderer: host {} target for EDRAM tile {}: {}x{} for a {}x{} guest surface, msaa "
+      "native_renderer: host {} {} target for EDRAM tile {}: {}x{} for a {}x{} guest surface, msaa "
       "{} (guest format 0x{:X})",
-      depth ? "depth" : "colour", surface.base_tile, host_width, host_height, surface.width,
-      surface.height, surface.msaa, surface.format);
+      layer == GuestLayer::kComposite ? "composite" : "world", depth ? "depth" : "colour",
+      surface.base_tile, host_width, host_height, surface.width, surface.height, surface.msaa,
+      surface.format);
 
   g_targets.push_back(std::move(target));
   RippleNoteTargetCreated(g_targets.back().get());
@@ -1348,12 +1452,18 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
   // is not addressed by the surface that is about to be drawn through. A partial
   // clear would need a real EDRAM model, which is exactly what this renderer is
   // built to avoid.
+  // Within one layer only. The two layers are the same EDRAM by construction --
+  // a composite target stands over exactly the tiles its world twin does -- but
+  // they are two renderings of one surface at different resolutions, not two
+  // surface descriptions sharing bytes, which is what this rule is about. Left
+  // unrestricted, a world-layer clear wipes the composite image the blit just
+  // put there, and the frame goes black.
   for (auto& candidate : g_targets) {
     GuestTarget* other = candidate.get();
-    const bool alias_color =
-        color != nullptr && other != color && !other->depth && TargetsOverlap(*other, *color);
-    const bool alias_depth =
-        depth != nullptr && other != depth && other->depth && TargetsOverlap(*other, *depth);
+    const bool alias_color = color != nullptr && other != color && !other->depth &&
+                             other->layer == color->layer && TargetsOverlap(*other, *color);
+    const bool alias_depth = depth != nullptr && other != depth && other->depth &&
+                             other->layer == depth->layer && TargetsOverlap(*other, *depth);
     if (!alias_color && !alias_depth)
       continue;
     if (ClearTargets(commands, alias_color ? other : nullptr, alias_depth ? other : nullptr, argb,
@@ -1488,7 +1598,7 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   ResolvedTexture* destination = nullptr;
   bool destination_created = false;
   for (auto& candidate : g_resolved) {
-    if (candidate->address == dest_address) {
+    if (candidate->address == dest_address && candidate->layer == target->layer) {
       destination = candidate.get();
       break;
     }
@@ -1498,6 +1608,7 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   if (destination == nullptr && device != nullptr) {
     auto created = std::make_unique<ResolvedTexture>();
     created->address = dest_address;
+    created->layer = target->layer;
     created->width = dest_width;
     created->height = dest_height;
     // Sized to match the target it is resolved out of, so the supersampled
@@ -1512,6 +1623,7 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     created->image_width = image_width;
     created->image_height = image_height;
     created->extent_generation = g_extent_generation;
+    created->extent_pending = !target->window_sized;
     // A colour target either way: the copy needs it as a copy destination and a
     // later draw needs to sample it, and depth is now resolved by a draw that
     // renders into it (see DepthResolveDraw). Depth keeps its R32_FLOAT view of
@@ -1531,38 +1643,17 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     return;
   }
 
-  // A destination is found by address alone, so it can be resolved into from
-  // targets at two different scales, and the copy cannot rescale. This is not
-  // hypothetical and not rare: BeginTiling does not establish the tiling extent
-  // until part way into the first frame, and AcquireTarget needs that extent to
-  // decide whether a surface is the screen. So every destination created before
-  // it exists at scale 1, and would then be resolved into from a scaled target
-  // for the rest of the run.
-  //
-  // Rebuild it at the new scale rather than dropping the resolve. Dropping is
-  // what made the scene black while leaving the one destination created after
-  // BeginTiling to draw the UI.
-  //
-  // Upward only, and that is what makes it terminate. Two targets at different
-  // scales can share a destination, and rebuilding on every disagreement means
-  // rebuilding twice a frame for the rest of the run, which is both a stall and
-  // a destination whose contents never survive long enough for the guest to read
-  // them. Keeping the larger size costs a partial resolve out of the smaller
-  // target landing in a corner of it; going back and forth costs the image.
+  // Startup sizes become authoritative once a source uses the window extent.
+  // Within that generation, growth stays monotonic to preserve shared resolves.
   const uint32_t want_width = ScaleExtent(destination->width, scale_x);
   const uint32_t want_height = ScaleExtent(destination->height, scale_y);
   // A resize is the one thing allowed to take the size back down, because the
-  // monotonic rule below would otherwise pin every destination at the largest
-  // window the run has ever seen.
-  // Generation 0 means "created before the window was ever published", which is
-  // the pre-BeginTiling case the monotonic rule below is for, not a resize.
-  // Conflating the two lets a destination created during startup shrink to
-  // whichever target happens to resolve into it first.
+  // monotonic rule would otherwise pin every destination at the largest window
+  // the run has ever seen.
   const bool resized =
-      destination->extent_generation != 0 &&
-      destination->extent_generation != g_extent_generation &&
+      target->window_sized &&
+      (destination->extent_pending || destination->extent_generation != g_extent_generation) &&
       !SameExtent(want_width, want_height, destination->image_width, destination->image_height);
-  destination->extent_generation = g_extent_generation;
   if (resized || want_width > destination->image_width ||
       want_height > destination->image_height) {
     RenderDevice* rebuild_device = PlumeDevice();
@@ -1573,7 +1664,8 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     // Per axis maxima rather than this target's own pair, so a target that is
     // larger in one axis and smaller in the other cannot shrink the destination
     // back on the next resolve and rebuild it forever.
-    const uint32_t image_width = resized ? want_width : std::max(want_width, destination->image_width);
+    const uint32_t image_width =
+        resized ? want_width : std::max(want_width, destination->image_width);
     const uint32_t image_height =
         resized ? want_height : std::max(want_height, destination->image_height);
     auto rebuilt = rebuild_device->createTexture(RenderTextureDesc::ColorTarget(
@@ -1585,11 +1677,9 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
 
     REXLOG_INFO(
         "native_renderer: resolve destination 0x{:08X} rebuilt at {}x{} for a {}x{} guest extent "
-        "(host {}x{}), because {}",
+        "(host {}x{}) in the {} layer",
         dest_address, scale_x, scale_y, destination->width, destination->height, image_width,
-        image_height,
-        resized ? "the window changed size"
-                : "it was created before BeginTiling gave the tiling extent");
+        image_height, destination->layer == GuestLayer::kComposite ? "composite" : "world");
 
     // Everything that pointed at the old image goes with it: the downscale's
     // descriptor set names it, and the present blit caches it by pointer, which
@@ -1626,11 +1716,28 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
       ++g_resolve_scale_mismatch;
   }
 
+  // Commit sizing only after allocation succeeds so failures can be retried.
+  if (target->window_sized) {
+    destination->extent_generation = g_extent_generation;
+    destination->extent_pending = false;
+  }
+
   // The other direction: a target smaller than the destination it feeds. The
   // copy cannot rescale, so this would put the target's pixels in a corner of a
   // destination the rest of the frame reads whole. With the area rule above
   // nothing should reach here; it is counted rather than assumed away.
   if (!SameExtent(want_width, want_height, destination->image_width, destination->image_height)) {
+    if (g_resolve_scale_undersized < 16) {
+      REXLOG_WARN(
+          "native_renderer: dropped an undersized resolve into 0x{:08X}: {} target tile {} "
+          "({}x{} guest, host {}x{}) wants {}x{}, {} destination is {}x{} (generation {} of {})",
+          dest_address, target->layer == GuestLayer::kComposite ? "composite" : "world",
+          target->base_tile, target->width, target->height, target->host_width,
+          target->host_height, want_width, want_height,
+          destination->layer == GuestLayer::kComposite ? "composite" : "world",
+          destination->image_width, destination->image_height, destination->extent_generation,
+          g_extent_generation);
+    }
     ++g_resolve_scale_undersized;
     ++g_resolves_dropped;
     return;
@@ -1742,24 +1849,25 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
 void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t height) {
   if (address == 0)
     return nullptr;
-  for (auto& candidate : g_resolved) {
-    if (candidate->address != address)
-      continue;
-
-    // The extent has to agree, and this is not a formality. An address that was
-    // once a resolve destination would otherwise be treated as one forever, so
-    // if the guest frees that buffer and loads an ordinary texture into it, the
-    // mirror would keep handing back the render target the scene before last
-    // drew. A disagreement about the extent is the cheapest evidence that the
-    // memory is no longer the image this owns; the caller falls through to
-    // decoding it as an asset, which is what it now is.
-    if (candidate->width != width || candidate->height != height) {
-      ++g_resolve_extent_mismatch;
-      RippleNoteBind(address, width, height, nullptr, true);
-      return nullptr;
+  // Prefer the drawing layer so screen copies retain its resolution.
+  for (int pass = 0; pass < 2; ++pass) {
+    const GuestLayer want = pass == 0 ? g_layer
+                                      : (g_layer == GuestLayer::kWorld ? GuestLayer::kComposite
+                                                                       : GuestLayer::kWorld);
+    for (auto& candidate : g_resolved) {
+      if (candidate->address != address || candidate->layer != want)
+        continue;
+      if (candidate->width != width || candidate->height != height) {
+        if (pass == 1) {
+          ++g_resolve_extent_mismatch;
+          RippleNoteBind(address, width, height, nullptr, true);
+          return nullptr;
+        }
+        continue;
+      }
+      RippleNoteBind(address, width, height, candidate.get(), false);
+      return candidate->texture.get();
     }
-    RippleNoteBind(address, width, height, candidate.get(), false);
-    return candidate->texture.get();
   }
   RippleNoteBind(address, width, height, nullptr, false);
   return nullptr;
@@ -1773,19 +1881,127 @@ void LogFrameSummary() {
       "applied={} dropped={} aliased={} | resolves copied={} dropped={} banded={} extent mismatch={} "
       "scale rebuilds={} undersized={} extent rebuilds={} | "
       "attachment mismatch={} | scale={}x extent={}x{} downscale failed={} | "
-      "composites={} skipped={} | retired batches held={} | presenting 0x{:08X} ({}x{})",
+      "composites={} skipped={} | layer boundaries={} composited={} failed={} | "
+      "retired batches held={} | presenting 0x{:08X} ({}x{})",
       g_targets.size(), g_framebuffers.size(), g_resolved.size(), g_clears_applied,
       g_clears_dropped, g_clears_aliased, g_resolves_copied, g_resolves_dropped, g_resolves_banded,
       g_resolve_extent_mismatch, g_resolve_scale_mismatch, g_resolve_scale_undersized,
       g_extent_rebuilds, g_attachment_mismatch, NativeRenderScale(), g_render_extent_width,
       g_render_extent_height, g_readback_downscale_failed, g_composites, g_composites_skipped,
-      g_retired_batches_held, g_present_texture ? g_present_texture->address : 0,
+      g_layer_boundaries, g_layer_composites, g_layer_composites_failed, g_retired_batches_held,
+      g_present_texture ? g_present_texture->address : 0,
       g_present_texture ? g_present_texture->width : 0,
       g_present_texture ? g_present_texture->height : 0);
 }
 
+// Upscale the world image into the composite image, once per frame, at the
+// moment the guest crosses from the world half of its frame into the UI half.
+//
+// The blit is the readback downscale's pipeline: the same full screen triangle
+// into a kColorFormat attachment, with the viewport doing all the scaling, which
+// is exactly a whole-source to whole-target stretch. The linear sampler is what
+// makes a world rendered below the window's resolution arrive filtered rather
+// than blocky.
+//
+// The depth attachment is not carried across. The UI is strictly 2D and nothing
+// 3D draws over it, so the composite's depth buffer starts clear: a UI draw that
+// tests depth is testing against an empty buffer, which is what "a fresh 2D
+// layer" means. If something in the UI turns out to depend on the world's depth,
+// that is evidence the marker is in the wrong place, not that the composite
+// needs the world's depth buffer.
+bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite) {
+  if (composite == nullptr || composite->layer != GuestLayer::kComposite || !composite->texture)
+    return false;
+  if (composite->composited_frame == g_frame)
+    return true;
+  // A menu frame reaches the composite layer without ever crossing a marker, so
+  // there is no world half to bring across. Marking it done keeps this off the
+  // per draw path for the rest of the frame.
+  if (!g_marker_seen) {
+    composite->composited_frame = g_frame;
+    return true;
+  }
+
+  RenderDevice* device = PlumeDevice();
+  if (device == nullptr || !EnsureDownscaleResources(device)) {
+    ++g_layer_composites_failed;
+    return false;
+  }
+
+  // The world target for the same guest surface. Acquiring it here rather than
+  // holding a pointer is what keeps the two in step across an extent rebuild:
+  // both are looked up by geometry, so both belong to the current generation.
+  GuestTarget* world = BoundColorTarget(0, GuestLayer::kWorld);
+  if (world == nullptr || !world->texture) {
+    ++g_layer_composites_failed;
+    return false;
+  }
+
+  GuestTarget* depth = BoundDepthTarget(GuestLayer::kComposite);
+  RenderFramebuffer* framebuffer = AcquireFramebuffer(composite, depth);
+  if (framebuffer == nullptr) {
+    ++g_layer_composites_failed;
+    return false;
+  }
+
+  if (composite->composite_source != world->texture.get()) {
+    // Retire rather than rewrite: a set the previous frame's list still reads
+    // cannot be written in place. See RetiredBatch.
+    if (composite->composite_set)
+      RetireBatch().sets.push_back(std::move(composite->composite_set));
+    RenderDescriptorRange ranges[2];
+    RenderDescriptorSetDesc set_desc = DownscaleSetDesc(ranges);
+    composite->composite_set = device->createDescriptorSet(set_desc);
+    if (!composite->composite_set) {
+      composite->composite_source = nullptr;
+      ++g_layer_composites_failed;
+      return false;
+    }
+    composite->composite_set->setTexture(0, world->texture.get(),
+                                         RenderTextureLayout::SHADER_READ);
+    composite->composite_set->setSampler(1, g_downscale.sampler.get());
+    composite->composite_source = world->texture.get();
+  }
+
+  // Both transitions before the framebuffer is bound: a barrier issued inside a
+  // render pass ends it on Plume's Vulkan backend.
+  Transition(commands, world->texture.get(), world->layout, RenderBarrierStage::GRAPHICS,
+             RenderTextureLayout::SHADER_READ);
+  Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::GRAPHICS,
+             RenderTextureLayout::COLOR_WRITE);
+  if (depth && depth->texture) {
+    Transition(commands, depth->texture.get(), depth->layout, RenderBarrierStage::GRAPHICS,
+               RenderTextureLayout::DEPTH_WRITE);
+  }
+
+  BindFramebuffer(commands, framebuffer);
+
+  const float w = float(composite->host_width);
+  const float h = float(composite->host_height);
+  commands->setViewports(RenderViewport(0.0f, 0.0f, w, h));
+  commands->setScissors(RenderRect(0, 0, int32_t(composite->host_width),
+                                   int32_t(composite->host_height)));
+  commands->setPipeline(g_downscale.pipeline.get());
+  commands->setGraphicsPipelineLayout(g_downscale.pipeline_layout.get());
+  commands->setGraphicsDescriptorSet(composite->composite_set.get(), 0);
+  commands->drawInstanced(3, 1, 0, 0);
+
+  // The blit covers every pixel, so the colour plane needs no clear. The depth
+  // plane does: the UI draws that test depth have to see an empty buffer rather
+  // than whatever this image held last frame.
+  if (depth && depth->texture)
+    commands->clearDepthStencil(true, true, 1.0f, 0);
+
+  composite->composited_frame = g_frame;
+  ++g_layer_composites;
+  return true;
+}
+
 RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* width,
                                         uint32_t* height, float* scale_x, float* scale_y) {
+  // Resolves between the marker and this draw still read the world surface.
+  if (g_marker_seen)
+    g_layer = GuestLayer::kComposite;
   // Colour target 0 and the depth stencil. The guest binds targets 1..3 in this
   // title only for the resolve source selector to name, and the pixel shaders
   // export a single colour (e0, all 128 of them), so one attachment is the whole
@@ -1794,6 +2010,12 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   GuestTarget* depth = BoundDepthTarget();
   if (color == nullptr && depth == nullptr)
     return nullptr;
+
+  // The first draw of the UI half brings the world across with it. Doing it here
+  // rather than at the marker itself means it happens only if something actually
+  // draws into the composite, so a frame that ends at the marker costs nothing.
+  if (color != nullptr && color->layer == GuestLayer::kComposite)
+    CompositeWorldIntoLayer(commands, color);
 
   if (color) {
     Transition(commands, color->texture.get(), color->layout, RenderBarrierStage::GRAPHICS,
@@ -1910,7 +2132,7 @@ struct BlitResources {
   std::unique_ptr<RenderDescriptorSet> descriptor_set;
 
   // What the set currently points at. Rewriting a descriptor set that a
-  // recorded draw still reads is trap 2 in the handoff; it is safe here only
+  // recorded draw still reads changes that draw; it is safe here only
   // because the present fence waits before the next frame records anything.
   const RenderTexture* bound_texture = nullptr;
 
@@ -2011,6 +2233,25 @@ bool WindowExtentDisabled() {
 
 void FrameNotePresentPhase(bool active) { g_in_present = active; }
 
+void FrameNoteLayerBoundary() {
+  if (UiLayerDisabled())
+    return;
+  if (!g_marker_seen)
+    ++g_layer_boundaries;
+  g_marker_seen = true;
+}
+
+void FrameResetLayer() {
+  // A frame that follows one with no marker is assumed to be another menu frame
+  // and starts already composited, so the whole of it is drawn at the window's
+  // size. A frame that follows a 3D one starts in the world layer and waits for
+  // its own marker.
+  g_previous_frame_had_marker = g_marker_seen;
+  g_layer = (UiLayerDisabled() || g_previous_frame_had_marker) ? GuestLayer::kWorld
+                                                              : GuestLayer::kComposite;
+  g_marker_seen = false;
+}
+
 void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
   if (WindowExtentDisabled())
     return;
@@ -2030,7 +2271,15 @@ void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
   const uint32_t want_height =
       uint32_t(std::clamp<int64_t>(std::llround(double(height) * pct), 1, kMaxExtent));
 
-  if (want_width == g_render_extent_width && want_height == g_render_extent_height) {
+  // The window's own size is the composite layer's extent, and it is compared
+  // too: a scale change that happens to leave the world extent alone still has
+  // to be able to move the composite one, and vice versa.
+  const uint32_t want_composite_width = std::clamp<uint32_t>(width, 1, kMaxExtent);
+  const uint32_t want_composite_height = std::clamp<uint32_t>(height, 1, kMaxExtent);
+
+  if (want_width == g_render_extent_width && want_height == g_render_extent_height &&
+      want_composite_width == g_composite_extent_width &&
+      want_composite_height == g_composite_extent_height) {
     g_pending_extent_width = 0;
     g_pending_extent_height = 0;
     return;
@@ -2059,6 +2308,8 @@ void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
   if (first) {
     g_render_extent_width = want_width;
     g_render_extent_height = want_height;
+    g_composite_extent_width = want_composite_width;
+    g_composite_extent_height = want_composite_height;
     ++g_extent_generation;
     REXLOG_INFO("native_renderer: render extent is {}x{} for a {}x{} window at {}x", want_width,
                 want_height, width, height, pct);
@@ -2072,6 +2323,8 @@ void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
   g_extent_apply_pending = true;
   g_apply_extent_width = want_width;
   g_apply_extent_height = want_height;
+  g_apply_composite_width = want_composite_width;
+  g_apply_composite_height = want_composite_height;
   REXLOG_INFO("native_renderer: window is now {}x{}, so the render extent becomes {}x{} at {}x",
               width, height, want_width, want_height, pct);
 }
@@ -2085,6 +2338,8 @@ void ApplyPendingExtent() {
   g_extent_apply_pending = false;
   g_render_extent_width = g_apply_extent_width;
   g_render_extent_height = g_apply_extent_height;
+  g_composite_extent_width = g_apply_composite_width;
+  g_composite_extent_height = g_apply_composite_height;
   ++g_extent_generation;
 
   // Same reason as the per destination rebuild: the draw path's texture sets
