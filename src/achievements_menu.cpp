@@ -96,6 +96,11 @@ constexpr std::uint32_t kHistoryMax = 0x10u;
 // byte_824253A2: set while the gallery has the BGM faded out.
 constexpr std::uint32_t kMutedFlagAddr = 0x824253A2u;
 
+// dword_8243D89C, the sound player every menu sound goes through, and the id
+// the rest of the menus use when the cursor moves.
+constexpr std::uint32_t kSoundManagerAddr = 0x8243D89Cu;
+constexpr std::uint32_t kSoundCursorMove = 4u;
+
 // dword_82440128: rows in the current tab, the scroll limit sub_82226858 tests.
 constexpr std::uint32_t kRowCountAddr = 0x82440128u;
 
@@ -264,6 +269,11 @@ std::uint32_t g_description_string = 0;
 std::uint32_t g_description_object = 0;
 int g_description_tab = -1;
 int g_description_row = -1;
+
+// Where the cursor was last tick. A tab of -1 means the screen has just opened,
+// so the first tick does not click.
+int g_cursor_tab = -1;
+int g_cursor_row = -1;
 
 // The guest's text records are single byte, so a multi-byte character would
 // draw as two garbled glyphs. Achievement metadata is UTF-8 (it comes from the
@@ -582,6 +592,30 @@ void RevealHighlighted(PPCContext& ctx, std::uint8_t* base) {
   call.r5.u32 = g_reveal_string;
   call.r6.s64 = -1;
   sub_821D3890(call, base);
+}
+
+// The gallery's own state machine never plays the cursor sound other screens
+// play from their tick (sub_821DC880 and friends: sound 4, off the menu's moved
+// flag). Driven off the highlighted row here instead of that flag, so changing
+// tab clicks as well.
+void PlayCursorMove(PPCContext& ctx, std::uint8_t* base) {
+  int tab = 0;
+  int index = 0;
+  if (!HighlightedRow(base, &tab, &index)) {
+    return;
+  }
+  const bool changed = tab != g_cursor_tab || index != g_cursor_row;
+  const bool first = g_cursor_tab < 0;
+  g_cursor_tab = tab;
+  g_cursor_row = index;
+  if (!changed || first) {
+    return;
+  }
+  PPCContext call = ctx;
+  call.r3.u32 = REX_LOAD_U32(kSoundManagerAddr);
+  call.r4.u32 = kSoundCursorMove;
+  call.r5.u32 = 0;
+  sub_821425D8(call, base);
 }
 
 void UpdateDescription(PPCContext& ctx, std::uint8_t* base) {
@@ -930,6 +964,7 @@ REX_EXTERN(__imp__sub_822265C8);
 
 REX_HOOK_RAW(sub_822265C8) {
   achievements_menu::g_description_object = 0;
+  achievements_menu::g_cursor_tab = -1;
   const bool keep_music = achievements_menu::Active();
   if (keep_music) {
     REX_STORE_U8(achievements_menu::kMutedFlagAddr, 1u);
@@ -957,6 +992,7 @@ REX_HOOK_RAW(sub_821DD108) {
   // State 3 has the current tab's cursor and text objects ready.
   if (REX_LOAD_U8(0x8243F3C2u) == 3u) {
     achievements_menu::UpdateDescription(ctx, base);
+    achievements_menu::PlayCursorMove(ctx, base);
   }
 }
 
