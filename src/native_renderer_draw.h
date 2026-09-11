@@ -105,6 +105,11 @@ void DrawSetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height, fl
 // just submitted; see PlumeFramesInFlight.
 void BeginGuestDrawFrame(uint32_t slot);
 
+// Dump one frame's draw sequence (shader slots, run-length encoded, with the
+// target each ran against). Only does anything with ES_LAYER_PROBE set, to a
+// frame count; see the probe in the .cpp for what it is for.
+void LayerProbeEndFrame();
+
 // Counters for the swap-time summary: draws issued, what was uploaded, and
 // every reason a draw was dropped.
 void LogGuestDrawSummary();

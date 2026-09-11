@@ -1830,19 +1830,36 @@ const void* FrameCurrentColorTexture() {
   return color != nullptr ? static_cast<const void*>(color->texture.get()) : nullptr;
 }
 
+bool FrameDescribeBoundColor(uint32_t* base_tile, uint32_t* guest_width, uint32_t* guest_height,
+                             uint32_t* host_width, uint32_t* host_height) {
+  GuestTarget* color = BoundColorTarget(0);
+  if (color == nullptr)
+    return false;
+  if (base_tile)
+    *base_tile = color->base_tile;
+  if (guest_width)
+    *guest_width = color->width;
+  if (guest_height)
+    *guest_height = color->height;
+  if (host_width)
+    *host_width = color->host_width;
+  if (host_height)
+    *host_height = color->host_height;
+  return true;
+}
+
 void ApplyPendingExtent();
 
 // Not the place to count frames: the readback path can flush the frame's work
 // mid frame, and the fresh command list that follows would look like a new one.
 void FrameNotifyCommandListBegun() {
   g_bound_framebuffer = nullptr;
-  // Safe here and nowhere earlier: whatever recorded these has been submitted
-  // and waited on. See g_retired_textures.
-  g_retired_textures.clear();
-  g_retired_framebuffers.clear();
-  g_retired_sets.clear();
-  g_retired_views.clear();
-  g_retired_targets.clear();
+  // Only the batches whose frame the GPU has actually finished with. See
+  // RetiredBatch: being here at all is not evidence of that, because the present
+  // waits a frame further back than the one it just submitted.
+  while (!g_retired.empty() && PlumeFrameRetired(g_retired.front().frame))
+    g_retired.pop_front();
+  g_retired_batches_held = g_retired.size();
   // After the drain, so the targets it retires get a full frame rather than
   // being freed by the very next list this opens. It declines to run on a mid
   // frame flush, which is why it tests the frame counter itself.
