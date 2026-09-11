@@ -54,7 +54,7 @@ import xenos_hlsl as H  # noqa: E402
 import xenos_ucode as U  # noqa: E402
 
 PACK_MAGIC = b"ESGS"
-PACK_VERSION = 6
+PACK_VERSION = 7
 
 # The sidecar the F2 shader debugger reads: per shader, the extractor's name,
 # the microcode disassembly and the emitted HLSL. Kept out of guest_shaders.bin

@@ -141,6 +141,12 @@ struct GuestTarget {
 
   bool window_sized = false;
 
+  // Whether this surface is a *resolution* rather than a fixed size buffer, the
+  // test AcquireTarget makes to decide whether to scale it. Kept because the
+  // clip scale wants the same answer: a fixed size buffer is an offscreen pass
+  // whose geometry has nothing to do with the window's shape.
+  bool resolution = false;
+
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
 
@@ -1211,6 +1217,7 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
   target->content_height = content_height;
   target->layer = layer;
   target->window_sized = window_sized;
+  target->resolution = is_resolution;
 
   // Multisampling is recorded but the host image is single sampled for now.
   // Nothing draws yet, so the only thing this loses is edge quality on a target
@@ -2273,9 +2280,39 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
   return true;
 }
 
+// How much of the window the guest's own 16:9 frame occupies, per axis. The world
+// image covers the whole window, so compressing world clip space by this puts the
+// guest's frustum in exactly the rectangle the UI is framed into: the margins
+// become field of view rather than a stretched copy of the middle, and the seam
+// at the content edge goes with them.
+//
+// (1, 1) on the composite layer, which is already drawn at 16:9 inside its own
+// image, and on a fixed size offscreen buffer, whose geometry has nothing to do
+// with the window.
+void LayerClipScale(const GuestTarget* target, float* x, float* y) {
+  *x = 1.0f;
+  *y = 1.0f;
+  if (target == nullptr || target->layer != GuestLayer::kWorld || !target->resolution)
+    return;
+  const uint32_t window_width = g_composite_extent_width;
+  const uint32_t window_height = g_composite_extent_height;
+  uint32_t extent_width = 0;
+  uint32_t extent_height = 0;
+  D3DTilingExtent(&extent_width, &extent_height);
+  if (window_width == 0 || window_height == 0 || extent_width == 0 || extent_height == 0)
+    return;
+  // The same `fit` the composite layer frames the UI with, so the two agree to
+  // the pixel rather than to the aspect ratio.
+  const double fit = std::min(double(window_width) / double(extent_width),
+                              double(window_height) / double(extent_height));
+  *x = float(fit * double(extent_width) / double(window_width));
+  *y = float(fit * double(extent_height) / double(window_height));
+}
+
 RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* width,
                                         uint32_t* height, float* scale_x, float* scale_y,
-                                        int32_t* offset_x, int32_t* offset_y) {
+                                        int32_t* offset_x, int32_t* offset_y,
+                                        float* clip_scale_x, float* clip_scale_y) {
   // Resolves between the marker and this draw still read the world surface.
   if (g_marker_seen)
     g_layer = GuestLayer::kComposite;
@@ -2333,6 +2370,8 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
     *offset_x = sized->offset_x;
   if (offset_y)
     *offset_y = sized->offset_y;
+  if (clip_scale_x != nullptr && clip_scale_y != nullptr)
+    LayerClipScale(sized, clip_scale_x, clip_scale_y);
   return framebuffer;
 }
 
