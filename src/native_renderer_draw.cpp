@@ -1795,6 +1795,11 @@ struct ProbeRun {
   uint32_t guest_height = 0;
   bool depth_enabled = false;
   bool depth_write = false;
+  // The test alone does not separate the layers: UI draws turn up with it
+  // enabled. The function is the rest of the answer, because "enabled, compare
+  // always" is how a UI draw leaves depth on while meaning off.
+  uint32_t depth_func = 7;
+  bool blend = false;
   uint32_t count = 0;
 };
 std::vector<ProbeRun> g_probe_runs;
@@ -1821,13 +1826,15 @@ void LayerProbeNoteDraw(int vertex_slot, int pixel_slot, const GuestRenderState&
     if (last.vertex_slot == vertex_slot && last.pixel_slot == pixel_slot &&
         last.base_tile == base_tile && last.guest_width == guest_width &&
         last.guest_height == guest_height && last.depth_enabled == state.depth_enabled &&
-        last.depth_write == state.depth_write) {
+        last.depth_write == state.depth_write &&
+        last.depth_func == uint32_t(state.depth_func) && last.blend == state.blend_enabled) {
       ++last.count;
       return;
     }
   }
   g_probe_runs.push_back({vertex_slot, pixel_slot, base_tile, guest_width, guest_height,
-                          state.depth_enabled, state.depth_write, 1});
+                          state.depth_enabled, state.depth_write, uint32_t(state.depth_func),
+                          state.blend_enabled, 1});
 }
 
 }  // namespace
@@ -1853,6 +1860,7 @@ void LayerProbeEndFrame() {
                         run.pixel_slot < 0 ? 0 : run.pixel_slot, run.base_tile, run.guest_width,
                         run.guest_height, run.depth_enabled ? "t" : "-",
                         run.depth_write ? "w" : "-");
+    line += fmt::format("f{}{}", run.depth_func, run.blend ? "b" : "-");
     if (run.count > 1)
       line += fmt::format("x{}", run.count);
   }
