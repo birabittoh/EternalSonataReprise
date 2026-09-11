@@ -13,6 +13,8 @@
 #include <plume_render_interface.h>
 #include <rex/ui/presenter.h>
 
+#include <memory>
+
 namespace eternalsonata {
 
 // The per-frame handoff the SDK's detached overlay mode is built around: the
@@ -117,6 +119,18 @@ void FrameNotePresentPhase(bool active);
 // A fresh command list has no framebuffer bound, so the deduplication above has
 // to be told. Called from wherever the frame's list is begun.
 void FrameNotifyCommandListBegun();
+
+// Hand a descriptor set to the frame path's retirement, which frees it once the
+// command list that may still name it has completed. Nothing may be destroyed on
+// the spot mid frame, and the draw path holds sets of its own.
+void FrameRetireDescriptorSet(std::unique_ptr<plume::RenderDescriptorSet> set);
+
+// Drop every cached texture descriptor set, because something they name is
+// about to be freed. The cache is keyed on raw texture pointers, so an
+// allocation that lands on a freed one's address would otherwise compare equal
+// and hand a draw a view onto a dead resource. Defined in the draw path and
+// called from wherever a target or resolve destination image is replaced.
+void DrawForgetTextureBindings();
 
 // The formats the guest's host render targets are created in. A pipeline has to
 // be built against the formats of the targets it will draw into, so these are
