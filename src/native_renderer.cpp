@@ -51,23 +51,32 @@ bool g_vsync = true;
 // Storage behind `resolution_scale`, same idea. See RegisterNativeRendererCvars.
 int32_t g_resolution_scale = 1;
 
+// Storage behind `render_scale`. Zero means "no opinion", which is what makes
+// `resolution_scale` still work for anyone who only knows about that one.
+float g_render_scale = 0.0f;
+
 constexpr int32_t kMinRenderScale = 1;
 constexpr int32_t kMaxRenderScale = 8;
+constexpr float kMinRenderScaleF = 0.25f;
+constexpr float kMaxRenderScaleF = 8.0f;
 
 }  // namespace
 
-uint32_t NativeRenderScale() {
+float NativeRenderScale() {
   // Latched, like NativeRendererEnabled: a host render target's size is part of
   // its identity (see GuestTarget in native_renderer_frame.cpp), so changing
   // this mid-run would leave every target the previous frames drew into keyed at
   // the old size. The cvar is kRequiresRestart for the same reason on Xenos.
-  static const uint32_t scale = [] {
+  static const float scale = [] {
     if (!NativeRendererEnabled())
-      return 1u;
-    const int32_t value = std::clamp(g_resolution_scale, kMinRenderScale, kMaxRenderScale);
-    if (value > 1)
+      return 1.0f;
+    const float value =
+        g_render_scale > 0.0f
+            ? std::clamp(g_render_scale, kMinRenderScaleF, kMaxRenderScaleF)
+            : float(std::clamp(g_resolution_scale, kMinRenderScale, kMaxRenderScale));
+    if (value != 1.0f)
       REXLOG_INFO("native_renderer: rendering at {}x the guest's 1280x720", value);
-    return uint32_t(value);
+    return value;
   }();
   return scale;
 }
@@ -135,6 +144,31 @@ void RegisterNativeRendererCvars() {
   scale.constraints.max = kMaxRenderScale;
   scale.default_value = "1";
   rex::cvar::RegisterFlag(std::move(scale));
+
+  // This renderer's own scale, and the one it prefers. Fractional, so it can say
+  // things `resolution_scale` cannot ("1.5x", "half res"), and private to this
+  // renderer so a settings.toml still round-trips to Xenos through the integer
+  // above. Zero leaves the integer in charge.
+  rex::cvar::FlagEntry fine;
+  fine.name = "render_scale";
+  fine.type = rex::cvar::FlagType::Double;
+  fine.category = "GPU";
+  fine.description = "Fractional draw resolution scale; 0 defers to resolution_scale";
+  fine.setter = [](std::string_view value) {
+    try {
+      g_render_scale = std::stof(std::string(value));
+    } catch (...) {
+      return false;
+    }
+    return true;
+  };
+  fine.getter = []() { return std::to_string(g_render_scale); };
+  fine.command_callback = [](std::string_view) {};
+  fine.lifecycle = rex::cvar::Lifecycle::kRequiresRestart;
+  fine.constraints.min = 0.0;
+  fine.constraints.max = kMaxRenderScaleF;
+  fine.default_value = "0";
+  rex::cvar::RegisterFlag(std::move(fine));
 }
 
 #if defined(__ANDROID__)

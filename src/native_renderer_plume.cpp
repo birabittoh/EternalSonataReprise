@@ -665,6 +665,13 @@ void PlumePresentFrame() {
     return;
   ProfileZone present_zone(kPhasePresent);
 
+  // Scoped, because this function returns from a dozen places and a flag left
+  // set would stop a pending extent from ever being applied.
+  struct PresentPhase {
+    PresentPhase() { FrameNotePresentPhase(true); }
+    ~PresentPhase() { FrameNotePresentPhase(false); }
+  } present_phase;
+
   // Before anything that touches the swap chain, since these can leave it
   // absent. The old surface is already gone by the time the event reaches us,
   // so the teardown is what stops the next present from drawing into a
@@ -747,6 +754,10 @@ void PlumePresentFrame() {
 
   const uint32_t width = g_backend.swap_chain->getWidth();
   const uint32_t height = g_backend.swap_chain->getHeight();
+
+  // Before FramePreparePresent counts the frame boundary, so the extent this
+  // settles on is the one the next frame's draws and resolves both see.
+  FrameNoteWindowExtent(width, height);
 
   // The guest's image, if it has produced one. Its barrier is appended to the
   // same list the guest's own clears and resolves recorded into, so the present

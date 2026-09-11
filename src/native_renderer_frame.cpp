@@ -53,6 +53,25 @@ constexpr RenderFormat kColorFormat = RenderFormat::B8G8R8A8_UNORM;
 // difference of view depth resolves steps of 1e-5.
 constexpr RenderFormat kDepthFormat = RenderFormat::D32_FLOAT_S8_UINT;
 
+// Guest pixel coordinate to host pixel coordinate. Always applied to an *edge*,
+// never to a width: two adjacent EDRAM bands share a guest edge, and rounding
+// each band's size on its own is what puts a one-pixel seam or overlap between
+// them once the scale stops being an integer.
+int32_t ScaleEdge(int32_t guest_edge, float scale) {
+  return int32_t(std::lround(double(guest_edge) * double(scale)));
+}
+
+uint32_t ScaleExtent(uint32_t guest_extent, float scale) {
+  return uint32_t(std::max<int32_t>(1, ScaleEdge(int32_t(guest_extent), scale)));
+}
+
+// Two host images agree when they are the same size; the float that produced
+// them is only the means. Comparing sizes rather than scales is also what keeps
+// the monotonic destination rebuild below from cycling on rounding noise.
+bool SameExtent(uint32_t a_w, uint32_t a_h, uint32_t b_w, uint32_t b_h) {
+  return a_w == b_w && a_h == b_h;
+}
+
 // A host image standing in for a region of EDRAM.
 //
 // Keyed by (base tile, size, multisampling, colour or depth) rather than by the
@@ -82,12 +101,16 @@ struct GuestTarget {
   uint32_t host_width = 0;
   uint32_t host_height = 0;
 
-  // Supersampling factor baked into host_width/host_height, so 1 for a target
+  // Supersampling factors baked into host_width/host_height, so 1 for a target
   // that is not the screen. Kept rather than recomputed because everything
   // downstream (the viewport, the resolve rectangle) has to agree with the size
   // the image was actually created at, and NativeRenderScale alone does not say
   // whether this particular target was grown. See AcquireTarget.
-  uint32_t scale = 1;
+  //
+  // Two of them, and fractional: once the extent comes from the window rather
+  // than from the guest's 16:9 they stop being the same number.
+  float scale_x = 1.0f;
+  float scale_y = 1.0f;
 
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
@@ -114,7 +137,18 @@ struct ResolvedTexture {
   // keeping it in guest units is what stops supersampling leaking into either.
   uint32_t width = 0;
   uint32_t height = 0;
-  uint32_t scale = 1;
+  // What `texture` is really sized to, and the factors that produced it. The
+  // size is the authority: the scales only exist so a resolve can map its guest
+  // rectangle onto the image the same way the target it reads from did.
+  uint32_t image_width = 0;
+  uint32_t image_height = 0;
+  float scale_x = 1.0f;
+  float scale_y = 1.0f;
+  // Which window size `texture` was sized for. A destination is found by address
+  // alone and grows monotonically within one of these, which is what stops two
+  // targets sharing an address from rebuilding it against each other every
+  // frame; a resize is the one event allowed to shrink it again.
+  uint64_t extent_generation = 0;
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
 
@@ -189,6 +223,48 @@ uint64_t g_readback_downscale_failed = 0;
 // resolves the screen a band at a time.
 uint64_t g_frame = 0;
 
+// Targets and destinations rebuilt because the window changed size. Climbs once
+// per settled resize and then stops; one that climbs while the window is still
+// says the debounce below is not holding.
+uint64_t g_extent_rebuilds = 0;
+
+// The host extent every "resolution" target is built at, and the counter that
+// says which resize it belongs to. Published once per frame from the window by
+// FrameNoteWindowExtent and read from nowhere else, so a target and the resolve
+// that reads it out cannot disagree about the size mid frame. Zero until the
+// first publication, which is what keeps a title that renders before the swap
+// chain exists on the cvar's own scale.
+uint32_t g_render_extent_width = 0;
+uint32_t g_render_extent_height = 0;
+uint64_t g_extent_generation = 0;
+
+// A window dragged by its corner emits a new size every frame, and each one
+// would otherwise rebuild every target and every resolve destination. Hold a
+// candidate until it stops moving.
+uint32_t g_pending_extent_width = 0;
+uint32_t g_pending_extent_height = 0;
+uint64_t g_pending_extent_frame = 0;
+// Half a second of stillness at 60fps. Eight frames was not a debounce at all:
+// a corner drag paused for a tenth of a second between movements, so a single
+// drag published dozens of extents and rebuilt every target for each one.
+constexpr uint64_t kExtentSettleFrames = 30;
+
+// A settled extent waiting to be applied, and the frame it was settled on.
+// Deciding and applying are deliberately separate: the decision is made at
+// present time, when the window size is known, but the teardown it implies can
+// only run at the top of the next frame's command list, which is the one moment
+// the previous frame's work is known to be retired.
+bool g_extent_apply_pending = false;
+uint32_t g_apply_extent_width = 0;
+uint32_t g_apply_extent_height = 0;
+
+// True for the whole of PlumePresentFrame. The frame counter alone cannot stand
+// in for this: it is bumped by FramePreparePresent, part way through the
+// present, so a list reopened after that point (the present blit's own, or a
+// readback flush) looks like the next frame while the current one is still
+// recording.
+bool g_in_present = false;
+
 std::vector<std::unique_ptr<GuestTarget>> g_targets;
 std::vector<std::unique_ptr<ResolvedTexture>> g_resolved;
 std::vector<FramebufferEntry> g_framebuffers;
@@ -246,6 +322,16 @@ const RenderFramebuffer* g_bound_framebuffer = nullptr;
 std::vector<std::unique_ptr<RenderTexture>> g_retired_textures;
 std::vector<std::unique_ptr<RenderFramebuffer>> g_retired_framebuffers;
 std::vector<std::unique_ptr<RenderDescriptorSet>> g_retired_sets;
+// Views outlive the set that names them by exactly as long, so they retire
+// together; a view whose texture is gone is as dangerous as the texture.
+std::vector<std::unique_ptr<RenderTextureView>> g_retired_views;
+
+// Whole targets, kept intact rather than stripped of their textures. Callers
+// acquire a GuestTarget* and only then ask for the command list, which is where
+// an extent change is applied, so a target that is dropped from g_targets has to
+// stay readable for the rest of that frame. The worst this costs is one clear or
+// draw landing in an image nothing will present.
+std::vector<std::unique_ptr<GuestTarget>> g_retired_targets;
 
 void BindFramebuffer(RenderCommandList* commands, RenderFramebuffer* framebuffer) {
   if (g_bound_framebuffer == framebuffer)
@@ -706,7 +792,8 @@ void ReadbackRecordCopy(RenderCommandList* commands, ResolvedTexture* destinatio
   // pitch and extent are the guest's and a copy cannot rescale.
   RenderTexture* source = destination->texture.get();
   RenderTextureLayout* source_layout = &destination->layout;
-  if (destination->scale > 1) {
+  if (!SameExtent(destination->image_width, destination->image_height, destination->width,
+                  destination->height)) {
     if (!DownscaleToReadbackSource(commands, destination))
       return;
     source = destination->readback_source.get();
@@ -767,9 +854,24 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
   const uint64_t extent_area = uint64_t(extent_width) * extent_height;
   const uint64_t surface_area = uint64_t(surface.width) * surface.height;
   const bool is_resolution = extent_area != 0 && surface_area * 3 >= extent_area;
-  const uint32_t scale = is_resolution ? NativeRenderScale() : 1u;
-  host_width *= scale;
-  host_height *= scale;
+  float scale_x = 1.0f;
+  float scale_y = 1.0f;
+  if (is_resolution) {
+    // Against the *tiling extent* rather than against this surface's own size,
+    // so every resolution surface in the frame shares one pair of factors. The
+    // 720x720 scene surface and the 1280x384 screen band resolve into the same
+    // 1280x720 destinations, and factors derived per surface would have them ask
+    // that destination for two different sizes and rebuild it against each
+    // other forever.
+    if (g_render_extent_width != 0 && g_render_extent_height != 0) {
+      scale_x = float(double(g_render_extent_width) / double(extent_width));
+      scale_y = float(double(g_render_extent_height) / double(extent_height));
+    } else {
+      scale_x = scale_y = NativeRenderScale();
+    }
+  }
+  host_width = ScaleExtent(host_width, scale_x);
+  host_height = ScaleExtent(host_height, scale_y);
 
   for (auto& candidate : g_targets) {
     if (candidate->base_tile == surface.base_tile && candidate->width == surface.width &&
@@ -794,7 +896,8 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth) {
   target->depth = depth;
   target->host_width = host_width;
   target->host_height = host_height;
-  target->scale = scale;
+  target->scale_x = scale_x;
+  target->scale_y = scale_y;
 
   // Multisampling is recorded but the host image is single sampled for now.
   // Nothing draws yet, so the only thing this loses is edge quality on a target
@@ -1296,9 +1399,10 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   // comparisons against the target, and only the final box and destination point
   // are scaled. The alternative (scaling the guest's rectangle up front) makes
   // every clamp and every log line read in two different units at once.
-  const uint32_t scale = target->scale;
-  const int32_t target_width = int32_t(target->host_width / scale);
-  const int32_t target_height = int32_t(target->host_height / scale);
+  const float scale_x = target->scale_x;
+  const float scale_y = target->scale_y;
+  const int32_t target_width = int32_t(std::lround(double(target->host_width) / scale_x));
+  const int32_t target_height = int32_t(std::lround(double(target->host_height) / scale_y));
 
   const bool unbounded_rect = src_x2 == 0x7FFFFFFF;
   const bool host_covers_screen =
@@ -1371,9 +1475,13 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     // copy. Almost everything the frame draws is sampled back out of a resolve
     // destination at some point, so a guest-sized destination here would undo
     // the whole thing.
-    created->scale = scale;
-    const uint32_t image_width = dest_width * scale;
-    const uint32_t image_height = dest_height * scale;
+    created->scale_x = scale_x;
+    created->scale_y = scale_y;
+    const uint32_t image_width = ScaleExtent(dest_width, scale_x);
+    const uint32_t image_height = ScaleExtent(dest_height, scale_y);
+    created->image_width = image_width;
+    created->image_height = image_height;
+    created->extent_generation = g_extent_generation;
     // A colour target either way: the copy needs it as a copy destination and a
     // later draw needs to sample it, and depth is now resolved by a draw that
     // renders into it (see DepthResolveDraw). Depth keeps its R32_FLOAT view of
@@ -1411,14 +1519,33 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   // a destination whose contents never survive long enough for the guest to read
   // them. Keeping the larger size costs a partial resolve out of the smaller
   // target landing in a corner of it; going back and forth costs the image.
-  if (destination->scale < scale) {
+  const uint32_t want_width = ScaleExtent(destination->width, scale_x);
+  const uint32_t want_height = ScaleExtent(destination->height, scale_y);
+  // A resize is the one thing allowed to take the size back down, because the
+  // monotonic rule below would otherwise pin every destination at the largest
+  // window the run has ever seen.
+  // Generation 0 means "created before the window was ever published", which is
+  // the pre-BeginTiling case the monotonic rule below is for, not a resize.
+  // Conflating the two lets a destination created during startup shrink to
+  // whichever target happens to resolve into it first.
+  const bool resized =
+      destination->extent_generation != 0 &&
+      destination->extent_generation != g_extent_generation &&
+      !SameExtent(want_width, want_height, destination->image_width, destination->image_height);
+  destination->extent_generation = g_extent_generation;
+  if (resized || want_width > destination->image_width ||
+      want_height > destination->image_height) {
     RenderDevice* rebuild_device = PlumeDevice();
     if (rebuild_device == nullptr) {
       ++g_resolves_dropped;
       return;
     }
-    const uint32_t image_width = destination->width * scale;
-    const uint32_t image_height = destination->height * scale;
+    // Per axis maxima rather than this target's own pair, so a target that is
+    // larger in one axis and smaller in the other cannot shrink the destination
+    // back on the next resolve and rebuild it forever.
+    const uint32_t image_width = resized ? want_width : std::max(want_width, destination->image_width);
+    const uint32_t image_height =
+        resized ? want_height : std::max(want_height, destination->image_height);
     auto rebuilt = rebuild_device->createTexture(RenderTextureDesc::ColorTarget(
         image_width, image_height, is_depth ? RenderFormat::R32_FLOAT : kColorFormat));
     if (!rebuilt) {
@@ -1427,9 +1554,12 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     }
 
     REXLOG_INFO(
-        "native_renderer: resolve destination 0x{:08X} rebuilt at {}x for a {}x{} guest extent "
-        "(host {}x{}); it was created before BeginTiling gave the tiling extent",
-        dest_address, scale, destination->width, destination->height, image_width, image_height);
+        "native_renderer: resolve destination 0x{:08X} rebuilt at {}x{} for a {}x{} guest extent "
+        "(host {}x{}), because {}",
+        dest_address, scale_x, scale_y, destination->width, destination->height, image_width,
+        image_height,
+        resized ? "the window changed size"
+                : "it was created before BeginTiling gave the tiling extent");
 
     // Everything that pointed at the old image goes with it: the downscale's
     // descriptor set names it, and the present blit caches it by pointer, which
@@ -1451,17 +1581,23 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
 
     destination->texture = std::move(rebuilt);
     destination->layout = RenderTextureLayout::UNKNOWN;
-    destination->scale = scale;
+    destination->image_width = image_width;
+    destination->image_height = image_height;
+    destination->scale_x = float(double(image_width) / double(destination->width));
+    destination->scale_y = float(double(image_height) / double(destination->height));
     // The readback buffer is sized from the guest extent, which has not changed,
     // so it survives. Only what feeds it had to go.
-    ++g_resolve_scale_mismatch;
+    if (resized)
+      ++g_extent_rebuilds;
+    else
+      ++g_resolve_scale_mismatch;
   }
 
   // The other direction: a target smaller than the destination it feeds. The
   // copy cannot rescale, so this would put the target's pixels in a corner of a
   // destination the rest of the frame reads whole. With the area rule above
   // nothing should reach here; it is counted rather than assumed away.
-  if (destination->scale != scale) {
+  if (!SameExtent(want_width, want_height, destination->image_width, destination->image_height)) {
     ++g_resolve_scale_undersized;
     ++g_resolves_dropped;
     return;
@@ -1478,16 +1614,34 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   const int32_t place_x = (dest_x < 0 ? 0 : dest_x) + (x1 - local_x);
   const int32_t place_y = (dest_y < 0 ? 0 : dest_y) + (y1 - local_y);
 
-  // Into host pixels at last: both images are scaled by the same factor, so the
-  // rectangle and the point it lands at scale together.
-  const int32_t s = int32_t(scale);
-  const RenderBox box(x1 * s, y1 * s, x2 * s, y2 * s);
+  // Into host pixels at last: both images are scaled by the same factors, so the
+  // rectangle and the point it lands at scale together. Every value here is an
+  // edge, rounded through ScaleEdge, so the two EDRAM bands of a 720p frame
+  // derive their shared edge from the same guest number and meet exactly.
+  const int32_t host_place_x = ScaleEdge(place_x, scale_x);
+  const int32_t host_place_y = ScaleEdge(place_y, scale_y);
+  int32_t host_x1 = ScaleEdge(x1, scale_x);
+  int32_t host_y1 = ScaleEdge(y1, scale_y);
+  int32_t host_x2 = ScaleEdge(x2, scale_x);
+  int32_t host_y2 = ScaleEdge(y2, scale_y);
+  // Rounding the edges independently can leave the box a pixel wider than what
+  // is left of the destination from the point it lands at, which a copy treats
+  // as a fatal argument rather than a clamp.
+  host_x2 = std::min(host_x2, host_x1 + int32_t(destination->image_width) - host_place_x);
+  host_y2 = std::min(host_y2, host_y1 + int32_t(destination->image_height) - host_place_y);
+  host_x2 = std::min(host_x2, int32_t(target->host_width));
+  host_y2 = std::min(host_y2, int32_t(target->host_height));
+  if (host_x2 <= host_x1 || host_y2 <= host_y1) {
+    ++g_resolves_dropped;
+    return;
+  }
+  const RenderBox box(host_x1, host_y1, host_x2, host_y2);
 
   if (is_depth) {
     // Not a copy: the depth image is D32_FLOAT_S8_UINT and the destination is
     // R32_FLOAT, which are not copy compatible on either API now that there is
     // a stencil plane. The draw samples the depth aspect instead.
-    if (!DepthResolveDraw(commands, target, destination, box, place_x * s, place_y * s)) {
+    if (!DepthResolveDraw(commands, target, destination, box, host_place_x, host_place_y)) {
       ++g_resolves_dropped;
       return;
     }
@@ -1498,7 +1652,7 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
                RenderTextureLayout::COPY_DEST);
     commands->copyTextureRegion(RenderTextureCopyLocation::Subresource(destination->texture.get()),
                                 RenderTextureCopyLocation::Subresource(target->texture.get()),
-                                uint32_t(place_x * s), uint32_t(place_y * s), 0, &box);
+                                uint32_t(host_place_x), uint32_t(host_place_y), 0, &box);
   }
 
   // And the same region again, out to a buffer the guest's own CPU can be given
@@ -1584,21 +1738,21 @@ void LogFrameSummary() {
   REXLOG_INFO(
       "native_renderer: frame targets={} framebuffers={} resolve destinations={} | clears "
       "applied={} dropped={} aliased={} | resolves copied={} dropped={} banded={} extent mismatch={} "
-      "scale rebuilds={} undersized={} | "
-      "attachment mismatch={} | scale={}x downscale failed={} | "
+      "scale rebuilds={} undersized={} extent rebuilds={} | "
+      "attachment mismatch={} | scale={}x extent={}x{} downscale failed={} | "
       "composites={} skipped={} | presenting 0x{:08X} ({}x{})",
       g_targets.size(), g_framebuffers.size(), g_resolved.size(), g_clears_applied,
       g_clears_dropped, g_clears_aliased, g_resolves_copied, g_resolves_dropped, g_resolves_banded,
       g_resolve_extent_mismatch, g_resolve_scale_mismatch, g_resolve_scale_undersized,
-      g_attachment_mismatch,
-      NativeRenderScale(), g_readback_downscale_failed, g_composites, g_composites_skipped,
+      g_extent_rebuilds, g_attachment_mismatch, NativeRenderScale(), g_render_extent_width,
+      g_render_extent_height, g_readback_downscale_failed, g_composites, g_composites_skipped,
       g_present_texture ? g_present_texture->address : 0,
       g_present_texture ? g_present_texture->width : 0,
       g_present_texture ? g_present_texture->height : 0);
 }
 
 RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* width,
-                                        uint32_t* height, uint32_t* scale) {
+                                        uint32_t* height, float* scale_x, float* scale_y) {
   // Colour target 0 and the depth stencil. The guest binds targets 1..3 in this
   // title only for the resolve source selector to name, and the pixel shaders
   // export a single colour (e0, all 128 of them), so one attachment is the whole
@@ -1630,8 +1784,11 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   // Taken from the attachment rather than from NativeRenderScale, so a draw into
   // a target AcquireTarget declined to grow gets 1 and its viewport is left
   // alone. Colour and depth are already known to agree on size here.
-  if (scale)
-    *scale = color != nullptr ? color->scale : depth->scale;
+  const GuestTarget* sized = color != nullptr ? color : depth;
+  if (scale_x)
+    *scale_x = sized->scale_x;
+  if (scale_y)
+    *scale_y = sized->scale_y;
   return framebuffer;
 }
 
@@ -1639,6 +1796,8 @@ const void* FrameCurrentColorTexture() {
   GuestTarget* color = BoundColorTarget(0);
   return color != nullptr ? static_cast<const void*>(color->texture.get()) : nullptr;
 }
+
+void ApplyPendingExtent();
 
 // Not the place to count frames: the readback path can flush the frame's work
 // mid frame, and the fresh command list that follows would look like a new one.
@@ -1649,6 +1808,12 @@ void FrameNotifyCommandListBegun() {
   g_retired_textures.clear();
   g_retired_framebuffers.clear();
   g_retired_sets.clear();
+  g_retired_views.clear();
+  g_retired_targets.clear();
+  // After the drain, so the targets it retires get a full frame rather than
+  // being freed by the very next list this opens. It declines to run on a mid
+  // frame flush, which is why it tests the frame counter itself.
+  ApplyPendingExtent();
 }
 
 // --- The present probe ---
@@ -1785,6 +1950,130 @@ bool EnsureBlitResources(RenderDevice* device) {
 // is both the cvar's own default and the safer answer if it ever goes missing.
 bool PresentLetterbox() { return rex::cvar::GetFlagByName("present_letterbox") != "false"; }
 
+// Debug switch: with ES_NO_WINDOW_EXTENT set, the extent never follows the
+// window and every resolution target stays on the cvar's own scale. Here to tell
+// a resize fault that is this code's from one that was already in the swap chain
+// path, which no amount of reading either can separate.
+bool WindowExtentDisabled() {
+  static const bool disabled = std::getenv("ES_NO_WINDOW_EXTENT") != nullptr;
+  return disabled;
+}
+
+void FrameNotePresentPhase(bool active) { g_in_present = active; }
+
+void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
+  if (WindowExtentDisabled())
+    return;
+  // A minimised window is zero sized. Keeping the extent it had is what lets the
+  // guest keep rendering into targets that are still the right size when it
+  // comes back, rather than tearing every one of them down and back up.
+  if (width == 0 || height == 0)
+    return;
+
+  // The scale is now a fraction of the window rather than a multiple of the
+  // guest's 1280x720, which is what makes 1.0 mean "render at the window's own
+  // resolution" instead of "render 720p and upscale at present".
+  const double pct = double(NativeRenderScale());
+  constexpr uint32_t kMaxExtent = 16384;
+  const uint32_t want_width =
+      uint32_t(std::clamp<int64_t>(std::llround(double(width) * pct), 1, kMaxExtent));
+  const uint32_t want_height =
+      uint32_t(std::clamp<int64_t>(std::llround(double(height) * pct), 1, kMaxExtent));
+
+  if (want_width == g_render_extent_width && want_height == g_render_extent_height) {
+    g_pending_extent_width = 0;
+    g_pending_extent_height = 0;
+    return;
+  }
+
+  // Nothing has been built yet on the first publication, so there is nothing to
+  // debounce and waiting would only mean a few frames rendered at the fallback
+  // scale and then thrown away.
+  const bool first = g_render_extent_width == 0;
+  if (!first) {
+    if (want_width != g_pending_extent_width || want_height != g_pending_extent_height) {
+      g_pending_extent_width = want_width;
+      g_pending_extent_height = want_height;
+      g_pending_extent_frame = g_frame;
+      return;
+    }
+    if (g_frame - g_pending_extent_frame < kExtentSettleFrames)
+      return;
+  }
+
+  g_pending_extent_width = 0;
+  g_pending_extent_height = 0;
+
+  // The first publication has nothing built yet, so there is nothing to tear
+  // down and it can take effect immediately.
+  if (first) {
+    g_render_extent_width = want_width;
+    g_render_extent_height = want_height;
+    ++g_extent_generation;
+    REXLOG_INFO("native_renderer: render extent is {}x{} for a {}x{} window at {}x", want_width,
+                want_height, width, height, pct);
+    return;
+  }
+
+  // Queued rather than applied. This runs from inside the present, after the
+  // frame's command list has been recorded and while it is about to be
+  // submitted, so retiring what it draws into here would free those images one
+  // command-list open later -- while the GPU is still reading them.
+  g_extent_apply_pending = true;
+  g_apply_extent_width = want_width;
+  g_apply_extent_height = want_height;
+  REXLOG_INFO("native_renderer: window is now {}x{}, so the render extent becomes {}x{} at {}x",
+              width, height, want_width, want_height, pct);
+}
+
+// Retire everything built at the old extent. Only safe at the top of a frame's
+// first command list: the lists are drained there, so what goes in now outlives
+// the frame that was still reading it.
+void ApplyPendingExtent() {
+  if (!g_extent_apply_pending || g_in_present)
+    return;
+  g_extent_apply_pending = false;
+  g_render_extent_width = g_apply_extent_width;
+  g_render_extent_height = g_apply_extent_height;
+  ++g_extent_generation;
+
+  // Explicitly, rather than letting AcquireTarget's scan decide. The scan
+  // matches on geometry, so targets built at the old extent would not be found
+  // again and a second set would quietly appear beside them while the guest's
+  // resolves kept reading the first.
+  for (auto& target : g_targets)
+    g_retired_targets.push_back(std::move(target));
+  g_targets.clear();
+  for (auto& entry : g_framebuffers) {
+    if (entry.framebuffer)
+      g_retired_framebuffers.push_back(std::move(entry.framebuffer));
+  }
+  g_framebuffers.clear();
+  g_bound_framebuffer = nullptr;
+  g_ripple_last_target = nullptr;
+
+  // Every depth resolve set names a *target's* depth texture and is rebuilt only
+  // when that pointer changes. A destination that sees no depth resolve before
+  // the retired targets are freed keeps naming a dead address, which a target
+  // allocated a frame or two later can land on; the pointer then compares equal
+  // and the set keeps a view onto a texture that no longer exists. Dropping them
+  // costs one rebuild per destination per resize.
+  for (auto& destination : g_resolved) {
+    if (destination->depth_set)
+      g_retired_sets.push_back(std::move(destination->depth_set));
+    if (destination->depth_source_view)
+      g_retired_views.push_back(std::move(destination->depth_source_view));
+    destination->depth_set_source = nullptr;
+  }
+
+  // The resolve destinations rebuild themselves on their next resolve, off the
+  // generation above, so the present blit keeps the image it already has until
+  // something draws over it.
+  ++g_extent_rebuilds;
+  REXLOG_INFO("native_renderer: render extent now {}x{}; {} target(s) retired",
+              g_render_extent_width, g_render_extent_height, g_retired_targets.size());
+}
+
 bool FramePreparePresent(RenderCommandList* commands) {
   ++g_frame;
   ResolvedTexture* source = g_present_texture;
@@ -1884,6 +2173,8 @@ void ShutdownFrameTargets() {
   g_retired_textures.clear();
   g_retired_framebuffers.clear();
   g_retired_sets.clear();
+  g_retired_views.clear();
+  g_retired_targets.clear();
   g_framebuffers.clear();
   g_targets.clear();
   g_resolved.clear();
@@ -1895,6 +2186,12 @@ void ShutdownFrameTargets() {
   // texture could land on an old address and inherit its id.
   g_ripple_texture_ids.clear();
   g_ripple_last_target = nullptr;
+  // So a device that comes back up republishes the extent rather than believing
+  // targets it no longer has are the right size.
+  g_render_extent_width = 0;
+  g_render_extent_height = 0;
+  g_pending_extent_width = 0;
+  g_pending_extent_height = 0;
 }
 
 }  // namespace eternalsonata
