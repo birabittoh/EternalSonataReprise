@@ -149,6 +149,12 @@ cbuffer XeDrawState : register(b%(cb_alpha)d, space%(cb_space)d) {
     float2 xe_point_size_minmax;
     uint xe_point_size_from_vertex;
     uint xe_draw_state_pad;
+    // World clip space compression. The guest projects at 16:9 while the world
+    // image covers the whole window, so squeezing clip space by the fraction of
+    // the window that 16:9 frame occupies turns the margins into real field of
+    // view instead of a stretch. (1, 1) for the UI layer and for any pass whose
+    // position is already in clip space.
+    float2 xe_clip_scale;
 };
 """
 
@@ -904,6 +910,54 @@ class VertexShader(Shader):
         self.inputs = U.vertex_fetch_table(header) if header else []
         self.by_instruction = {e["instruction"]: e for e in self.inputs}
         Shader.__init__(self, name, ucode, header)
+        self._scan_position_source()
+
+    # Dot products are what a projection is made of, so a position that never
+    # passes through one against a vertex constant is already in clip space.
+    DOT_OPS = ("dp4", "dp3", "dp2add")
+
+    def _scan_position_source(self):
+        """Decide whether the position export is a projection.
+
+        Only a projected position may have clip space compressed by
+        xe_clip_scale: a fullscreen pass writes its quad at x in [-1, 1], and
+        squeezing that leaves unwritten bars down the sides of the image, which
+        read as unblurred margins rather than as an obvious black bar.
+
+        Taint starts at a dot product with a constant operand and propagates
+        through every later use, so a quad that merely offsets itself by a
+        constant stays untainted. Control flow is ignored, hence the fixpoint.
+        """
+        self.projects_position = False
+        alu = [instr for instr in self.decoded["instructions"].values()
+               if instr["type"] != "fetch"]
+        tainted = set()
+        while True:
+            changed = False
+            for instr in alu:
+                count = max(U.VECTOR_OPS[instr["vector_opcode"]][1], 1)
+                sources = instr["sources"][:count]
+                hot = any(s["is_temp"] and s["reg"] in tainted for s in sources)
+                if not hot and instr["vector_name"] in self.DOT_OPS:
+                    hot = any(not s["is_temp"] for s in sources)
+                if hot:
+                    if instr["export"]:
+                        if (instr["vector_dest"] == EXPORT_POSITION
+                                and not self.projects_position):
+                            self.projects_position = True
+                            changed = True
+                    elif instr["vector_dest"] not in tainted:
+                        tainted.add(instr["vector_dest"])
+                        changed = True
+                # The scalar half reads src3 and writes its own register.
+                scalar = instr["sources"][2]
+                if (scalar["is_temp"] and scalar["reg"] in tainted
+                        and not instr["export"]
+                        and instr["scalar_dest"] not in tainted):
+                    tainted.add(instr["scalar_dest"])
+                    changed = True
+            if not changed:
+                break
 
     def _scan_fetch(self, address, instr):
         if instr["opcode"] != 0:
@@ -940,6 +994,9 @@ class VertexShader(Shader):
         registers = sorted(e for e in self.exports if e <= MAX_INTERPOLATOR)
         names = [self.interpolator_name(r) for r in registers]
         out = self._prelude(source_name)
+        if self.projects_position:
+            out.append(DRAW_STATE_CB % {"cb_alpha": PixelShader.CB_ALPHA,
+                                        "cb_space": self.CB_SPACE})
 
         out.append("struct VSInput {")
         for entry in self.inputs:
@@ -974,6 +1031,10 @@ class VertexShader(Shader):
         self._emit_body(out, "    ")
 
         out.append("")
+        if self.projects_position:
+            # Before the divide, so it is a narrower frustum rather than a
+            # scaled image. See xe_clip_scale.
+            out.append("    out_position.xy *= xe_clip_scale;")
         out.append("    output.out_position = out_position;")
         for name in names:
             out.append("    output.out_%s = out_%s;" % (name, name))

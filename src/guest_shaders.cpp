@@ -39,8 +39,9 @@ constexpr uint32_t kMagic = 0x53475345;  // 'ESGS', little endian
 // and b3. The pack layout did not change, so a stale pack would load and bind
 // the vertex float bank to every pixel shader; refusing it is the point.
 // Bumped to 5 for the literal constant pool section, and to 6 for the point
-// sprite geometry shader's entry past the two slot tables.
-constexpr uint32_t kVersion = 6;
+// sprite geometry shader's entry past the two slot tables, and to 7 for the
+// clip scale, which every vertex shader's emitted HLSL depends on.
+constexpr uint32_t kVersion = 7;
 constexpr char kDefaultName[] = "guest_shaders.bin";
 
 constexpr uint8_t kFlagPointSize = 1 << 0;

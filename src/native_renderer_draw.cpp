@@ -1615,8 +1615,12 @@ void WaterProbeEndFrame() {
 // fixed function state with no host equivalent and a root descriptor is per
 // pipeline layout rather than per stage. See XeDrawState in
 // scripts/xenos_hlsl.py.
+//
+// 14 words in the cbuffer, rounded up to the float4 the tail one sits in: the
+// cache compares whole words, so it must not read past what is written.
+constexpr size_t kDrawStateWords = 16;
 struct DrawStateCache {
-  uint32_t words[8] = {};
+  uint32_t words[kDrawStateWords] = {};
   RenderBufferReference buffer;
   bool valid = false;
 };
@@ -1956,12 +1960,14 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   float target_scale_y = 1.0f;
   int32_t target_offset_x = 0;
   int32_t target_offset_y = 0;
+  float clip_scale_x = 1.0f;
+  float clip_scale_y = 1.0f;
   bool have_targets;
   {
     ProfileZone targets_zone(kPhaseBindTargets);
     have_targets = FrameBindDrawTargets(commands, &target_width, &target_height, &target_scale_x,
-                                        &target_scale_y, &target_offset_x,
-                                        &target_offset_y) != nullptr;
+                                        &target_scale_y, &target_offset_x, &target_offset_y,
+                                        &clip_scale_x, &clip_scale_y) != nullptr;
   }
   if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
@@ -2492,7 +2498,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // read.
   const bool point_list = call.primitive_type == 1;
   const float ndc_y_sign = PlumeShaderFormat() == RenderShaderFormat::SPIRV ? -1.0f : 1.0f;
-  uint32_t draw_state[12] = {};
+  uint32_t draw_state[kDrawStateWords] = {};
   const uint32_t alpha_func = alpha_enabled ? uint32_t(call.state.alpha_func) : 7u;  // 7 is ALWAYS
   const uint32_t param_gen = point_list && call.state.param_gen_enabled ? 1u : 0u;
   const float point_ndc[2] = {target_scale_x / width, ndc_y_sign * target_scale_y / height};
@@ -2517,6 +2523,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   std::memcpy(&draw_state[8], &call.state.point_diameter_min, 4);
   std::memcpy(&draw_state[9], &call.state.point_diameter_max, 4);
   draw_state[10] = point_size_from_vertex;  // 11 is the cbuffer's tail padding
+  // Unconditional, because whether a shader is allowed this is decided offline:
+  // only a vertex shader whose position is a projection declares xe_clip_scale
+  // at all, so a fullscreen pass ignores it rather than being told to. See
+  // VertexShader._scan_position_source in scripts/xenos_hlsl.py.
+  std::memcpy(&draw_state[12], &clip_scale_x, 4);
+  std::memcpy(&draw_state[13], &clip_scale_y, 4);
   if (!g_draw_state_cache.valid ||
       std::memcmp(g_draw_state_cache.words, draw_state, sizeof(draw_state)) != 0) {
     const Allocation allocation = ArenaAllocate(device, kUploadAlignment);
