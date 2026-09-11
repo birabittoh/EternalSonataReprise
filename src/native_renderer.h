@@ -47,14 +47,15 @@ inline constexpr const char* kNativeRendererPluginName = "plume";
 // meaningful once the config files have been loaded.
 bool NativeRendererEnabled();
 
-// Supersampling factor the guest's 1280x720 frame is rendered at, latched at
-// boot; see NativeRenderScale's body for why it cannot be a live read. Always 1
-// on the Xenos path, which owns the cvars itself and does its own scaling.
-//
-// Fractional, so it is not a texel-for-texel supersample any more: `render_scale`
-// gives it directly and `resolution_scale` remains the integer fallback the
-// Xenos backend shares.
+// Fraction of the window the 3D world is rendered at: 1.0 is the window's own
+// resolution. Live, since the extent it feeds is republished every present.
+// Always 1 on the Xenos path, which owns the cvars itself and does its own
+// scaling.
 float NativeRenderScale();
+
+// The same number as it was at boot, for the one caller that runs before the
+// window has ever published a size and so cannot retire anything.
+float NativeRenderScaleAtBoot();
 
 // Registers the cvars a GPU plugin would have registered, so selecting this
 // renderer does not silently lose them: `vsync` and `resolution_scale`, both of

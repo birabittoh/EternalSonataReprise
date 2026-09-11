@@ -505,6 +505,9 @@ RenderDescriptorSet* AcquireBindingSet(RenderDevice* device, std::vector<Binding
   return cache.back().set.get();
 }
 
+// How many times a rebuild has emptied the texture set cache, for the summary.
+uint64_t g_texture_set_forgets = 0;
+
 // ---------------------------------------------------------------------------
 // Samplers, out of the guest's texture fetch constants.
 //
@@ -2624,10 +2627,11 @@ void LogGuestDrawSummary() {
 
   REXLOG_INFO(
       "native_renderer:   samplers={} (overflowed {}x, inexact clamp mode {}x, alpha test {}x) | "
-      "descriptor sets: texture={} (misses {}) sampler={} (misses {}) transient={} failed={}",
+      "descriptor sets: texture={} (misses {}, forgets {}) sampler={} (misses {}) transient={} "
+      "failed={}",
       g_sampler_count, g_sampler_overflow, g_clamp_inexact, g_alpha_test_draws,
-      g_texture_sets.size(), g_texture_set_misses, g_sampler_sets.size(), g_sampler_set_misses,
-      g_texture_set_transient, g_binding_set_failed);
+      g_texture_sets.size(), g_texture_set_misses, g_texture_set_forgets, g_sampler_sets.size(),
+      g_sampler_set_misses, g_texture_set_transient, g_binding_set_failed);
 
   REXLOG_INFO("native_renderer:   binding cache: hits={} misses={}", g_binding_cache_hits,
               g_binding_cache_misses);
@@ -2683,6 +2687,21 @@ uint64_t g_bound_gpu_count = 0;
 FrameBoundStats g_bound_stats;
 
 }  // namespace
+
+void DrawForgetTextureBindings() {
+  if (g_texture_sets.empty())
+    return;
+  ++g_texture_set_forgets;
+  // Retired rather than destroyed: a set is a range of a GPU visible heap that
+  // the frame's command list names by pointer and does not read until it
+  // executes, so freeing one here would pull it out from under a draw already
+  // recorded.
+  for (auto& entry : g_texture_sets)
+    FrameRetireDescriptorSet(std::move(entry.set));
+  g_texture_sets.clear();
+  g_binding_cache.valid = false;
+  g_binding_cache.texture_set = nullptr;
+}
 
 void ProfileEndFrame() {
   ApplyProfileZonesCvar();

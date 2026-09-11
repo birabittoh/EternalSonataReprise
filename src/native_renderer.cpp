@@ -51,8 +51,8 @@ bool g_vsync = true;
 // Storage behind `resolution_scale`, same idea. See RegisterNativeRendererCvars.
 int32_t g_resolution_scale = 1;
 
-// Storage behind `render_scale`. Zero means "no opinion", which is what makes
-// `resolution_scale` still work for anyone who only knows about that one.
+// Storage behind `render_scale`, as a fraction of the window. Zero means "no
+// opinion" and renders at the window's own resolution.
 float g_render_scale = 0.0f;
 
 constexpr int32_t kMinRenderScale = 1;
@@ -63,10 +63,24 @@ constexpr float kMaxRenderScaleF = 8.0f;
 }  // namespace
 
 float NativeRenderScale() {
-  // Latched, like NativeRendererEnabled: a host render target's size is part of
-  // its identity (see GuestTarget in native_renderer_frame.cpp), so changing
-  // this mid-run would leave every target the previous frames drew into keyed at
-  // the old size. The cvar is kRequiresRestart for the same reason on Xenos.
+  // A live read. The extent it feeds is already republished every present and
+  // torn down through the debounced resize path, so a mid-run change lands the
+  // same way dragging the window's corner does.
+  //
+  // `resolution_scale` is deliberately not consulted: under this renderer the
+  // extent comes from the window, so the integer the Resolution row writes in
+  // lockstep for the Xenos backend would mean "three times the window" here.
+  if (!NativeRendererEnabled())
+    return 1.0f;
+  if (g_render_scale <= 0.0f)
+    return 1.0f;
+  return std::clamp(g_render_scale, kMinRenderScaleF, kMaxRenderScaleF);
+}
+
+float NativeRenderScaleAtBoot() {
+  // The fallback for the window extent never having been published, where the
+  // size a target was built at *is* part of its identity and nothing retires it.
+  // Keeps the integer fallback, since that path is the pre-window one.
   static const float scale = [] {
     if (!NativeRendererEnabled())
       return 1.0f;
@@ -75,7 +89,7 @@ float NativeRenderScale() {
             ? std::clamp(g_render_scale, kMinRenderScaleF, kMaxRenderScaleF)
             : float(std::clamp(g_resolution_scale, kMinRenderScale, kMaxRenderScale));
     if (value != 1.0f)
-      REXLOG_INFO("native_renderer: rendering at {}x the guest's 1280x720", value);
+      REXLOG_INFO("native_renderer: rendering at {}x until the window publishes a size", value);
     return value;
   }();
   return scale;
@@ -153,7 +167,7 @@ void RegisterNativeRendererCvars() {
   fine.name = "render_scale";
   fine.type = rex::cvar::FlagType::Double;
   fine.category = "GPU";
-  fine.description = "Fractional draw resolution scale; 0 defers to resolution_scale";
+  fine.description = "Draw resolution as a fraction of the window; 0 means the window's own size";
   fine.setter = [](std::string_view value) {
     try {
       g_render_scale = std::stof(std::string(value));
@@ -164,7 +178,9 @@ void RegisterNativeRendererCvars() {
   };
   fine.getter = []() { return std::to_string(g_render_scale); };
   fine.command_callback = [](std::string_view) {};
-  fine.lifecycle = rex::cvar::Lifecycle::kRequiresRestart;
+  // Hot: FrameNoteWindowExtent recomputes the extent from this every present and
+  // retires the old targets through the same debounced path a resize uses.
+  fine.lifecycle = rex::cvar::Lifecycle::kHotReload;
   fine.constraints.min = 0.0;
   fine.constraints.max = kMaxRenderScaleF;
   fine.default_value = "0";

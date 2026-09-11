@@ -291,6 +291,7 @@ bool g_acquire_failure_reported = false;
 // uncapped count would go on skipping waits long after the balance was restored.
 uint32_t g_present_debt = 0;
 uint64_t g_present_failures = 0;
+uint64_t g_resize_failures = 0;
 
 void OwePresentWait() { g_present_debt = std::min(g_present_debt + 1, kMaxFrameLatency); }
 
@@ -397,8 +398,26 @@ void GrowReleaseSemaphores() {
 
 void ApplyResize() {
   if (!g_backend.swap_chain->resize()) {
-    REXLOG_WARN("native_renderer: Plume swap chain resize failed");
+    // The back buffers are released by now and there are none to replace them,
+    // so the present path has nothing to draw into until a later resize takes.
+    // Keep asking for one: a transient failure (the window mid-drag, a mode
+    // change) recovers on its own, and only the reason below says whether this
+    // one can.
+    ++g_resize_failures;
+    g_resize_pending.store(true, std::memory_order_release);
+    if (g_resize_failures == 1) {
+      REXLOG_WARN(
+          "native_renderer: Plume swap chain resize failed, 0x{:08X} (device removed reason "
+          "0x{:08X}); the window will stay frozen until one succeeds",
+          uint32_t(g_backend.swap_chain->getLastError()),
+          uint32_t(g_backend.swap_chain->getDeviceRemovedReason()));
+    }
     return;
+  }
+  if (g_resize_failures != 0) {
+    REXLOG_INFO("native_renderer: Plume swap chain resize recovered after {} failure(s)",
+                g_resize_failures);
+    g_resize_failures = 0;
   }
   CreateFramebuffers();
   GrowReleaseSemaphores();
@@ -832,8 +851,13 @@ void PlumePresentFrame() {
   // it owes the same debt an early return does.
   if (!g_backend.swap_chain->present(image, &signal, 1)) {
     OwePresentWait();
-    if (++g_present_failures == 1)
-      REXLOG_WARN("native_renderer: Plume present failed; the swap chain may be out of date");
+    if (++g_present_failures == 1) {
+      REXLOG_WARN(
+          "native_renderer: Plume present failed, 0x{:08X} (device removed reason 0x{:08X}); the "
+          "swap chain may be out of date",
+          uint32_t(g_backend.swap_chain->getLastError()),
+          uint32_t(g_backend.swap_chain->getDeviceRemovedReason()));
+    }
     g_resize_pending.store(true, std::memory_order_release);
   }
 
@@ -858,8 +882,9 @@ void PlumePresentFrame() {
   if (++g_frames_presented % 600 == 0) {
     REXLOG_INFO(
         "native_renderer: Plume presented {} frames ({} acquire failures, {} present failures, "
-        "{} wait(s) owed)",
-        g_frames_presented, g_acquire_failures, g_present_failures, g_present_debt);
+        "{} resize failures, {} wait(s) owed)",
+        g_frames_presented, g_acquire_failures, g_present_failures, g_resize_failures,
+        g_present_debt);
   }
 }
 
