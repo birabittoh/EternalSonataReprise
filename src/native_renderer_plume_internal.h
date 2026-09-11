@@ -98,11 +98,17 @@ void FramePresentGuestImage(plume::RenderCommandList* commands, uint32_t width, 
 // multiplied by. Not always NativeRenderScale: a target that is not the screen
 // is never grown.
 //
+// `offset_x`/`offset_y` are where the guest's own 16:9 image starts inside the
+// attachment, which is zero everywhere except the UI layer: its image is the
+// whole window and the UI is placed in the largest 16:9 rectangle that fits,
+// centred. `width`/`height` are that rectangle, not the attachment.
+//
 // The bind is deduplicated inside, because Plume's Vulkan backend ends the
 // active render pass on every setFramebuffer.
 plume::RenderFramebuffer* FrameBindDrawTargets(plume::RenderCommandList* commands,
                                                uint32_t* width, uint32_t* height,
-                                               float* scale_x, float* scale_y);
+                                               float* scale_x, float* scale_y,
+                                               int32_t* offset_x, int32_t* offset_y);
 
 // Publish the window's size as the extent every "resolution" target is built at.
 // Call once per frame, on the guest thread, at the frame boundary: the extent is

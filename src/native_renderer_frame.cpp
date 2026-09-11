@@ -126,6 +126,17 @@ struct GuestTarget {
   float scale_x = 1.0f;
   float scale_y = 1.0f;
 
+  // Where the guest's own image sits inside the host image, and how big it is
+  // there. Zero and host_width/host_height for the world layer, whose image is
+  // exactly the guest surface scaled. The UI layer's image is the whole window
+  // while the UI itself is the largest centred 16:9 rectangle inside it, so
+  // everything that maps a guest coordinate onto this image (the viewport, the
+  // resolve rectangle) has to add the offset and clamp to the content.
+  int32_t offset_x = 0;
+  int32_t offset_y = 0;
+  uint32_t content_width = 0;
+  uint32_t content_height = 0;
+
   GuestLayer layer = GuestLayer::kWorld;
 
   bool window_sized = false;
@@ -180,12 +191,25 @@ struct ResolvedTexture {
   uint32_t image_height = 0;
   float scale_x = 1.0f;
   float scale_y = 1.0f;
+  // The margin the guest's rectangle sits inside, carried over from the target
+  // that resolves into this one. Non zero only for a UI layer destination of the
+  // screen, where the image is the window and the guest's 16:9 is centred in it;
+  // the margin holds the world, so the present shows it and the readback crops
+  // it away again.
+  int32_t offset_x = 0;
+  int32_t offset_y = 0;
   // Which window size `texture` was sized for. A destination is found by address
   // alone and grows monotonically within one of these, which is what stops two
   // targets sharing an address from rebuilding it against each other every
   // frame; a resize is the one event allowed to shrink it again.
   uint64_t extent_generation = 0;
   bool extent_pending = true;
+  // The frame a resolve last wrote into this copy. Which of the two layers'
+  // copies of one guest address is the live one cannot be answered by the layer
+  // being drawn into: the guest's own end of frame quad composites the banded
+  // screen, and it draws after the marker while the screen it samples was
+  // resolved before it. See FrameResolveTextureByAddress.
+  uint64_t resolved_frame = 0;
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
 
@@ -305,6 +329,12 @@ bool g_previous_frame_had_marker = false;
 uint64_t g_layer_boundaries = 0;
 uint64_t g_layer_composites = 0;
 uint64_t g_layer_composites_failed = 0;
+
+// Draws and resolves per layer, indexed by GuestLayer. What separates "the world
+// half is not being recorded at all" from "it is recorded and does not reach the
+// screen", which nothing else in the summary distinguishes.
+uint64_t g_layer_draws[2] = {0, 0};
+uint64_t g_layer_resolves[2] = {0, 0};
 
 // Keep the split opt in until UI framing and the readback crop are complete.
 // Set ES_UI_LAYER=1 to enable it.
@@ -527,6 +557,14 @@ RenderDescriptorSetDesc DownscaleSetDesc(RenderDescriptorRange (&ranges)[2]) {
   return RenderDescriptorSetDesc(ranges, 2);
 }
 
+// The source rectangle, as depth_resolve.vert.hlsl reads it. Shared with the
+// readback downscale, which needs it to crop the margin the UI layer's image
+// carries around the guest's own 16:9 rectangle.
+struct BlitRectConstants {
+  float uv_scale[2] = {1.0f, 1.0f};
+  float uv_offset[2] = {0.0f, 0.0f};
+};
+
 bool EnsureDownscaleResources(RenderDevice* device) {
   if (g_downscale.initialized)
     return true;
@@ -611,11 +649,80 @@ struct DepthResolveResources {
 DepthResolveResources g_depth_resolve;
 uint64_t g_depth_resolve_failed = 0;
 
-// The source rectangle, as depth_resolve.vert.hlsl reads it.
-struct DepthResolveConstants {
-  float uv_scale[2] = {1.0f, 1.0f};
-  float uv_offset[2] = {0.0f, 0.0f};
-};
+using DepthResolveConstants = BlitRectConstants;
+
+// The readback crop: the downscale again, but taking a source rectangle, for a
+// destination whose image is the window and so carries the world in a margin
+// around the guest's own 16:9 frame. Kept apart from the downscale rather than
+// folded into it, because the world composite blit shares that pipeline and
+// nothing that runs every frame should change to serve a path that only the
+// save screenshot reaches.
+DepthResolveResources g_crop;
+uint64_t g_crop_failed = 0;
+
+bool EnsureCropResources(RenderDevice* device) {
+  if (g_crop.initialized)
+    return true;
+  if (g_crop.failed || device == nullptr)
+    return false;
+
+  RenderDescriptorRange ranges[2];
+  RenderDescriptorSetDesc set_desc = DownscaleSetDesc(ranges);
+
+  const RenderPushConstantRange push_constants(0, 0, 0, sizeof(BlitRectConstants),
+                                               RenderShaderStageFlag::VERTEX);
+
+  RenderPipelineLayoutDesc layout_desc;
+  layout_desc.pushConstantRanges = &push_constants;
+  layout_desc.pushConstantRangesCount = 1;
+  layout_desc.descriptorSetDescs = &set_desc;
+  layout_desc.descriptorSetDescsCount = 1;
+  layout_desc.allowInputLayout = false;
+  g_crop.pipeline_layout = device->createPipelineLayout(layout_desc);
+
+  // The depth resolve's vertex shader, which is the one that takes a source
+  // rectangle, with the blit's own pixel shader.
+  const RenderShaderFormat shader_format = PlumeShaderFormat();
+#ifdef _WIN32
+  if (shader_format == RenderShaderFormat::DXIL) {
+    g_crop.vertex_shader = device->createShader(
+        depthResolveVertBlobDXIL, sizeof(depthResolveVertBlobDXIL), "VSMain", shader_format);
+    g_crop.pixel_shader =
+        device->createShader(blitFragBlobDXIL, sizeof(blitFragBlobDXIL), "PSMain", shader_format);
+  } else
+#endif
+      if (shader_format == RenderShaderFormat::SPIRV) {
+    g_crop.vertex_shader = device->createShader(
+        depthResolveVertBlobSPIRV, sizeof(depthResolveVertBlobSPIRV), "VSMain", shader_format);
+    g_crop.pixel_shader = device->createShader(blitFragBlobSPIRV, sizeof(blitFragBlobSPIRV),
+                                               "PSMain", shader_format);
+  }
+
+  if (g_crop.vertex_shader && g_crop.pixel_shader && g_crop.pipeline_layout) {
+    RenderGraphicsPipelineDesc pipeline_desc;
+    pipeline_desc.pipelineLayout = g_crop.pipeline_layout.get();
+    pipeline_desc.vertexShader = g_crop.vertex_shader.get();
+    pipeline_desc.pixelShader = g_crop.pixel_shader.get();
+    pipeline_desc.renderTargetFormat[0] = kColorFormat;
+    pipeline_desc.renderTargetCount = 1;
+    pipeline_desc.cullMode = RenderCullMode::NONE;
+    pipeline_desc.depthEnabled = false;
+    pipeline_desc.depthWriteEnabled = false;
+    pipeline_desc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
+    g_crop.pipeline = device->createGraphicsPipeline(pipeline_desc);
+  }
+
+  if (!g_crop.pipeline) {
+    REXLOG_ERROR(
+        "native_renderer: could not create the readback crop pipeline, so a CPU readback of the "
+        "screen will carry the margin the UI layer draws the world into");
+    g_crop.failed = true;
+    return false;
+  }
+
+  g_crop.initialized = true;
+  return true;
+}
 
 bool EnsureDepthResolveResources(RenderDevice* device) {
   if (g_depth_resolve.initialized)
@@ -830,8 +937,28 @@ bool DownscaleToReadbackSource(RenderCommandList* commands, ResolvedTexture* des
   const float height = float(destination->height);
   commands->setViewports(RenderViewport(0.0f, 0.0f, width, height));
   commands->setScissors(RenderRect(0, 0, int32_t(destination->width), int32_t(destination->height)));
-  commands->setPipeline(g_downscale.pipeline.get());
-  commands->setGraphicsPipelineLayout(g_downscale.pipeline_layout.get());
+  // Only the guest's own rectangle, so what the CPU reads back is framed the way
+  // the guest expects however much of the window the world has spread into
+  // around it. Without a margin there is nothing to crop and this is the plain
+  // downscale, which is the path every title and every window size takes.
+  const bool crop = destination->offset_x != 0 || destination->offset_y != 0;
+  if (crop && EnsureCropResources(device)) {
+    const float image_w = float(destination->image_width);
+    const float image_h = float(destination->image_height);
+    BlitRectConstants push;
+    push.uv_scale[0] = (image_w - 2.0f * float(destination->offset_x)) / image_w;
+    push.uv_scale[1] = (image_h - 2.0f * float(destination->offset_y)) / image_h;
+    push.uv_offset[0] = float(destination->offset_x) / image_w;
+    push.uv_offset[1] = float(destination->offset_y) / image_h;
+    commands->setPipeline(g_crop.pipeline.get());
+    commands->setGraphicsPipelineLayout(g_crop.pipeline_layout.get());
+    commands->setGraphicsPushConstants(0, &push);
+  } else {
+    if (crop)
+      ++g_crop_failed;
+    commands->setPipeline(g_downscale.pipeline.get());
+    commands->setGraphicsPipelineLayout(g_downscale.pipeline_layout.get());
+  }
   commands->setGraphicsDescriptorSet(destination->readback_set.get(), 0);
   commands->drawInstanced(3, 1, 0, 0);
   return true;
@@ -989,14 +1116,44 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
     const uint32_t want_width = composite ? g_composite_extent_width : g_render_extent_width;
     const uint32_t want_height = composite ? g_composite_extent_height : g_render_extent_height;
     if (want_width != 0 && want_height != 0) {
-      scale_x = float(double(want_width) / double(extent_width));
-      scale_y = float(double(want_height) / double(extent_height));
+      if (composite) {
+        // Uniform, so the UI never distorts: it is drawn into the largest 16:9
+        // rectangle that fits in the window rather than stretched across it.
+        // The image stays the window's own size, and the margins are where the
+        // world shows through.
+        const double fit = std::min(double(want_width) / double(extent_width),
+                                    double(want_height) / double(extent_height));
+        scale_x = scale_y = float(fit);
+      } else {
+        scale_x = float(double(want_width) / double(extent_width));
+        scale_y = float(double(want_height) / double(extent_height));
+      }
     } else {
       scale_x = scale_y = NativeRenderScaleAtBoot();
     }
   }
-  host_width = ScaleExtent(host_width, scale_x);
-  host_height = ScaleExtent(host_height, scale_y);
+  // The surface's own size at this layer's scale: what the guest's pixels
+  // occupy, before any margin around them.
+  const uint32_t content_width = ScaleExtent(host_width, scale_x);
+  const uint32_t content_height = ScaleExtent(host_height, scale_y);
+  int32_t offset_x = 0;
+  int32_t offset_y = 0;
+  host_width = content_width;
+  host_height = content_height;
+  // A composite surface that spans the tiling extent is the screen, so its host
+  // image is the window and the guest's content is centred in it. One that does
+  // not span it is some smaller buffer and keeps its own size.
+  if (layer == GuestLayer::kComposite && g_composite_extent_width != 0 &&
+      surface.width == extent_width) {
+    if (g_composite_extent_width > content_width) {
+      offset_x = int32_t(g_composite_extent_width - content_width) / 2;
+      host_width = g_composite_extent_width;
+    }
+    if (g_composite_extent_height > content_height) {
+      offset_y = int32_t(g_composite_extent_height - content_height) / 2;
+      host_height = g_composite_extent_height;
+    }
+  }
 
   for (auto& candidate : g_targets) {
     if (candidate->base_tile == surface.base_tile && candidate->width == surface.width &&
@@ -1024,6 +1181,10 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
   target->host_height = host_height;
   target->scale_x = scale_x;
   target->scale_y = scale_y;
+  target->offset_x = offset_x;
+  target->offset_y = offset_y;
+  target->content_width = content_width;
+  target->content_height = content_height;
   target->layer = layer;
   target->window_sized = window_sized;
 
@@ -1541,8 +1702,19 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   // every clamp and every log line read in two different units at once.
   const float scale_x = target->scale_x;
   const float scale_y = target->scale_y;
-  const int32_t target_width = int32_t(std::lround(double(target->host_width) / scale_x));
-  const int32_t target_height = int32_t(std::lround(double(target->host_height) / scale_y));
+  // The guest's own rectangle, not the whole image: a UI layer target is window
+  // sized with the guest's 16:9 centred inside it, and every comparison below is
+  // in guest pixels.
+  const uint32_t content_width_host =
+      target->content_width != 0 ? target->content_width : target->host_width;
+  const uint32_t content_height_host =
+      target->content_height != 0 ? target->content_height : target->host_height;
+  const int32_t target_width = int32_t(std::lround(double(content_width_host) / scale_x));
+  const int32_t target_height = int32_t(std::lround(double(content_height_host) / scale_y));
+  // The margins around it, which the destination has to carry too so that the
+  // world showing through them survives the resolve and reaches the present.
+  const int32_t margin_x = int32_t(target->host_width - content_width_host);
+  const int32_t margin_y = int32_t(target->host_height - content_height_host);
 
   const bool unbounded_rect = src_x2 == 0x7FFFFFFF;
   const bool host_covers_screen =
@@ -1595,6 +1767,12 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
         dest_width, dest_height);
   }
 
+  // Only a destination that is the whole guest surface carries its margins; a
+  // smaller one is some other buffer that happens to be resolved out of the same
+  // target and wants no room around it.
+  const int32_t dest_margin_x = int32_t(dest_width) == target_width ? margin_x : 0;
+  const int32_t dest_margin_y = int32_t(dest_height) == target_height ? margin_y : 0;
+
   ResolvedTexture* destination = nullptr;
   bool destination_created = false;
   for (auto& candidate : g_resolved) {
@@ -1618,8 +1796,10 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     // the whole thing.
     created->scale_x = scale_x;
     created->scale_y = scale_y;
-    const uint32_t image_width = ScaleExtent(dest_width, scale_x);
-    const uint32_t image_height = ScaleExtent(dest_height, scale_y);
+    created->offset_x = dest_margin_x / 2;
+    created->offset_y = dest_margin_y / 2;
+    const uint32_t image_width = ScaleExtent(dest_width, scale_x) + uint32_t(dest_margin_x);
+    const uint32_t image_height = ScaleExtent(dest_height, scale_y) + uint32_t(dest_margin_y);
     created->image_width = image_width;
     created->image_height = image_height;
     created->extent_generation = g_extent_generation;
@@ -1645,8 +1825,8 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
 
   // Startup sizes become authoritative once a source uses the window extent.
   // Within that generation, growth stays monotonic to preserve shared resolves.
-  const uint32_t want_width = ScaleExtent(destination->width, scale_x);
-  const uint32_t want_height = ScaleExtent(destination->height, scale_y);
+  const uint32_t want_width = ScaleExtent(destination->width, scale_x) + uint32_t(dest_margin_x);
+  const uint32_t want_height = ScaleExtent(destination->height, scale_y) + uint32_t(dest_margin_y);
   // A resize is the one thing allowed to take the size back down, because the
   // monotonic rule would otherwise pin every destination at the largest window
   // the run has ever seen.
@@ -1706,8 +1886,14 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     destination->layout = RenderTextureLayout::UNKNOWN;
     destination->image_width = image_width;
     destination->image_height = image_height;
-    destination->scale_x = float(double(image_width) / double(destination->width));
-    destination->scale_y = float(double(image_height) / double(destination->height));
+    // The margin is not part of the guest's rectangle, so the scale is derived
+    // from what is left once it is taken off.
+    destination->offset_x = dest_margin_x / 2;
+    destination->offset_y = dest_margin_y / 2;
+    destination->scale_x =
+        float(double(image_width - uint32_t(dest_margin_x)) / double(destination->width));
+    destination->scale_y =
+        float(double(image_height - uint32_t(dest_margin_y)) / double(destination->height));
     // The readback buffer is sized from the guest extent, which has not changed,
     // so it survives. Only what feeds it had to go.
     if (resized)
@@ -1758,12 +1944,30 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   // rectangle and the point it lands at scale together. Every value here is an
   // edge, rounded through ScaleEdge, so the two EDRAM bands of a 720p frame
   // derive their shared edge from the same guest number and meet exactly.
-  const int32_t host_place_x = ScaleEdge(place_x, scale_x);
-  const int32_t host_place_y = ScaleEdge(place_y, scale_y);
-  int32_t host_x1 = ScaleEdge(x1, scale_x);
-  int32_t host_y1 = ScaleEdge(y1, scale_y);
-  int32_t host_x2 = ScaleEdge(x2, scale_x);
-  int32_t host_y2 = ScaleEdge(y2, scale_y);
+  // Both images place the guest's rectangle at the same margin, so the offsets
+  // add to the source and the destination alike.
+  int32_t host_place_x = ScaleEdge(place_x, scale_x) + destination->offset_x;
+  int32_t host_place_y = ScaleEdge(place_y, scale_y) + destination->offset_y;
+  int32_t host_x1 = ScaleEdge(x1, scale_x) + target->offset_x;
+  int32_t host_y1 = ScaleEdge(y1, scale_y) + target->offset_y;
+  int32_t host_x2 = ScaleEdge(x2, scale_x) + target->offset_x;
+  int32_t host_y2 = ScaleEdge(y2, scale_y) + target->offset_y;
+  // An edge that is flush with the guest surface takes the margin beyond it with
+  // it, because what sits out there is the world showing around the UI and
+  // nothing else would ever copy it across. A banded resolve reaches only its own
+  // end of the image, which is exactly right: the other band reaches the other.
+  if (x1 == 0 && place_x == 0) {
+    host_x1 -= target->offset_x;
+    host_place_x -= destination->offset_x;
+  }
+  if (y1 == 0 && place_y == 0) {
+    host_y1 -= target->offset_y;
+    host_place_y -= destination->offset_y;
+  }
+  if (x2 == target_width)
+    host_x2 = int32_t(target->host_width);
+  if (y2 == target_height)
+    host_y2 = int32_t(target->host_height);
   // Rounding the edges independently can leave the box a pixel wider than what
   // is left of the destination from the point it lands at, which a copy treats
   // as a fatal argument rather than a clamp.
@@ -1840,6 +2044,8 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   RippleNoteResolve(target, destination, destination_created);
 
   ++g_resolves_copied;
+  ++g_layer_resolves[size_t(target->layer)];
+  destination->resolved_frame = g_frame;
   // The present blit always wants the last colour resolve; a depth resolve
   // must not steal that slot from it.
   if (!is_depth)
@@ -1849,25 +2055,38 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
 void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t height) {
   if (address == 0)
     return nullptr;
-  // Prefer the drawing layer so screen copies retain its resolution.
-  for (int pass = 0; pass < 2; ++pass) {
-    const GuestLayer want = pass == 0 ? g_layer
-                                      : (g_layer == GuestLayer::kWorld ? GuestLayer::kComposite
-                                                                       : GuestLayer::kWorld);
-    for (auto& candidate : g_resolved) {
-      if (candidate->address != address || candidate->layer != want)
-        continue;
-      if (candidate->width != width || candidate->height != height) {
-        if (pass == 1) {
-          ++g_resolve_extent_mismatch;
-          RippleNoteBind(address, width, height, nullptr, true);
-          return nullptr;
-        }
-        continue;
-      }
-      RippleNoteBind(address, width, height, candidate.get(), false);
-      return candidate->texture.get();
+  // The freshest copy, not the drawing layer's. Preferring the drawing layer is
+  // wrong for the one draw that matters most: the guest ends a field frame with
+  // a fullscreen quad that composites its banded screen, and that quad is after
+  // the marker, so it draws in the UI layer while the screen it samples was
+  // resolved by the world layer. Once a stale UI layer copy of that address
+  // exists, which a menu frame creates, the preference returns it every frame
+  // and the world stops updating on screen while everything else keeps running.
+  //
+  // The drawing layer is still the tie break, so a copy both layers wrote this
+  // frame keeps the resolution of the layer asking for it.
+  ResolvedTexture* best = nullptr;
+  bool mismatched = false;
+  for (auto& candidate : g_resolved) {
+    if (candidate->address != address)
+      continue;
+    if (candidate->width != width || candidate->height != height) {
+      mismatched = true;
+      continue;
     }
+    if (best == nullptr || candidate->resolved_frame > best->resolved_frame ||
+        (candidate->resolved_frame == best->resolved_frame && candidate->layer == g_layer)) {
+      best = candidate.get();
+    }
+  }
+  if (best != nullptr) {
+    RippleNoteBind(address, width, height, best, false);
+    return best->texture.get();
+  }
+  if (mismatched) {
+    ++g_resolve_extent_mismatch;
+    RippleNoteBind(address, width, height, nullptr, true);
+    return nullptr;
   }
   RippleNoteBind(address, width, height, nullptr, false);
   return nullptr;
@@ -1882,13 +2101,19 @@ void LogFrameSummary() {
       "scale rebuilds={} undersized={} extent rebuilds={} | "
       "attachment mismatch={} | scale={}x extent={}x{} downscale failed={} | "
       "composites={} skipped={} | layer boundaries={} composited={} failed={} | "
+      "layer draws world={} ui={} resolves world={} ui={} presented layer={} | "
       "retired batches held={} | presenting 0x{:08X} ({}x{})",
       g_targets.size(), g_framebuffers.size(), g_resolved.size(), g_clears_applied,
       g_clears_dropped, g_clears_aliased, g_resolves_copied, g_resolves_dropped, g_resolves_banded,
       g_resolve_extent_mismatch, g_resolve_scale_mismatch, g_resolve_scale_undersized,
       g_extent_rebuilds, g_attachment_mismatch, NativeRenderScale(), g_render_extent_width,
       g_render_extent_height, g_readback_downscale_failed, g_composites, g_composites_skipped,
-      g_layer_boundaries, g_layer_composites, g_layer_composites_failed, g_retired_batches_held,
+      g_layer_boundaries, g_layer_composites, g_layer_composites_failed, g_layer_draws[0],
+      g_layer_draws[1], g_layer_resolves[0], g_layer_resolves[1],
+      g_present_texture == nullptr
+          ? "none"
+          : (g_present_texture->layer == GuestLayer::kComposite ? "ui" : "world"),
+      g_retired_batches_held,
       g_present_texture ? g_present_texture->address : 0,
       g_present_texture ? g_present_texture->width : 0,
       g_present_texture ? g_present_texture->height : 0);
@@ -1961,6 +2186,11 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
                                          RenderTextureLayout::SHADER_READ);
     composite->composite_set->setSampler(1, g_downscale.sampler.get());
     composite->composite_source = world->texture.get();
+    REXLOG_INFO(
+        "native_renderer: composite for EDRAM tile {} ({}x{}) now reads the world target at tile "
+        "{}, {}x{} host for a {}x{} guest surface",
+        composite->base_tile, composite->host_width, composite->host_height, world->base_tile,
+        world->host_width, world->host_height, world->width, world->height);
   }
 
   // Both transitions before the framebuffer is bound: a barrier issued inside a
@@ -1998,7 +2228,8 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
 }
 
 RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* width,
-                                        uint32_t* height, float* scale_x, float* scale_y) {
+                                        uint32_t* height, float* scale_x, float* scale_y,
+                                        int32_t* offset_x, int32_t* offset_y) {
   // Resolves between the marker and this draw still read the world surface.
   if (g_marker_seen)
     g_layer = GuestLayer::kComposite;
@@ -2032,18 +2263,25 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
 
   BindFramebuffer(commands, framebuffer);
   RippleNoteDrawTarget(color);
-  if (width)
-    *width = framebuffer->getWidth();
-  if (height)
-    *height = framebuffer->getHeight();
+  ++g_layer_draws[size_t((color != nullptr ? color : depth)->layer)];
   // Taken from the attachment rather than from NativeRenderScale, so a draw into
   // a target AcquireTarget declined to grow gets 1 and its viewport is left
   // alone. Colour and depth are already known to agree on size here.
   const GuestTarget* sized = color != nullptr ? color : depth;
+  // The guest's own rectangle inside the attachment, which is the whole of it
+  // everywhere except the UI layer.
+  if (width)
+    *width = sized->content_width != 0 ? sized->content_width : framebuffer->getWidth();
+  if (height)
+    *height = sized->content_height != 0 ? sized->content_height : framebuffer->getHeight();
   if (scale_x)
     *scale_x = sized->scale_x;
   if (scale_y)
     *scale_y = sized->scale_y;
+  if (offset_x)
+    *offset_x = sized->offset_x;
+  if (offset_y)
+    *offset_y = sized->offset_y;
   return framebuffer;
 }
 
@@ -2443,7 +2681,11 @@ void FramePresentGuestImage(RenderCommandList* commands, uint32_t width, uint32_
   float y = 0.0f;
   float w = float(width);
   float h = float(height);
-  if (PresentLetterbox()) {
+  // A UI layer source is the window already: the letterbox is baked into where
+  // the UI was drawn inside it, and the bars are the world. Letterboxing it
+  // again would pillarbox the whole thing a second time.
+  const bool preframed = source->offset_x != 0 || source->offset_y != 0;
+  if (PresentLetterbox() && !preframed) {
     const float scale = std::min(w / float(source->width), h / float(source->height));
     w = float(source->width) * scale;
     h = float(source->height) * scale;
