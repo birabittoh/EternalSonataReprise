@@ -20,6 +20,10 @@
 // Editing only the icon run is what left the hover labels one place to the
 // right of the art, with an eleventh selectable still reachable past Save.
 //
+// A third run, of type-110 records at y=-21, is the glow the cursor lights up
+// behind the hovered icon. Each one is cut to its own option's icon shape, so
+// leaving it in place put the wrong silhouette behind the moved entries.
+//
 // What consumes the tag: sub_82236CD0 switches on it through byte_82082148
 // (index = tag - 1, offsets into its own jump table) and stores a screen id in
 // dword_8243F364. State 6 of the strip's tick sub_821DC3C0 copies that id to
@@ -69,6 +73,14 @@ constexpr int kStripCount = 11;
 constexpr std::int32_t kIconSpacing = 75;  // shared by both runs
 constexpr std::int32_t kIconY = 11;
 constexpr std::uint32_t kFirstIconId = 185u;
+
+// The hover glow is a third run: type-110 records, {type, id, x, y, 1000, 1000,
+// argb, 2}, 0x20 each, at y=-21 and x = 263 + 75 * index, ids 291 + index. It is
+// one glow per option, cut to that option's icon shape, so it has to travel with
+// the art the same way the selectable does.
+constexpr std::uint32_t kGlowRecordType = 110u;
+constexpr std::uint32_t kGlowStride = 0x20u;
+constexpr std::int32_t kGlowY = -21;
 constexpr std::uint32_t kListTerminator = 0xFFFFu;
 constexpr std::uint32_t kMaxListWords = 0x800u;
 
@@ -154,6 +166,32 @@ std::uint32_t FindIconStrip(const std::uint8_t* base, std::uint32_t list,
     const std::uint32_t next = at + kIconStride;
     if (ReadU32(base, next) == kIconRecordType &&
         ReadU32(base, next + 4u) == 233u) {
+      return at;
+    }
+  }
+  return 0;
+}
+
+// Where the glow run starts, or 0. Matched on its own shape rather than on an
+// id, for the same reason the icon strip is scanned: every language has its own
+// copy of the list and they do not share a layout.
+std::uint32_t FindGlowRun(const std::uint8_t* base, std::uint32_t list,
+                          std::uint32_t end) {
+  for (std::uint32_t at = list; at + kGlowStride * kStripCount <= end;
+       at += 4u) {
+    if (ReadU32(base, at) != kGlowRecordType ||
+        ReadI32(base, at + 12u) != kGlowY) {
+      continue;
+    }
+    const std::int32_t x0 = ReadI32(base, at + 8u);
+    bool ok = true;
+    for (int k = 1; ok && k < kStripCount; ++k) {
+      const std::uint32_t rec = at + kGlowStride * static_cast<std::uint32_t>(k);
+      ok = ReadU32(base, rec) == kGlowRecordType &&
+           ReadI32(base, rec + 12u) == kGlowY &&
+           ReadI32(base, rec + 8u) == x0 + kIconSpacing * k;
+    }
+    if (ok) {
       return at;
     }
   }
@@ -273,6 +311,10 @@ void MaybeEditOptionStrip(std::uint8_t* base, std::uint32_t list) {
   if (!FindSelectableRun(base, list, end, &sel)) {
     return;  // never edit the art without the selection, or they drift apart
   }
+  const std::uint32_t glow = FindGlowRun(base, list, end);
+  if (!glow) {
+    return;  // same for the glow: a stale one sits behind the wrong icon
+  }
 
   if (sel.stride > 0x80u) {
     return;  // beyond what PermuteRun can hold; refuse rather than corrupt
@@ -282,6 +324,7 @@ void MaybeEditOptionStrip(std::uint8_t* base, std::uint32_t list) {
   // the cursor still stops at Save. The selectable records carry their own tags
   // and travel with their art, so every option that moves keeps its screen.
   PermuteRun(base, strip, kIconStride, 8u);
+  PermuteRun(base, glow, kGlowStride, 8u);
   PermuteRun(base, sel.start, sel.stride, 4u);
   WriteU32(base,
            sel.start + sel.stride * static_cast<std::uint32_t>(kTargetIndex) +
