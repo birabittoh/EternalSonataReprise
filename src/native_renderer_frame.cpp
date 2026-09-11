@@ -154,6 +154,13 @@ struct GuestTarget {
   // The frame this target was last composited into, so the blit happens once per
   // frame however many draws follow the marker.
   uint64_t composited_frame = ~0ull;
+  // The frame a draw last landed in this target, and where in the frame's order
+  // it was. The order is what matters and the frame alone is not enough: the
+  // scene surface and the banded screen are both drawn every frame, and it is
+  // the last one before the marker that holds the image. See
+  // CompositeWorldIntoLayer.
+  uint64_t drawn_frame = 0;
+  uint64_t drawn_serial = 0;
 };
 
 // Framebuffers are per (colour, depth) pair, which is the granularity Plume
@@ -333,6 +340,9 @@ uint64_t g_layer_composites_failed = 0;
 // Draws and resolves per layer, indexed by GuestLayer. What separates "the world
 // half is not being recorded at all" from "it is recorded and does not reach the
 // screen", which nothing else in the summary distinguishes.
+// Ticks once per draw, so targets drawn in the same frame still have an order.
+uint64_t g_draw_serial = 0;
+
 uint64_t g_layer_draws[2] = {0, 0};
 uint64_t g_layer_resolves[2] = {0, 0};
 
@@ -398,6 +408,20 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
 // See "The ripple probe" at the end of this namespace. Declared here because
 // the first thing it watches is a target being created.
 void RippleNoteTargetCreated(const GuestTarget* target);
+
+// One frame in 300, the order of everything that touches a composite image of
+// the screen: clear, alias clear, the world blit, the first draw, the resolve.
+// Which of those lands last in the margin is the whole question when the margin
+// comes out black, and no counter can answer it.
+void LayerTrace(const char* what, const GuestTarget* target, uint32_t detail = 0) {
+  if (target == nullptr || target->layer != GuestLayer::kComposite || target->base_tile != 0)
+    return;
+  if (g_frame % 300 != 0)
+    return;
+  REXLOG_INFO("native_renderer: layer trace {} on composite {}x{} (guest {}x{} msaa {}) detail {}",
+              what, target->host_width, target->host_height, target->width, target->height,
+              target->msaa, detail);
+}
 
 GuestTarget* BoundColorTarget(uint32_t index, GuestLayer layer) {
   if (index >= d3d::kColorSurfaceCount || !g_bound_color_valid[index])
@@ -1596,6 +1620,7 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
     return;
   }
   RippleNoteClear(color, false, argb);
+  LayerTrace("clear", color, argb);
 
   // And again for every other host image standing over the same EDRAM.
   //
@@ -1631,6 +1656,7 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
                      clear_depth, clear_stencil, z, stencil, nullptr, nullptr)) {
       ++g_clears_aliased;
       RippleNoteClear(alias_color ? other : nullptr, true, argb);
+      LayerTrace("alias clear", alias_color ? other : nullptr, argb);
     }
   }
 
@@ -2046,6 +2072,9 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   ++g_resolves_copied;
   ++g_layer_resolves[size_t(target->layer)];
   destination->resolved_frame = g_frame;
+  // The box's right edge, so a copy that stops at the content rather than at the
+  // margin is visible as a number rather than as a black bar.
+  LayerTrace("resolve", target, uint32_t(host_x2));
   // The present blit always wants the last colour resolve; a depth resolve
   // must not steal that slot from it.
   if (!is_depth)
@@ -2153,10 +2182,26 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
     return false;
   }
 
-  // The world target for the same guest surface. Acquiring it here rather than
-  // holding a pointer is what keeps the two in step across an extent rebuild:
-  // both are looked up by geometry, so both belong to the current generation.
+  // The world image over the same EDRAM tiles that something actually drew into
+  // most recently. Not the world twin of the bound surface: the guest renders
+  // the scene through a banded 1280x384 surface and composites it into a
+  // 1280x720 one at the end of the frame, so the twin of the surface bound at
+  // the marker is the one the guest's own composite quad writes and the world
+  // layer never touches. Blitting that put an empty image in the margins, which
+  // reads as the letterbox this split exists to remove.
+  //
+  // By draw order rather than by frame: the scene surface and the banded screen
+  // are both drawn every frame, so a frame-granular test picks whichever comes
+  // first in the target list, which was the 720x720 scene surface and is not the
+  // screen.
   GuestTarget* world = BoundColorTarget(0, GuestLayer::kWorld);
+  for (auto& candidate : g_targets) {
+    if (candidate->depth || candidate->layer != GuestLayer::kWorld ||
+        candidate->base_tile != composite->base_tile || !candidate->texture)
+      continue;
+    if (world == nullptr || candidate->drawn_serial > world->drawn_serial)
+      world = candidate.get();
+  }
   if (world == nullptr || !world->texture) {
     ++g_layer_composites_failed;
     return false;
@@ -2224,6 +2269,7 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
 
   composite->composited_frame = g_frame;
   ++g_layer_composites;
+  LayerTrace("world blit from", composite, world->host_width);
   return true;
 }
 
@@ -2263,7 +2309,12 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
 
   BindFramebuffer(commands, framebuffer);
   RippleNoteDrawTarget(color);
-  ++g_layer_draws[size_t((color != nullptr ? color : depth)->layer)];
+  GuestTarget* drawn = color != nullptr ? color : depth;
+  ++g_layer_draws[size_t(drawn->layer)];
+  if (drawn->drawn_frame != g_frame)
+    LayerTrace("first draw", color);
+  drawn->drawn_frame = g_frame;
+  drawn->drawn_serial = ++g_draw_serial;
   // Taken from the attachment rather than from NativeRenderScale, so a draw into
   // a target AcquireTarget declined to grow gets 1 and its viewport is left
   // alone. Colour and depth are already known to agree on size here.
