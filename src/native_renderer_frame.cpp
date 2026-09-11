@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <memory>
 #include <string>
 #include <vector>
@@ -313,25 +314,49 @@ GuestTarget* BoundDepthTarget() {
 const RenderFramebuffer* g_bound_framebuffer = nullptr;
 
 // Resources replaced part way through a frame, held until the frame that may
-// still reference them has run. A command list keeps raw pointers to everything
-// recorded into it and does not execute until the present, so destroying a
-// texture the moment it is replaced leaves the submission reading freed memory.
+// still reference them has actually run on the GPU. A command list keeps raw
+// pointers to everything recorded into it and does not execute until the
+// present, so destroying a texture the moment it is replaced leaves the
+// submission reading freed memory.
 //
-// Drained from FrameNotifyCommandListBegun, which is reached only after the
-// present's fence wait, so anything in here has been retired by then.
-std::vector<std::unique_ptr<RenderTexture>> g_retired_textures;
-std::vector<std::unique_ptr<RenderFramebuffer>> g_retired_framebuffers;
-std::vector<std::unique_ptr<RenderDescriptorSet>> g_retired_sets;
-// Views outlive the set that names them by exactly as long, so they retire
-// together; a view whose texture is gone is as dangerous as the texture.
-std::vector<std::unique_ptr<RenderTextureView>> g_retired_views;
+// Stamped with the frame that retired them, and freed only once that frame is
+// known to have retired. Draining at the next command list open is a frame too
+// early: the present submits frame N and then waits on the slot kFramesInFlight
+// back, which is N-1, so frame N is still executing on the GPU when frame N+1
+// opens its first list. What that buys the GPU is freed memory, and the symptom
+// is a device hang (DXGI_ERROR_DEVICE_HUNG behind a failed Present, plus an
+// nvlddmkm id 153 in the system event log) rather than anything the renderer's
+// own counters can see.
+struct RetiredBatch {
+  uint64_t frame = 0;
+  std::vector<std::unique_ptr<RenderTexture>> textures;
+  std::vector<std::unique_ptr<RenderFramebuffer>> framebuffers;
+  std::vector<std::unique_ptr<RenderDescriptorSet>> sets;
+  // Views outlive the set that names them by exactly as long, so they retire
+  // together; a view whose texture is gone is as dangerous as the texture.
+  std::vector<std::unique_ptr<RenderTextureView>> views;
+  // Whole targets, kept intact rather than stripped of their textures. Callers
+  // acquire a GuestTarget* and only then ask for the command list, which is
+  // where an extent change is applied, so a target dropped from g_targets has to
+  // stay readable for the rest of that frame. The worst this costs is one clear
+  // or draw landing in an image nothing will present.
+  std::vector<std::unique_ptr<GuestTarget>> targets;
+};
+std::deque<RetiredBatch> g_retired;
 
-// Whole targets, kept intact rather than stripped of their textures. Callers
-// acquire a GuestTarget* and only then ask for the command list, which is where
-// an extent change is applied, so a target that is dropped from g_targets has to
-// stay readable for the rest of that frame. The worst this costs is one clear or
-// draw landing in an image nothing will present.
-std::vector<std::unique_ptr<GuestTarget>> g_retired_targets;
+// The batch this frame's retirements go into. Stamping with g_frame is safe
+// either side of FramePreparePresent's bump: a retirement recorded after it is
+// stamped one frame late and so held one frame longer, which errs the only way
+// that cannot hurt.
+RetiredBatch& RetireBatch() {
+  if (g_retired.empty() || g_retired.back().frame != g_frame)
+    g_retired.push_back(RetiredBatch{g_frame});
+  return g_retired.back();
+}
+
+// How many batches are still waiting on the GPU, for the frame summary. A number
+// that keeps climbing means nothing is ever reported retired.
+size_t g_retired_batches_held = 0;
 
 void BindFramebuffer(RenderCommandList* commands, RenderFramebuffer* framebuffer) {
   if (g_bound_framebuffer == framebuffer)
@@ -609,7 +634,7 @@ bool DepthResolveDraw(RenderCommandList* commands, GuestTarget* target,
   }
   if (!destination->depth_set || destination->depth_set_source != target->texture.get()) {
     if (destination->depth_set)
-      g_retired_sets.push_back(std::move(destination->depth_set));
+      RetireBatch().sets.push_back(std::move(destination->depth_set));
     RenderDescriptorRange ranges[2];
     RenderDescriptorSetDesc set_desc = DownscaleSetDesc(ranges);
     destination->depth_set = device->createDescriptorSet(set_desc);
@@ -1262,7 +1287,7 @@ void RippleProbeFlush() {
 
 void FrameRetireDescriptorSet(std::unique_ptr<RenderDescriptorSet> set) {
   if (set)
-    g_retired_sets.push_back(std::move(set));
+    RetireBatch().sets.push_back(std::move(set));
 }
 
 void FrameSetColorSurface(uint32_t index, const Surface* surface) {
@@ -1569,17 +1594,17 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     // Everything that pointed at the old image goes with it: the downscale's
     // descriptor set names it, and the present blit caches it by pointer, which
     // a recycled allocation would otherwise alias.
-    g_retired_textures.push_back(std::move(destination->texture));
+    RetireBatch().textures.push_back(std::move(destination->texture));
     if (destination->readback_source)
-      g_retired_textures.push_back(std::move(destination->readback_source));
+      RetireBatch().textures.push_back(std::move(destination->readback_source));
     if (destination->readback_framebuffer)
-      g_retired_framebuffers.push_back(std::move(destination->readback_framebuffer));
+      RetireBatch().framebuffers.push_back(std::move(destination->readback_framebuffer));
     if (destination->readback_set)
-      g_retired_sets.push_back(std::move(destination->readback_set));
+      RetireBatch().sets.push_back(std::move(destination->readback_set));
     if (destination->depth_framebuffer)
-      g_retired_framebuffers.push_back(std::move(destination->depth_framebuffer));
+      RetireBatch().framebuffers.push_back(std::move(destination->depth_framebuffer));
     if (destination->depth_set)
-      g_retired_sets.push_back(std::move(destination->depth_set));
+      RetireBatch().sets.push_back(std::move(destination->depth_set));
     destination->depth_set_source = nullptr;
     destination->readback_source_layout = RenderTextureLayout::UNKNOWN;
     PresentBlitForgetTexture();
@@ -1748,13 +1773,13 @@ void LogFrameSummary() {
       "applied={} dropped={} aliased={} | resolves copied={} dropped={} banded={} extent mismatch={} "
       "scale rebuilds={} undersized={} extent rebuilds={} | "
       "attachment mismatch={} | scale={}x extent={}x{} downscale failed={} | "
-      "composites={} skipped={} | presenting 0x{:08X} ({}x{})",
+      "composites={} skipped={} | retired batches held={} | presenting 0x{:08X} ({}x{})",
       g_targets.size(), g_framebuffers.size(), g_resolved.size(), g_clears_applied,
       g_clears_dropped, g_clears_aliased, g_resolves_copied, g_resolves_dropped, g_resolves_banded,
       g_resolve_extent_mismatch, g_resolve_scale_mismatch, g_resolve_scale_undersized,
       g_extent_rebuilds, g_attachment_mismatch, NativeRenderScale(), g_render_extent_width,
       g_render_extent_height, g_readback_downscale_failed, g_composites, g_composites_skipped,
-      g_present_texture ? g_present_texture->address : 0,
+      g_retired_batches_held, g_present_texture ? g_present_texture->address : 0,
       g_present_texture ? g_present_texture->width : 0,
       g_present_texture ? g_present_texture->height : 0);
 }
@@ -2055,12 +2080,13 @@ void ApplyPendingExtent() {
   // matches on geometry, so targets built at the old extent would not be found
   // again and a second set would quietly appear beside them while the guest's
   // resolves kept reading the first.
+  const size_t retired_targets = g_targets.size();
   for (auto& target : g_targets)
-    g_retired_targets.push_back(std::move(target));
+    RetireBatch().targets.push_back(std::move(target));
   g_targets.clear();
   for (auto& entry : g_framebuffers) {
     if (entry.framebuffer)
-      g_retired_framebuffers.push_back(std::move(entry.framebuffer));
+      RetireBatch().framebuffers.push_back(std::move(entry.framebuffer));
   }
   g_framebuffers.clear();
   g_bound_framebuffer = nullptr;
@@ -2074,9 +2100,9 @@ void ApplyPendingExtent() {
   // costs one rebuild per destination per resize.
   for (auto& destination : g_resolved) {
     if (destination->depth_set)
-      g_retired_sets.push_back(std::move(destination->depth_set));
+      RetireBatch().sets.push_back(std::move(destination->depth_set));
     if (destination->depth_source_view)
-      g_retired_views.push_back(std::move(destination->depth_source_view));
+      RetireBatch().views.push_back(std::move(destination->depth_source_view));
     destination->depth_set_source = nullptr;
   }
 
@@ -2085,7 +2111,7 @@ void ApplyPendingExtent() {
   // something draws over it.
   ++g_extent_rebuilds;
   REXLOG_INFO("native_renderer: render extent now {}x{}; {} target(s) retired",
-              g_render_extent_width, g_render_extent_height, g_retired_targets.size());
+              g_render_extent_width, g_render_extent_height, retired_targets);
 }
 
 bool FramePreparePresent(RenderCommandList* commands) {
@@ -2184,11 +2210,7 @@ void ShutdownFrameTargets() {
   }
 
   g_bound_framebuffer = nullptr;
-  g_retired_textures.clear();
-  g_retired_framebuffers.clear();
-  g_retired_sets.clear();
-  g_retired_views.clear();
-  g_retired_targets.clear();
+  g_retired.clear();
   g_framebuffers.clear();
   g_targets.clear();
   g_resolved.clear();
