@@ -1772,6 +1772,12 @@ void DrawSetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height, fl
 namespace {
 bool RecordGuestDraw(const GuestDrawCall& call);
 
+// The draw that separates the world from the UI. One per frame in every field
+// frame measured, and absent from menu frames, which have no 3D to separate.
+// See the layer probe below for how it was found.
+constexpr int kLayerMarkerVertexSlot = 0x62;
+constexpr int kLayerMarkerPixelSlot = 0x65;
+
 // The layer probe.
 //
 // Two questions have to be answered from a running frame before the world and
@@ -1913,6 +1919,10 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   }
   NoteGuestShaderDraw(vertex_slot, pixel_slot, elapsed_ns);
   LayerProbeNoteDraw(vertex_slot, pixel_slot, call.state);
+
+  // Arm the UI transition here; intervening resolves still need the world.
+  if (vertex_slot == kLayerMarkerVertexSlot && pixel_slot == kLayerMarkerPixelSlot)
+    FrameNoteLayerBoundary();
   return true;
 }
 

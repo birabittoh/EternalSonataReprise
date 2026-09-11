@@ -1634,6 +1634,9 @@ REX_HOOK_RAW(D3DDevice__Swap) {
     eternalsonata::g_guest_frame_callback();
   }
 
+  // The guest's own frame boundary, and the only one the draw path has: the
+  // next frame starts in the world layer again.
+  eternalsonata::FrameResetLayer();
   eternalsonata::LayerProbeEndFrame();
 
   static uint64_t swaps = 0;
