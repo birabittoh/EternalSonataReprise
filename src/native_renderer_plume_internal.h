@@ -105,10 +105,14 @@ void FramePresentGuestImage(plume::RenderCommandList* commands, uint32_t width, 
 //
 // The bind is deduplicated inside, because Plume's Vulkan backend ends the
 // active render pass on every setFramebuffer.
+// `clip_scale_x`/`clip_scale_y` are what a world draw's clip space is compressed
+// by so the wider image is extra field of view rather than a stretch. See
+// LayerClipScale.
 plume::RenderFramebuffer* FrameBindDrawTargets(plume::RenderCommandList* commands,
                                                uint32_t* width, uint32_t* height,
                                                float* scale_x, float* scale_y,
-                                               int32_t* offset_x, int32_t* offset_y);
+                                               int32_t* offset_x, int32_t* offset_y,
+                                               float* clip_scale_x, float* clip_scale_y);
 
 // Publish the window's size as the extent every "resolution" target is built at.
 // Call once per frame, on the guest thread, at the frame boundary: the extent is

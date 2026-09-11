@@ -665,9 +665,10 @@ RenderPipelineLayout* EnsureLayout(RenderDevice* device) {
   // The four constant banks, as root descriptors rather than a descriptor set:
   // they change per draw and a root CBV is the cheapest way to point at a new
   // slice of an upload buffer. b0/b1 are the vertex float and bool banks,
-  // b2/b3 the pixel ones, and b4 is the alpha test, which is render state
-  // rather than a guest constant bank: the console tests alpha in fixed
-  // function hardware and the host has to do it in the shader.
+  // b2/b3 the pixel ones, and b4 is XeDrawState, which is render state rather
+  // than a guest constant bank: the alpha test the console does in fixed
+  // function hardware, the point sprite size, and the world clip scale. All
+  // three stages read it, so it carries no visibility restriction.
   //
   // Register space 2, matching the generated HLSL: under Vulkan these become a
   // push descriptor set at set index 2, and space 0 is already the textures'.
