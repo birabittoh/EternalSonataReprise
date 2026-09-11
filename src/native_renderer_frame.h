@@ -74,6 +74,13 @@ void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t he
 // the very image it is writing.
 const void* FrameCurrentColorTexture();
 
+// Which guest surface colour target 0 currently stands for, for the layer probe
+// in the draw layer: the question it answers is whether the UI draws into the
+// banded screen target or into a surface of its own, and a target is only
+// distinguishable by the tile and the guest extent behind it.
+bool FrameDescribeBoundColor(uint32_t* base_tile, uint32_t* guest_width, uint32_t* guest_height,
+                             uint32_t* host_width, uint32_t* host_height);
+
 // The host frame currently being recorded, counted at the present. The readback
 // path needs it to know whether a copy it recorded has actually run yet: a
 // resolve in an earlier frame has completed by definition, because the present

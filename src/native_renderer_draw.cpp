@@ -1771,7 +1771,94 @@ void DrawSetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height, fl
 
 namespace {
 bool RecordGuestDraw(const GuestDrawCall& call);
+
+// The layer probe.
+//
+// Two questions have to be answered from a running frame before the world and
+// the UI can be split into separate targets: whether the UI draws into the
+// banded screen target or into a surface of its own, and whether the frame is
+// cleanly world-then-UI or interleaves the two. Both are about the *sequence* of
+// draws, which no counter can show, so this run-length encodes one frame's
+// shader slots and the target each ran against.
+//
+// Off unless ES_LAYER_PROBE is set, to a swap interval: one frame in that many
+// is recorded and dumped, so a single run can be walked from the title screen
+// through a field and into a battle and every phase gets sampled.
+// `depth` is the depth test and write as one letter pair, because that is the
+// candidate classifier once the shader pair turned out not to be one: vs0f/ps03
+// draws in both layers, so something about the *state* has to separate them.
+struct ProbeRun {
+  int vertex_slot = -1;
+  int pixel_slot = -1;
+  uint32_t base_tile = 0;
+  uint32_t guest_width = 0;
+  uint32_t guest_height = 0;
+  bool depth_enabled = false;
+  bool depth_write = false;
+  uint32_t count = 0;
+};
+std::vector<ProbeRun> g_probe_runs;
+bool g_probe_armed = false;
+
+uint32_t LayerProbeInterval() {
+  static const uint32_t interval = [] {
+    const char* value = std::getenv("ES_LAYER_PROBE");
+    if (value == nullptr)
+      return 0u;
+    const int parsed = std::atoi(value);
+    return parsed > 0 ? uint32_t(parsed) : 300u;
+  }();
+  return interval;
+}
+
+void LayerProbeNoteDraw(int vertex_slot, int pixel_slot, const GuestRenderState& state) {
+  if (!g_probe_armed)
+    return;
+  uint32_t base_tile = 0, guest_width = 0, guest_height = 0;
+  FrameDescribeBoundColor(&base_tile, &guest_width, &guest_height, nullptr, nullptr);
+  if (!g_probe_runs.empty()) {
+    ProbeRun& last = g_probe_runs.back();
+    if (last.vertex_slot == vertex_slot && last.pixel_slot == pixel_slot &&
+        last.base_tile == base_tile && last.guest_width == guest_width &&
+        last.guest_height == guest_height && last.depth_enabled == state.depth_enabled &&
+        last.depth_write == state.depth_write) {
+      ++last.count;
+      return;
+    }
+  }
+  g_probe_runs.push_back({vertex_slot, pixel_slot, base_tile, guest_width, guest_height,
+                          state.depth_enabled, state.depth_write, 1});
+}
+
 }  // namespace
+
+void LayerProbeEndFrame() {
+  const uint32_t interval = LayerProbeInterval();
+  if (interval == 0)
+    return;
+
+  static uint64_t swaps = 0;
+  if (!g_probe_armed) {
+    g_probe_armed = ++swaps % interval == 0;
+    return;
+  }
+  g_probe_armed = false;
+
+  std::string line;
+  for (const ProbeRun& run : g_probe_runs) {
+    if (!line.empty())
+      line += "  ";
+    line += fmt::format("vs{:02x}/ps{:02x}@t{}:{}x{}/z{}{}",
+                        run.vertex_slot < 0 ? 0 : run.vertex_slot,
+                        run.pixel_slot < 0 ? 0 : run.pixel_slot, run.base_tile, run.guest_width,
+                        run.guest_height, run.depth_enabled ? "t" : "-",
+                        run.depth_write ? "w" : "-");
+    if (run.count > 1)
+      line += fmt::format("x{}", run.count);
+  }
+  REXLOG_INFO("native_renderer: layer probe frame ({} runs): {}", g_probe_runs.size(), line);
+  g_probe_runs.clear();
+}
 
 // The draw, plus the shader debugger's two hooks into it: a shader switched off
 // in the F2 overlay drops every draw that binds it, and one that draws is
@@ -1817,6 +1904,7 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
     elapsed_ns = elapsed_ns != 0 ? elapsed_ns : 1;
   }
   NoteGuestShaderDraw(vertex_slot, pixel_slot, elapsed_ns);
+  LayerProbeNoteDraw(vertex_slot, pixel_slot, call.state);
   return true;
 }
 
