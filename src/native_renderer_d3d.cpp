@@ -1634,6 +1634,8 @@ REX_HOOK_RAW(D3DDevice__Swap) {
     eternalsonata::g_guest_frame_callback();
   }
 
+  eternalsonata::LayerProbeEndFrame();
+
   static uint64_t swaps = 0;
   if (++swaps % 300 == 0) {
     REXLOG_INFO("native_renderer: guest swap #{}", swaps);
