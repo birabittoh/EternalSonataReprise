@@ -4,6 +4,7 @@
 
 #include "native_renderer_plume.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -279,6 +280,19 @@ rex::ui::UIDrawer* g_overlay = nullptr;
 uint64_t g_frames_presented = 0;
 uint64_t g_acquire_failures = 0;
 bool g_acquire_failure_reported = false;
+
+// Waits taken that no present paid back. The frame latency waitable object is a
+// semaphore seeded with maxFrameLatency and topped up only by Present, so a
+// frame that waits and then bails out spends a token for good; spend
+// maxFrameLatency of them and the next wait blocks forever, with the guest
+// thread parked in swap_chain->wait() and no frame ever reaching the screen.
+// Skipping that many later waits is what puts the count back. Capped at the
+// latency itself, since the semaphore cannot be more empty than that and an
+// uncapped count would go on skipping waits long after the balance was restored.
+uint32_t g_present_debt = 0;
+uint64_t g_present_failures = 0;
+
+void OwePresentWait() { g_present_debt = std::min(g_present_debt + 1, kMaxFrameLatency); }
 
 // Whether the frame's command list is currently open. The guest opens it at its
 // first render call of the frame and the present closes it; see
@@ -717,8 +731,12 @@ void PlumePresentFrame() {
   // inside present is the whole point: it yields when there is genuinely nothing
   // to do rather than snapping the frame rate to a divisor of the refresh rate.
   if (g_present_wait) {
-    ProfileZone wait_zone(kPhasePresent);
-    g_backend.swap_chain->wait();
+    if (g_present_debt > 0) {
+      --g_present_debt;
+    } else {
+      ProfileZone wait_zone(kPhasePresent);
+      g_backend.swap_chain->wait();
+    }
   }
 
   // The frame being recorded, captured before FramePreparePresent below counts
@@ -739,18 +757,22 @@ void PlumePresentFrame() {
           "dropped until it recovers");
     }
     g_resize_pending.store(true, std::memory_order_release);
+    OwePresentWait();
     FlushWithoutPresent();
     return;
   }
   if (image >= g_backend.framebuffers.size()) {
+    OwePresentWait();
     FlushWithoutPresent();
     return;
   }
 
   RenderTexture* backbuffer = g_backend.swap_chain->getTexture(image);
   RenderCommandList* commands = PlumeGuestCommands();
-  if (commands == nullptr)
+  if (commands == nullptr) {
+    OwePresentWait();
     return;
+  }
 
   const uint32_t width = g_backend.swap_chain->getWidth();
   const uint32_t height = g_backend.swap_chain->getHeight();
@@ -806,7 +828,14 @@ void PlumePresentFrame() {
   g_backend.queue->executeCommandLists(&submit, 1, &wait, 1, &signal, 1, submitting.fence.get());
   submitting.submitted = true;
   submitting.frame_index = recording_frame;
-  g_backend.swap_chain->present(image, &signal, 1);
+  // A failed Present does not top the frame latency semaphore back up either, so
+  // it owes the same debt an early return does.
+  if (!g_backend.swap_chain->present(image, &signal, 1)) {
+    OwePresentWait();
+    if (++g_present_failures == 1)
+      REXLOG_WARN("native_renderer: Plume present failed; the swap chain may be out of date");
+    g_resize_pending.store(true, std::memory_order_release);
+  }
 
   // And then do *not* wait for it. This is the whole of frames in flight: the
   // frame just submitted runs on the GPU while the CPU records the next one,
@@ -827,8 +856,10 @@ void PlumePresentFrame() {
   BeginGuestDrawFrame(g_slot);
 
   if (++g_frames_presented % 600 == 0) {
-    REXLOG_INFO("native_renderer: Plume presented {} frames ({} acquire failures)",
-                g_frames_presented, g_acquire_failures);
+    REXLOG_INFO(
+        "native_renderer: Plume presented {} frames ({} acquire failures, {} present failures, "
+        "{} wait(s) owed)",
+        g_frames_presented, g_acquire_failures, g_present_failures, g_present_debt);
   }
 }
 
