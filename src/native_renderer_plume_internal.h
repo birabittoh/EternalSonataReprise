@@ -91,15 +91,28 @@ void FramePresentGuestImage(plume::RenderCommandList* commands, uint32_t width, 
 // back its size so a draw can clamp the guest's viewport to it. Null when the
 // guest has nothing bound, which is a draw that cannot be issued.
 //
-// `scale` is the supersampling factor the attachments were created at, which is
-// what the guest's own viewport (in guest pixels) has to be multiplied by. Not
-// always NativeRenderScale: a target that is not the screen is never grown.
+// `scale_x`/`scale_y` are the supersampling factors the attachments were created
+// at, which is what the guest's own viewport (in guest pixels) has to be
+// multiplied by. Not always NativeRenderScale: a target that is not the screen
+// is never grown.
 //
 // The bind is deduplicated inside, because Plume's Vulkan backend ends the
 // active render pass on every setFramebuffer.
 plume::RenderFramebuffer* FrameBindDrawTargets(plume::RenderCommandList* commands,
                                                uint32_t* width, uint32_t* height,
-                                               uint32_t* scale);
+                                               float* scale_x, float* scale_y);
+
+// Publish the window's size as the extent every "resolution" target is built at.
+// Call once per frame, on the guest thread, at the frame boundary: the extent is
+// part of a target's identity, so a change mid frame would have a resolve read
+// out of an image of a different size than the draws wrote into.
+void FrameNoteWindowExtent(uint32_t width, uint32_t height);
+
+// Bracket the whole of the present. What the extent change tears down can only
+// be retired from a command list opened by the guest's own work, never from one
+// opened inside the present, which is already recorded and about to be
+// submitted.
+void FrameNotePresentPhase(bool active);
 
 // A fresh command list has no framebuffer bound, so the deduplication above has
 // to be told. Called from wherever the frame's list is begun.

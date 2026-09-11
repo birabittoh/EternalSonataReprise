@@ -1843,12 +1843,13 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 
   uint32_t target_width = 0;
   uint32_t target_height = 0;
-  uint32_t target_scale = 1;
+  float target_scale_x = 1.0f;
+  float target_scale_y = 1.0f;
   bool have_targets;
   {
     ProfileZone targets_zone(kPhaseBindTargets);
-    have_targets =
-        FrameBindDrawTargets(commands, &target_width, &target_height, &target_scale) != nullptr;
+    have_targets = FrameBindDrawTargets(commands, &target_width, &target_height, &target_scale_x,
+                                        &target_scale_y) != nullptr;
   }
   if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
@@ -2278,16 +2279,17 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // The guest states it in guest pixels and the target may be supersampled, so
   // it is scaled up before the clamp -- that scaling *is* the higher rendering
   // resolution, since it is the viewport transform that decides how many host
-  // pixels the same clip-space triangle covers. `target_scale` rather than
+  // pixels the same clip-space triangle covers. `target_scale_x`/`target_scale_y` rather than
   // NativeRenderScale, so a draw into a target that was not grown is untouched.
   float x = 0.0f, y = 0.0f;
   float width = float(target_width), height = float(target_height);
   if (g_viewport.set) {
-    const float s = float(target_scale);
-    x = float(g_viewport.x) * s;
-    y = float(g_viewport.y) * s;
-    width = float(g_viewport.width) * s;
-    height = float(g_viewport.height) * s;
+    // Edges, not sizes, so two viewports that abut in guest pixels still abut
+    // once the scale is fractional.
+    x = float(g_viewport.x) * target_scale_x;
+    y = float(g_viewport.y) * target_scale_y;
+    width = float(g_viewport.x + g_viewport.width) * target_scale_x - x;
+    height = float(g_viewport.y + g_viewport.height) * target_scale_y - y;
     if (x + width > float(target_width))
       width = float(target_width) - x;
     if (y + height > float(target_height))
@@ -2332,7 +2334,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // for every draw, which is what makes it correct for the passes that never
   // touch a screen-space UV as well.
   //
-  // Half a *host* pixel, so it is deliberately not multiplied by target_scale
+  // Half a *host* pixel, so it is deliberately not multiplied by the target scale
   // above: what it corrects is where the host rasteriser takes its sample
   // within a target pixel, which is a property of the target's own grid. The
   // game's baked half-texel UVs are a separate, guest-space term and are
@@ -2356,7 +2358,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // cost far more geometry than it fixed.
   //
   // The scaled viewport reciprocal turns a point diameter in guest pixels into
-  // a clip space radius. This includes target_scale because both PA_SU_POINT_SIZE
+  // a clip space radius. This includes the target scale because both PA_SU_POINT_SIZE
   // and a vertex shader's e63 export are measured on the guest's 1280x720 pixel
   // grid, while width and height describe the supersampled host target. Its y is
   // negated under SPIR-V because the vertex shaders are compiled with
@@ -2373,8 +2375,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   uint32_t draw_state[12] = {};
   const uint32_t alpha_func = alpha_enabled ? uint32_t(call.state.alpha_func) : 7u;  // 7 is ALWAYS
   const uint32_t param_gen = point_list && call.state.param_gen_enabled ? 1u : 0u;
-  const float point_scale = float(target_scale);
-  const float point_ndc[2] = {point_scale / width, ndc_y_sign * point_scale / height};
+  const float point_ndc[2] = {target_scale_x / width, ndc_y_sign * target_scale_y / height};
   // Which of the two point sizes the geometry shader reads. A vertex shader
   // with no e63 export leaves the varying at its sentinel, and a real export
   // can be negative, so the choice cannot be made from the value.
