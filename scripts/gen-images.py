@@ -14,6 +14,7 @@ OUT_PATH = os.path.join(ROOT, "src", "images.generated.h")
 # (source file, C identifier)
 IMAGES = [
     ("icon_trophies.png", "IconTrophies"),
+    ("icon_trophies_glow.png", "IconTrophiesGlow"),
 ]
 
 

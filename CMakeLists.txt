@@ -140,12 +140,16 @@ add_custom_command(
 # src/images.generated.h is a gitignored build artifact regenerated whenever a
 # .png or the generator script changes.
 set(ETERNALSONATA_IMAGES_HEADER ${CMAKE_SOURCE_DIR}/src/images.generated.h)
+# Globbed so that adding a .png cannot leave a stale header behind: naming them
+# one by one means a new image silently never rebuilds it.
+file(GLOB ETERNALSONATA_IMAGE_SOURCES CONFIGURE_DEPENDS
+     ${CMAKE_SOURCE_DIR}/src/images/*.png)
 add_custom_command(
     OUTPUT ${ETERNALSONATA_IMAGES_HEADER}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-images.py
     DEPENDS
         ${CMAKE_SOURCE_DIR}/scripts/gen-images.py
-        ${CMAKE_SOURCE_DIR}/src/images/icon_trophies.png
+        ${ETERNALSONATA_IMAGE_SOURCES}
     COMMENT "Generating src/images.generated.h"
     VERBATIM
 )
