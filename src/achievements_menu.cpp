@@ -100,6 +100,9 @@ constexpr std::uint32_t kMutedFlagAddr = 0x824253A2u;
 // the rest of the menus use when the cursor moves.
 constexpr std::uint32_t kSoundManagerAddr = 0x8243D89Cu;
 constexpr std::uint32_t kSoundCursorMove = 4u;
+// What the rest of the menus give for a choice taken and a choice undone.
+constexpr std::uint32_t kSoundConfirm = 5u;
+constexpr std::uint32_t kSoundCancel = 3u;
 
 // dword_82440128: rows in the current tab, the scroll limit sub_82226858 tests.
 constexpr std::uint32_t kRowCountAddr = 0x82440128u;
@@ -538,11 +541,19 @@ bool HighlightedRow(std::uint8_t* base, int* tab, int* index) {
   return true;
 }
 
-// Shows the highlighted row's own name and description in place of "???", for
-// this session only: nothing is unlocked and nothing is written to the save.
-// The title is rewritten straight into the row's own text object, because
+// Toggles the highlighted row between its own name and description and "???",
+// for this session only: nothing is unlocked and nothing is written to the
+// save. The title is rewritten straight into the row's own text object, because
 // rebuilding the list (sub_822273A0) allocates a second set of rows over the
 // first and takes the scroll back to the top.
+void PlaySound(PPCContext& ctx, std::uint8_t* base, std::uint32_t id) {
+  PPCContext call = ctx;
+  call.r3.u32 = REX_LOAD_U32(kSoundManagerAddr);
+  call.r4.u32 = id;
+  call.r5.u32 = 0;
+  sub_821425D8(call, base);
+}
+
 void RevealHighlighted(PPCContext& ctx, std::uint8_t* base) {
   int tab = 0;
   int index = 0;
@@ -552,20 +563,29 @@ void RevealHighlighted(PPCContext& ctx, std::uint8_t* base) {
   }
 
   std::string title;
+  bool revealed = false;
   {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (index >= static_cast<int>(g_tabs[tab].size())) {
       return;
     }
     Row& row = g_tabs[tab][static_cast<std::size_t>(index)];
-    if (row.revealed) {
+    // An earned or non-secret row reads as itself whatever the flag says, so
+    // there is nothing to toggle and no sound to give for it.
+    if (row.unlocked || !row.secret) {
       return;
     }
-    row.revealed = true;
-    g_revealed.insert(row.id);
+    row.revealed = !row.revealed;
+    if (row.revealed) {
+      g_revealed.insert(row.id);
+    } else {
+      g_revealed.erase(row.id);
+    }
     title = RowTitle(&row);
+    revealed = row.revealed;
   }
 
+  PlaySound(ctx, base, revealed ? kSoundConfirm : kSoundCancel);
   g_description_row = -1;  // so the description is rewritten this tick
 
   const std::uint32_t row_object = g_row_object[tab][index];
@@ -611,11 +631,7 @@ void PlayCursorMove(PPCContext& ctx, std::uint8_t* base) {
   if (!changed || first) {
     return;
   }
-  PPCContext call = ctx;
-  call.r3.u32 = REX_LOAD_U32(kSoundManagerAddr);
-  call.r4.u32 = kSoundCursorMove;
-  call.r5.u32 = 0;
-  sub_821425D8(call, base);
+  PlaySound(ctx, base, kSoundCursorMove);
 }
 
 void UpdateDescription(PPCContext& ctx, std::uint8_t* base) {
