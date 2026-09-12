@@ -1791,9 +1791,8 @@ constexpr int kLayerMarkerPixelSlot = 0x65;
 // draws, which no counter can show, so this run-length encodes one frame's
 // shader slots and the target each ran against.
 //
-// Off unless ES_LAYER_PROBE is set, to a swap interval: one frame in that many
-// is recorded and dumped, so a single run can be walked from the title screen
-// through a field and into a battle and every phase gets sampled.
+// ES_LAYER_PROBE sets the swap interval. The experimental UI layer defaults
+// to one frame in 300 so resize reports include the draw geometry.
 // `depth` is the depth test and write as one letter pair, because that is the
 // candidate classifier once the shader pair turned out not to be one: vs0f/ps03
 // draws in both layers, so something about the *state* has to separate them.
@@ -1811,40 +1810,56 @@ struct ProbeRun {
   uint32_t depth_func = 7;
   bool blend = false;
   uint32_t count = 0;
+  std::string geometry;
 };
 std::vector<ProbeRun> g_probe_runs;
 bool g_probe_armed = false;
+std::string g_probe_geometry;
 
 uint32_t LayerProbeInterval() {
   static const uint32_t interval = [] {
     const char* value = std::getenv("ES_LAYER_PROBE");
     if (value == nullptr)
-      return 0u;
+      return std::getenv("ES_UI_LAYER") != nullptr ? 300u : 0u;
     const int parsed = std::atoi(value);
     return parsed > 0 ? uint32_t(parsed) : 300u;
   }();
   return interval;
 }
 
-void LayerProbeNoteDraw(int vertex_slot, int pixel_slot, const GuestRenderState& state) {
+void LayerProbeNoteDraw(int vertex_slot, int pixel_slot, const GuestDrawCall& call) {
   if (!g_probe_armed)
     return;
+  const GuestRenderState& state = call.state;
   uint32_t base_tile = 0, guest_width = 0, guest_height = 0;
   FrameDescribeBoundColor(&base_tile, &guest_width, &guest_height, nullptr, nullptr);
+  std::string geometry = g_probe_geometry;
+  if (vertex_slot <= 6 || (vertex_slot >= 94 && vertex_slot <= 99)) {
+    const uint32_t mask = GuestPipelineTextureMask(call.pipeline);
+    for (uint32_t stage = 0; stage < kTextureSlots; ++stage) {
+      if ((mask & (1u << stage)) == 0)
+        continue;
+      TextureFetch fetch;
+      if (GetBoundTextureFetch(call.memory_base, stage, fetch, nullptr))
+        geometry += fmt::format(" tf{}={:08x}:{}x{}", stage, fetch.base_address,
+                                fetch.width, fetch.height);
+    }
+  }
   if (!g_probe_runs.empty()) {
     ProbeRun& last = g_probe_runs.back();
     if (last.vertex_slot == vertex_slot && last.pixel_slot == pixel_slot &&
         last.base_tile == base_tile && last.guest_width == guest_width &&
         last.guest_height == guest_height && last.depth_enabled == state.depth_enabled &&
         last.depth_write == state.depth_write &&
-        last.depth_func == uint32_t(state.depth_func) && last.blend == state.blend_enabled) {
+        last.depth_func == uint32_t(state.depth_func) && last.blend == state.blend_enabled &&
+        last.geometry == geometry) {
       ++last.count;
       return;
     }
   }
   g_probe_runs.push_back({vertex_slot, pixel_slot, base_tile, guest_width, guest_height,
                           state.depth_enabled, state.depth_write, uint32_t(state.depth_func),
-                          state.blend_enabled, 1});
+                          state.blend_enabled, 1, std::move(geometry)});
 }
 
 }  // namespace
@@ -1873,6 +1888,7 @@ void LayerProbeEndFrame() {
     line += fmt::format("f{}{}", run.depth_func, run.blend ? "b" : "-");
     if (run.count > 1)
       line += fmt::format("x{}", run.count);
+    line += fmt::format(" [{}]", run.geometry);
   }
   REXLOG_INFO("native_renderer: layer probe frame ({} runs): {}", g_probe_runs.size(), line);
   g_probe_runs.clear();
@@ -1922,7 +1938,7 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
     elapsed_ns = elapsed_ns != 0 ? elapsed_ns : 1;
   }
   NoteGuestShaderDraw(vertex_slot, pixel_slot, elapsed_ns);
-  LayerProbeNoteDraw(vertex_slot, pixel_slot, call.state);
+  LayerProbeNoteDraw(vertex_slot, pixel_slot, call);
 
   // Arm the UI transition here; intervening resolves still need the world.
   if (vertex_slot == kLayerMarkerVertexSlot && pixel_slot == kLayerMarkerPixelSlot)
@@ -1962,16 +1978,29 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   int32_t target_offset_y = 0;
   float clip_scale_x = 1.0f;
   float clip_scale_y = 1.0f;
+  int draw_vertex_slot = -1, draw_pixel_slot = -1;
+  GuestPipelineShaderSlots(call.pipeline, &draw_vertex_slot, &draw_pixel_slot);
+  const bool screen_composite = draw_vertex_slot == 3 &&
+      (draw_pixel_slot == 4 || draw_pixel_slot == 9) &&
+      g_viewport.set && g_viewport.x == 0 && g_viewport.y == 0 &&
+      g_viewport.width >= 1280 && g_viewport.height >= 720;
   bool have_targets;
   {
     ProfileZone targets_zone(kPhaseBindTargets);
     have_targets = FrameBindDrawTargets(commands, &target_width, &target_height, &target_scale_x,
                                         &target_scale_y, &target_offset_x, &target_offset_y,
-                                        &clip_scale_x, &clip_scale_y) != nullptr;
+                                        &clip_scale_x, &clip_scale_y, screen_composite) != nullptr;
   }
   if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
     return false;
+  }
+  if (g_probe_armed) {
+    g_probe_geometry = fmt::format(
+        "viewport {}:{},{} {}x{} host {}x{} offset {},{} scale {},{} clip {},{} screen {}",
+        g_viewport.set, g_viewport.x, g_viewport.y, g_viewport.width, g_viewport.height,
+        target_width, target_height, target_offset_x, target_offset_y,
+        target_scale_x, target_scale_y, clip_scale_x, clip_scale_y, screen_composite);
   }
 
   const bool rect_list = call.primitive_type == 8;
@@ -2523,10 +2552,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   std::memcpy(&draw_state[8], &call.state.point_diameter_min, 4);
   std::memcpy(&draw_state[9], &call.state.point_diameter_max, 4);
   draw_state[10] = point_size_from_vertex;  // 11 is the cbuffer's tail padding
-  // Unconditional, because whether a shader is allowed this is decided offline:
-  // only a vertex shader whose position is a projection declares xe_clip_scale
-  // at all, so a fullscreen pass ignores it rather than being told to. See
-  // VertexShader._scan_position_source in scripts/xenos_hlsl.py.
+  // The shader scan excludes direct clip space writes. The target selection
+  // keeps auxiliary projections independent of the window aspect.
   std::memcpy(&draw_state[12], &clip_scale_x, 4);
   std::memcpy(&draw_state[13], &clip_scale_y, 4);
   if (!g_draw_state_cache.valid ||

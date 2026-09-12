@@ -2301,6 +2301,10 @@ void LayerClipScale(const GuestTarget* target, float* x, float* y) {
   D3DTilingExtent(&extent_width, &extent_height);
   if (window_width == 0 || window_height == 0 || extent_width == 0 || extent_height == 0)
     return;
+  // The camera draws into the screen bands. The square auxiliary pass has
+  // its own projection and must keep its original framing.
+  if (target->width != extent_width)
+    return;
   // The same `fit` the composite layer frames the UI with, so the two agree to
   // the pixel rather than to the aspect ratio.
   const double fit = std::min(double(window_width) / double(extent_width),
@@ -2312,7 +2316,8 @@ void LayerClipScale(const GuestTarget* target, float* x, float* y) {
 RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* width,
                                         uint32_t* height, float* scale_x, float* scale_y,
                                         int32_t* offset_x, int32_t* offset_y,
-                                        float* clip_scale_x, float* clip_scale_y) {
+                                        float* clip_scale_x, float* clip_scale_y,
+                                        bool screen_composite) {
   // Resolves between the marker and this draw still read the world surface.
   if (g_marker_seen)
     g_layer = GuestLayer::kComposite;
@@ -2356,20 +2361,29 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   // a target AcquireTarget declined to grow gets 1 and its viewport is left
   // alone. Colour and depth are already known to agree on size here.
   const GuestTarget* sized = color != nullptr ? color : depth;
+  // Screen effects and the final copy sample the expanded world, including
+  // when the guest binds a band of the screen as their destination.
+  const bool full_screen = screen_composite && g_marker_seen &&
+      sized->layer == GuestLayer::kComposite && sized->resolution &&
+      sized->width == 1280 && (sized->height == 384 || sized->height == 720);
+  const uint32_t content_width = sized->content_width != 0
+      ? sized->content_width : framebuffer->getWidth();
+  const uint32_t content_height = sized->content_height != 0
+      ? sized->content_height : framebuffer->getHeight();
   // The guest's own rectangle inside the attachment, which is the whole of it
   // everywhere except the UI layer.
   if (width)
-    *width = sized->content_width != 0 ? sized->content_width : framebuffer->getWidth();
+    *width = full_screen ? framebuffer->getWidth() : content_width;
   if (height)
-    *height = sized->content_height != 0 ? sized->content_height : framebuffer->getHeight();
+    *height = full_screen ? framebuffer->getHeight() : content_height;
   if (scale_x)
-    *scale_x = sized->scale_x;
+    *scale_x = full_screen ? float(framebuffer->getWidth()) / 1280.0f : sized->scale_x;
   if (scale_y)
-    *scale_y = sized->scale_y;
+    *scale_y = full_screen ? float(framebuffer->getHeight()) / 720.0f : sized->scale_y;
   if (offset_x)
-    *offset_x = sized->offset_x;
+    *offset_x = full_screen ? 0 : sized->offset_x;
   if (offset_y)
-    *offset_y = sized->offset_y;
+    *offset_y = full_screen ? 0 : sized->offset_y;
   if (clip_scale_x != nullptr && clip_scale_y != nullptr)
     LayerClipScale(sized, clip_scale_x, clip_scale_y);
   return framebuffer;
