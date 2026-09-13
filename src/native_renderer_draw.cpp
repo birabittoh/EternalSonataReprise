@@ -1776,6 +1776,37 @@ void DrawSetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height, fl
 namespace {
 bool RecordGuestDraw(const GuestDrawCall& call);
 
+bool IsSceneSprite(const GuestDrawCall& call, int vertex_slot) {
+  if (vertex_slot < 0x0d || vertex_slot > 0x12 || call.device == nullptr)
+    return false;
+  // These sprites use c4..7 for the camera. UI projections have constant W.
+  const uint8_t* bank = call.device + d3d::kVertexConstantShadow;
+  return std::abs(GuestFloat(bank, 7, 0)) > 0.000001f ||
+      std::abs(GuestFloat(bank, 7, 1)) > 0.000001f ||
+      std::abs(GuestFloat(bank, 7, 2)) > 0.000001f;
+}
+
+bool IsScreenColorFill(const GuestDrawCall& call) {
+  const GuestDrawStream& stream = call.streams[0];
+  if (call.indexed || call.primitive_type != 6 || call.count != 4 ||
+      stream.data == nullptr || stream.stride != 12 || stream.size < 48)
+    return false;
+  uint32_t corners = 0;
+  for (uint32_t i = 0; i < 4; ++i) {
+    const uint8_t* vertex = stream.data + i * stream.stride;
+    const float x = GuestFloat(vertex, 0, 0);
+    const float y = GuestFloat(vertex, 0, 1);
+    const bool left = std::abs(x) <= 0.5f;
+    const bool right = std::abs(x - 1280.0f) <= 0.5f;
+    const bool top = std::abs(y) <= 0.5f;
+    const bool bottom = std::abs(y - 720.0f) <= 0.5f;
+    if ((!left && !right) || (!top && !bottom))
+      return false;
+    corners |= 1u << (uint32_t(right) + 2u * uint32_t(bottom));
+  }
+  return corners == 15;
+}
+
 // The draw that separates the world from the UI. One per frame in every field
 // frame measured, and absent from menu frames, which have no 3D to separate.
 // See the layer probe below for how it was found.
@@ -1907,6 +1938,9 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   if (call.pipeline != nullptr)
     GuestPipelineShaderSlots(call.pipeline, &vertex_slot, &pixel_slot);
   if (GuestShaderDrawDisabled(vertex_slot, pixel_slot)) {
+    // Shader visibility must preserve the guest's world/UI boundary.
+    if (vertex_slot == kLayerMarkerVertexSlot && pixel_slot == kLayerMarkerPixelSlot)
+      FrameNoteLayerBoundary();
     Drop(kDropShaderDisabled, "toggled off in the F2 shader debugger");
     return false;
   }
@@ -1980,8 +2014,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   float clip_scale_y = 1.0f;
   int draw_vertex_slot = -1, draw_pixel_slot = -1;
   GuestPipelineShaderSlots(call.pipeline, &draw_vertex_slot, &draw_pixel_slot);
-  const bool screen_composite = draw_vertex_slot == 3 &&
-      (draw_pixel_slot == 4 || draw_pixel_slot == 9) &&
+  const bool scene_sprite = IsSceneSprite(call, draw_vertex_slot);
+  // The bloom setup fills the screen through the same shader used by UI boxes.
+  const bool screen_fill = draw_vertex_slot == 7 && draw_pixel_slot == 1 &&
+      IsScreenColorFill(call);
+  const bool screen_composite = (screen_fill || (draw_vertex_slot == 3 &&
+      (draw_pixel_slot == 4 || draw_pixel_slot == 9))) &&
       g_viewport.set && g_viewport.x == 0 && g_viewport.y == 0 &&
       g_viewport.width >= 1280 && g_viewport.height >= 720;
   bool have_targets;
@@ -1989,18 +2027,24 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     ProfileZone targets_zone(kPhaseBindTargets);
     have_targets = FrameBindDrawTargets(commands, &target_width, &target_height, &target_scale_x,
                                         &target_scale_y, &target_offset_x, &target_offset_y,
-                                        &clip_scale_x, &clip_scale_y, screen_composite) != nullptr;
+                                        &clip_scale_x, &clip_scale_y, screen_composite,
+                                        scene_sprite) != nullptr;
   }
   if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
     return false;
   }
+  // Flat sprite effects already cover their viewport; camera widening shrinks them.
+  if (draw_vertex_slot >= 0x0d && draw_vertex_slot <= 0x12 && !scene_sprite) {
+    clip_scale_x = 1.0f;
+    clip_scale_y = 1.0f;
+  }
   if (g_probe_armed) {
     g_probe_geometry = fmt::format(
-        "viewport {}:{},{} {}x{} host {}x{} offset {},{} scale {},{} clip {},{} screen {}",
+        "viewport {}:{},{} {}x{} host {}x{} offset {},{} scale {},{} clip {},{} screen {} scene_sprite {}",
         g_viewport.set, g_viewport.x, g_viewport.y, g_viewport.width, g_viewport.height,
         target_width, target_height, target_offset_x, target_offset_y,
-        target_scale_x, target_scale_y, clip_scale_x, clip_scale_y, screen_composite);
+        target_scale_x, target_scale_y, clip_scale_x, clip_scale_y, screen_composite, scene_sprite);
   }
 
   const bool rect_list = call.primitive_type == 8;
