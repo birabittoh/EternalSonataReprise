@@ -2286,13 +2286,13 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
 // become field of view rather than a stretched copy of the middle, and the seam
 // at the content edge goes with them.
 //
-// (1, 1) on the composite layer, which is already drawn at 16:9 inside its own
-// image, and on a fixed size offscreen buffer, whose geometry has nothing to do
-// with the window.
-void LayerClipScale(const GuestTarget* target, float* x, float* y) {
+// The composite layer retains its UI frame. Camera masks share the world view
+// even when their textures stay at the guest resolution.
+void LayerClipScale(const GuestTarget* target, float* x, float* y,
+                    bool scene_sprite = false) {
   *x = 1.0f;
   *y = 1.0f;
-  if (target == nullptr || target->layer != GuestLayer::kWorld || !target->resolution)
+  if (target == nullptr || (target->layer != GuestLayer::kWorld && !scene_sprite))
     return;
   const uint32_t window_width = g_composite_extent_width;
   const uint32_t window_height = g_composite_extent_height;
@@ -2301,9 +2301,12 @@ void LayerClipScale(const GuestTarget* target, float* x, float* y) {
   D3DTilingExtent(&extent_width, &extent_height);
   if (window_width == 0 || window_height == 0 || extent_width == 0 || extent_height == 0)
     return;
-  // The camera draws into the screen bands. The square auxiliary pass has
-  // its own projection and must keep its original framing.
-  if (target->width != extent_width)
+  // The bloom mask projects models through the scene camera at half resolution.
+  // Its projection must match the screen bands that the bloom is added to.
+  const bool camera_mask = uint64_t(target->width) * 2 == extent_width &&
+      uint64_t(target->height) * 2 == extent_height;
+  const bool screen = target->resolution && target->width == extent_width;
+  if (!screen && !camera_mask)
     return;
   // The same `fit` the composite layer frames the UI with, so the two agree to
   // the pixel rather than to the aspect ratio.
@@ -2317,7 +2320,7 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
                                         uint32_t* height, float* scale_x, float* scale_y,
                                         int32_t* offset_x, int32_t* offset_y,
                                         float* clip_scale_x, float* clip_scale_y,
-                                        bool screen_composite) {
+                                        bool screen_composite, bool scene_sprite) {
   // Resolves between the marker and this draw still read the world surface.
   if (g_marker_seen)
     g_layer = GuestLayer::kComposite;
@@ -2363,7 +2366,8 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   const GuestTarget* sized = color != nullptr ? color : depth;
   // Screen effects and the final copy sample the expanded world, including
   // when the guest binds a band of the screen as their destination.
-  const bool full_screen = screen_composite && g_marker_seen &&
+  // Camera sprites can follow the marker and still belong to the world view.
+  const bool full_screen = (screen_composite || scene_sprite) && g_marker_seen &&
       sized->layer == GuestLayer::kComposite && sized->resolution &&
       sized->width == 1280 && (sized->height == 384 || sized->height == 720);
   const uint32_t content_width = sized->content_width != 0
@@ -2385,7 +2389,7 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   if (offset_y)
     *offset_y = full_screen ? 0 : sized->offset_y;
   if (clip_scale_x != nullptr && clip_scale_y != nullptr)
-    LayerClipScale(sized, clip_scale_x, clip_scale_y);
+    LayerClipScale(sized, clip_scale_x, clip_scale_y, full_screen && scene_sprite);
   return framebuffer;
 }
 
