@@ -113,7 +113,8 @@ plume::RenderFramebuffer* FrameBindDrawTargets(plume::RenderCommandList* command
                                                float* scale_x, float* scale_y,
                                                int32_t* offset_x, int32_t* offset_y,
                                                float* clip_scale_x, float* clip_scale_y,
-                                               bool screen_composite, bool scene_sprite);
+                                               bool screen_composite, bool scene_sprite,
+                                               bool self_composite);
 
 // Publish the window's size as the extent every "resolution" target is built at.
 // Call once per frame, on the guest thread, at the frame boundary: the extent is
