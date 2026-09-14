@@ -5,6 +5,7 @@
 #include "native_renderer_d3d.h"
 
 #include <atomic>
+#include <bit>
 #include <cstring>
 #include <vector>
 
@@ -51,6 +52,7 @@ REX_EXTERN(__imp__D3DDevice__SetDepthStencilSurface);
 REX_EXTERN(__imp__D3DDevice__SetViewport);
 REX_EXTERN(__imp__D3DDevice__Clear);
 REX_EXTERN(__imp__D3DDevice__Resolve);
+REX_EXTERN(__imp__sub_8212BDB0);
 
 namespace eternalsonata {
 namespace {
@@ -1264,6 +1266,28 @@ REX_HOOK_RAW(D3D__CreateDevice) {
       device + eternalsonata::d3d::kVertexConstantShadow,
       device + eternalsonata::d3d::kPixelConstantShadow,
       device + eternalsonata::d3d::kTextureFetchConstants);
+}
+
+REX_HOOK_RAW(sub_8212BDB0) {
+  __imp__sub_8212BDB0(ctx, base);
+  if (!eternalsonata::NativeRendererEnabled())
+    return;
+  const uint32_t shadow_mode = REX_LOAD_U32(0x824BB3C8);
+  if (shadow_mode != 1 && shadow_mode != 2)
+    return;
+  float scale_x, scale_y;
+  eternalsonata::FrameWorldClipScale(&scale_x, &scale_y);
+  if (scale_x == 1.0f && scale_y == 1.0f)
+    return;
+  // The shared matrix feeds both shadow geometry and receiver UVs.
+  // Scale its clip columns before the guest derives either constant bank.
+  for (uint32_t row = 0; row < 4; ++row) {
+    const uint32_t address = 0x824BBE80 + row * 16;
+    const float x = std::bit_cast<float>(REX_LOAD_U32(address));
+    const float y = std::bit_cast<float>(REX_LOAD_U32(address + 4));
+    REX_STORE_U32(address, std::bit_cast<uint32_t>(x * scale_x));
+    REX_STORE_U32(address + 4, std::bit_cast<uint32_t>(y * scale_y));
+  }
 }
 
 // (device, start, source, count), count in vec4s. The guest's own constant
