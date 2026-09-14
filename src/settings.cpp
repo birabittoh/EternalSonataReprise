@@ -3,7 +3,6 @@
 
 #include "settings.h"
 
-#include "debug_area_overlay.h"
 #include "eternalsonata_options_api.h"
 #include "field_player_model_override.h"
 #include "host_timer_resolution.h"
@@ -101,9 +100,6 @@ REXCVAR_DEFINE_BOOL(frame_debug, false, "Eternal Sonata",
 REXCVAR_DEFINE_BOOL(menu_scan, false, "Eternal Sonata",
                     "Debug: diff guest memory across Subtitles row toggles to locate menu "
                     "value state (logs candidates)");
-
-REXCVAR_DEFINE_BOOL(debug_show_all_maps, false, "Eternal Sonata",
-                    "Debug: show all areas in debug overlay, including unnamed event/menu areas");
 
 // The native renderer's per-phase timing (native_renderer_profile.h) reads the
 // clock twice per zone, many times per draw call, measured as a real,
@@ -686,16 +682,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       rex::cvar::ResetToDefault("gpu_plugin");
       SaveBasic();
       SaveAdvanced();
-    }
-    ImGui::SameLine();
-    // Debug tool: force-loads a field area out of turn. See
-    // debug_area_overlay.h / force_load_area.h for the safety caveats.
-    if (ImGui::Button(debug_area_overlay_ ? "Close Debug" : "Debug...")) {
-      if (debug_area_overlay_) {
-        debug_area_overlay_.reset();
-      } else {
-        debug_area_overlay_ = eternalsonata::CreateDebugAreaOverlay(imgui_drawer());
-      }
     }
     ImGui::SameLine();
     // Opens the SDK's own full cvar browser (the same one bind_settings/F4
@@ -1307,7 +1293,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 #endif
   rex::input::InputSystem* input_system_;
   std::unique_ptr<rex::ui::SettingsDialog> dev_settings_overlay_;
-  std::unique_ptr<rex::ui::ImGuiDialog> debug_area_overlay_;
 
   rex::system::AutoUpdater auto_updater_;
   bool update_check_requested_ = false;

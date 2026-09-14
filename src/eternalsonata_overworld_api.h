@@ -9,6 +9,14 @@ extern "C" {
 
 #define ETERNALSONATA_OVERWORLD_ABI_VERSION 1u
 
+enum {
+  ETERNALSONATA_OVERWORLD_OK = 0,
+  ETERNALSONATA_OVERWORLD_QUEUED = 1,
+  ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE = -1,
+  ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT = -2,
+  ETERNALSONATA_OVERWORLD_ERR_IN_BATTLE = -3
+};
+
 #define ETERNALSONATA_OVERWORLD_EVENT_AREA_ENTERED \
   "eternalsonata.overworld.area_entered"
 #define ETERNALSONATA_OVERWORLD_EVENT_ACTION \
@@ -49,6 +57,22 @@ typedef struct EternalSonataOverworldEvent {
   char area_name[96];
   char dialogue[256];
 } EternalSonataOverworldEvent;
+
+// Host ABI version, so a mod can check compatibility.
+typedef uint32_t (*EternalSonataOverworldAbiVersionFn)(void);
+
+// True when area loading can be requested: field active and no battle.
+typedef int (*EternalSonataIsAreaLoadingAvailableFn)(void);
+
+// Queues a field area id (e.g. "hno01") to be force-loaded on the next guest tick.
+typedef int (*EternalSonataForceLoadAreaFn)(const char* area_id);
+
+// Number of known areas in the area table.
+typedef int (*EternalSonataGetAreaCountFn)(void);
+
+// Copies area id and display name for area `index` (0-based) into the buffers.
+typedef int (*EternalSonataGetAreaInfoFn)(int index, char* id_out, int id_len,
+                                         char* name_out, int name_len);
 
 #ifdef __cplusplus
 }

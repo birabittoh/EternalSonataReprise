@@ -47,7 +47,7 @@ class ForceLoadArea {
   bool has_pending_ = false;
 };
 
-// Process-wide instance shared between the debug overlay and the app hooks.
+// Process-wide instance shared between the overworld area-load API and the app hooks.
 ForceLoadArea& GetForceLoadArea();
 
 // Expose warp data for the field resume hook to apply (used by field_player_model_override.cpp)
