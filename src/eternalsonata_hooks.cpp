@@ -1,3 +1,4 @@
+#include <bit>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -8,6 +9,7 @@
 #include <rex/system/kernel_state.h>
 
 #include "eternalsonata_hooks_internal.h"
+#include "native_renderer_frame.h"
 #include "overworld_system.h"
 
 // ---------------------------------------------------------------------------
@@ -122,6 +124,32 @@ u32 ConsoleTextOverrideFor(u8* base, u32 text_address) {
 // so the simplest fix is to override the whole function and return 0 (pass).
 REX_EXTERN(__imp__sub_82254060);
 REX_HOOK_RAW(sub_82254060) { ctx.r3.u64 = 0; }
+
+// The renderer widens the world after the guest has already culled its models.
+// Give the guest sphere test the same horizontal field of view for this call.
+REX_EXTERN(__imp__sub_82108878);
+REX_HOOK_RAW(sub_82108878) {
+    const u32 camera = ctx.r3.u32;
+    float clip_x = 1.0f;
+    float clip_y = 1.0f;
+    eternalsonata::FrameWorldClipScale(&clip_x, &clip_y);
+    if (!camera || clip_x >= 1.0f || clip_x <= 0.0f) {
+        __imp__sub_82108878(ctx, base);
+        return;
+    }
+
+    constexpr u32 kRightExtent = 388;
+    constexpr u32 kLeftExtent = 392;
+    const u32 right_bits = REX_LOAD_U32(camera + kRightExtent);
+    const u32 left_bits = REX_LOAD_U32(camera + kLeftExtent);
+    REX_STORE_U32(camera + kRightExtent,
+                  std::bit_cast<u32>(std::bit_cast<float>(right_bits) / clip_x));
+    REX_STORE_U32(camera + kLeftExtent,
+                  std::bit_cast<u32>(std::bit_cast<float>(left_bits) / clip_x));
+    __imp__sub_82108878(ctx, base);
+    REX_STORE_U32(camera + kRightExtent, right_bits);
+    REX_STORE_U32(camera + kLeftExtent, left_bits);
+}
 
 // The debug-console (sub_822DFA88) and ConsoleSetting (sub_822E5BE8) init
 // hooks used to live here.  Both forced "console active" state bytes after
