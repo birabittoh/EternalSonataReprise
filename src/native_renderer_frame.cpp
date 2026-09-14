@@ -2623,10 +2623,21 @@ void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
   // resolution" instead of "render 720p and upscale at present".
   const double pct = double(NativeRenderScale());
   constexpr uint32_t kMaxExtent = 16384;
+
+  // Normalized render scale: at 30% render height matches 30% of 720p (216p)
+  // regardless of screen resolution, scaling smoothly up to the window height.
+  double target_height = double(height);
+  double target_width = double(width);
+  if (pct < 1.0 && height > 216) {
+    constexpr double kBaseGrainyHeight = 216.0;
+    const double t = std::clamp((pct - 0.30) / (1.0 - 0.30), 0.0, 1.0);
+    target_height = kBaseGrainyHeight + t * (double(height) - kBaseGrainyHeight);
+    target_width = double(width) * (target_height / double(height));
+  }
   const uint32_t want_width =
-      uint32_t(std::clamp<int64_t>(std::llround(double(width) * pct), 1, kMaxExtent));
+      uint32_t(std::clamp<int64_t>(std::llround(target_width), 1, kMaxExtent));
   const uint32_t want_height =
-      uint32_t(std::clamp<int64_t>(std::llround(double(height) * pct), 1, kMaxExtent));
+      uint32_t(std::clamp<int64_t>(std::llround(target_height), 1, kMaxExtent));
 
   // The window's own size is the composite layer's extent, and it is compared
   // too: a scale change that happens to leave the world extent alone still has
