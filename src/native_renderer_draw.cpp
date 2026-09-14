@@ -2022,7 +2022,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // Both passes sample the expanded scene and must cover the same viewport.
   const bool screen_composite = (screen_fill || (draw_vertex_slot == 3 &&
       (draw_pixel_slot == 4 || draw_pixel_slot == 9 ||
-       draw_pixel_slot == 0x67 || draw_pixel_slot == 0x68))) &&
+       draw_pixel_slot == 0x67 || draw_pixel_slot == 0x68 || draw_pixel_slot == 0x80))) &&
       g_viewport.set && g_viewport.x == 0 && g_viewport.y == 0 &&
       g_viewport.width >= 1280 && g_viewport.height >= 720;
   // This copy uses additive blending and expects an empty destination.
