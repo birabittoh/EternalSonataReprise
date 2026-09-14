@@ -4,14 +4,18 @@
 #include <cstring>
 #include <span>
 #include <string>
+#include <vector>
 
 #include <rex/runtime.h>
 #include <rex/memory/utils.h>
 #include <rex/system/kernel_state.h>
+#include <rex/system/mod_plugin.h>
 #include <rex/system/mod_registry.h>
 
+#include "area_names.generated.h"
 #include "eternalsonata_overworld_api.h"
 #include "field_player_model_override.h"
+#include "force_load_area.h"
 #include "room_presence.h"
 
 namespace eternalsonata {
@@ -112,3 +116,67 @@ void NotifyOverworldBattleStarted(uint32_t encounter, uint32_t music,
 }
 
 }  // namespace eternalsonata
+
+// Public C ABI (see eternalsonata_overworld_api.h). AreaNameTable() is an
+// unordered_map; sort once for a stable, readable enumeration order.
+namespace {
+
+const std::vector<std::pair<std::string, std::string>>& SortedAreas() {
+  static const std::vector<std::pair<std::string, std::string>> sorted = [] {
+    std::vector<std::pair<std::string, std::string>> v;
+    for (const auto& [id, name] : eternalsonata::AreaNameTable()) {
+      v.emplace_back(id, name);
+    }
+    std::sort(v.begin(), v.end());
+    return v;
+  }();
+  return sorted;
+}
+
+}  // namespace
+
+using namespace eternalsonata;
+
+extern "C" REX_MOD_PLUGIN_EXPORT uint32_t EternalSonataOverworldAbiVersion(void) {
+  return ETERNALSONATA_OVERWORLD_ABI_VERSION;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsAreaLoadingAvailable(void) {
+  return !GetRoomPresence().IsBattleActive() ? 1 : 0;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataForceLoadArea(const char* area_id) {
+  if (!area_id || area_id[0] == '\0') {
+    return ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT;
+  }
+  if (GetRoomPresence().IsBattleActive()) {
+    return ETERNALSONATA_OVERWORLD_ERR_IN_BATTLE;
+  }
+  GetForceLoadArea().Request(area_id);
+  return ETERNALSONATA_OVERWORLD_QUEUED;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetAreaCount(void) {
+  return static_cast<int>(SortedAreas().size());
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetAreaInfo(int index, char* id_out, int id_len,
+                                                             char* name_out, int name_len) {
+  const auto& areas = SortedAreas();
+  if (index < 0 || index >= static_cast<int>(areas.size())) {
+    return ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT;
+  }
+  if (id_out && id_len > 0) {
+    const std::string& id = areas[index].first;
+    const size_t n = std::min(static_cast<size_t>(id_len - 1), id.size());
+    std::memcpy(id_out, id.data(), n);
+    id_out[n] = '\0';
+  }
+  if (name_out && name_len > 0) {
+    const std::string& name = areas[index].second;
+    const size_t n = std::min(static_cast<size_t>(name_len - 1), name.size());
+    std::memcpy(name_out, name.data(), n);
+    name_out[n] = '\0';
+  }
+  return ETERNALSONATA_OVERWORLD_OK;
+}
