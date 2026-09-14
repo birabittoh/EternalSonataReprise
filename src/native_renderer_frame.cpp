@@ -2331,7 +2331,8 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
                                         uint32_t* height, float* scale_x, float* scale_y,
                                         int32_t* offset_x, int32_t* offset_y,
                                         float* clip_scale_x, float* clip_scale_y,
-                                        bool screen_composite, bool scene_sprite) {
+                                        bool screen_composite, bool scene_sprite,
+                                        bool self_composite) {
   // Resolves between the marker and this draw still read the world surface.
   if (g_marker_seen)
     g_layer = GuestLayer::kComposite;
@@ -2347,8 +2348,26 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   // The first draw of the UI half brings the world across with it. Doing it here
   // rather than at the marker itself means it happens only if something actually
   // draws into the composite, so a frame that ends at the marker costs nothing.
-  if (color != nullptr && color->layer == GuestLayer::kComposite)
-    CompositeWorldIntoLayer(commands, color);
+  if (color != nullptr && color->layer == GuestLayer::kComposite) {
+    if (self_composite && color->composited_frame != g_frame) {
+      Transition(commands, color->texture.get(), color->layout, RenderBarrierStage::GRAPHICS,
+                 RenderTextureLayout::COLOR_WRITE);
+      if (depth && depth->texture) {
+        Transition(commands, depth->texture.get(), depth->layout, RenderBarrierStage::GRAPHICS,
+                   RenderTextureLayout::DEPTH_WRITE);
+      }
+      RenderFramebuffer* clear_framebuffer = AcquireFramebuffer(color, depth);
+      if (clear_framebuffer != nullptr) {
+        BindFramebuffer(commands, clear_framebuffer);
+        commands->clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 0.0f));
+        if (depth && depth->texture)
+          commands->clearDepthStencil(true, true, 1.0f, 0);
+        color->composited_frame = g_frame;
+      }
+    } else {
+      CompositeWorldIntoLayer(commands, color);
+    }
+  }
 
   if (color) {
     Transition(commands, color->texture.get(), color->layout, RenderBarrierStage::GRAPHICS,

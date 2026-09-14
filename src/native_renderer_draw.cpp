@@ -2025,13 +2025,15 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
        draw_pixel_slot == 0x67 || draw_pixel_slot == 0x68))) &&
       g_viewport.set && g_viewport.x == 0 && g_viewport.y == 0 &&
       g_viewport.width >= 1280 && g_viewport.height >= 720;
+  // This copy uses additive blending and expects an empty destination.
+  const bool self_composite = screen_composite && draw_vertex_slot == 3 && draw_pixel_slot == 4;
   bool have_targets;
   {
     ProfileZone targets_zone(kPhaseBindTargets);
     have_targets = FrameBindDrawTargets(commands, &target_width, &target_height, &target_scale_x,
                                         &target_scale_y, &target_offset_x, &target_offset_y,
                                         &clip_scale_x, &clip_scale_y, screen_composite,
-                                        scene_sprite) != nullptr;
+                                        scene_sprite, self_composite) != nullptr;
   }
   if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
