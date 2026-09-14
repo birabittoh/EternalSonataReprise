@@ -97,6 +97,9 @@ void FrameNoteLayerBoundary();
 // frame boundary the draw path has.
 void FrameResetLayer();
 
+// Shared by scene geometry and camera based shadow projections.
+void FrameWorldClipScale(float* x, float* y);
+
 void LogFrameSummary();
 
 }  // namespace eternalsonata

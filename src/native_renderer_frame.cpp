@@ -2288,11 +2288,10 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
 //
 // The composite layer retains its UI frame. Camera masks share the world view
 // even when their textures stay at the guest resolution.
-void LayerClipScale(const GuestTarget* target, float* x, float* y,
-                    bool scene_sprite = false) {
+void FrameWorldClipScale(float* x, float* y) {
   *x = 1.0f;
   *y = 1.0f;
-  if (target == nullptr || (target->layer != GuestLayer::kWorld && !scene_sprite))
+  if (UiLayerDisabled())
     return;
   const uint32_t window_width = g_composite_extent_width;
   const uint32_t window_height = g_composite_extent_height;
@@ -2301,6 +2300,21 @@ void LayerClipScale(const GuestTarget* target, float* x, float* y,
   D3DTilingExtent(&extent_width, &extent_height);
   if (window_width == 0 || window_height == 0 || extent_width == 0 || extent_height == 0)
     return;
+  const double fit = std::min(double(window_width) / double(extent_width),
+                              double(window_height) / double(extent_height));
+  *x = float(fit * double(extent_width) / double(window_width));
+  *y = float(fit * double(extent_height) / double(window_height));
+}
+
+void LayerClipScale(const GuestTarget* target, float* x, float* y,
+                    bool scene_sprite = false) {
+  *x = 1.0f;
+  *y = 1.0f;
+  if (target == nullptr || (target->layer != GuestLayer::kWorld && !scene_sprite))
+    return;
+  uint32_t extent_width = 0;
+  uint32_t extent_height = 0;
+  D3DTilingExtent(&extent_width, &extent_height);
   // The bloom mask projects models through the scene camera at half resolution.
   // Its projection must match the screen bands that the bloom is added to.
   const bool camera_mask = uint64_t(target->width) * 2 == extent_width &&
@@ -2310,10 +2324,7 @@ void LayerClipScale(const GuestTarget* target, float* x, float* y,
     return;
   // The same `fit` the composite layer frames the UI with, so the two agree to
   // the pixel rather than to the aspect ratio.
-  const double fit = std::min(double(window_width) / double(extent_width),
-                              double(window_height) / double(extent_height));
-  *x = float(fit * double(extent_width) / double(window_width));
-  *y = float(fit * double(extent_height) / double(window_height));
+  FrameWorldClipScale(x, y);
 }
 
 RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* width,
