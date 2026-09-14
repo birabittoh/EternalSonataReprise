@@ -58,7 +58,7 @@ float g_render_scale = 0.0f;
 constexpr int32_t kMinRenderScale = 1;
 constexpr int32_t kMaxRenderScale = 8;
 constexpr float kMinRenderScaleF = 0.25f;
-constexpr float kMaxRenderScaleF = 8.0f;
+constexpr float kMaxRenderScaleF = 1.0f;
 
 }  // namespace
 

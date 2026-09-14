@@ -647,7 +647,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     DrawUpdateSection();
 
     DrawFullscreenRow();
-    DrawResolutionRow();
     DrawRenderScaleRow();
     DrawFrameRateRow();
     DrawVsyncRow();
@@ -958,44 +957,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   }
 #endif  // _WIN32
 
-  void DrawResolutionRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("resolution");
-    if (!entry)
-      return;
-    static constexpr std::array<const char*, 4> kAllOptions = {"720p", "1080p", "1440p", "4K"};
-
-    // Only offer presets that fit on the user's actual display -- no point
-    // letting someone pick 4K on a 1080p monitor.
-    int count = std::clamp(AllowedResolutionCount(), 1, static_cast<int>(kAllOptions.size()));
-    std::vector<const char*> options(kAllOptions.begin(), kAllOptions.begin() + count);
-
-    std::string current = entry->getter();
-    int cur_idx = 0;
-    for (int i = 0; i < static_cast<int>(options.size()); ++i) {
-      if (current == options[i]) {
-        cur_idx = i;
-        break;
-      }
-    }
-
-    ImGui::TextUnformatted("Resolution");
-    ImGui::SameLine(180.0f);
-    ImGui::SetNextItemWidth(160.0f);
-    ImGui::PushID("resolution");
-    int sel = cur_idx;
-    // Discrete slider, matching DrawFrameRateRow: snaps between presets
-    // rather than allowing arbitrary drag positions.
-    if (ImGui::SliderInt("##v", &sel, 0, static_cast<int>(options.size()) - 1, options[sel],
-                         ImGuiSliderFlags_NoInput)) {
-      rex::cvar::SetFlagByName("resolution", options[sel], /*persist=*/true);
-      rex::cvar::SetFlagByName("resolution_scale",
-                               std::to_string(ResolutionScaleFor(options[sel])),
-                               /*persist=*/true);
-      SaveBasic();
-    }
-    ImGui::PopID();
-  }
-
   void DrawRenderScaleRow() {
     // render_scale only exists under the native renderer, which sizes its
     // targets from the window and so can render at any fraction of it. Under
@@ -1011,7 +972,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // moving this rebuilds the render targets a fraction of a second later the
   // same way dragging the window's corner does. The floor is 30% because below
   // that the resolve rectangle's rounding starts to show on the EDRAM band
-  // edges; the ceiling is supersampling, and costs what it sounds like.
+  // edges; 100% renders at the native window resolution.
   void DrawContinuousRenderScaleRow() {
     const auto* entry = rex::cvar::GetFlagInfo("render_scale");
     if (!entry)
@@ -1019,13 +980,13 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     const double current = std::atof(entry->getter().c_str());
     // Zero is the cvar's "no opinion", which renders at the window's own size.
     int percent = static_cast<int>(std::lround((current > 0.0 ? current : 1.0) * 100.0));
-    percent = std::clamp(percent, 30, 200);
+    percent = std::clamp(percent, 30, 100);
 
     ImGui::PushID("render_scale");
     ImGui::TextUnformatted("Render Resolution");
     ImGui::SameLine(180.0f);
     ImGui::SetNextItemWidth(160.0f);
-    if (ImGui::SliderInt("##v", &percent, 30, 200, "%d%%")) {
+    if (ImGui::SliderInt("##v", &percent, 30, 100, "%d%%")) {
       rex::cvar::SetFlagByName("render_scale", std::to_string(percent / 100.0),
                                /*persist=*/true);
       SaveBasic();
@@ -1034,23 +995,21 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   }
 
   // resolution_scale is an integer cvar (range 1-8) whose named-resolution
-  // steps (1/2/3/4 for 720p/1080p/1440p/4K, per ResolutionScaleFor) are the
-  // only meaningful values -- each option here renders at one of the named
-  // resolutions up to and including the current display resolution (e.g. at
-  // 1440p: render at 720p/1080p/1440p, i.e. 33%/67%/100%). Rather than
-  // sliding over the percentage itself (which lets the handle rest on
-  // in-between values while dragging, since e.g. 73% is a perfectly valid
-  // int even though no scale produces it), the slider's domain *is* the
-  // list of valid scales, so it's mechanically impossible to drag to
-  // anything else. 720p's base of 1 has only one valid scale, so the
-  // slider is disabled there instead of doing nothing.
+  // steps (1/2/3/4 for 720p/1080p/1440p/4K) are the only meaningful values.
   void DrawIntegerRenderScaleRow() {
     const auto* scale_entry = rex::cvar::GetFlagInfo("resolution_scale");
-    const auto* res_entry = rex::cvar::GetFlagInfo("resolution");
-    if (!scale_entry || !res_entry)
+    if (!scale_entry)
       return;
 
-    int base = ResolutionScaleFor(res_entry->getter());
+    int base = 1;
+    const int display_height = DesktopDisplayHeight();
+    if (display_height >= 2160) {
+      base = 4;
+    } else if (display_height >= 1440) {
+      base = 3;
+    } else if (display_height >= 1080) {
+      base = 2;
+    }
     int current_scale = std::atoi(scale_entry->getter().c_str());
 
     std::vector<int> valid_scales;
@@ -1399,6 +1358,9 @@ void BindSettingsTargets(rex::ui::Window* window,
                          std::filesystem::path user_settings_path) {
   g_window = window;
   g_user_settings_path = std::move(user_settings_path);
+  rex::cvar::RegisterChangeCallback("fullscreen", [](std::string_view, std::string_view) {
+    SaveUserSettings();
+  });
 }
 
 bool IsCvarPendingRestart(const char* name) {
