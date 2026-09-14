@@ -1096,7 +1096,7 @@ class PixelShader(Shader):
         line = self._fetch_destination(instr, "xe_tf")
         if not line:
             return
-        if self.name == "ps_058" and slot == 13 and components == 2:
+        if self.name in ("ps_025", "ps_058") and slot == 13 and components == 2:
             # Refraction uses guest clip coordinates to sample the expanded scene.
             coordinate = "lerp(float2(0.5f, 0.5f), %s, xe_clip_scale)" % coordinate
         self._emit_block(out, indent, instr, [
