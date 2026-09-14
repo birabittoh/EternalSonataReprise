@@ -2562,10 +2562,11 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // cost far more geometry than it fixed.
   //
   // The scaled viewport reciprocal turns a point diameter in guest pixels into
-  // a clip space radius. This includes the target scale because both PA_SU_POINT_SIZE
-  // and a vertex shader's e63 export are measured on the guest's 1280x720 pixel
-  // grid, while width and height describe the supersampled host target. Its y is
-  // negated under SPIR-V because the vertex shaders are compiled with
+  // a clip space radius. This includes the target and world clip scales because
+  // both PA_SU_POINT_SIZE and a vertex shader's e63 export are measured on the
+  // guest's 1280x720 pixel grid. The uniform world fit keeps their quads square
+  // when the target aspect changes. Its y is negated under SPIR-V because the
+  // vertex shaders are compiled with
   // -fvk-invert-y and the geometry shader is not, so the position it expands has
   // already been flipped into Vulkan's y-down clip space while the sprite
   // coordinate's v still runs from the top down.
@@ -2579,7 +2580,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   uint32_t draw_state[kDrawStateWords] = {};
   const uint32_t alpha_func = alpha_enabled ? uint32_t(call.state.alpha_func) : 7u;  // 7 is ALWAYS
   const uint32_t param_gen = point_list && call.state.param_gen_enabled ? 1u : 0u;
-  const float point_ndc[2] = {target_scale_x / width, ndc_y_sign * target_scale_y / height};
+  const float point_ndc[2] = {target_scale_x * clip_scale_x / width,
+                              ndc_y_sign * target_scale_y * clip_scale_y / height};
   // Which of the two point sizes the geometry shader reads. A vertex shader
   // with no e63 export leaves the varying at its sentinel, and a real export
   // can be negative, so the choice cannot be made from the value.
