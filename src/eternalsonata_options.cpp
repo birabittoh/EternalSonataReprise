@@ -352,8 +352,12 @@ struct PageLayout {
   u32 bar_skip_bytes;
   u32 group_id;         // selectable group holding the page's rows
   u32 stock_rows;       // rows the group ships with
-  int32_t stock_item_y0;  // first stock item, used to identify the group
-  int32_t stock_item_yn;  // last stock item; our rows follow it at 50px pitch
+  // Y of the group's last stock selectable item on the main menu, which is the
+  // screen every constant here was measured against. Not used to *find* the
+  // group (the live value is read for that); it is the reference the live one
+  // is compared against, so a screen that sits elsewhere shifts the bars by the
+  // difference. See BarY.
+  int32_t stock_item_yn;
   int32_t first_row_y;    // record y of our first row
   // Cue id played when one of our rows changes value. The stock handlers
   // disagree - sub_82201620 plays 5 on page 1, sub_82202CB0 plays 4 on page 2 -
@@ -367,11 +371,11 @@ struct PageLayout {
 constexpr PageLayout kPages[kPageCount] = {
     // Page 1: rows appended below Voce (record y 285, 335).
     {kOptionsListByLang, kOptionsListBytes, kInsertOffset, kIconRecordBytes, 2,
-     2, 430, 480, 385, 5},
+     2, 480, 385, 5},
     // Page 2: rows appended below the three button rows (record y 25/75/125,
     // selectable items at 165/215/265).
-    {kButtonsListByLang, kButtonsListBytes, kButtonsInsertOffset, 0, 1, 3, 165,
-     265, 175, 5},
+    {kButtonsListByLang, kButtonsListBytes, kButtonsInsertOffset, 0, 1, 3, 265,
+     175, 5},
 };
 
 u32 PageMaxRows(int page) {
@@ -894,6 +898,16 @@ struct PageState {
   // list is done.
   u32 list_gauges = 0;
   u32 list_numbers = 0;
+  // Y of the group's last stock selectable item, read live off the group node
+  // each frame, or 0 before it has been seen. Compared against the layout's own
+  // figure to place the bars; see BarY.
+  int32_t stock_item_yn = 0;
+  // The screen object this page's list was last built into. It is what says
+  // "this page is on screen right now" (see ActivePage): a screen object is
+  // allocated per list walk and freed when the screen pops, so the top of the
+  // stack being this address is the page being displayed, whatever menu drove
+  // it there.
+  u32 screen = 0;
   // The language's value column, read out of the display list at build time
   // (it shifts per language) and reused when placing bars.
   int32_t value_base_x = 0;
@@ -905,16 +919,49 @@ struct PageState {
 };
 PageState g_page[kPageCount];
 
-// The UI root, and the slot table it keeps one screen object per menu depth in
-// (sub_821F2F38 allocates the 1744-byte screen object into 4 * (depth + 709)).
-constexpr u32 kUiRoot = 0x824400E4u;
+// The UI roots, and the slot table each keeps one screen object per menu depth
+// in (sub_821F2F38 allocates the 1744-byte screen object into
+// 4 * (depth + 709) of whichever root it was handed).
+//
+// There are two, and Options is opened through both. They are separate menu
+// systems, not one system in two modes: each has its own root, its own state
+// byte and its own state machine.
+//
+//   dword_824400E4 / byte_8243F3C0 / sub_821DCC08 (12 states) - the main menu
+//   dword_824400DC / byte_8243F3C3 / sub_821DD220 (27 states) - in-game
+//
+// Assuming the main-menu root here is what left the in-game screen completely
+// unattended: every object id this file resolves comes out of the root's slot
+// table, so in-game they were all read from the wrong screen (or from no screen
+// at all), and the page could never be recognised as active either.
+constexpr u32 kUiRootMenu = 0x824400E4u;
+constexpr u32 kUiRootField = 0x824400DCu;
+constexpr u32 kUiRoots[] = {kUiRootMenu, kUiRootField};
 constexpr u32 kScreenSlotBase = 709u;
 
-inline bool GuestPtr(u32 v) { return v >= 0x82000000u && v < 0xFB000000u; }
+// Which of the two last built one of our screens. Everything that resolves an
+// object of the Options screen goes through it, so it has to follow whichever
+// menu opened the screen rather than being fixed.
+u32 g_ui_root = kUiRootMenu;
 
-// The screen object currently on top, or 0 if the root is not up yet.
-u32 CurrentScreenObject(u8* base) {
-  const u32 root = REX_LOAD_U32(kUiRoot);
+// A plausible guest pointer: anywhere from the image base up. There is no upper
+// bound to apply - the 0xE0000000 aperture maps all 512 MiB of physical memory,
+// so a heap object can sit anywhere below 4 GiB.
+//
+// This used to stop at 0xFB000000, which is not a boundary of anything. The
+// main menu's UI objects happen to land under it and the in-game menu's above
+// it (its root is at 0xFD28D040, physical 0x1D28D040), so every pointer check
+// in this file failed during play while passing from the main menu: no screen
+// object, no menu object, no group node, and therefore none of the rows'
+// highlight bars placed, no gauge value written and no selectable-count patch.
+// 0xFFFFFFFF is excluded because it is this UI's terminator everywhere (id
+// arrays, list chains), and with no upper bound it would otherwise read as a
+// pointer and be followed.
+inline bool GuestPtr(u32 v) { return v >= 0x82000000u && v != 0xFFFFFFFFu; }
+
+// The screen object currently on top of `root_ptr`'s stack, or 0.
+u32 ScreenObjectOf(u8* base, u32 root_ptr) {
+  const u32 root = REX_LOAD_U32(root_ptr);
   if (!GuestPtr(root)) {
     return 0;
   }
@@ -922,6 +969,9 @@ u32 CurrentScreenObject(u8* base) {
   const u32 screen = REX_LOAD_U32(root + 4 * (depth + kScreenSlotBase));
   return GuestPtr(screen) ? screen : 0;
 }
+
+// The screen object currently on top, or 0 if the root is not up yet.
+u32 CurrentScreenObject(u8* base) { return ScreenObjectOf(base, g_ui_root); }
 
 // Objects registered on `screen`, read out of the id array at +0x4C (terminated
 // by 0xFFFFFFFF). `max` bounds the walk: page 2's screen holds far more objects
@@ -941,11 +991,40 @@ u32 ScreenObjectIds(u8* base, u32 screen, u32* ids, u32 max) {
   return n;
 }
 
-// Which Options page is on screen right now, or -1 for anything else. Read
-// from the menu state machine's own state byte every frame rather than latched
-// when a screen is built: paging with LB/RB pushes and pops screens without
-// rebuilding them, so a latched flag would survive the page it described.
+// Which Options page is on screen right now, or -1 for anything else. Asked
+// every frame rather than latched when a screen is built: paging with LB/RB
+// pushes and pops screens without rebuilding them, so a latched flag would
+// survive the page it described.
+//
+// The screen object on top of the stack is what answers it. byte_8243F3C0 -
+// sub_821DCC08's own state byte, which used to answer it alone - is only driven
+// while the *main menu's* state machine owns Options; opened during play the
+// screen is driven by something else entirely and the byte never takes one of
+// these values. That made this return -1 for the whole visit, and since every
+// other hook here runs behind it, the rows were spliced into the display list
+// and then left completely unattended: no highlight bar placed (so all of them
+// sat at their record coordinates in the corner, all visible at once), no gauge
+// value written, and no selectable-count patch, so the cursor could not reach
+// the rows. A screen object, by contrast, is allocated per list walk by
+// sub_821F2F38 and freed when the screen pops, so it identifies the page no
+// matter which menu opened it.
+//
+// The state byte is kept as a second chance: it is known-good from the main
+// menu, and costs one load.
 int ActivePage(u8* base) {
+  // Both roots, because the page may have been opened through either and the
+  // other one's stack still has whatever it was last showing on top.
+  for (const u32 root_ptr : kUiRoots) {
+    const u32 top = ScreenObjectOf(base, root_ptr);
+    if (!top) {
+      continue;
+    }
+    for (int p = 0; p < kPageCount; ++p) {
+      if (g_page[p].screen == top) {
+        return p;
+      }
+    }
+  }
   switch (REX_LOAD_U8(kMenuState)) {
     case kStateOptionRows:
     case kStateOptionSlider:
@@ -1046,7 +1125,7 @@ constexpr u32 kSoundManager = 0x8243D89Cu;
 // entirely in the cursor hook below and so never reach that code.
 void PlayMenuSfx(u8* base, u32 cue) {
   const u32 mgr = REX_LOAD_U32(kSoundManager);
-  if (mgr < 0x82000000u || mgr >= 0xFB000000u) {
+  if (!GuestPtr(mgr)) {
     return;
   }
   g_play_menu_sfx(mgr, cue, 0, 0);
@@ -1218,8 +1297,49 @@ int32_t BarX(int page, const OptionRow& row, int index) {
          row.bar_nudge_x + index * row.bar_nudge_step_x;
 }
 
+// Runtime y of `row`'s bar.
+//
+// The row records' y is a design-time constant, measured against the main
+// menu's Options screen. The in-game one is not at the same height, and a bar
+// is placed in absolute runtime coordinates rather than drawn by the record, so
+// the two part company: the rows drew correctly during play while every bar sat
+// well above its row.
+//
+// The group's last stock selectable item is the anchor that fixes it. It moves
+// with the screen, it is already read every frame to find the group, and on the
+// main menu it is exactly the figure the layout was measured against - so the
+// shift is zero there and nothing about the known-good placement changes.
+//
 int32_t BarY(int page, u32 row) {
-  return RowRecordY(page, row) + kRecordToRuntimeY + kBarShrinkFixup;
+  const PageState& st = g_page[page];
+  const int32_t shift =
+      st.stock_item_yn ? st.stock_item_yn - kPages[page].stock_item_yn : 0;
+  return RowRecordY(page, row) + kRecordToRuntimeY + kBarShrinkFixup + shift;
+}
+
+// Extra y the *instant* placement needs on page 1, on top of BarY.
+//
+// The two mechanisms do not agree about where a bar goes: setting it with
+// sub_82178A88 and sliding it there with sub_82179F78 land six rows apart, the
+// slide being the correct one. So this belongs to sub_82178A88 and must never
+// reach the slide - adding it to both put the bar off the bottom of the screen
+// the moment a value changed. The tell is that the bar starts wrong and snaps
+// into place on the first value change.
+//
+// Both entry points need it, and by the same amount: it is a property of the
+// screen, not of which menu opened it. Page 2 places correctly from either and
+// is left alone.
+//
+// That the two spaces differ at all is not new: sub_82200FE8 places page 1's
+// stock bars at y 895/945 and its handler then slides them to 155/205, a
+// constant 740 apart. Same disagreement, same screen, different figure - 740
+// was tried here and overshoots. This one is measured against the real rows
+// rather than derived, so a live reading of a stock bar's own y is what should
+// eventually replace it.
+constexpr int32_t kInstantBarRows = 6;
+
+int32_t InstantBarBiasY(int page) {
+  return page == kPageOptions ? kInstantBarRows * kRowYStep : 0;
 }
 
 // Where a bar goes when it is not the selected one. Far off the left of a
@@ -1264,10 +1384,14 @@ void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
   // placement runs from the per-frame menu update, well after all of that.
   // Page 2's rows have always been placed unbiased, and land correctly.
   const int32_t y = BarY(page, row);
+  // Per mechanism, not per call: the swap below is instant even when this was
+  // asked to slide, so the bias follows whichever one actually places the bar.
+  const int32_t instant_y = y + InstantBarBiasY(page);
 
   // One bar, sliding between values: the row's values all want the same width.
   if (st.bar_id[row].size() == 1) {
-    PlaceBar(base, st.bar_id[row][0], BarX(page, def, value_index), y, move);
+    PlaceBar(base, st.bar_id[row][0], BarX(page, def, value_index),
+             move ? y : instant_y, move);
     return;
   }
 
@@ -1278,8 +1402,8 @@ void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
   for (u32 v = 0; v < st.bar_id[row].size(); ++v) {
     const bool selected = v == static_cast<u32>(value_index);
     PlaceBar(base, st.bar_id[row][v],
-             selected ? BarX(page, def, static_cast<int>(v)) : kBarParkedX, y,
-             /*move=*/false);
+             selected ? BarX(page, def, static_cast<int>(v)) : kBarParkedX,
+             instant_y, /*move=*/false);
   }
 }
 
@@ -1319,7 +1443,7 @@ u32 SliderObject(u8* base, int page, u32 row) {
   if (row >= st.slider_id.size() || st.slider_id[row] == 0xFFFFFFFFu) {
     return 0;
   }
-  const u32 root = REX_LOAD_U32(kUiRoot);
+  const u32 root = REX_LOAD_U32(g_ui_root);
   if (!GuestPtr(root)) {
     return 0;
   }
@@ -1373,7 +1497,7 @@ void RefreshSlider(u8* base, int page, u32 row) {
   REX_STORE_U32(obj + kSliderObjValueOffset, static_cast<u32>(shown));
   g_refresh_slider(obj);
 
-  const u32 root = REX_LOAD_U32(kUiRoot);
+  const u32 root = REX_LOAD_U32(g_ui_root);
   if (row >= st.slider_num_id.size() ||
       st.slider_num_id[row] == 0xFFFFFFFFu || !GuestPtr(root)) {
     return;
@@ -1504,7 +1628,7 @@ u32 VoiceBarId(u8* base) {
 // the position goes through, so sizing it needs the object.
 u32 VoiceBarObject(u8* base) {
   const u32 bar_id = VoiceBarId(base);
-  const u32 root = REX_LOAD_U32(kUiRoot);
+  const u32 root = REX_LOAD_U32(g_ui_root);
   if (bar_id == 0xFFFFFFFFu || !GuestPtr(root)) {
     return 0;
   }
@@ -2405,6 +2529,12 @@ REX_HOOK_RAW(sub_821F2F38) {
     ctx.r4.u32 = swapped;
   }
 
+  // r3 is the root the screen is being built into, and it is the only place
+  // that is stated outright: which of the two menu systems is running Options
+  // cannot be inferred afterwards. Latched before the call, which clobbers r3
+  // with the return value.
+  const u32 built_root = ctx.r3.u32;
+
   const bool ours = ClassifyList(ctx.r4.u32, &page, &lang_idx);
   if (ours) {
     EnsurePageRows(base, page, lang_idx);
@@ -2413,14 +2543,46 @@ REX_HOOK_RAW(sub_821F2F38) {
     }
   }
   __imp__sub_821F2F38(ctx, base);
+  // Which root was handed the screen, as one of the two known ones.
+  u32 built_root_ptr = 0;
+  for (const u32 root_ptr : kUiRoots) {
+    if (REX_LOAD_U32(root_ptr) == built_root) {
+      built_root_ptr = root_ptr;
+      break;
+    }
+  }
+  // Follow it, so every object this file resolves afterwards comes out of the
+  // right slot table.
+  if (ours && built_root_ptr) {
+    g_ui_root = built_root_ptr;
+  }
+  // Screen objects are heap blocks, freed when a screen pops, so an address can
+  // be handed straight back to a later screen. Every one of them is allocated
+  // right here, which makes this the one place a page's recorded address can be
+  // retired before it starts answering for somebody else's screen.
+  const u32 screen =
+      ScreenObjectOf(base, built_root_ptr ? built_root_ptr : g_ui_root);
+  if (screen) {
+    for (PageState& st : g_page) {
+      if (st.screen == screen) {
+        st.screen = 0;
+      }
+    }
+  }
   if (!ours) {
     return;
   }
+  g_page[page].screen = screen;
+  REXLOG_INFO("[options] page {}: built by root 0x{:08X} ({}), screen 0x{:08X}",
+              page, built_root,
+              built_root_ptr == kUiRootField
+                  ? "in-game"
+                  : (built_root_ptr == kUiRootMenu ? "main menu" : "unknown"),
+              screen);
   // Everything the list creates is registered by the time it returns, and our
   // bar records are the last of those - so this count, taken here and nowhere
   // later, is the boundary between the objects we own and the ones the screen's
   // own handler goes on to create afterwards (see PageState::list_objects).
-  const u32 screen = CurrentScreenObject(base);
   g_page[page].list_objects =
       screen ? ScreenObjectIds(base, screen, nullptr, 256) : 0;
   g_page[page].list_gauges =
@@ -2718,7 +2880,7 @@ namespace {
 constexpr u32 kBarOffsets[] = {84, 88, 92, 120};
 
 void DumpHighlightBars(u8* base, int page) {
-  const u32 root = REX_LOAD_U32(kUiRoot);
+  const u32 root = REX_LOAD_U32(g_ui_root);
   if (!GuestPtr(root)) {
     return;
   }
@@ -2814,6 +2976,67 @@ void DumpHighlightBars(u8* base, int page) {
   REXLOG_INFO("[bar] screen object written to {}", path);
 }
 
+// The menu object every selectable group is chained off.
+constexpr u32 kMenuObject = 0x824400E8u;
+
+// Locates `page`'s row group among the menu's group nodes. Returns the node, or
+// 0. On success `arr` receives its subitem pointer array and `stock_yn` the y
+// of its last stock item.
+//
+// A group is identified by its id *and* by the shape of its stock items - never
+// by its count byte, and never by where the items absolutely sit. Both pages'
+// groups are walked from the same list, so the id alone would not tell them
+// apart; what does is that a row group's stock items run top to bottom at the
+// row pitch.
+//
+// Absolute coordinates were tried for that second test (430/480 on page 1,
+// 165/265 on page 2). They are wrong for the same reason the bars' own y was:
+// the in-game screen does not sit where the main menu's does.
+//
+// The count byte used to stand in for the shape check as well, on the grounds
+// that it also made the patch idempotent. That was its own version of the same
+// bug: a re-opened screen can hand back a group node still carrying the count a
+// previous visit wrote into it, so the node stopped matching. Idempotence comes
+// from the caller writing by value instead - re-running it every frame writes
+// the same numbers, and heals a stale node the first frame it is seen.
+u32 FindRowGroup(u8* base, u32 menu, int page, u32* arr, int32_t* stock_yn) {
+  const PageLayout& pl = kPages[page];
+  for (u32 i = REX_LOAD_U32(menu + 392); GuestPtr(i);
+       i = REX_LOAD_U32(i + 48)) {
+    if (REX_LOAD_U32(i) != pl.group_id) {
+      continue;
+    }
+    // Only bounds the array walk; a group of ours always sits inside it,
+    // patched or not.
+    const u32 count = REX_LOAD_U8(i + 0x0C);
+    if (count < pl.stock_rows || count > kSelectableSlots) {
+      continue;
+    }
+    const u32 items = REX_LOAD_U32(i + 8);
+    if (!GuestPtr(items)) {
+      continue;
+    }
+    const u32 s0 = REX_LOAD_U32(items);
+    const u32 sn = REX_LOAD_U32(items + 4 * (pl.stock_rows - 1));
+    if (!GuestPtr(s0) || !GuestPtr(sn)) {
+      continue;
+    }
+    const int32_t y0 = static_cast<int32_t>(REX_LOAD_U32(s0 + 8));
+    const int32_t yn = static_cast<int32_t>(REX_LOAD_U32(sn + 8));
+    if (yn - y0 != kRowYStep * static_cast<int32_t>(pl.stock_rows - 1)) {
+      continue;
+    }
+    if (arr) {
+      *arr = items;
+    }
+    if (stock_yn) {
+      *stock_yn = yn;
+    }
+    return i;
+  }
+  return 0;
+}
+
 }  // namespace
 
 // sub_821F62B8 is the per-frame cursor update for the menu. We piggyback on it
@@ -2822,7 +3045,23 @@ void DumpHighlightBars(u8* base, int page) {
 REX_EXTERN(__imp__sub_821F62B8);
 
 REX_HOOK_RAW(sub_821F62B8) {
+  const u32 tick_root = ctx.r3.u32;
   __imp__sub_821F62B8(ctx, base);
+
+  // One line per root this ever ticks for. The main menu and the in-game menu
+  // are separate systems (see kUiRoots), so whether this one function drives
+  // both is not something to assume.
+  static u32 s_ticked[2] = {};
+  for (u32& seen : s_ticked) {
+    if (seen == tick_root) {
+      break;
+    }
+    if (!seen) {
+      seen = tick_root;
+      REXLOG_INFO("[options] menu tick runs for root 0x{:08X}", tick_root);
+      break;
+    }
+  }
 
   const int page = ActivePage(base);
   static int s_last_active_page = -1;
@@ -2852,6 +3091,19 @@ REX_HOOK_RAW(sub_821F62B8) {
   const PageLayout& pl = kPages[page];
   const std::vector<OptionRow>& all = Rows();
   const u32 rows = static_cast<u32>(st.rows.size());
+
+  // Found before anything is placed, not after: the group's last stock item is
+  // what the bars are positioned against (see BarY), so reading it later would
+  // leave the first frame's placement using the previous screen's anchor.
+  const u32 menu = REX_LOAD_U32(kMenuObject);
+  u32 group_items = 0;
+  int32_t stock_yn = 0;
+  const u32 group =
+      GuestPtr(menu) ? FindRowGroup(base, menu, page, &group_items, &stock_yn)
+                     : 0;
+  if (group) {
+    st.stock_item_yn = stock_yn;
+  }
 
   // Normally already done at build time (see the sub_821F2F38 hook), which is
   // what keeps the bars from being seen anywhere but on their row's value. This
@@ -2891,103 +3143,76 @@ REX_HOOK_RAW(sub_821F62B8) {
       CaptureVoiceBarScale(base, voice);
     }
   }
-  const u32 menu = REX_LOAD_U32(0x824400E8u);
-  if (menu < 0x82000000u || menu >= 0xFB000000u) {
+  if (!GuestPtr(menu)) {
     return;
   }
 
-  // Find the page's row group and give it `rows` more items. Each node is
-  // {id @ +0, subitem block @ +4, subitem pointer array @ +8, count byte @
-  // +0x0C (mirrored at +0x0D), current index @ +0x2C, next @ +0x30}. The array
-  // is pre-allocated with kSelectableSlots slots; unused ones are parked at the
-  // sentinel (10000 + i, 10000 + i), so no allocation is needed - only a
-  // position and a bigger count.
+  // Give the page's row group `rows` more items. Each node is {id @ +0, subitem
+  // block @ +4, subitem pointer array @ +8, count byte @ +0x0C (mirrored at
+  // +0x0D), current index @ +0x2C, next @ +0x30}. The array is pre-allocated
+  // with kSelectableSlots slots; unused ones are parked at the sentinel
+  // (10000 + i, 10000 + i), so no allocation is needed - only a position and a
+  // bigger count.
   //
   // Those slots, minus the page's stock rows, are the hard ceiling on how many
   // rows a page can hold - which is what PageMaxRows enforces at registration
   // time. Writing past the array would run into whatever follows it in guest
   // memory, so the count below is clamped rather than trusted.
-  //
-  // A group is identified by its id *and* by where its stock items sit, never
-  // by its count byte. Both pages' groups are walked from the same list, so
-  // the item-y check is what tells them apart - the group ids alone would not.
-  //
-  // The count byte used to stand in for the item-y check as well, on the
-  // grounds that it also made the patch idempotent. That is what made the rows
-  // unreachable when Options was opened during play: a re-opened screen can
-  // hand back a group node still carrying the count a previous visit wrote
-  // into it, so the node stopped matching and was skipped for the whole visit.
-  // Idempotence comes from the write being by value instead - re-running it
-  // every frame writes the same numbers, and heals a stale node the first
-  // frame it is seen.
-  for (u32 i = REX_LOAD_U32(menu + 392);
-       i >= 0x82000000u && i < 0xFB000000u; i = REX_LOAD_U32(i + 48)) {
-    if (REX_LOAD_U32(i) != pl.group_id) {
-      continue;
-    }
-    // Only bounds the array walk below; a group of ours always sits inside it,
-    // patched or not.
-    const u32 count = REX_LOAD_U8(i + 0x0C);
-    if (count < pl.stock_rows || count > kSelectableSlots) {
-      continue;
-    }
-    const u32 arr = REX_LOAD_U32(i + 8);
-    if (arr < 0x82000000u || arr >= 0xFB000000u) {
-      continue;
-    }
-    const u32 s0 = REX_LOAD_U32(arr);
-    const u32 sn = REX_LOAD_U32(arr + 4 * (pl.stock_rows - 1));
-    if (s0 < 0x82000000u || s0 >= 0xFB000000u || sn < 0x82000000u ||
-        sn >= 0xFB000000u) {
-      continue;
-    }
-    // Confirm this really is the page's row group before writing.
-    if (static_cast<int32_t>(REX_LOAD_U32(s0 + 8)) != pl.stock_item_y0 ||
-        static_cast<int32_t>(REX_LOAD_U32(sn + 8)) != pl.stock_item_yn) {
-      continue;
-    }
-
+  bool matched = false;
+  if (group) {
     const u32 n = std::min<u32>(rows, PageMaxRows(page));
     u32 srow[kMaxOptionRows];
-    bool ok = true;
+    matched = true;
     for (u32 r = 0; r < n; ++r) {
-      const u32 s = REX_LOAD_U32(arr + 4 * (pl.stock_rows + r));
-      if (s < 0x82000000u || s >= 0xFB000000u) {
-        ok = false;
+      const u32 s = REX_LOAD_U32(group_items + 4 * (pl.stock_rows + r));
+      if (!GuestPtr(s)) {
+        matched = false;
         break;
       }
       srow[r] = s;
     }
-    if (!ok) {
-      continue;
+    if (matched) {
+      // The cursor column x is per-language (confirmed by diffing the raw
+      // display lists 2026-08-06: Italian/French author 550, English 500), so
+      // it has to be read from a stock row rather than hardcoded - a mismatch
+      // here is what made Down-navigation skip straight over the new rows in
+      // English/German/Spanish despite the count byte being patched correctly.
+      const u32 opt_x = REX_LOAD_U32(REX_LOAD_U32(group_items) + 4);
+      for (u32 r = 0; r < n; ++r) {
+        const int32_t y = stock_yn + kRowYStep * static_cast<int32_t>(r + 1);
+        REX_STORE_U32(srow[r] + 4, opt_x);
+        REX_STORE_U32(srow[r] + 8, static_cast<u32>(y));
+      }
+      const u32 count = REX_LOAD_U8(group + 0x0C);
+      const u8 want = static_cast<u8>(pl.stock_rows + n);
+      if (count != want) {
+        REX_STORE_U8(group + 0x0C, want);
+        REX_STORE_U8(group + 0x0D, want);
+        REXLOG_INFO("[options] page {}: {} native rows made selectable "
+                    "(node=0x{:08X}, count {} -> {}, stock item y {})",
+                    page, n, group, count, want, stock_yn);
+      }
+      // A node carried over from a visit that had more rows can leave the
+      // cursor parked past the last item, where navigation has nothing to move
+      // to.
+      if (REX_LOAD_U8(group + 0x2C) >= want) {
+        REX_STORE_U8(group + 0x2C, static_cast<u8>(want - 1));
+      }
     }
+  }
 
-    // The cursor column x is per-language (confirmed by diffing the raw
-    // display lists 2026-08-06: Italian/French author 550, English 500), so
-    // it has to be read from a stock row rather than hardcoded - a mismatch
-    // here is what made Down-navigation skip straight over the new rows in
-    // English/German/Spanish despite the count byte being patched correctly.
-    const u32 opt_x = REX_LOAD_U32(s0 + 4);
-    for (u32 r = 0; r < n; ++r) {
-      const int32_t y =
-          pl.stock_item_yn + kRowYStep * static_cast<int32_t>(r + 1);
-      REX_STORE_U32(srow[r] + 4, opt_x);
-      REX_STORE_U32(srow[r] + 8, static_cast<u32>(y));
-    }
-    const u8 want = static_cast<u8>(pl.stock_rows + n);
-    if (count != want) {
-      REX_STORE_U8(i + 0x0C, want);
-      REX_STORE_U8(i + 0x0D, want);
-      REXLOG_INFO("[options] page {}: {} native rows made selectable "
-                  "(node=0x{:08X}, count {} -> {})",
-                  page, n, i, count, want);
-    }
-    // A node carried over from a visit that had more rows can leave the cursor
-    // parked past the last item, where navigation has nothing to move to.
-    if (REX_LOAD_U8(i + 0x2C) >= want) {
-      REX_STORE_U8(i + 0x2C, static_cast<u8>(want - 1));
-    }
-    break;
+  // The rows are spliced into the display list by a hook that never consults
+  // this group, so a miss here is invisible except as rows the cursor refuses
+  // to reach. Say so once per visit rather than leaving it silent.
+  static bool s_warned[kPageCount] = {};
+  if (page_changed) {
+    s_warned[page] = false;
+  }
+  if (!matched && rows && !s_warned[page]) {
+    s_warned[page] = true;
+    REXLOG_WARN("[options] page {}: no row group (id {}) matched; {} native "
+                "rows are drawn but not selectable",
+                page, pl.group_id, rows);
   }
 
   // Handle input, but only while the cursor is actually parked on one of our
@@ -2999,7 +3224,7 @@ REX_HOOK_RAW(sub_821F62B8) {
     return;
   }
   for (u32 i = REX_LOAD_U32(menu + 392);
-       i >= 0x82000000u && i < 0xFB000000u; i = REX_LOAD_U32(i + 48)) {
+       GuestPtr(i); i = REX_LOAD_U32(i + 48)) {
     if (REX_LOAD_U32(i) != pl.group_id) {
       continue;
     }
