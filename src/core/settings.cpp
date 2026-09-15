@@ -119,6 +119,15 @@ REXCVAR_DEFINE_BOOL(native_texture_mips, false, "Eternal Sonata",
                     "leaves the textures cached under the old setting behind, since the "
                     "mirror never evicts.");
 
+// A multiplier rather than an angle, because the guest picks its own vertical
+// field of view per camera and cutscenes set theirs deliberately. Applied in
+// the sub_82108180 hook, which is the single place the projection matrix, the
+// stored field of view and the cull extents are all derived from it.
+REXCVAR_DEFINE_DOUBLE(camera_fov_scale, 1.0, "Eternal Sonata",
+                      "Multiplier on the game's vertical field of view. 1 leaves every camera "
+                      "as the game framed it; above 1 pulls the view back.")
+    .range(0.5, 2.0);
+
 // Which model the overworld leader wears. "party" tracks the active party's
 // first member (the game itself always spawns Allegretto regardless of party
 // order); a character name pins that character; "default" leaves the game's
@@ -248,11 +257,12 @@ constexpr std::array kGameDefaults = {
 // render_scale is listed for the same no-op reason as vsync: only the native
 // renderer registers it, and resolution_scale stays beside it so a settings.toml
 // still round-trips through Xenos.
-constexpr std::array<const char*, 16> kBasicCvarNames = {
+constexpr std::array<const char*, 17> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
-    "host_timer_resolution_ms", "vsync", "voice_language", "render_scale"};
+    "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
+    "camera_fov_scale"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -644,6 +654,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
     DrawFullscreenRow();
     DrawRenderScaleRow();
+    DrawFieldOfViewRow();
     DrawFrameRateRow();
     DrawVsyncRow();
     DrawAudioMuteRow();
@@ -960,6 +971,28 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     if (ImGui::SliderInt("##v", &idx, 0, RenderScaleOptionCount() - 1, label,
                          ImGuiSliderFlags_NoInput)) {
       SetRenderScaleOption(idx);
+    }
+    ImGui::PopID();
+  }
+
+  // Applies to the next camera setup rather than instantly: the guest calls
+  // sub_82108180 when a camera changes, so the view widens on the next cut or
+  // area rather than under the player's feet.
+  void DrawFieldOfViewRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("camera_fov_scale");
+    if (!entry)
+      return;
+    int percent = static_cast<int>(std::lround(REXCVAR_GET(camera_fov_scale) * 100.0));
+    percent = std::clamp(percent, 50, 200);
+
+    ImGui::PushID("camera_fov_scale");
+    ImGui::TextUnformatted("Field of View");
+    ImGui::SameLine(180.0f);
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::SliderInt("##v", &percent, 50, 200, "%d%%", ImGuiSliderFlags_NoInput)) {
+      rex::cvar::SetFlagByName("camera_fov_scale", std::to_string(percent / 100.0),
+                               /*persist=*/true);
+      SaveBasic();
     }
     ImGui::PopID();
   }
