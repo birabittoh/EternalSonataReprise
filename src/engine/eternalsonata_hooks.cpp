@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include <iterator>
@@ -7,6 +8,7 @@
 
 #include "generated/eternalsonata_init.h"
 
+#include <rex/cvar.h>
 #include <rex/system/kernel_state.h>
 
 #include "eternalsonata_hooks_internal.h"
@@ -125,6 +127,36 @@ u32 ConsoleTextOverrideFor(u8* base, u32 text_address) {
 // so the simplest fix is to override the whole function and return 0 (pass).
 REX_EXTERN(__imp__sub_82254060);
 REX_HOOK_RAW(sub_82254060) { ctx.r3.u64 = 0; }
+
+// sub_82108180(camera, vertical_fov, near, far) is the only projection setup in
+// the binary. It derives the projection matrix at camera+304, the stored field
+// of view at camera+368 and the near plane extents at camera+380..392 from that
+// one angle, so scaling the argument moves the rendered view and the frustum
+// the cull test below uses together.
+REXCVAR_DECLARE(double, camera_fov_scale);
+REX_EXTERN(__imp__sub_82108180);
+REX_HOOK_RAW(sub_82108180) {
+    const double scale = std::clamp(REXCVAR_GET(camera_fov_scale), 0.5, 2.0);
+    const double fov = ctx.f1.f64;
+    // Radians, and the cameras seen so far sit at pi/2. Anything outside a
+    // plausible angle is not the value this hook thinks it is.
+    if (scale == 1.0 || fov <= 0.01 || fov >= 2.5) {
+        __imp__sub_82108180(ctx, base);
+        return;
+    }
+
+    const u32 camera = ctx.r3.u32;
+    ctx.f1.f64 = fov * scale;
+    __imp__sub_82108180(ctx, base);
+
+    // sub_821078B0 re-runs this every frame with the angle stored back at
+    // camera+368, so leaving the scaled one there multiplies it again each
+    // frame. Put the guest's own angle back and let only the projection and
+    // the extents derived from it carry the scale.
+    if (camera) {
+        REX_STORE_U32(camera + 368, std::bit_cast<u32>(static_cast<float>(fov)));
+    }
+}
 
 // The renderer widens the world after the guest has already culled its models.
 // Give the guest sphere test the same field of view for this call. A window
