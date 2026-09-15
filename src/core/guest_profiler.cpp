@@ -656,7 +656,15 @@ class GuestProfilerOverlay : public rex::ui::ImGuiDialog {
     // this one says why. Taken from ImGui rather than GetAsyncKeyState so it
     // respects the overlay's own keyboard focus, and ignored while a text field
     // has the keyboard.
-    if (ImGui::IsKeyPressed(ImGuiKey_F3, false) && !io.WantTextInput) {
+    //
+    // guest_profile is debug_only, i.e. hidden from the normal F4 cvar list, so
+    // requiring it to already be true is what keeps this heavy (thread suspend
+    // and stack walk per sample) window from popping up for a player who just
+    // wanted the FPS counter. Someone who wants it sets --guest_profile=true
+    // (or the config equivalent) before launch, same as any other debug_only
+    // cvar.
+    if (ImGui::IsKeyPressed(ImGuiKey_F3, false) && !io.WantTextInput &&
+        (open_ || REXCVAR_GET(guest_profile))) {
       open_ = !open_;
       g_overlay_open.store(open_, std::memory_order_relaxed);
     }
