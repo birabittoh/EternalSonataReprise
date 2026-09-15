@@ -67,6 +67,12 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
 // keep being served in its place.
 void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t height);
 
+// True when that same lookup would hand back a render target whose host image is
+// not the guest's own size, i.e. one the render scale shrank or grew. The guest's
+// own end of frame composite quad samples one of these, so it is what upscales
+// the world to the window and it does so with the sampler the guest asked for.
+bool FrameResolveTextureIsScaled(uint32_t address, uint32_t width, uint32_t height);
+
 // The host texture currently bound as colour target 0, for the read-write
 // hazard check in the draw layer: a resolve destination handed back by
 // FrameResolveTextureByAddress is the render target itself rather than a copy

@@ -57,6 +57,11 @@ float NativeRenderScale();
 // window has ever published a size and so cannot retire anything.
 float NativeRenderScaleAtBoot();
 
+// True to scale the world image up to the window with nearest neighbour, for a
+// sharp pixelated look at a low render scale, rather than the bilinear filter
+// everything uses otherwise. Live, read per frame.
+bool NativeRenderPixelatedScaling();
+
 // Registers the cvars a GPU plugin would have registered, so selecting this
 // renderer does not silently lose them: `vsync` and `resolution_scale`, both of
 // which live inside rexgpu-xenos and therefore never register when no plugin is

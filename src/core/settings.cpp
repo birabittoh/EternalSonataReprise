@@ -257,12 +257,12 @@ constexpr std::array kGameDefaults = {
 // render_scale is listed for the same no-op reason as vsync: only the native
 // renderer registers it, and resolution_scale stays beside it so a settings.toml
 // still round-trips through Xenos.
-constexpr std::array<const char*, 17> kBasicCvarNames = {
+constexpr std::array<const char*, 18> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
-    "camera_fov_scale"};
+    "camera_fov_scale", "render_pixelated_scaling"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -654,6 +654,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
     DrawFullscreenRow();
     DrawRenderScaleRow();
+    DrawRenderFilterRow();
     DrawFieldOfViewRow();
     DrawFrameRateRow();
     DrawVsyncRow();
@@ -961,7 +962,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       return;
     int idx = RenderScaleOptionIndex();
     char label[16];
-    std::snprintf(label, sizeof(label), "%d%%", RenderScaleOptionPercent(idx));
+    // ImGui runs the format string through printf itself, so the percent sign
+    // has to survive that pass as well as this one.
+    std::snprintf(label, sizeof(label), "%d%%%%", RenderScaleOptionPercent(idx));
 
     ImGui::PushID("render_scale");
     ImGui::TextUnformatted("Render Resolution");
@@ -975,6 +978,24 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
+  // The sampler every upscale of the world image uses, so it takes effect on the
+  // very next frame.
+  void DrawRenderFilterRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("render_pixelated_scaling");
+    if (!entry)
+      return;
+    // At 100% nothing is magnified, so the filter has nothing to choose between.
+    if (RenderScalePercent() >= 100)
+      return;
+    ImGui::TextUnformatted("Pixelated Scaling");
+    ImGui::SameLine(180.0f);
+    ImGui::PushID("render_pixelated_scaling");
+    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
+      SaveBasic();
+    }
+    ImGui::PopID();
+  }
+
   // Applies to the next camera setup rather than instantly: the guest calls
   // sub_82108180 when a camera changes, so the view widens on the next cut or
   // area rather than under the player's feet.
@@ -984,7 +1005,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       return;
     int idx = CameraFovOptionIndex();
     char label[16];
-    std::snprintf(label, sizeof(label), "%d%%", CameraFovOptionPercent(idx));
+    std::snprintf(label, sizeof(label), "%d%%%%", CameraFovOptionPercent(idx));
 
     ImGui::PushID("camera_fov_scale");
     ImGui::TextUnformatted("Field of View");

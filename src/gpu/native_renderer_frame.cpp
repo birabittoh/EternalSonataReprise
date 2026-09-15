@@ -165,6 +165,7 @@ struct GuestTarget {
   // corrupts a draw already recorded.
   std::unique_ptr<RenderDescriptorSet> composite_set;
   const RenderTexture* composite_source = nullptr;
+  bool composite_linear = true;
   // The frame this target was last composited into, so the blit happens once per
   // frame however many draws follow the marker.
   uint64_t composited_frame = ~0ull;
@@ -584,6 +585,9 @@ struct DownscaleResources {
   std::unique_ptr<RenderPipelineLayout> pipeline_layout;
   std::unique_ptr<RenderPipeline> pipeline;
   std::unique_ptr<RenderSampler> sampler;
+  // For the layer composite, which magnifies the world image; the readback
+  // downscale always minifies and stays linear.
+  std::unique_ptr<RenderSampler> sampler_nearest;
   bool initialized = false;
   bool failed = false;
 };
@@ -645,6 +649,9 @@ bool EnsureDownscaleResources(RenderDevice* device) {
   sampler_desc.addressV = RenderTextureAddressMode::CLAMP;
   sampler_desc.addressW = RenderTextureAddressMode::CLAMP;
   g_downscale.sampler = device->createSampler(sampler_desc);
+  sampler_desc.minFilter = RenderFilter::NEAREST;
+  sampler_desc.magFilter = RenderFilter::NEAREST;
+  g_downscale.sampler_nearest = device->createSampler(sampler_desc);
 
   if (g_downscale.vertex_shader && g_downscale.pixel_shader && g_downscale.pipeline_layout) {
     RenderGraphicsPipelineDesc pipeline_desc;
@@ -662,7 +669,7 @@ bool EnsureDownscaleResources(RenderDevice* device) {
     g_downscale.pipeline = device->createGraphicsPipeline(pipeline_desc);
   }
 
-  if (!g_downscale.pipeline || !g_downscale.sampler) {
+  if (!g_downscale.pipeline || !g_downscale.sampler || !g_downscale.sampler_nearest) {
     REXLOG_ERROR(
         "native_renderer: could not create the readback downscale pipeline, so the guest cannot "
         "read back its own resolved pixels while supersampling");
@@ -2151,6 +2158,29 @@ void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t he
   return nullptr;
 }
 
+bool FrameResolveTextureIsScaled(uint32_t address, uint32_t width, uint32_t height) {
+  if (address == 0)
+    return false;
+  // Same freshest-copy selection as above, without the ripple bookkeeping: this
+  // is a question about a bind the caller is about to make, not the bind itself.
+  const ResolvedTexture* best = nullptr;
+  for (auto& candidate : g_resolved) {
+    if (candidate->address != address)
+      continue;
+    if (candidate->width != width || candidate->height != height)
+      continue;
+    if (best == nullptr || candidate->resolved_frame > best->resolved_frame ||
+        (candidate->resolved_frame == best->resolved_frame && candidate->layer == g_layer)) {
+      best = candidate.get();
+    }
+  }
+  if (best == nullptr)
+    return false;
+  const uint32_t image_width = best->image_width != 0 ? best->image_width : best->width;
+  const uint32_t image_height = best->image_height != 0 ? best->image_height : best->height;
+  return image_width != best->width || image_height != best->height;
+}
+
 uint64_t FrameIndex() { return g_frame; }
 
 void LogFrameSummary() {
@@ -2244,7 +2274,9 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
     return false;
   }
 
-  if (composite->composite_source != world->texture.get()) {
+  const bool composite_linear = !NativeRenderPixelatedScaling();
+  if (composite->composite_source != world->texture.get() ||
+      composite->composite_linear != composite_linear) {
     // Retire rather than rewrite: a set the previous frame's list still reads
     // cannot be written in place. See RetiredBatch.
     if (composite->composite_set)
@@ -2259,8 +2291,10 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
     }
     composite->composite_set->setTexture(0, world->texture.get(),
                                          RenderTextureLayout::SHADER_READ);
-    composite->composite_set->setSampler(1, g_downscale.sampler.get());
+    composite->composite_set->setSampler(
+        1, composite_linear ? g_downscale.sampler.get() : g_downscale.sampler_nearest.get());
     composite->composite_source = world->texture.get();
+    composite->composite_linear = composite_linear;
     REXLOG_INFO(
         "native_renderer: composite for EDRAM tile {} ({}x{}) now reads the world target at tile "
         "{}, {}x{} host for a {}x{} guest surface",
@@ -2530,7 +2564,11 @@ struct BlitResources {
   std::unique_ptr<RenderPipelineLayout> pipeline_layout;
   std::unique_ptr<RenderPipeline> pipeline;
   std::unique_ptr<RenderSampler> sampler;
+  std::unique_ptr<RenderSampler> sampler_nearest;
   std::unique_ptr<RenderDescriptorSet> descriptor_set;
+
+  // Which of the two the set currently holds, so a cvar change rewrites it.
+  bool bound_linear = true;
 
   // What the set currently points at. Rewriting a descriptor set that a
   // recorded draw still reads changes that draw; it is safe here only
@@ -2587,6 +2625,9 @@ bool EnsureBlitResources(RenderDevice* device) {
   sampler_desc.addressV = RenderTextureAddressMode::CLAMP;
   sampler_desc.addressW = RenderTextureAddressMode::CLAMP;
   g_blit.sampler = device->createSampler(sampler_desc);
+  sampler_desc.minFilter = RenderFilter::NEAREST;
+  sampler_desc.magFilter = RenderFilter::NEAREST;
+  g_blit.sampler_nearest = device->createSampler(sampler_desc);
 
   if (g_blit.vertex_shader && g_blit.pixel_shader && g_blit.pipeline_layout) {
     RenderGraphicsPipelineDesc pipeline_desc;
@@ -2606,7 +2647,7 @@ bool EnsureBlitResources(RenderDevice* device) {
 
   g_blit.descriptor_set = device->createDescriptorSet(descriptor_set_desc);
 
-  if (!g_blit.pipeline || !g_blit.sampler || !g_blit.descriptor_set) {
+  if (!g_blit.pipeline || !g_blit.sampler || !g_blit.sampler_nearest || !g_blit.descriptor_set) {
     REXLOG_ERROR(
         "native_renderer: could not create the present blit pipeline, so the guest's image "
         "cannot be presented");
@@ -2845,10 +2886,13 @@ bool FramePreparePresent(RenderCommandList* commands) {
   Transition(commands, source->texture.get(), source->layout, RenderBarrierStage::GRAPHICS,
              RenderTextureLayout::SHADER_READ);
 
-  if (g_blit.bound_texture != source->texture.get()) {
+  const bool linear = !NativeRenderPixelatedScaling();
+  if (g_blit.bound_texture != source->texture.get() || g_blit.bound_linear != linear) {
     g_blit.bound_texture = source->texture.get();
+    g_blit.bound_linear = linear;
     g_blit.descriptor_set->setTexture(0, source->texture.get(), RenderTextureLayout::SHADER_READ);
-    g_blit.descriptor_set->setSampler(1, g_blit.sampler.get());
+    g_blit.descriptor_set->setSampler(
+        1, linear ? g_blit.sampler.get() : g_blit.sampler_nearest.get());
   }
   return true;
 }
