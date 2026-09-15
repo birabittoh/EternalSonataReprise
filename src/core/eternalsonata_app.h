@@ -376,6 +376,11 @@ class EternalsonataApp : public rex::ReXApp {
     // renderer; the Xenos backend measures neither, so the row is left out
     // rather than shown reading zero.
     if (eternalsonata::NativeRendererEnabled()) {
+      // The perf-counters section (frame time graph, draw/vert/stall counts,
+      // XMA, dispatch, threading, caches) only ever reads emulated-Xenos and
+      // XMA-decoder counters. This build's native renderer/audio path never
+      // touches them, so left on it would just show a flat graph and zeros.
+      SetDebugOverlayShowPerfCounters(false);
       SetDebugOverlayDetails([]() {
         const auto bound = eternalsonata::GetFrameBoundStats();
         const bool gpu_bound = bound.verdict[0] == 'G';
