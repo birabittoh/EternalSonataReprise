@@ -19,6 +19,7 @@
 #include "native_renderer_plume.h"
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_readback.h"
+#include "settings.h"
 
 #ifdef _WIN32
 #include "shaders/blitVert.hlsl.dxil.h"
@@ -2698,6 +2699,11 @@ void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
 
   g_pending_extent_width = 0;
   g_pending_extent_height = 0;
+
+  // The debounce above is what makes this safe to write to disk: a window being
+  // dragged by its corner gets here once, when it stops.
+  if (!first)
+    PersistWindowSize();
 
   // The first publication has nothing built yet, so there is nothing to tear
   // down and it can take effect immediately.

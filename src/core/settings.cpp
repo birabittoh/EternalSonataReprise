@@ -1416,6 +1416,42 @@ void SaveUserSettings() {
   SaveBasicCvars(g_user_settings_path);
 }
 
+void PersistWindowSize() {
+  if (g_user_settings_path.empty() || g_window == nullptr) {
+    return;
+  }
+  // Fullscreen size is the display's, not a window size worth coming back to.
+  if (g_window->IsFullscreen()) {
+    return;
+  }
+  // Logical, because that is the unit window_width/window_height are read in;
+  // the renderer's own extent is in physical pixels and would grow the window
+  // on every launch on a scaled display.
+  const uint32_t width = g_window->GetActualLogicalWidth();
+  const uint32_t height = g_window->GetActualLogicalHeight();
+  if (width == 0 || height == 0 || width > 8192 || height > 8192) {
+    return;
+  }
+
+  auto* width_entry = rex::cvar::GetFlagInfo("window_width");
+  auto* height_entry = rex::cvar::GetFlagInfo("window_height");
+  if (!width_entry || !height_entry) {
+    return;
+  }
+  const std::string want_width = std::to_string(width);
+  const std::string want_height = std::to_string(height);
+  if (width_entry->getter() == want_width && height_entry->getter() == want_height) {
+    return;
+  }
+
+  // Both are kRequiresRestart, and they are deliberately outside
+  // kBasicCvarNames: the settings UI's pending-restart banner scans that list,
+  // and a resize the player just performed is already in effect on screen.
+  rex::cvar::SetFlagByName("window_width", want_width, /*persist=*/true);
+  rex::cvar::SetFlagByName("window_height", want_height, /*persist=*/true);
+  rex::cvar::SaveConfigSubset(g_user_settings_path, {"window_width", "window_height"});
+}
+
 void SetFrameRateSetting(const char* value) {
   auto* entry = rex::cvar::GetFlagInfo("frame_rate");
   if (!entry || !entry->setter || entry->getter() == value) {
