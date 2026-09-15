@@ -258,6 +258,22 @@ inline constexpr uint32_t kPartyAttackOffset = 265144u - 183648u;   // u16
 inline constexpr uint32_t kPartyDefenseOffset = 265152u - 183648u;  // u16
 inline constexpr uint32_t kPartySpeedOffset = 265154u - 183648u;    // u16
 
+// --- Scene node -----------------------------------------------------------
+//
+// Each unit's node id in the scene graph at dword_824CF500, i.e. the same id
+// space the field player and the field camera use (overworld_system.cpp's
+// kSceneManager). sub_821A9EA0 is the accessor: given a {kind, slot}
+// descriptor it returns the party dword at manager+265336 or the enemy one at
+// manager+445560, and its callers feed the result straight to the scene
+// lookup sub_82176CD8 keys on, which is what fixes these as node ids rather
+// than object pointers. sub_82190318 (unit to unit distance) and
+// sub_82190438 (facing angle) are the readers.
+//
+// So a unit's transform is reachable with sub_8217BF28 / sub_82178A88, the
+// getter and setter the overworld API already drives.
+inline constexpr uint32_t kPartySceneNodeOffset = 265336u - 183648u;  // u32
+inline constexpr uint32_t kEnemySceneNodeOffset = 445560u - 429568u;  // u32
+
 // Address helpers. Callers still have to bounds-check against the live counts.
 inline constexpr uint32_t PartyRecord(uint32_t slot) {
   return kPartyArrayBase + kPartyRecordStride * slot;

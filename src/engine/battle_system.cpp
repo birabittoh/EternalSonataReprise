@@ -57,6 +57,7 @@
 
 #include "generated/eternalsonata_init.h"
 
+#include <cmath>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -66,6 +67,7 @@
 #include <rex/hook.h>
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
+#include <rex/system/kernel_state.h>
 #include <rex/system/mod_plugin.h>
 #include <rex/system/mod_registry.h>
 
@@ -85,6 +87,15 @@ REX_IMPORT(__imp__sub_821BB140, g_finish_battle_intro, u32(u32));
 // The game's BTX text lookup: (block, index) -> guest char*. Enemy names come
 // out of it exactly as sub_821ABE88 fetches them.
 REX_IMPORT(__imp__sub_8223B780, g_lookup_text, u32(u32, u32));
+
+// The scene graph transform accessors, keyed by node id. The same pair
+// overworld_system.cpp drives for the field leader and the field camera; a
+// battle unit's node id comes out of its record (battle_layout.h
+// kPartySceneNodeOffset).
+REX_IMPORT(__imp__sub_8217BF28, g_get_scene_position, u32(u32, u32, u32));
+REX_IMPORT(__imp__sub_82178A88, g_set_scene_position,
+           void(u32, u32, u32, u32, u32, u32));
+constexpr uint32_t kSceneManager = 0x824CF500u;
 
 // Set in OnPostSetup. Null until then, which is what makes every entry point
 // answer "unavailable" during boot rather than dereferencing nothing.
@@ -247,6 +258,121 @@ bool SetEnemyHp(int slot, int32_t hp) {
   std::memcpy(&bits, &ratio, sizeof(bits));
   WriteGuest32(record + battle::kEnemyHpRatioOffset, bits);
   return true;
+}
+
+// --- Unit positions --------------------------------------------------------
+//
+// A unit's transform is not in its record; the record only holds a scene node
+// id, and the transform lives in the scene graph the field also uses. So the
+// reads and writes here are guest calls, not memory accesses, and both have to
+// happen on the guest thread: the getter is sampled once per frame off the
+// back of the FSM hook and cached, and the setter is queued.
+
+struct UnitPosition {
+  bool valid = false;
+  float x = 0.0f;
+  float y = 0.0f;
+  float z = 0.0f;
+};
+
+std::mutex g_position_mutex;
+UnitPosition g_party_positions[ETERNALSONATA_BATTLE_MAX_PARTY];
+UnitPosition g_enemy_positions[ETERNALSONATA_BATTLE_MAX_ENEMIES];
+uint32_t g_position_scratch = 0;
+
+uint32_t PositionScratch() {
+  auto* kernel = rex::system::kernel_state();
+  if (!kernel || !kernel->memory()) {
+    return 0;
+  }
+  if (!g_position_scratch) {
+    g_position_scratch = kernel->memory()->SystemHeapAlloc(16, 0x20);
+  }
+  return g_position_scratch;
+}
+
+// The scene node id for one unit, or 0. sub_821A9EA0 is the game's own
+// accessor for exactly this.
+uint32_t SceneNode(int kind, int slot) {
+  const int live = kind == ETERNALSONATA_BATTLE_ACTOR_PARTY ? PartyCount() : EnemyCount();
+  if (slot < 0 || slot >= live) {
+    return 0;
+  }
+  const uint32_t address =
+      kind == ETERNALSONATA_BATTLE_ACTOR_PARTY
+          ? battle::PartyRecord(static_cast<uint32_t>(slot)) + battle::kPartySceneNodeOffset
+          : battle::EnemyRecord(static_cast<uint32_t>(slot)) + battle::kEnemySceneNodeOffset;
+  const uint32_t node = ReadGuest<uint32_t>(address);
+  return node == 0xFFFFFFFFu ? 0 : node;
+}
+
+void PollPositionSide(int kind, UnitPosition* out, int capacity) {
+  const uint32_t scratch = PositionScratch();
+  auto* memory = Mem();
+  for (int slot = 0; slot < capacity; ++slot) {
+    const uint32_t node = scratch && memory ? SceneNode(kind, slot) : 0;
+    if (!node) {
+      std::lock_guard<std::mutex> lock(g_position_mutex);
+      out[slot].valid = false;
+      continue;
+    }
+    g_get_scene_position(scratch, kSceneManager, node);
+    const auto* vec = memory->TranslateVirtual<const uint8_t*>(scratch);
+    if (!vec) {
+      continue;
+    }
+    UnitPosition now;
+    now.valid = true;
+    now.x = rex::memory::load_and_swap<float>(vec);
+    now.y = rex::memory::load_and_swap<float>(vec + 4);
+    now.z = rex::memory::load_and_swap<float>(vec + 8);
+    std::lock_guard<std::mutex> lock(g_position_mutex);
+    out[slot] = now;
+  }
+}
+
+void PollUnitPositions() {
+  PollPositionSide(ETERNALSONATA_BATTLE_ACTOR_PARTY, g_party_positions,
+                   ETERNALSONATA_BATTLE_MAX_PARTY);
+  PollPositionSide(ETERNALSONATA_BATTLE_ACTOR_ENEMY, g_enemy_positions,
+                   ETERNALSONATA_BATTLE_MAX_ENEMIES);
+}
+
+void ForgetUnitPositions() {
+  std::lock_guard<std::mutex> lock(g_position_mutex);
+  for (auto& entry : g_party_positions) {
+    entry.valid = false;
+  }
+  for (auto& entry : g_enemy_positions) {
+    entry.valid = false;
+  }
+}
+
+void SetUnitPositionOnGuestThread(int kind, int slot, UnitPosition position) {
+  if (!Available()) {
+    return;
+  }
+  const uint32_t node = SceneNode(kind, slot);
+  const uint32_t scratch = PositionScratch();
+  auto* memory = Mem();
+  if (!node || !scratch || !memory) {
+    return;
+  }
+  auto* vec = memory->TranslateVirtual<uint8_t*>(scratch);
+  if (!vec) {
+    return;
+  }
+  rex::memory::store_and_swap<float>(vec, position.x);
+  rex::memory::store_and_swap<float>(vec + 4, position.y);
+  rex::memory::store_and_swap<float>(vec + 8, position.z);
+  g_set_scene_position(kSceneManager, node, scratch, 0, 0, 0xFFFFFFFFu);
+  position.valid = true;
+  std::lock_guard<std::mutex> lock(g_position_mutex);
+  if (kind == ETERNALSONATA_BATTLE_ACTOR_PARTY && slot < ETERNALSONATA_BATTLE_MAX_PARTY) {
+    g_party_positions[slot] = position;
+  } else if (kind == ETERNALSONATA_BATTLE_ACTOR_ENEMY && slot < ETERNALSONATA_BATTLE_MAX_ENEMIES) {
+    g_enemy_positions[slot] = position;
+  }
 }
 
 void KillAllEnemies() {
@@ -770,7 +896,20 @@ void PollSide(int kind, UnitWatch* watch, int capacity) {
 // thread that owns the fields, and gives it a natural off switch: the FSM only
 // runs while there is a battle.
 void PollBattleUnits() {
-  if (!Available() || !g_runtime || !g_runtime->mod_registry()) {
+  if (!Available() || !g_runtime) {
+    for (auto& watch : g_party_watch) {
+      watch.valid = false;
+    }
+    for (auto& watch : g_enemy_watch) {
+      watch.valid = false;
+    }
+    ForgetUnitPositions();
+    return;
+  }
+  // Positions are published straight to callers, so they are sampled whether
+  // or not anything is listening for events.
+  PollUnitPositions();
+  if (!g_runtime->mod_registry()) {
     for (auto& watch : g_party_watch) {
       watch.valid = false;
     }
@@ -1050,6 +1189,59 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetBattleEnemyHp(int slot, int
     return ETERNALSONATA_BATTLE_ERR_UNAVAILABLE;
   }
   return SetEnemyHp(slot, hp) ? ETERNALSONATA_BATTLE_OK : ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetBattleUnitPosition(
+    int side, int slot, EternalSonataBattlePosition* out) {
+  if (!out) {
+    return ETERNALSONATA_BATTLE_ERR_INVALID_ARGUMENT;
+  }
+  std::memset(out, 0, sizeof(*out));
+  if (!Available()) {
+    return ETERNALSONATA_BATTLE_ERR_UNAVAILABLE;
+  }
+  const int capacity = side == ETERNALSONATA_BATTLE_ACTOR_PARTY
+                           ? ETERNALSONATA_BATTLE_MAX_PARTY
+                           : ETERNALSONATA_BATTLE_MAX_ENEMIES;
+  if ((side != ETERNALSONATA_BATTLE_ACTOR_PARTY &&
+       side != ETERNALSONATA_BATTLE_ACTOR_ENEMY) ||
+      slot < 0 || slot >= capacity) {
+    return ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
+  }
+  std::lock_guard<std::mutex> lock(g_position_mutex);
+  const UnitPosition& entry = side == ETERNALSONATA_BATTLE_ACTOR_PARTY
+                                  ? g_party_positions[slot]
+                                  : g_enemy_positions[slot];
+  if (!entry.valid) {
+    return ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
+  }
+  out->x = entry.x;
+  out->y = entry.y;
+  out->z = entry.z;
+  return ETERNALSONATA_BATTLE_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetBattleUnitPosition(
+    int side, int slot, const EternalSonataBattlePosition* position) {
+  if (!position || !std::isfinite(position->x) || !std::isfinite(position->y) ||
+      !std::isfinite(position->z)) {
+    return ETERNALSONATA_BATTLE_ERR_INVALID_ARGUMENT;
+  }
+  if (!Available()) {
+    return ETERNALSONATA_BATTLE_ERR_UNAVAILABLE;
+  }
+  if ((side != ETERNALSONATA_BATTLE_ACTOR_PARTY &&
+       side != ETERNALSONATA_BATTLE_ACTOR_ENEMY) ||
+      !SceneNode(side, slot)) {
+    return ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
+  }
+  UnitPosition target;
+  target.x = position->x;
+  target.y = position->y;
+  target.z = position->z;
+  PostToGuestMainThread(
+      [side, slot, target] { SetUnitPositionOnGuestThread(side, slot, target); });
+  return ETERNALSONATA_BATTLE_QUEUED;
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSkipBattleTurn(void) {
