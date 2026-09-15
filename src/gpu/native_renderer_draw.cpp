@@ -19,6 +19,7 @@
 #include <rex/logging.h>
 
 #include "guest_shaders.h"
+#include "native_renderer.h"
 #include "native_renderer_frame.h"
 #include "native_renderer_pipeline_internal.h"
 #include "native_renderer_plume.h"
@@ -2712,6 +2713,14 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // WaterPinT12 rewrites a fetch constant *after* it is read, so a draw under
   // it does not describe itself; the pin is a debug knob and is zero in a
   // shipped frame, so the cache is simply stood down while it is set.
+  // The upscale filter picks the sampler for a scaled render target, so a cached
+  // set built under the other answer is stale.
+  static bool s_cached_pixelated = false;
+  if (const bool pixelated = NativeRenderPixelatedScaling(); pixelated != s_cached_pixelated) {
+    s_cached_pixelated = pixelated;
+    g_binding_cache.valid = false;
+  }
+
   const bool cacheable = fetch_signature != 0 && WaterPinT12() == 0;
   if (cacheable && g_binding_cache.valid && g_binding_cache.epoch == content_epoch &&
       g_binding_cache.signature == fetch_signature && g_binding_cache.mask == texture_mask) {
@@ -2747,6 +2756,18 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
           {
             ProfileZone lookup_zone(kPhaseMirrorLookup);
             texture = static_cast<RenderTexture*>(TextureMirrorLookup(call.memory_base, fetch));
+          }
+          // A render target the render scale resized is the one texture whose
+          // host size is not the size the guest's sampler was chosen for, so the
+          // guest's own composite quad is what magnifies the world to the
+          // window. Point sample those, and only those; ordinary textures keep
+          // the filter the guest asked for.
+          if (NativeRenderPixelatedScaling() &&
+              FrameResolveTextureIsScaled(fetch.base_address, fetch.width, fetch.height)) {
+            sampler_state.min_filter = 0;
+            sampler_state.mag_filter = 0;
+            sampler_state.mip_filter = 0;
+            sampler_state.aniso = 0;
           }
           ProfileZone sampler_zone(kPhaseAcquireSampler);
           sampler = AcquireSampler(device, sampler_state);

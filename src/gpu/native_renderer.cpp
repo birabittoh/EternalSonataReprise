@@ -55,6 +55,9 @@ int32_t g_resolution_scale = 1;
 // opinion" and renders at the window's own resolution.
 float g_render_scale = 0.0f;
 
+// Storage behind `render_pixelated_scaling`.
+bool g_render_pixelated_scaling = false;
+
 constexpr int32_t kMinRenderScale = 1;
 constexpr int32_t kMaxRenderScale = 8;
 constexpr float kMinRenderScaleF = 0.25f;
@@ -94,6 +97,8 @@ float NativeRenderScaleAtBoot() {
   }();
   return scale;
 }
+
+bool NativeRenderPixelatedScaling() { return g_render_pixelated_scaling; }
 
 void RegisterNativeRendererCvars() {
   if (!NativeRendererEnabled())
@@ -185,6 +190,25 @@ void RegisterNativeRendererCvars() {
   fine.constraints.max = kMaxRenderScaleF;
   fine.default_value = "0";
   rex::cvar::RegisterFlag(std::move(fine));
+
+  // Which sampler magnifies the world image: the present blit, the layer
+  // composite and, the one that is actually visible, the guest's own composite
+  // quad reading a scaled render target. Nearest keeps the low resolution pixels
+  // crisp instead of smearing them.
+  rex::cvar::FlagEntry filter;
+  filter.name = "render_pixelated_scaling";
+  filter.type = rex::cvar::FlagType::Boolean;
+  filter.category = "GPU";
+  filter.description = "Upscale the rendered image with nearest neighbour instead of bilinear";
+  filter.setter = [](std::string_view value) {
+    g_render_pixelated_scaling = value == "true" || value == "1" || value == "yes";
+    return true;
+  };
+  filter.getter = []() { return std::string(g_render_pixelated_scaling ? "true" : "false"); };
+  filter.command_callback = [](std::string_view) {};
+  filter.lifecycle = rex::cvar::Lifecycle::kHotReload;
+  filter.default_value = "false";
+  rex::cvar::RegisterFlag(std::move(filter));
 }
 
 #if defined(__ANDROID__)
