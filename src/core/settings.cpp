@@ -982,17 +982,19 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     const auto* entry = rex::cvar::GetFlagInfo("camera_fov_scale");
     if (!entry)
       return;
-    int percent = static_cast<int>(std::lround(REXCVAR_GET(camera_fov_scale) * 100.0));
-    percent = std::clamp(percent, 50, 200);
+    int idx = CameraFovOptionIndex();
+    char label[16];
+    std::snprintf(label, sizeof(label), "%d%%", CameraFovOptionPercent(idx));
 
     ImGui::PushID("camera_fov_scale");
     ImGui::TextUnformatted("Field of View");
     ImGui::SameLine(180.0f);
     ImGui::SetNextItemWidth(160.0f);
-    if (ImGui::SliderInt("##v", &percent, 50, 200, "%d%%", ImGuiSliderFlags_NoInput)) {
-      rex::cvar::SetFlagByName("camera_fov_scale", std::to_string(percent / 100.0),
-                               /*persist=*/true);
-      SaveBasic();
+    // Discrete 0..N-1 slider on the same steps the native Options gauge moves
+    // through, so the two rows cannot land on values the other cannot show.
+    if (ImGui::SliderInt("##v", &idx, 0, CameraFovOptionCount() - 1, label,
+                         ImGuiSliderFlags_NoInput)) {
+      SetCameraFovOption(idx);
     }
     ImGui::PopID();
   }
@@ -1382,6 +1384,56 @@ void SetRenderScalePercent(int percent) {
   rex::cvar::SetFlagByName("resolution_scale", std::to_string(scale),
                            /*persist=*/true);
   SaveUserSettings();
+}
+
+// ---------------------------------------------------------------------------
+// Camera field of view, as a percentage
+// ---------------------------------------------------------------------------
+//
+// The bounds are the cvar's own .range(0.5, 2.0), in tens like the render
+// scale beside it: the native Options row is a gauge that moves one step per
+// press, so the whole range stays a manageable number of presses.
+constexpr int kCameraFovMinPercent = 50;
+constexpr int kCameraFovMaxPercent = 200;
+constexpr int kCameraFovStepPercent = 10;
+
+int CameraFovOptionCount() {
+  return (kCameraFovMaxPercent - kCameraFovMinPercent) / kCameraFovStepPercent + 1;
+}
+
+int CameraFovOptionPercent(int index) {
+  if (index < 0 || index >= CameraFovOptionCount()) {
+    return 100;
+  }
+  return kCameraFovMinPercent + index * kCameraFovStepPercent;
+}
+
+int CameraFovPercent() {
+  const int percent =
+      static_cast<int>(std::lround(REXCVAR_GET(camera_fov_scale) * 100.0));
+  return std::clamp(percent, kCameraFovMinPercent, kCameraFovMaxPercent);
+}
+
+// Nearest step, so a value the overlay's continuous slider set still lands on
+// a row value rather than falling off the end.
+int CameraFovOptionIndex() {
+  const int steps = (CameraFovPercent() - kCameraFovMinPercent + kCameraFovStepPercent / 2) /
+                    kCameraFovStepPercent;
+  return std::clamp(steps, 0, CameraFovOptionCount() - 1);
+}
+
+void SetCameraFovPercent(int percent) {
+  percent = std::clamp(percent, kCameraFovMinPercent, kCameraFovMaxPercent);
+  rex::cvar::SetFlagByName("camera_fov_scale", std::to_string(percent / 100.0),
+                           /*persist=*/true);
+  SaveUserSettings();
+}
+
+void SetCameraFovOption(int index) {
+  if (index < 0 || index >= CameraFovOptionCount()) {
+    return;
+  }
+  SetCameraFovPercent(CameraFovOptionPercent(index));
 }
 
 void ApplySettingDefaults() {

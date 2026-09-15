@@ -188,6 +188,12 @@ constexpr u32 kBarRecordBytes = 0x2Cu;
 // that byte on entry, so a gauge outside the pair draws on the wrong layer.
 constexpr u32 kSliderRecordOffset = 0x3E0u;
 constexpr u32 kSliderRecordBytes = 0x2Cu;
+// The gauge's maximum, and the only thing its bar geometry is scaled by:
+// sub_8220F4A8 turns it into pixels per unit once, at creation, so a maximum
+// written to the object afterwards moves the readout but not the bar. The
+// type-1200 dispatch at 0x821F5CE0 hands this field over as both the maximum
+// and the starting value.
+constexpr u32 kSliderMaxOffset = 0x0Cu;
 constexpr u32 kSliderXOffset = 0x04u;
 constexpr u32 kSliderYOffset = 0x08u;
 constexpr u32 kSliderNumXOffset = 0x18u;
@@ -205,6 +211,9 @@ constexpr int32_t kSliderRecordDY = -2;
 // ours are the last entries of each, the same rule the highlight bars follow.
 // A screen refuses a fourth gauge, which is why slider rows are page 2 only:
 // page 1's volumes fill its table.
+//
+// The menu manager's heap caps the total across every screen at once; it is
+// grown for us, see kVolContHeapSize.
 constexpr u32 kScreenSliderIds = 1528u;
 constexpr u32 kScreenSliderNumIds = 644u;
 constexpr u32 kScreenSliderCount = 3u;
@@ -466,6 +475,9 @@ bool ClassifyList(u32 list_addr, int* page, int* lang_idx) {
 
 constexpr LocalizedLabel kLabelResolution = {
     {"Resolution", "Aufl\xF6sung", "R\xE9solution", "Resoluci\xF3n", "Risoluzione"}};
+constexpr LocalizedLabel kLabelFieldOfView = {
+    {"Field of View", "Sichtfeld", "Champ de vue", "Campo visi\xF3n",
+     "Campo visivo"}};
 constexpr LocalizedLabel kLabelFrameRate = {
     {"Frame Rate", "Bildrate", "Fr\xE9quence", "Fotogramas", "Framerate"}};
 // Kept short on purpose: a label shares its row with the value column at
@@ -591,6 +603,10 @@ struct OptionRow {
   // display hook the step index is drawn as is.
   int slider_steps = 0;
   std::function<int(int)> slider_display;
+  // What the gauge reads as full, or zero to keep the 100 the cloned record
+  // carries. A row whose values run past 100 (the field of view reaches 200%)
+  // has to raise it, or both the bar and the readout clamp.
+  int slider_max = 0;
   // The cvar this row writes, when that cvar only takes effect on the next
   // launch (rex::cvar::Lifecycle::kRequiresRestart). Non-null means the row
   // draws the restart marker once the cvar has actually been changed this
@@ -691,6 +707,8 @@ int FrameRateGetIndex();
 void FrameRateSetIndex(u8* base, int idx);
 int RenderScaleGet();
 void RenderScaleSet(u8* base, int percent);
+int CameraFovGet();
+void CameraFovSet(u8* base, int index);
 int TextGetIndex();
 void TextSetIndex(u8* base, int idx);
 int OverworldModelGetIndex();
@@ -781,7 +799,7 @@ std::vector<OptionRow>& Rows() {
     // while the guest thread is walking the registry safe: appends only ever
     // touch the tail, and references the guest side already holds stay valid.
     initial.reserve(kMaxOptionRows * kPageCount);
-    initial.resize(4);
+    initial.resize(5);
 
     // Page 2, the graphics page, in the order they are drawn.
     //
@@ -794,51 +812,65 @@ std::vector<OptionRow>& Rows() {
     initial[0].get_index = &RenderScaleGet;
     initial[0].set_index = &RenderScaleSet;
     initial[0].page = kPageButtons;
+    // Field of View, the page's second gauge. Its range runs past 100%, so the
+    // record carries its own maximum instead of the cloned 100. The second
+    // gauge only exists because the CampVolCont heap is grown for it (see the
+    // sub_82112240 hook).
+    MakeLiteralRow(initial[1], kLabelFieldOfView, nullptr, 0);
+    initial[1].slider = true;
+    initial[1].slider_steps = eternalsonata::CameraFovOptionCount();
+    initial[1].slider_display = &eternalsonata::CameraFovOptionPercent;
+    initial[1].slider_max = eternalsonata::CameraFovOptionPercent(
+        eternalsonata::CameraFovOptionCount() - 1);
+    initial[1].get_index = &CameraFovGet;
+    initial[1].set_index = &CameraFovSet;
+    initial[1].page = kPageButtons;
     // Labels come from settings.cpp's preset list, so the row and the overlay's
     // slider offer the same states in the same order.
     std::vector<const char*> fps_values;
     for (int i = 0; i < eternalsonata::FrameRateOptionCount(); ++i) {
       fps_values.push_back(eternalsonata::FrameRateOptionLabel(i));
     }
-    MakeLiteralRow(initial[1], kLabelFrameRate, fps_values.data(),
+    MakeLiteralRow(initial[2], kLabelFrameRate, fps_values.data(),
                    static_cast<int>(fps_values.size()));
-    initial[1].get_index = &FrameRateGetIndex;
-    initial[1].set_index = &FrameRateSetIndex;
-    initial[1].page = kPageButtons;
+    initial[2].get_index = &FrameRateGetIndex;
+    initial[2].set_index = &FrameRateSetIndex;
+    initial[2].page = kPageButtons;
     // Six characters against the eight of "Adaptive"/"Unlocked", which is what
     // the row width is sized for.
-    FitBarToValue(initial[1], "30 FPS");
-    FitBarToValue(initial[1], "60 FPS");
+    FitBarToValue(initial[2], "30 FPS");
+    FitBarToValue(initial[2], "60 FPS");
 
     // Page 1, the game page, below the stock Subtitles and Voice rows.
-    MakeLiteralRow(initial[2], kLabelText, nullptr, 0);
+    MakeLiteralRow(initial[3], kLabelText, nullptr, 0);
     for (int i = 0; i < eternalsonata::UserLanguageCount(); ++i) {
       OptionValue value;
       value.literal[0] = eternalsonata::UserLanguageCode(i);
-      initial[2].values.push_back(std::move(value));
+      initial[3].values.push_back(std::move(value));
     }
-    initial[2].bar_nudge_x = kTextBarNudge;
-    initial[2].bar_nudge_step_x = kTextBarNudgeStep;
-    initial[2].get_index = &TextGetIndex;
-    initial[2].set_index = &TextSetIndex;
-    initial[2].page = kPageOptions;
+    initial[3].bar_nudge_x = kTextBarNudge;
+    initial[3].bar_nudge_step_x = kTextBarNudgeStep;
+    initial[3].get_index = &TextGetIndex;
+    initial[3].set_index = &TextSetIndex;
+    initial[3].page = kPageOptions;
     // The guest reads its language once at boot, so user_language is
     // kRequiresRestart (see SetUserLanguageSetting) - and this is the row where
     // the marker matters most, since nothing else on screen changes when it moves.
-    initial[2].restart_cvar = "user_language";
-    MakeLiteralRow(initial[3], kLabelOverworldModel, kOverworldModelValues,
+    initial[3].restart_cvar = "user_language";
+    MakeLiteralRow(initial[4], kLabelOverworldModel, kOverworldModelValues,
                    static_cast<int>(std::size(kOverworldModelValues)));
-    initial[3].get_index = &OverworldModelGetIndex;
-    initial[3].set_index = &OverworldModelSetIndex;
-    initial[3].page = kPageOptions;
+    initial[4].get_index = &OverworldModelGetIndex;
+    initial[4].set_index = &OverworldModelSetIndex;
+    initial[4].page = kPageOptions;
 
-    // Mod-published translations for the four labels above, in every language
+    // Mod-published translations for the labels above, in every language
     // including the ones mods added. The Text row's own *values* stay as they
     // are: they are two-letter language codes, which are not translated.
     TranslateBuiltinLabel(initial[0], "resolution_label");
-    TranslateBuiltinLabel(initial[1], "framerate_label");
-    TranslateBuiltinLabel(initial[2], "text_label");
-    TranslateBuiltinLabel(initial[3], "overworld_model_label");
+    TranslateBuiltinLabel(initial[1], "fov_label");
+    TranslateBuiltinLabel(initial[2], "framerate_label");
+    TranslateBuiltinLabel(initial[3], "text_label");
+    TranslateBuiltinLabel(initial[4], "overworld_model_label");
     return initial;
   }();
   return rows;
@@ -872,6 +904,12 @@ struct PageState {
   // Gauge and number ids of each slider row, per row on this page in page
   // order, 0xFFFFFFFF for a row that is not a slider. They come from the
   // screen's own gauge/number tables, not from the array the bars come from.
+  // The row group we last patched the count byte of, and the subitem array it
+  // carried. Remembered because the count has to be handed back before the
+  // screen is built again, and by then menu+392 lists the *incoming* screen's
+  // groups, so the node can no longer be found by searching.
+  u32 group_node = 0;
+  u32 group_items = 0;
   std::vector<u32> slider_id;
   std::vector<u32> slider_num_id;
   bool bars_resolved = false;
@@ -1073,6 +1111,10 @@ constexpr u8 kSubtitleRowIndex = 0;  // Subtitles, the reference two-option row
 // +436 = released. We want the +428 edge so one press is one toggle.
 constexpr u32 kPad0 = 0x824BB418u;
 constexpr u32 kPadPressed = 428u;
+// +432 is the same edge plus the whole held mask re-asserted on each auto
+// repeat tick (sub_82128310 counts the delay at +20 and the interval at +24),
+// which is what lets the stock volume rows run while a direction is held.
+constexpr u32 kPadRepeat = 432u;
 constexpr u32 kBtnDPadLeft = 0x0004u;
 constexpr u32 kBtnDPadRight = 0x0008u;
 constexpr u32 kBtnA = 0x1000u;
@@ -1821,7 +1863,7 @@ int CurrentGroupRow(u8* base, u32 group_id) {
 // handler does in that call is disturbed.
 struct MaskedDirections {
   u8* base;
-  static constexpr u32 kOffsets[] = {8, 424, kPadPressed, 432};
+  static constexpr u32 kOffsets[] = {8, 424, kPadPressed, kPadRepeat};
   u32 saved[std::size(kOffsets)];
   explicit MaskedDirections(u8* b) : base(b) {
     const u32 keep = ~(kLeftMask | kRightMask);
@@ -1855,6 +1897,16 @@ void RenderScaleSet(u8* base, int index) {
   REXLOG_INFO("[options] render resolution -> {}% (cvar now {}%)",
               eternalsonata::RenderScaleOptionPercent(index),
               eternalsonata::RenderScalePercent());
+}
+
+// Same shape as the render scale row: the step index is the row's value, the
+// percentage behind it belongs to settings.h.
+int CameraFovGet() { return eternalsonata::CameraFovOptionIndex(); }
+
+void CameraFovSet(u8* base, int index) {
+  eternalsonata::SetCameraFovOption(index);
+  REXLOG_INFO("[options] camera fov -> {}%",
+              eternalsonata::CameraFovOptionPercent(index));
 }
 
 // Text language. The guest reads its language once at boot, so this only
@@ -1927,7 +1979,8 @@ void WriteBarRecord(u8* base, u32 at, u32 src_list, int32_t x, int32_t y,
 // Clones a stock volume gauge onto our row, bracketed by its own layer pair.
 // Cloning keeps every field we have not identified, the maximum of 100 among
 // them. Returns the bytes written.
-u32 WriteSliderRecords(u8* base, u32 at, u32 tpl_list, int32_t x, int32_t y) {
+u32 WriteSliderRecords(u8* base, u32 at, u32 tpl_list, int32_t x, int32_t y,
+                       int max) {
   REX_STORE_U32(at + 0x00, kLayerRecord);
   REX_STORE_U32(at + 0x04, kSliderLayer);
   at += kLayerRecordBytes;
@@ -1946,6 +1999,9 @@ u32 WriteSliderRecords(u8* base, u32 at, u32 tpl_list, int32_t x, int32_t y) {
   REX_STORE_U32(at + kSliderNumXOffset, static_cast<u32>(x + num_dx));
   REX_STORE_U32(at + kSliderNumYOffset, static_cast<u32>(y + num_dy));
   REX_STORE_U32(at + kSliderNumWidthOffset, kSliderNumWidth);
+  if (max > 0) {
+    REX_STORE_U32(at + kSliderMaxOffset, static_cast<u32>(max));
+  }
   at += kSliderRecordBytes;
   REX_STORE_U32(at + 0x00, kLayerRecord);
   REX_STORE_U32(at + 0x04, 0);
@@ -2224,7 +2280,7 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     // the same column they do.
     if (row.slider) {
       at += WriteSliderRecords(base, at, tpl_list, st.value_base_x,
-                               y + kSliderRecordDY);
+                               y + kSliderRecordDY, row.slider_max);
     }
     WriteSeparatorRecord(base, at, tpl_list, y - kRowYStep + sep_dy);
     at += kSepRecordBytes;
@@ -2430,12 +2486,17 @@ void ResolveBars(u8* base, int page) {
       if (!all[st.rows[r]].slider) {
         continue;
       }
+      // The slot counters step on their own line: REX_LOAD_U32 expands its
+      // argument twice, so a ++ inside it runs twice and the next slider row
+      // reads past the end of the table.
       if (gauge_slot < gauges) {
-        st.slider_id[r] = REX_LOAD_U32(screen + kScreenSliderIds + 4 * gauge_slot++);
+        st.slider_id[r] = REX_LOAD_U32(screen + kScreenSliderIds + 4 * gauge_slot);
+        ++gauge_slot;
       }
       if (number_slot < numbers) {
         st.slider_num_id[r] =
-            REX_LOAD_U32(screen + kScreenSliderNumIds + 4 * number_slot++);
+            REX_LOAD_U32(screen + kScreenSliderNumIds + 4 * number_slot);
+        ++number_slot;
       }
       // Seeded here because the record decides the gauge's maximum, never its
       // value, same as sub_82200FE8 does for the volumes.
@@ -2448,6 +2509,10 @@ void ResolveBars(u8* base, int page) {
   PlacePageBars(base, page);
 }
 
+
+// Defined further down, next to the group lookup it undoes; called from the
+// screen build hook above it.
+void ResetRowGroup(u8* base, int page);
 }  // namespace
 
 // sub_8223B780(blob, string_id) -> char*: the BTX text lookup. Answer our
@@ -2619,6 +2684,7 @@ REX_HOOK_RAW(sub_821F2F38) {
 
   const bool ours = ClassifyList(ctx.r4.u32, &page, &lang_idx);
   if (ours) {
+    ResetRowGroup(base, page);
     EnsurePageRows(base, page, lang_idx);
     if (g_page[page].list) {
       ctx.r4.u32 = g_page[page].list;
@@ -3119,7 +3185,104 @@ u32 FindRowGroup(u8* base, u32 menu, int page, u32* arr, int32_t* stock_yn) {
   return 0;
 }
 
+// Puts `page`'s row group back into the state sub_821FFC48 created it in, right
+// before the screen that fills it is built again.
+//
+// The group is a 48 entry block plus a pointer array into it, and the array is a
+// permutation, not an identity: tearing a screen down removes the group's items
+// one at a time, each removal shifting the survivors down and parking the
+// removed entry at the end of the count. Our rows never carry an id (they are
+// positioned by hand into entries the game has not handed out), so the teardown
+// skips them, walks them to the front of the array, and leaves the count sitting
+// on them. The next build then hands the game's own rows the entries our rows
+// used to occupy, and everything we place off the "last stock item" lands a row
+// block low - once per revisit, cumulative with the row count.
+//
+// Rewriting the array to identity and stamping every entry back to its creation
+// sentinel is the whole fix: the incoming build starts from a virgin group, so
+// array position means what the rest of this file assumes it means (stock rows
+// first, ours after). On a first visit it is a no-op.
+constexpr u32 kGroupBlockSlots = 48;  // sub_821FFC48: 768 bytes of 16
+
+void ResetRowGroup(u8* base, int page) {
+  const u32 menu = REX_LOAD_U32(kMenuObject);
+  if (!GuestPtr(menu)) {
+    return;
+  }
+  const PageLayout& pl = kPages[page];
+  for (u32 group = REX_LOAD_U32(menu + 392); GuestPtr(group);
+       group = REX_LOAD_U32(group + 48)) {
+    if (REX_LOAD_U32(group) != pl.group_id) {
+      continue;
+    }
+    const u32 blk = REX_LOAD_U32(group + 4);
+    const u32 arr = REX_LOAD_U32(group + 8);
+    if (!GuestPtr(blk) || !GuestPtr(arr)) {
+      return;
+    }
+    for (u32 k = 0; k < kGroupBlockSlots; ++k) {
+      const u32 entry = blk + 16 * k;
+      REX_STORE_U32(arr + 4 * k, entry);
+      REX_STORE_U32(entry, 0xFFFFFFFFu);
+      REX_STORE_U32(entry + 4, 10000u + k);
+      REX_STORE_U32(entry + 8, 10000u + k);
+      REX_STORE_U32(entry + 12, 0xFFFFFFFFu);
+    }
+    REX_STORE_U8(group + 0x0C, 0);
+    REX_STORE_U8(group + 0x0D, 0);
+    REX_STORE_U8(group + 0x0E, 0xFF);
+    REX_STORE_U8(group + 0x0F, 0);
+    REX_STORE_U8(group + 0x10, 0);
+    REX_STORE_U8(group + 0x12, 0);
+    REX_STORE_U32(group + 0x14, 0xFFFFFFFFu);
+    REX_STORE_U32(group + 0x18, 0xFFFFFFFFu);
+    REX_STORE_U32(group + 0x1C, 0xFFFFFFFFu);
+    REX_STORE_U32(group + 0x20, 0xFFFFFFFFu);
+    REX_STORE_U32(group + 0x28, 0xFFFFFFFFu);
+    REX_STORE_U8(group + 0x2C, 0);
+    return;
+  }
+}
+
 }  // namespace
+
+// Every gauge on a menu screen costs one 108 byte element out of the menu
+// manager's own sub-heap, and the game sizes that heap ("CampVolCont", at
+// mgr+944) for exactly the three volume rows it shipped with: 768 bytes, which
+// the allocator turns into four blocks of 160. The fourth is the Resolution
+// row's, so a fifth gauge gets a null and takes sub_821F1B48's failure path,
+// which frees three registry entries it never created and leaves the screen
+// walking a dangling object.
+//
+// Growing the heap here is the whole fix: it is carved out of the 348 MB
+// GlobalHeap by size alone, with no upper bound and no other reader of that
+// number, so every allocation and free after this keeps running through the
+// game's own code.
+constexpr u32 kVolContHeapStockSize = 768u;
+constexpr u32 kVolContHeapSize = 2048u;
+
+REX_EXTERN(__imp__sub_82112240);
+REX_HOOK_RAW(sub_82112240) {
+  const u32 name_ptr = ctx.r5.u32;
+  // Names live either in the image or on a heap, so this is wider than
+  // GuestPtr; the point is only to reject the null some callers pass.
+  if (ctx.r4.u32 == kVolContHeapStockSize && name_ptr >= 0x30000000u &&
+      name_ptr < 0xFF000000u) {
+    char name[16] = {};
+    for (u32 i = 0; i + 1 < sizeof(name); ++i) {
+      name[i] = static_cast<char>(REX_LOAD_U8(name_ptr + i));
+      if (!name[i]) {
+        break;
+      }
+    }
+    if (std::string_view(name) == "CampVolCont") {
+      ctx.r4.u32 = kVolContHeapSize;
+      REXLOG_INFO("[options] CampVolCont heap grown to {} bytes for {} gauges",
+                  kVolContHeapSize, kVolContHeapSize / 160);
+    }
+  }
+  __imp__sub_82112240(ctx, base);
+}
 
 // sub_821F62B8 is the per-frame cursor update for the menu. We piggyback on it
 // to keep the native rows selectable (the screen resets the group's count on
@@ -3265,6 +3428,8 @@ REX_HOOK_RAW(sub_821F62B8) {
         REX_STORE_U32(srow[r] + 4, opt_x);
         REX_STORE_U32(srow[r] + 8, static_cast<u32>(y));
       }
+      st.group_node = group;
+      st.group_items = group_items;
       const u32 count = REX_LOAD_U8(group + 0x0C);
       const u8 want = static_cast<u8>(pl.stock_rows + n);
       if (count != want) {
@@ -3302,7 +3467,26 @@ REX_HOOK_RAW(sub_821F62B8) {
   // rows. Neither handler has anything of its own for those indices -
   // sub_82201620 stops at 2 and sub_82202CB0 at 3 - so nothing else consumes
   // the press.
-  if (REX_LOAD_U32(menu + 396) != pl.group_id) {
+  // The just-pressed mask stays set for a whole guest frame, so latch on our
+  // own observation of the transition - this stays correct even if the cursor
+  // update runs more than once per frame. The repeat mask is latched the same
+  // way: it is clear between ticks, so the transition is one step per tick.
+  //
+  // Both are read before any of the checks below, so a frame this hook bails
+  // out of still advances them; a latch left stale across a page turn would
+  // swallow the next transition that matched it.
+  static u32 s_prev_pressed = 0;
+  const u32 pressed = REX_LOAD_U32(kPad0 + kPadPressed);
+  const u32 fresh = pressed & ~s_prev_pressed;
+  s_prev_pressed = pressed;
+
+  static u32 s_prev_repeat = 0;
+  const u32 repeat_now = REX_LOAD_U32(kPad0 + kPadRepeat);
+  const u32 repeat = repeat_now & ~s_prev_repeat;
+  s_prev_repeat = repeat_now;
+
+  const u32 active_group = REX_LOAD_U32(menu + 396);
+  if (active_group != pl.group_id) {
     return;
   }
   for (u32 i = REX_LOAD_U32(menu + 392);
@@ -3311,14 +3495,6 @@ REX_HOOK_RAW(sub_821F62B8) {
       continue;
     }
     const u8 row = REX_LOAD_U8(i + 0x2C);
-
-    // The just-pressed mask stays set for a whole guest frame, so latch on our
-    // own observation of the transition - this stays correct even if the cursor
-    // update runs more than once per frame.
-    static u32 s_prev_pressed = 0;
-    const u32 pressed = REX_LOAD_U32(kPad0 + kPadPressed);
-    const u32 fresh = pressed & ~s_prev_pressed;
-    s_prev_pressed = pressed;
 
     // Subtitles (row 0 of page 1's group) is the reference two-option row for
     // the highlight hunt - it is a stock row, so its value and highlight move
@@ -3338,8 +3514,11 @@ REX_HOOK_RAW(sub_821F62B8) {
     const u32 opt_row = row - pl.stock_rows;
     const OptionRow& def = all[st.rows[opt_row]];
 
-    // A slider row's steps stand in for its values: it moves on the same press
-    // edges, and left/right walk the gauge one step at a time.
+    // A slider row's steps stand in for its values, and it takes the repeat
+    // mask so holding a direction walks the gauge the way the stock volume
+    // rows do. A value row keeps the plain press edge: its handful of values
+    // would otherwise fly past under one held press.
+    const u32 step = def.slider ? repeat : fresh;
     const int value_count =
         def.slider ? def.slider_steps : static_cast<int>(def.values.size());
     if (value_count < 1) {
@@ -3352,11 +3531,11 @@ REX_HOOK_RAW(sub_821F62B8) {
     // value, right toward the last (clamped at the ends, not wrapping) - for
     // a boolean row that is exactly "left picks Si, right picks NO". A cycles
     // forward through every value, wrapping.
-    if (fresh & kLeftMask) {
+    if (step & kLeftMask) {
       if (cur > 0) {
         next = cur - 1;
       }
-    } else if (fresh & kRightMask) {
+    } else if (step & kRightMask) {
       if (cur < value_count - 1) {
         next = cur + 1;
       }
