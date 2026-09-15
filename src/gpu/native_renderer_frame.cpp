@@ -2839,14 +2839,15 @@ void FramePresentGuestImage(RenderCommandList* commands, uint32_t width, uint32_
   float y = 0.0f;
   float w = float(width);
   float h = float(height);
-  // A UI layer source is the window already: the letterbox is baked into where
-  // the UI was drawn inside it, and the bars are the world. Letterboxing it
-  // again would pillarbox the whole thing a second time.
-  const bool preframed = source->offset_x != 0 || source->offset_y != 0;
-  if (PresentLetterbox() && !preframed) {
-    const float scale = std::min(w / float(source->width), h / float(source->height));
-    w = float(source->width) * scale;
-    h = float(source->height) * scale;
+  // Fit the image that exists, not the guest's 16:9 idea of it. A world layer
+  // copy is already the window's shape with no margin to mark it as framed, so
+  // measuring the guest size here pillarboxes it for the frame it is presented.
+  const uint32_t source_w = source->image_width != 0 ? source->image_width : source->width;
+  const uint32_t source_h = source->image_height != 0 ? source->image_height : source->height;
+  if (PresentLetterbox() && source_w != 0 && source_h != 0) {
+    const float scale = std::min(w / float(source_w), h / float(source_h));
+    w = float(source_w) * scale;
+    h = float(source_h) * scale;
     x = (float(width) - w) * 0.5f;
     y = (float(height) - h) * 0.5f;
   }
