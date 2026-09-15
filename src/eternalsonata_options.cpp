@@ -222,7 +222,16 @@ constexpr u32 kReadoutMaxChars = 8u;
 // Live gauge object: maximum, current value.
 constexpr u32 kSliderObjMaxOffset = 100u;
 constexpr u32 kSliderObjValueOffset = 104u;
-constexpr int32_t kBarShrinkFixup = 7;    // see below
+// Vertical correction applied to every bar, on top of the record-to-runtime
+// offset. It began as the compensation for the bar's height scale (see below)
+// and now also absorbs the taller quad these bars are given (kBarQuadHalfHeight),
+// which a top-anchored sprite does not centre for us.
+constexpr int32_t kBarShrinkFixup = 24;
+
+// The same, horizontally, applied to every bar. The quad starts at x 0 and
+// grows rightwards, so the bar's left edge does not move when it is resized,
+// and it sits a few pixels left of where the values read best.
+constexpr int32_t kBarOffsetX = 6;
 constexpr u32 kBarBlockXOffset = 0x14u;   // the bar record's x within the block
 constexpr u32 kBarBlockYOffset = 0x18u;   // the bar record's y within the block
 // +0x10 / +0x14 of a type-100-family record are a size scale in thousandths
@@ -655,42 +664,23 @@ int32_t BarWidthFor(const OptionRow& row, int index, int lang) {
   return BarWidthForValues(row.values, lang);
 }
 
-// Whether every value of `row` wants the same bar, which decides how the row's
-// highlight is built at all.
+// How many bar objects `row` needs. One, always: it slides between values and
+// is resized to whichever one it is under, exactly as the game's own rows
+// behave.
 //
-// A bar's width is fixed when the object is created: the display-list
-// interpreter converts the record's thousandths and passes them to the object's
-// constructor (sub_821EF0E8), and nothing reads them again - writing the scale
-// back onto the live object was tried and does nothing. So a row whose values
-// disagree about width cannot have one bar that resizes; it gets one bar per
-// value instead, pre-sized, with all but the selected one parked off-screen.
-//
-// A row where they agree - every built-in one, and any mod row that does not
-// ask for per-value widths - keeps a single bar that slides between values, so
-// the animation the game's own rows have is only given up where it cannot be
-// had.
-bool RowHasUniformBars(const OptionRow& row, int lang) {
-  if (row.values.size() < 2) {
-    return true;
-  }
-  const int32_t first = BarWidthFor(row, 0, lang);
-  for (int i = 1; i < static_cast<int>(row.values.size()); ++i) {
-    if (BarWidthFor(row, i, lang) != first) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// How many bar objects `row` needs: one to slide, or one per value to swap
-// between.
+// A row whose values disagreed about width used to get one pre-sized bar per
+// value instead, with all but the selected one parked off-screen, so the
+// Frame Rate row blinked its bars in and out where every other row slid one.
+// That was on the reasoning that a bar's width is fixed when the object is
+// created, the display-list interpreter having passed the record's thousandths
+// to sub_821EF0E8 with nothing reading them again. The width does live on the
+// object rather than in the registry the position goes through, but it is
+// writable: sub_82201620 resizes the Voice row's single bar on every value
+// change, and the Voice row code here already writes the same field itself.
+// See SetBarScaleX.
 u32 BarsForRow(const OptionRow& row, int lang) {
   // A slider row has no values to highlight; the gauge is its own indicator.
-  if (row.slider) {
-    return 0u;
-  }
-  return RowHasUniformBars(row, lang) ? 1u
-                                      : static_cast<u32>(row.values.size());
+  return row.slider ? 0u : 1u;
 }
 
 // The Frame Rate row draws settings.cpp's own preset list (see
@@ -861,6 +851,7 @@ std::vector<u32> g_label_addr;  // per-row label string
 std::vector<std::vector<u32>> g_value_addr;  // per-row literal value strings
 u32 g_strings_rows = 0;  // rows the two arrays above have been filled for
 u32 g_bar_vec = 0;  // shared guest scratch for the {x, y, z} move argument
+u32 g_bar_quad = 0;  // shared guest scratch for the 8 floats of a bar's quad
 // The restart marker, shared by every row: only one language is on screen at a
 // time, so one allocation serves all of them (the BTX hook hands the same
 // pointer back for any row's marker id).
@@ -927,8 +918,8 @@ PageState g_page[kPageCount];
 // systems, not one system in two modes: each has its own root, its own state
 // byte and its own state machine.
 //
-//   dword_824400E4 / byte_8243F3C0 / sub_821DCC08 (12 states) - the main menu
-//   dword_824400DC / byte_8243F3C3 / sub_821DD220 (27 states) - in-game
+//   dword_824400E4 / byte_8243F3C0 / sub_821DCC08 (12 states): the main menu
+//   dword_824400DC / byte_8243F3C3 / sub_821DD220 (27 states): in-game
 //
 // Assuming the main-menu root here is what left the in-game screen completely
 // unattended: every object id this file resolves comes out of the root's slot
@@ -945,8 +936,8 @@ constexpr u32 kScreenSlotBase = 709u;
 u32 g_ui_root = kUiRootMenu;
 
 // A plausible guest pointer: anywhere from the image base up. There is no upper
-// bound to apply - the 0xE0000000 aperture maps all 512 MiB of physical memory,
-// so a heap object can sit anywhere below 4 GiB.
+// bound to apply, because the 0xE0000000 aperture maps all 512 MiB of physical
+// memory, so a heap object can sit anywhere below 4 GiB.
 //
 // This used to stop at 0xFB000000, which is not a boundary of anything. The
 // main menu's UI objects happen to land under it and the in-game menu's above
@@ -997,7 +988,7 @@ u32 ScreenObjectIds(u8* base, u32 screen, u32* ids, u32 max) {
 // survive the page it described.
 //
 // The screen object on top of the stack is what answers it. byte_8243F3C0 -
-// sub_821DCC08's own state byte, which used to answer it alone - is only driven
+// sub_821DCC08's own state byte, which used to answer it alone, is only driven
 // while the *main menu's* state machine owns Options; opened during play the
 // screen is driven by something else entirely and the byte never takes one of
 // these values. That made this return -1 for the whole visit, and since every
@@ -1103,6 +1094,37 @@ REX_IMPORT(__imp__sub_82178A88, g_set_object_pos, void(u32, u32, u32, u32, u32, 
 // sub_821F6580(root, id) -> object. The id->object resolver sub_82200FE8 itself
 // uses on these same ids.
 REX_IMPORT(__imp__sub_821F6580, g_resolve_object, u32(u32, u32));
+
+// sub_821796B8(&registry, id, &quad[8], 0, 0, -1) sets an object's four corner
+// vertices, as {x,y} pairs in the order top-left, top-right, bottom-left,
+// bottom-right.
+//
+// This is how a highlight bar is resized. sub_82202358 is the game's own
+// version for the stock rows: it measures the value's text, adds 70, and lays
+// the quad out as {0,7, W,7, 0,67, W,67}. Nothing about the object's scale is
+// touched, which is why writing that scale back has no effect once the object
+// exists.
+REX_IMPORT(__imp__sub_821796B8, g_set_object_quad,
+           void(u32, u32, u32, u32, u32, u32));
+// sub_82202358 lays its quad out as 7..67. Ours is taller, and centred on the
+// same 37: the stock rows' bars are shorter than the ones these rows want, and
+// the quad is in object space, so growing it about its own centre changes the
+// height without moving where the bar sits. Both figures below were settled
+// against the real rows, and each is a single knob: kBarQuadHalfHeight is the
+// height, kBarTextPad the width.
+constexpr int32_t kBarQuadCentreY = 37;
+constexpr int32_t kBarQuadHalfHeight = 57;
+constexpr int32_t kBarQuadTop = kBarQuadCentreY - kBarQuadHalfHeight;
+constexpr int32_t kBarQuadBottom = kBarQuadCentreY + kBarQuadHalfHeight;
+// The margin left around the value's text. sub_82202358 uses 70 against a text
+// it measures properly; ours is estimated per character, and runs a little
+// short of the real glyphs, so the margin takes up the difference.
+constexpr int32_t kBarTextPad = 86;
+// Added per character on top of the estimate, because the shortfall grows with
+// the length of the value rather than being a fixed margin. Kept here rather
+// than in kValueCharPx, which lays the value columns out and would move the
+// text itself if it were widened.
+constexpr int32_t kBarCharExtra = 4;
 
 // sub_8220F938(gauge) redraws a volume gauge from the value at +104.
 REX_IMPORT(__imp__sub_8220F938, g_refresh_slider, u32(u32));
@@ -1292,7 +1314,7 @@ int32_t ValueColumnOffset(int page, const std::vector<OptionValue>& values,
 // and every placement below goes through it, so a bar can never disagree with
 // the value it highlights.
 int32_t BarX(int page, const OptionRow& row, int index) {
-  return g_page[page].value_base_x + kRecordToRuntimeX +
+  return g_page[page].value_base_x + kRecordToRuntimeX + kBarOffsetX +
          ValueColumnOffset(page, row.values, static_cast<u32>(index)) +
          row.bar_nudge_x + index * row.bar_nudge_step_x;
 }
@@ -1307,7 +1329,7 @@ int32_t BarX(int page, const OptionRow& row, int index) {
 //
 // The group's last stock selectable item is the anchor that fixes it. It moves
 // with the screen, it is already read every frame to find the group, and on the
-// main menu it is exactly the figure the layout was measured against - so the
+// main menu it is exactly the figure the layout was measured against, so the
 // shift is zero there and nothing about the known-good placement changes.
 //
 int32_t BarY(int page, u32 row) {
@@ -1322,7 +1344,7 @@ int32_t BarY(int page, u32 row) {
 // The two mechanisms do not agree about where a bar goes: setting it with
 // sub_82178A88 and sliding it there with sub_82179F78 land six rows apart, the
 // slide being the correct one. So this belongs to sub_82178A88 and must never
-// reach the slide - adding it to both put the bar off the bottom of the screen
+// reach the slide. Adding it to both put the bar off the bottom of the screen
 // the moment a value changed. The tell is that the bar starts wrong and snaps
 // into place on the first value change.
 //
@@ -1332,7 +1354,7 @@ int32_t BarY(int page, u32 row) {
 //
 // That the two spaces differ at all is not new: sub_82200FE8 places page 1's
 // stock bars at y 895/945 and its handler then slides them to 155/205, a
-// constant 740 apart. Same disagreement, same screen, different figure - 740
+// constant 740 apart. Same disagreement, same screen, different figure: 740
 // was tried here and overshoots. This one is measured against the real rows
 // rather than derived, so a live reading of a stock bar's own y is what should
 // eventually replace it.
@@ -1368,43 +1390,100 @@ void PlaceBar(u8* base, u32 bar_id, int32_t x, int32_t y, bool move) {
   }
 }
 
+// The object behind a bar's registry id, or 0.
+u32 BarObject(u8* base, u32 bar_id) {
+  const u32 root = REX_LOAD_U32(g_ui_root);
+  if (bar_id == 0xFFFFFFFFu || !GuestPtr(root)) {
+    return 0;
+  }
+  const u32 obj = g_resolve_object(root, bar_id);
+  return GuestPtr(obj) ? obj : 0;
+}
+
+// The x scale the object was built with, from the thousandths its record
+// carried, or 1.0 if it cannot be read.
+float BarScaleX(u8* base, u32 bar_id) {
+  const u32 obj = BarObject(base, bar_id);
+  if (!obj) {
+    return 1.0f;
+  }
+  const u32 bits = REX_LOAD_U32(obj + kBarObjScaleXOffset);
+  float scale;
+  std::memcpy(&scale, &bits, sizeof(scale));
+  return scale > 0.0f ? scale : 1.0f;
+}
+
+// Resizes a bar to `width` drawn pixels, the way sub_82202358 resizes the stock
+// ones: by rewriting the object's four corner vertices.
+//
+// The quad is not what gets drawn. The object's scale, baked in when it was
+// built from the record's thousandths, still multiplies it, so the quad has to
+// be divided by that scale to land on a given width. The stock bars carry a
+// scale of 1.0, which is why sub_82202358 can use the width directly and we
+// cannot.
+//
+// The y pair is sub_82202358's own, unscaled, for the same reason in reverse:
+// the object's y scale is applied to it and already produces the height these
+// bars have today, so the y correction that goes with that height (see
+// kBarShrinkFixup) stays valid.
+void SetBarWidth(u8* base, u32 bar_id, int32_t width) {
+  if (bar_id == 0xFFFFFFFFu || !g_bar_quad || width <= 0) {
+    return;
+  }
+  const auto put = [&](u32 slot, float v) {
+    u32 bits;
+    std::memcpy(&bits, &v, sizeof(bits));
+    REX_STORE_U32(g_bar_quad + 4 * slot, bits);
+  };
+  const float w = static_cast<float>(width) / BarScaleX(base, bar_id);
+  const float top = static_cast<float>(kBarQuadTop);
+  const float bottom = static_cast<float>(kBarQuadBottom);
+  put(0, 0.0f);  put(1, top);
+  put(2, w);     put(3, top);
+  put(4, 0.0f);  put(5, bottom);
+  put(6, w);     put(7, bottom);
+  g_set_object_quad(kTextRegistry, bar_id, g_bar_quad, 0, 0, 0xFFFFFFFFu);
+}
+
+// How wide `row`'s bar should be while `index` is selected, in pixels.
+//
+// sub_82202358 measures the value's text with sub_821D4598 and adds 70. Our
+// values cannot be measured that way: a type-200 record creates no object, so
+// there is nothing on the screen to ask. The same per-character estimate the
+// value columns are laid out with stands in, which keeps the bar and the
+// spacing of the text inside it consistent by construction.
+int32_t BarWidthPx(const OptionRow& row, int index) {
+  const int lang = DrawLanguage();
+  if (index < 0 || index >= static_cast<int>(row.values.size())) {
+    return 0;
+  }
+  const std::string& text = ValueText(row.values[index], lang);
+  return TextWidth(text) + kBarTextPad +
+         kBarCharExtra * static_cast<int32_t>(text.size());
+}
+
 void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
   PageState& st = g_page[page];
   if (row >= st.bar_id.size() || st.bar_id[row].empty() || !g_bar_vec) {
     return;
   }
   const OptionRow& def = Rows()[st.rows[row]];
-  // One y for both mechanisms. An earlier version biased the *instant*
-  // placement by 740px, on the strength of sub_82200FE8 placing page 1's stock
-  // bars at 895/945 where its handler animates them to 155/205. That bias is
-  // wrong here: it put the Text row's bar off the bottom of the screen, where
-  // it stayed until the first value change slid it up into the right place.
-  // The two spaces sub_82200FE8 appears to use are a property of when it runs
-  // relative to the screen's own setup, not of sub_82178A88 - and our
-  // placement runs from the per-frame menu update, well after all of that.
-  // Page 2's rows have always been placed unbiased, and land correctly.
+  // One y for both mechanisms, plus the instant path's own bias. An earlier
+  // version biased *both* by 740px, on the strength of sub_82200FE8 placing
+  // page 1's stock bars at 895/945 where its handler animates them to 155/205.
+  // That put the bar off the bottom of the screen the moment a value changed:
+  // the disagreement is real but belongs to sub_82178A88 alone, and the figure
+  // is not 740. See InstantBarBiasY.
   const int32_t y = BarY(page, row);
-  // Per mechanism, not per call: the swap below is instant even when this was
-  // asked to slide, so the bias follows whichever one actually places the bar.
-  const int32_t instant_y = y + InstantBarBiasY(page);
+  const u32 bar_id = st.bar_id[row][0];
 
-  // One bar, sliding between values: the row's values all want the same width.
-  if (st.bar_id[row].size() == 1) {
-    PlaceBar(base, st.bar_id[row][0], BarX(page, def, value_index),
-             move ? y : instant_y, move);
-    return;
-  }
-
-  // One bar per value, each already the right width. Only the selected one is
-  // on the row; the rest are parked off-screen. The swap is instant even when
-  // asked to slide - the incoming bar is a different object from the outgoing
-  // one, so there is nothing to slide *from*.
-  for (u32 v = 0; v < st.bar_id[row].size(); ++v) {
-    const bool selected = v == static_cast<u32>(value_index);
-    PlaceBar(base, st.bar_id[row][v],
-             selected ? BarX(page, def, static_cast<int>(v)) : kBarParkedX,
-             instant_y, /*move=*/false);
-  }
+  PlaceBar(base, bar_id, BarX(page, def, value_index),
+           move ? y : y + InstantBarBiasY(page), move);
+  // Width is per value, so it is rewritten every time the bar moves. This is
+  // what lets one bar serve a row whose values differ in length; the row used
+  // to get a pre-sized bar per value instead, swapped in and out, which is why
+  // Frame Rate blinked where every other row slid.
+  SetBarWidth(base, bar_id, BarWidthPx(def, value_index));
 }
 
 // ---------------------------------------------------------------------------
@@ -2026,6 +2105,9 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   st.bars_resolved = false;
   if (!g_bar_vec) {
     g_bar_vec = mem->SystemHeapAlloc(16, 0x20);
+  }
+  if (!g_bar_quad) {
+    g_bar_quad = mem->SystemHeapAlloc(32, 0x20);
   }
   const u32 list = st.list;
 
@@ -2983,7 +3065,7 @@ constexpr u32 kMenuObject = 0x824400E8u;
 // 0. On success `arr` receives its subitem pointer array and `stock_yn` the y
 // of its last stock item.
 //
-// A group is identified by its id *and* by the shape of its stock items - never
+// A group is identified by its id *and* by the shape of its stock items, never
 // by its count byte, and never by where the items absolutely sit. Both pages'
 // groups are walked from the same list, so the id alone would not tell them
 // apart; what does is that a row group's stock items run top to bottom at the
@@ -2997,7 +3079,7 @@ constexpr u32 kMenuObject = 0x824400E8u;
 // that it also made the patch idempotent. That was its own version of the same
 // bug: a re-opened screen can hand back a group node still carrying the count a
 // previous visit wrote into it, so the node stopped matching. Idempotence comes
-// from the caller writing by value instead - re-running it every frame writes
+// from the caller writing by value instead: re-running it every frame writes
 // the same numbers, and heals a stale node the first frame it is seen.
 u32 FindRowGroup(u8* base, u32 menu, int page, u32* arr, int32_t* stock_yn) {
   const PageLayout& pl = kPages[page];
