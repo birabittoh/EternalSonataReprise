@@ -104,7 +104,8 @@ jobs:
       - name: Install Android NDK
         if: matrix.platform == 'android-arm64'
         run: |
-          sdkmanager --install "ndk;${{ matrix.ndk_version }}"
+          SDKMANAGER="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)"
+          "$SDKMANAGER" --install "ndk;${{ matrix.ndk_version }}"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ matrix.ndk_version }}" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17 (Android)
