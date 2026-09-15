@@ -445,8 +445,8 @@ Guest addresses are translated through `base + offset + REX_PHYS_HOST_OFFSET(add
 
 ### Config File
 
-- `eternalsonata_config.toml` — Main project config
-- `eternalsonata_manifest.toml` — Codegen manifest (references the config)
+- `eternalsonata_manifest.toml` — Codegen manifest, includes the files below
+- `config/*.toml` — Function names, vtable destructors, D3D9 names, CRT mappings
 
 ### Build Pipeline
 
