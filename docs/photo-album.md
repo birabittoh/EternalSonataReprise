@@ -2,7 +2,7 @@
 
 Reverse-engineering notes for the in-game camera's album, the Photos tab of the
 status menu. The mod-facing surface built on top of this is
-`src/eternalsonata_photo_api.h`, implemented in `src/photo_system.cpp`.
+`src/api/eternalsonata_photo_api.h`, implemented in `src/engine/photo_system.cpp`.
 
 Addresses are guest addresses in the retail `default.xex`.
 
@@ -81,7 +81,7 @@ if (haze < 0.05) haze = 0
 
 Both `exp` calls go through `sub_822CDE38`, which clamps its argument to
 [-708.396418532265, 709.782712893385] first; `Development()` in
-`src/photo_system.cpp` clamps the same way.
+`src/engine/photo_system.cpp` clamps the same way.
 
 Two consequences worth knowing:
 
@@ -93,7 +93,7 @@ Two consequences worth knowing:
   `sub_82209478` writing the pinned zero through.
 * Because the game only evaluates the formula when the album screen is open,
   polling its cached copy would report a photograph as finished whenever the
-  player next happened to look at it. `src/photo_system.cpp` therefore reruns
+  player next happened to look at it. `src/engine/photo_system.cpp` therefore reruns
   the formula itself once per frame, which is what lets
   `eternalsonata.photo.developed` land when development actually completes.
 

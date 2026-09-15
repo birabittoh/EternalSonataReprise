@@ -237,55 +237,55 @@ add_custom_target(eternalsonata_guest_shaders
 
 # Sources
 set(ETERNALSONATA_SOURCES
-    src/main.cpp
-    src/eternalsonata_hooks.cpp
-    src/eternalsonata_framerate.cpp
-    src/eternalsonata_lipsync.cpp
-    src/eternalsonata_voice.cpp
-    src/eternalsonata_options.cpp
-    src/eternalsonata_presence.cpp
-    src/room_presence.cpp
-    src/party_system.cpp
-    src/battle_system.cpp
-    src/overworld_system.cpp
-    src/enemy_system.cpp
-    src/save_system.cpp
-    src/achievement_translation.cpp
-    src/eternalsonata_asset_container.cpp
-    src/eternalsonata_asset_mesh.cpp
-    src/eternalsonata_asset_texture.cpp
-    src/eternalsonata_asset_system.cpp
-    src/photo_system.cpp
-    src/piano_music_system.cpp
-    src/music_system.cpp
-    src/option_strip.cpp
-    src/achievements_menu.cpp
-    src/achievement_system.cpp
-    src/item_system.cpp
-    src/equipment_system.cpp
-    src/game_settings.cpp
-    src/flag_system.cpp
-    src/guest_main_thread.cpp
-    src/guest_profiler.cpp
-    src/host_timer_resolution.cpp
-    src/force_load_area.cpp
-    src/field_player_model_override.cpp
-    src/host_menu.cpp
-    src/input_overlay.cpp
-    src/dlc_auto_install.cpp
-    src/guest_shaders.cpp
-    src/native_renderer.cpp
-    src/native_renderer_d3d.cpp
-    src/native_renderer_draw.cpp
-    src/native_renderer_frame.cpp
-    src/native_renderer_pipeline.cpp
-    src/native_renderer_readback.cpp
-    src/native_renderer_plume.cpp
-    src/native_renderer_overlay.cpp
-    src/native_renderer_shader_debug.cpp
-    src/native_renderer_state.cpp
-    src/native_renderer_texture.cpp
-    src/settings.cpp
+    src/core/main.cpp
+    src/engine/eternalsonata_hooks.cpp
+    src/engine/eternalsonata_framerate.cpp
+    src/engine/eternalsonata_lipsync.cpp
+    src/engine/eternalsonata_voice.cpp
+    src/engine/eternalsonata_options.cpp
+    src/engine/eternalsonata_presence.cpp
+    src/engine/room_presence.cpp
+    src/engine/party_system.cpp
+    src/engine/battle_system.cpp
+    src/engine/overworld_system.cpp
+    src/engine/enemy_system.cpp
+    src/engine/save_system.cpp
+    src/engine/achievement_translation.cpp
+    src/assets/eternalsonata_asset_container.cpp
+    src/assets/eternalsonata_asset_mesh.cpp
+    src/assets/eternalsonata_asset_texture.cpp
+    src/assets/eternalsonata_asset_system.cpp
+    src/engine/photo_system.cpp
+    src/engine/piano_music_system.cpp
+    src/engine/music_system.cpp
+    src/engine/option_strip.cpp
+    src/engine/achievements_menu.cpp
+    src/engine/achievement_system.cpp
+    src/engine/item_system.cpp
+    src/engine/equipment_system.cpp
+    src/core/game_settings.cpp
+    src/engine/flag_system.cpp
+    src/core/guest_main_thread.cpp
+    src/core/guest_profiler.cpp
+    src/core/host_timer_resolution.cpp
+    src/engine/force_load_area.cpp
+    src/engine/field_player_model_override.cpp
+    src/platform/host_menu.cpp
+    src/platform/input_overlay.cpp
+    src/engine/dlc_auto_install.cpp
+    src/gpu/guest_shaders.cpp
+    src/gpu/native_renderer.cpp
+    src/gpu/native_renderer_d3d.cpp
+    src/gpu/native_renderer_draw.cpp
+    src/gpu/native_renderer_frame.cpp
+    src/gpu/native_renderer_pipeline.cpp
+    src/gpu/native_renderer_readback.cpp
+    src/gpu/native_renderer_plume.cpp
+    src/gpu/native_renderer_overlay.cpp
+    src/gpu/native_renderer_shader_debug.cpp
+    src/gpu/native_renderer_state.cpp
+    src/gpu/native_renderer_texture.cpp
+    src/core/settings.cpp
     ${ETERNALSONATA_AREA_NAMES_HEADER}
     ${ETERNALSONATA_ICON_HEADER}
     ${ETERNALSONATA_FONTS_HEADER}
@@ -324,6 +324,20 @@ endif()
 rexglue_setup_target(eternalsonata GPU_PLUGINS xenos)
 
 target_link_libraries(eternalsonata PRIVATE plume)
+
+# src/ is split into core/engine/gpu/platform/assets/api subdirectories, but
+# translation units still #include each other's headers by flat filename
+# (e.g. "settings.h") rather than a path relative to their own subdirectory.
+# Adding every subdirectory here keeps that working without rewriting every
+# include site across the codebase.
+target_include_directories(eternalsonata PRIVATE
+    src/core
+    src/engine
+    src/gpu
+    src/platform
+    src/assets
+    src/api
+)
 
 if(WIN32)
     # timeBeginPeriod / timeGetDevCaps, for src/host_timer_resolution.cpp.

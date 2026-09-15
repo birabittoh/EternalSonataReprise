@@ -2,10 +2,10 @@
 
 Guest-side layout of an enemy's stats, and how the host exposes them.
 
-API: [`src/eternalsonata_enemy_api.h`](../src/eternalsonata_enemy_api.h),
-implemented in `src/enemy_system.cpp`, offsets in `src/battle_layout.h`. For the
+API: [`src/api/eternalsonata_enemy_api.h`](../src/api/eternalsonata_enemy_api.h),
+implemented in `src/engine/enemy_system.cpp`, offsets in `src/engine/battle_layout.h`. For the
 encounter those enemies are fighting in, see
-[`src/eternalsonata_battle_api.h`](../src/eternalsonata_battle_api.h).
+[`src/api/eternalsonata_battle_api.h`](../src/api/eternalsonata_battle_api.h).
 
 ## No per-type table
 
@@ -101,7 +101,7 @@ only HP if the field is the ratio's denominator.
 **Attack, defense, resistances.** `sub_821AFF40` is the damage formula. It reads
 attacker and defender stats side by side, branching on unit kind per term, so
 each enemy field is pinned to the party field in the same slot of the
-expression; `src/party_system.cpp` names those.
+expression; `src/engine/party_system.cpp` names those.
 
 ```
 attacker term 1   enemy part+312   party stats+0x14 (attack)
@@ -159,7 +159,7 @@ part + 492   base defense    (sub_821AFD80)
 through `sub_821B8090` / `sub_821B7F60` / `sub_821B7E30`, which clamp the result
 to `base * [0.7, 1.3]`. Anything writing one of the three has to write the base
 copy too, or the next buff drags the value back to within 30% of the original.
-`WriteStat` in `src/enemy_system.cpp` does.
+`WriteStat` in `src/engine/enemy_system.cpp` does.
 
 ## The HP ratio invariant
 

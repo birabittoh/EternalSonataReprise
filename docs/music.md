@@ -2,7 +2,7 @@
 
 Reverse-engineering notes for the status menu's Music entry, the three tab
 gallery of the game's OST. The mod-facing surface built on top of this is
-`src/eternalsonata_music_api.h`, implemented in `src/music_system.cpp`.
+`src/api/eternalsonata_music_api.h`, implemented in `src/engine/music_system.cpp`.
 
 Addresses are guest addresses in the retail `default.xex`.
 

@@ -2,8 +2,8 @@
 
 Reverse-engineering notes for the player's inventory and for the **Item Set**,
 the short list of items that can actually be used in battle. The mod-facing
-surface built on top of this is `src/eternalsonata_item_api.h`, implemented in
-`src/item_system.cpp`.
+surface built on top of this is `src/api/eternalsonata_item_api.h`, implemented in
+`src/engine/item_system.cpp`.
 
 Addresses are guest addresses in the retail `default.xex`.
 
@@ -95,7 +95,7 @@ block's base}`. The seven languages are JPN USA GBR FRA ITA DEU ESP and
 gaps, so entry *n* is text id *n*.
 
 `sub_8220EEE0` is the item row painter and resolves the name as
-`sub_8223B780(0x82376400, id - 1)`. `src/item_system.cpp` walks the blocks in
+`sub_8223B780(0x82376400, id - 1)`. `src/engine/item_system.cpp` walks the blocks in
 host code instead, so a name lookup does not have to queue onto the guest
 thread.
 
@@ -256,6 +256,6 @@ into the saved party block.
   the budget;
 * 2048 bytes from `0x8255EF08`, the whole inventory table.
 
-So both halves survive a save and reload, and `src/item_system.cpp` hangs its
+So both halves survive a save and reload, and `src/engine/item_system.cpp` hangs its
 "adopt what the save restored, do not announce it" reset off the same
 `sub_82240AF8` hook the photo album and piano music use.

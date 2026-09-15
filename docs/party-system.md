@@ -5,8 +5,8 @@ How Eternal Sonata stores its party, and what this project does with that.
 The reverse engineering below used to live in the `party_overlay` mod, which
 re-derived it all from raw guest addresses. It lives here now: the exe reads and
 writes party state itself and exposes it to mods through
-[`src/eternalsonata_party_api.h`](../src/eternalsonata_party_api.h), implemented
-in `src/party_system.cpp`. A mod should never need an address from this page;
+[`src/api/eternalsonata_party_api.h`](../src/api/eternalsonata_party_api.h), implemented
+in `src/engine/party_system.cpp`. A mod should never need an address from this page;
 it is here so the next person can check the implementation against the binary.
 
 ## Ten slots, and only ten
@@ -240,4 +240,4 @@ scan runs once, and only after some mod has actually renamed somebody.
 * **An eleventh character.** See "Ten slots, and only ten": the tables cannot
   be widened in place and the API does not pretend otherwise.
 * **Field models.** Who walks the overworld is a separate mechanism entirely;
-  see `src/field_player_model_override.h`.
+  see `src/engine/field_player_model_override.h`.

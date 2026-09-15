@@ -573,7 +573,7 @@ signal than eyeballing one file.
 scan of `0x821cc000..0x821e8000` for a compare against 13 found nothing, so the
 message state machine probably dispatches through its own jump table. Finding
 it would allow a proper hold-to-fast-forward instead of the control-code
-rewrite currently in `src/eternalsonata_hooks.cpp`.
+rewrite currently in `src/engine/eternalsonata_hooks.cpp`.
 
 **Character encoding.** Confirm the JP blocks are plain Shift-JIS (spot checks
 say yes) and determine whether the western blocks are true Latin-1 or a custom
