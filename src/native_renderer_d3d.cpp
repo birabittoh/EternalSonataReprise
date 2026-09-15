@@ -24,6 +24,8 @@
 #include "native_renderer_shader_debug.h"
 
 REX_EXTERN(__imp__D3D__CreateDevice);
+REX_EXTERN(__imp__sub_8212C3B0);
+REX_EXTERN(__imp__sub_8212C470);
 REX_EXTERN(__imp__D3DDevice__SetVertexShaderConstantF);
 REX_EXTERN(__imp__D3DDevice__SetPixelShaderConstantF);
 REX_EXTERN(__imp__D3DDevice__SetVertexShader);
@@ -1139,10 +1141,19 @@ void SetGuestFrameCallback(std::function<void()> callback) {
 
 }  // namespace eternalsonata
 
-// The draw entry points. Each records the pipeline the draw runs with; see the
-// block comment above RecordDraw for what the counters are for. All four are
-// observe-only: the guest still writes its packets into the unread ring.
-//
+// Scene phases survive the optional effect pass used by blinking models.
+REX_HOOK_RAW(sub_8212C3B0) {
+  if (eternalsonata::NativeRendererEnabled())
+    eternalsonata::FrameBeginWorld();
+  __imp__sub_8212C3B0(ctx, base);
+}
+
+REX_HOOK_RAW(sub_8212C470) {
+  __imp__sub_8212C470(ctx, base);
+  if (eternalsonata::NativeRendererEnabled())
+    eternalsonata::FrameNoteLayerBoundary();
+}
+
 // (dev, primType, baseVertexIndex, startIndex, indexCount)
 REX_HOOK_RAW(D3DDevice__DrawIndexedVertices) {
   const uint32_t device = ctx.r3.u32;

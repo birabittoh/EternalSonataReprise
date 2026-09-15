@@ -87,6 +87,9 @@ bool FrameDescribeBoundColor(uint32_t* base_tile, uint32_t* guest_width, uint32_
 // waits on its fence.
 uint64_t FrameIndex();
 
+// Scene setup selects world targets before any clears or draws.
+void FrameBeginWorld();
+
 // The guest has crossed from the world half of its frame into the UI half, so
 // every draw from here to the end of the frame belongs to the composite layer,
 // which is rendered at the window's own size rather than at the render scale.
