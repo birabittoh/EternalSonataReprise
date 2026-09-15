@@ -74,6 +74,13 @@ void InitSettingsCaches();
 // has not run yet.
 void SaveUserSettings();
 
+// Writes the window's current size to the window_width/window_height cvars so
+// the next launch comes up at it. Called from the renderer's extent debounce,
+// which is the only place a resize is already known to have settled; calling it
+// per frame would rewrite the file while the window is still being dragged.
+// No-op while fullscreen, or before BindSettingsTargets has run.
+void PersistWindowSize();
+
 // Binds the window and settings file that SaveUserSettings and the resolution
 // path act on. Call this at startup (OnPostSetup). The F4 overlay is created
 // lazily, so capturing these in CreateSettingsDialog alone leaves the native
