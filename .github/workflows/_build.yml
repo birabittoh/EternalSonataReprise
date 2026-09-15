@@ -101,10 +101,6 @@ jobs:
         if: matrix.platform == 'windows'
         run: choco install llvm cmake ninja -y
 
-      - name: Set up Android NDK
-        if: matrix.platform == 'android-arm64'
-        uses: android-actions/setup-android@v3
-
       - name: Install Android NDK
         if: matrix.platform == 'android-arm64'
         run: |
