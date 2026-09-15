@@ -1,5 +1,6 @@
 #include <bit>
 #include <cstring>
+#include <iterator>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -126,29 +127,48 @@ REX_EXTERN(__imp__sub_82254060);
 REX_HOOK_RAW(sub_82254060) { ctx.r3.u64 = 0; }
 
 // The renderer widens the world after the guest has already culled its models.
-// Give the guest sphere test the same horizontal field of view for this call.
+// Give the guest sphere test the same field of view for this call. A window
+// wider than 16:9 expands horizontally and a taller one vertically, so both
+// extent pairs have to follow their own axis.
 REX_EXTERN(__imp__sub_82108878);
 REX_HOOK_RAW(sub_82108878) {
     const u32 camera = ctx.r3.u32;
     float clip_x = 1.0f;
     float clip_y = 1.0f;
     eternalsonata::FrameWorldClipScale(&clip_x, &clip_y);
-    if (!camera || clip_x >= 1.0f || clip_x <= 0.0f) {
-        __imp__sub_82108878(ctx, base);
-        return;
+
+    // Top, bottom, right and left extents at the near plane. Bottom and left
+    // are negative, so a plain divide widens them the right way.
+    struct Extent {
+        u32 offset;
+        float scale;
+    };
+    const Extent extents[] = {
+        {380, clip_y}, {384, clip_y}, {388, clip_x}, {392, clip_x},
+    };
+
+    u32 saved[std::size(extents)] = {};
+    bool widened = false;
+    if (camera) {
+        for (size_t i = 0; i < std::size(extents); ++i) {
+            saved[i] = REX_LOAD_U32(camera + extents[i].offset);
+            if (extents[i].scale >= 1.0f || extents[i].scale <= 0.0f) {
+                continue;
+            }
+            REX_STORE_U32(camera + extents[i].offset,
+                          std::bit_cast<u32>(std::bit_cast<float>(saved[i]) /
+                                             extents[i].scale));
+            widened = true;
+        }
     }
 
-    constexpr u32 kRightExtent = 388;
-    constexpr u32 kLeftExtent = 392;
-    const u32 right_bits = REX_LOAD_U32(camera + kRightExtent);
-    const u32 left_bits = REX_LOAD_U32(camera + kLeftExtent);
-    REX_STORE_U32(camera + kRightExtent,
-                  std::bit_cast<u32>(std::bit_cast<float>(right_bits) / clip_x));
-    REX_STORE_U32(camera + kLeftExtent,
-                  std::bit_cast<u32>(std::bit_cast<float>(left_bits) / clip_x));
     __imp__sub_82108878(ctx, base);
-    REX_STORE_U32(camera + kRightExtent, right_bits);
-    REX_STORE_U32(camera + kLeftExtent, left_bits);
+
+    if (widened) {
+        for (size_t i = 0; i < std::size(extents); ++i) {
+            REX_STORE_U32(camera + extents[i].offset, saved[i]);
+        }
+    }
 }
 
 // The debug-console (sub_822DFA88) and ConsoleSetting (sub_822E5BE8) init
