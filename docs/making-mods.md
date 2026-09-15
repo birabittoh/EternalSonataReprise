@@ -1294,6 +1294,34 @@ battle thread, so a callback must be thread-safe and must not touch ImGui.
 
 ## Overworld events
 
+The host also exports `EternalSonataGetFieldPosition` and
+`EternalSonataSetFieldPosition`. Resolve both through the host executable and
+use `EternalSonataFieldPosition` from the overworld header. The getter reads the
+live field leader's map coordinates. The setter queues an absolute position for
+the next guest main thread frame and updates the scene transform through the
+game's own position routine. It returns `ETERNALSONATA_OVERWORLD_QUEUED` when
+accepted. Both calls reject battle and return `ERR_UNAVAILABLE` while the field
+leader is absent during a map transition. A movement mod can call the getter,
+adjust the coordinates, and call the setter each frame while its free movement
+control is active.
+
+`EternalSonataSetFieldCollisionEnabled(0)` stops the field colliders from
+resolving movement, so any position is accepted and characters keep their own
+height instead of being snapped to the floor;
+`EternalSonataIsFieldCollisionEnabled` reports the current state. The toggle applies immediately and takes effect for every field
+mover, NPCs included, so pair it with free movement rather than leaving it on.
+It is refused during battle and should be set back to 1 when the mod's control
+ends.
+
+`EternalSonataGetFieldCamera` reads the active field camera's position and
+rotation. Rotation components are pitch, yaw, and roll in radians. A mod can
+queue `EternalSonataSetFieldCameraControl(1)` to suspend the game's camera
+motion, then queue `EternalSonataSetFieldCamera` with an absolute transform.
+The host switches the active field camera from follow mode to direct transform
+mode while control is enabled. Call
+`EternalSonataSetFieldCameraControl(0)` when control ends so the game's camera
+mode and motion resume.
+
 The overworld surface reports four edges on the shared event bus. Copy
 `src/api/eternalsonata_overworld_api.h` into a mod for the event names, enums, and
 the `EternalSonataOverworldEvent` payload shared by all four:

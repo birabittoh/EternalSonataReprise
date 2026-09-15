@@ -61,6 +61,42 @@ typedef struct EternalSonataOverworldEvent {
 // Host ABI version, so a mod can check compatibility.
 typedef uint32_t (*EternalSonataOverworldAbiVersionFn)(void);
 
+typedef struct EternalSonataFieldPosition {
+  float x;
+  float y;
+  float z;
+} EternalSonataFieldPosition;
+
+// Reads the current field leader position. Returns UNAVAILABLE during a map
+// transition and IN_BATTLE during battle.
+typedef int (*EternalSonataGetFieldPositionFn)(EternalSonataFieldPosition* out);
+
+// Applies a position on the next guest main thread frame. The scene transform
+// is updated through the game's own position routine.
+typedef int (*EternalSonataSetFieldPositionFn)(const EternalSonataFieldPosition* position);
+
+// Stops the field colliders from resolving movement, so positions are accepted
+// anywhere and characters keep their own height instead of being snapped to the
+// floor. Affects every field mover, NPCs included, and is refused during battle.
+typedef int (*EternalSonataSetFieldCollisionEnabledFn)(int enabled);
+
+// 1 when collision is on, 0 when disabled.
+typedef int (*EternalSonataIsFieldCollisionEnabledFn)(void);
+
+typedef struct EternalSonataFieldCamera {
+  EternalSonataFieldPosition position;
+  EternalSonataFieldPosition rotation;
+} EternalSonataFieldCamera;
+
+// Reads the active field camera position and rotation in radians.
+typedef int (*EternalSonataGetFieldCameraFn)(EternalSonataFieldCamera* out);
+
+// Enables camera control until disabled or the field is torn down.
+typedef int (*EternalSonataSetFieldCameraControlFn)(int enabled);
+
+// Queues an absolute camera transform. Camera control must be enabled.
+typedef int (*EternalSonataSetFieldCameraFn)(const EternalSonataFieldCamera* camera);
+
 // True when area loading can be requested: field active and no battle.
 typedef int (*EternalSonataIsAreaLoadingAvailableFn)(void);
 
