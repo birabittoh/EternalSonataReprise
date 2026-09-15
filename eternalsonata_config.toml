@@ -64,7 +64,7 @@ longjmp_address = 0x822D0620
 
 # 0x820EE7D8 is deliberately left unnamed. It was labelled DIALOG_TEXT__utility
 # here, which contradicts this repo's own analysis (see the comments in
-# src/field_player_model_override.cpp: it is the field-object model
+# src/engine/field_player_model_override.cpp: it is the field-object model
 # instantiator), and renaming it broke the REX_HOOK_RAW(sub_820EE7D8) there.
 
 # ############################################################################

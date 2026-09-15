@@ -2,12 +2,12 @@
 
 The game's own Options settings: what each byte behind the menu rows means,
 and how this project exposes them to mods. The surface mods build against is
-`src/eternalsonata_settings_api.h`, implemented in `src/game_settings.cpp`.
+`src/api/eternalsonata_settings_api.h`, implemented in `src/core/game_settings.cpp`.
 
 Everything here is a set of plain bytes in one contiguous block that the game
 itself writes, reads and persists across saves; a mod does not own a menu row
 to reach any of it. This is deliberately separate from
-`src/eternalsonata_options_api.h`, which lets a mod *add* a row of its own.
+`src/api/eternalsonata_options_api.h`, which lets a mod *add* a row of its own.
 A mod may use either or neither.
 
 ## The settings block

@@ -2,8 +2,8 @@
 
 Reverse-engineering notes for the Piano Music menu, the gallery of Chopin piano
 pieces. The mod-facing surface built on top of this is
-`src/eternalsonata_piano_music_api.h`, implemented in
-`src/piano_music_system.cpp`.
+`src/api/eternalsonata_piano_music_api.h`, implemented in
+`src/engine/piano_music_system.cpp`.
 
 Addresses are guest addresses in the retail `default.xex`.
 
@@ -45,7 +45,7 @@ a title is always playable.
 
 `sub_8222B260` is the only thing that ORs bits into the session mask, from what
 the `PIANO_CHECK` screen (`sub_82209758`, screen id 13) found. Because nothing
-saves it, `src/piano_music_system.cpp` reports the two halves separately as
+saves it, `src/engine/piano_music_system.cpp` reports the two halves separately as
 `unlocked_saved` and `unlocked_session`, and clears the session bit as well as
 the saved flag when a mod locks a piece.
 
@@ -55,7 +55,7 @@ and zeroes on entry. `sub_82229FC0` (this screen's init) zeroes it before
 `sub_8222B348` builds the list, and the Music screen parks a row index of -1
 there instead (`music.md`). A mod reading the guest dword at an arbitrary
 moment would therefore see another screen's value, so
-`src/piano_music_system.cpp` mirrors the mask host side from those two
+`src/engine/piano_music_system.cpp` mirrors the mask host side from those two
 routines and writes the guest copy back only while it still agrees with the
 mirror.
 

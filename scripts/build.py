@@ -111,7 +111,7 @@ GUEST_SHADER_PACK = "guest_shaders.bin"
 # The F2 shader debugger's sidecar (microcode disassembly + HLSL per shader).
 # Deployed next to the exe for local runs, but deliberately left out of the
 # packaged build: it is a debugging aid, and it is larger than the pack the
-# renderer actually needs. See src/native_renderer_shader_debug.h.
+# renderer actually needs. See src/gpu/native_renderer_shader_debug.h.
 GUEST_SHADER_DEBUG_PACK = "guest_shaders_debug.bin"
 
 # macOS has no Vulkan of its own, so the SDK's CMake stages a loader, MoltenVK
@@ -287,7 +287,7 @@ def main():
     shutil.copy2(build_output, exe_name)
 
     # The native renderer reads its ahead-of-time compiled shaders from a pack
-    # next to the exe (see src/guest_shaders.h), so it follows the exe out of
+    # next to the exe (see src/gpu/guest_shaders.h), so it follows the exe out of
     # the build directory.
     for name in (GUEST_SHADER_PACK, GUEST_SHADER_DEBUG_PACK):
         pack = os.path.join("out", "build", preset, name)

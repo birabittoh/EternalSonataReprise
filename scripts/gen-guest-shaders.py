@@ -13,7 +13,7 @@ the guest's shader inventory is a closed set compiled into the executable, so
 translating it is a finite offline problem rather than a runtime one.
 
 Output is a single pack file, `guest_shaders.bin`, deployed next to the exe and
-read once at startup by src/guest_shaders.cpp. It is a file rather than an
+read once at startup by src/gpu/guest_shaders.cpp. It is a file rather than an
 embedded byte array because the compiled blobs come to a few megabytes per
 format, and turning that into C++ array initialisers costs far more build time
 than reading it back does at runtime.

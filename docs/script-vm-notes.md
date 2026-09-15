@@ -351,7 +351,7 @@ The `w` case at `0x821D5804`: `0x821D5810` tests for `>` (bare `<w>` → code 2)
 (`<wNNNN>` → code 1). All three advance the arg index by exactly 1, and the
 bare `<w>` path never reads its argument slot.
 
-**Applied:** `src/eternalsonata_hooks.cpp` wraps this function and rewrites
+**Applied:** `src/engine/eternalsonata_hooks.cpp` wraps this function and rewrites
 control code 13 → 2 in the output, making `<wv>` messages player-skippable
 without touching assets. Flags at the top of that hook also allow 1 → 2. Not
 yet verified in-game.

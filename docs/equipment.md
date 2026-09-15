@@ -7,8 +7,8 @@ Equipment is the meeting point of two systems that already have their own
 write-ups: an item ([items.md](items.md)) worn by a character
 ([party-system.md](party-system.md)). The exe reads and writes it itself and
 exposes it to mods through
-[`src/eternalsonata_equipment_api.h`](../src/eternalsonata_equipment_api.h),
-implemented in `src/equipment_system.cpp`. A mod should never need an address
+[`src/api/eternalsonata_equipment_api.h`](../src/api/eternalsonata_equipment_api.h),
+implemented in `src/engine/equipment_system.cpp`. A mod should never need an address
 from this page; it is here so the next person can check the implementation
 against the binary.
 

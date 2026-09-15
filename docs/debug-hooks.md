@@ -98,7 +98,7 @@ exits the process. **This is the primary blocker for running the recompiled bina
 ### Implemented Hook
 
 ```cpp
-// src/eternalsonata_hooks.cpp
+// src/engine/eternalsonata_hooks.cpp
 REX_EXTERN(__imp__sub_82254060);
 REX_HOOK_RAW(sub_82254060) { ctx.r3.u64 = 0; }
 ```
@@ -320,7 +320,7 @@ the cmdline parser (which requires `0x824A6728 != 0`).
 
 ### Unused Hook Stubs
 
-Two hooks exist in `src/eternalsonata_hooks.cpp` but are not wired to any
+Two hooks exist in `src/engine/eternalsonata_hooks.cpp` but are not wired to any
 config entries:
 
 - **`EternalsonataSkipSubObjectRelease()`** — no-op, intended for `sub_82294600`
@@ -509,7 +509,7 @@ python scripts/build.py     # runs codegen + cmake build
 
 Groundwork for exposing SDK cvars (starting with `fullscreen`) as native rows in
 the game's own Options screen, rather than only in the ImGui overlay
-(`src/settings.cpp`).
+(`src/core/settings.cpp`).
 
 ### Corrections to earlier notes
 
@@ -661,7 +661,7 @@ record pointer the interpreter is walking.
   bytes** of records. There is no slack before the next structure, so the list
   must be *copied* to be extended, not patched in place.
 
-`src/eternalsonata_hooks.cpp` implements a native **Fullscreen** row on this:
+`src/engine/eternalsonata_hooks.cpp` implements a native **Fullscreen** row on this:
 copy the list into `SystemHeapAlloc` memory, append two type-200 records
 (label X=120, value X=490, Y=385) plus a fresh `0xFFFF`, swap the pointer in a
 `sub_821F2F38` hook when the incoming list is the Options one, and answer two
@@ -745,7 +745,7 @@ before the answer was found; do not re-derive them:
 
 **How it was found.** Guessing was the problem, so the search was made
 exhaustive: a full-memory differ (`menu_scan` cvar, "Value-highlight hunt" in
-`src/eternalsonata_hooks.cpp`) snapshots all committed guest memory on every
+`src/engine/eternalsonata_hooks.cpp`) snapshots all committed guest memory on every
 left press and again on every right press, and intersects across toggles. A
 two-option row is idempotent per direction, so left is unambiguously state A and
 right state B regardless of press order. 334 MiB collapsed to 724 stable
@@ -856,7 +856,7 @@ renumbered and their highlights move. Only the 100 family creates entries —
 text (200) and 600 do not, which is why the row's three text records never
 disturbed the indices.
 
-Implemented in `src/eternalsonata_hooks.cpp`: the row's copy of the display
+Implemented in `src/engine/eternalsonata_hooks.cpp`: the row's copy of the display
 list appends a cloned bar block at 600x800 thousandths, `MoveFullscreenBar`
 places it on entry with `sub_82178A88` and slides it on toggle with
 `sub_82179F78`.
@@ -1020,7 +1020,7 @@ keyed by the object at `+0`; the dirty flags it sets afterwards are `+518 = 0`,
 `+840 = 0`, `+841 = 0`, `+4 = 1`, `+854 = 0`, `+925 = 1`. Writing a longer
 string into that buffer and re-setting those flags is what lets the Render
 Resolution row read `70%` rather than `70`.
-`src/eternalsonata_options.cpp` draws the Render Resolution row on this.
+`src/engine/eternalsonata_options.cpp` draws the Render Resolution row on this.
 
 ### Open work
 
@@ -1051,9 +1051,9 @@ placement).*
 Two independent, unrelated instruments for asking "why is the frame slow." Both
 default to off. Neither reads the other's data.
 
-### `native_profile_zones` (`src/settings.cpp`)
+### `native_profile_zones` (`src/core/settings.cpp`)
 
-Gates `ProfileZone` (`src/native_renderer_profile.h`), the manually placed
+Gates `ProfileZone` (`src/gpu/native_renderer_profile.h`), the manually placed
 timers inside the native renderer's own code: present, draw, vertex upload,
 texture bind, fence wait, and so on (full phase list in
 `native_renderer_draw.cpp`'s `kPhaseNames`). Each zone reads the clock on
@@ -1065,7 +1065,7 @@ per-phase breakdown and the CPU/GPU bound verdict that the swap summary prints.
 Only tells you about time spent inside the native renderer's own C++. It has no
 way to see guest code, kernel calls, or anything else running on the thread.
 
-### `guest_profile` (`src/guest_profiler.cpp`)
+### `guest_profile` (`src/core/guest_profiler.cpp`)
 
 Gates a separate stack-sampling profiler: a background thread periodically
 suspends the render thread, reads its actual call stack via

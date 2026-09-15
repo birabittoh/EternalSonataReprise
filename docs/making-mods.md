@@ -402,7 +402,7 @@ Achievements screen; the latter is drawn with the guest font, so it folds them
 to Latin-1 and anything outside that draws as `?`.
 
 To do the same from a code mod, publish three mod-registry events from
-`OnCreateDialogs` (see `src/settings.h`). `settings.language_option` adds the
+`OnCreateDialogs` (see `src/core/settings.h`). `settings.language_option` adds the
 entry (`payload.u64` is the id, `payload.bytes` is `"Label"` or
 `"Label|CODE|SLOT"`), `settings.language_slot` claims the block on its own, and
 `settings.native_string` translates one of the rows this project synthesises
@@ -542,7 +542,7 @@ mod opting into a rebuild does not force the cost or the risk on the others.
 
 A mod that decides at runtime what to replace (a translation that follows the
 language setting, a texture built from the player's own files, a randomiser)
-uses the C ABI instead. Copy `src/eternalsonata_asset_api.h` from this repo
+uses the C ABI instead. Copy `src/assets/eternalsonata_asset_api.h` from this repo
 into your mod for the signatures and the full contract; the entry points
 resolve out of the host executable exactly as with the Options and party APIs:
 
@@ -931,7 +931,7 @@ See `src/event_pong/`, `src/blackboard/`, and
 `src/bus_inspector/` for the pattern.
 
 **Adding a Language dropdown entry**: the curated Settings overlay's
-Language row (`src/settings.cpp`) is app code, not SDK code, so it isn't
+Language row (`src/core/settings.cpp`) is app code, not SDK code, so it isn't
 something a mod can reach through `RegisterAddress`/`FindAddress`. Instead
 NocturneRecomp itself subscribes, from `OnPostLoadXexImage()` (after
 `Runtime` exists but before any mod's `OnCreateDialogs` runs), to a
@@ -1045,7 +1045,7 @@ if you have a reason to.
 
 The entry points are exported from the host executable, not from the SDK, so
 you resolve them at runtime rather than linking against anything. Copy
-`src/eternalsonata_options_api.h` from this repo into your mod for the
+`src/api/eternalsonata_options_api.h` from this repo into your mod for the
 signatures and the full contract, then:
 
 ```cpp
@@ -1114,7 +1114,7 @@ Things worth knowing before you use it:
 
 The built-in Resolution and Frame Rate rows go through this exact registration
 path -- there is no privileged internal route -- so anything that works for
-them works for a mod row. See `src/eternalsonata_options.cpp` for the
+them works for a mod row. See `src/engine/eternalsonata_options.cpp` for the
 underlying display-list and selection work, and `docs/debug-hooks.md` §14 for
 the reverse engineering it rests on.
 
@@ -1123,7 +1123,7 @@ the reverse engineering it rests on.
 A mod can ask who is in the party, read and write their stats, add and remove
 members, reorder them and rename them, without knowing a single guest address.
 Copy
-`src/eternalsonata_party_api.h` from this repo into your mod for the
+`src/api/eternalsonata_party_api.h` from this repo into your mod for the
 signatures and the full contract, then resolve the entry points out of the host
 executable exactly as with the Options API:
 
@@ -1178,7 +1178,7 @@ you need to know what a call actually does.
 
 The item API covers inventory stacks, the battle Item Set, score pieces,
 static item data, custom items, and the party's gold. Copy
-`src/eternalsonata_item_api.h` into your mod and resolve its entry points as
+`src/api/eternalsonata_item_api.h` into your mod and resolve its entry points as
 with the party API.
 
 ```cpp
@@ -1202,7 +1202,7 @@ See `docs/items.md` for the inventory, Item Set, score-piece, and gold layouts.
 
 The battle API publishes an event when either side starts an attack or ability,
 and when a combatant consumes an item. Copy
-`src/eternalsonata_battle_api.h` into your mod for the event names and payload
+`src/api/eternalsonata_battle_api.h` into your mod for the event names and payload
 layout, then subscribe through the shared mod registry:
 
 ```cpp
@@ -1295,7 +1295,7 @@ battle thread, so a callback must be thread-safe and must not touch ImGui.
 ## Overworld events
 
 The overworld surface reports four edges on the shared event bus. Copy
-`src/eternalsonata_overworld_api.h` into a mod for the event names, enums, and
+`src/api/eternalsonata_overworld_api.h` into a mod for the event names, enums, and
 the `EternalSonataOverworldEvent` payload shared by all four:
 
 ```cpp
@@ -1356,7 +1356,7 @@ payload before passing it to another thread.
 ## Rebalancing enemies
 
 A mod can change what a monster hits for, what it takes to kill one, and what
-killing it is worth. Copy `src/eternalsonata_enemy_api.h` from this repo into
+killing it is worth. Copy `src/api/eternalsonata_enemy_api.h` from this repo into
 your mod for the signatures and the full contract, then resolve the entry points
 out of the host executable as with the other APIs:
 
@@ -1421,7 +1421,7 @@ in `f64`.
 A mod can ask whether the game would let the player save right now, read or
 change play time, list what is in each save slot, and be told when a save
 starts, finishes, or fails. Copy
-`src/eternalsonata_save_api.h` from this repo into your mod for the signatures
+`src/api/eternalsonata_save_api.h` from this repo into your mod for the signatures
 and the full contract; the entry points resolve out of the host executable the
 same way as the Options and party APIs.
 
@@ -1478,7 +1478,7 @@ A mod can add achievements of its own. They behave like the title's twenty two
 everywhere: the unlock toast, the SDK's achievement overlay, and the status
 menu's Achievements screen, whose third tab (**Custom**) is drawn only when at
 least one mod registered something. Copy
-`src/eternalsonata_achievement_api.h` from this repo into your mod for the
+`src/api/eternalsonata_achievement_api.h` from this repo into your mod for the
 signatures and the full contract:
 
 ```cpp
