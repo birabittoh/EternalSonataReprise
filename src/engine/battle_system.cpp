@@ -95,6 +95,13 @@ REX_IMPORT(__imp__sub_8223B780, g_lookup_text, u32(u32, u32));
 REX_IMPORT(__imp__sub_8217BF28, g_get_scene_position, u32(u32, u32, u32));
 REX_IMPORT(__imp__sub_82178A88, g_set_scene_position,
            void(u32, u32, u32, u32, u32, u32));
+REX_IMPORT(__imp__sub_8217BFA8, g_get_scene_rotation, u32(u32, u32, u32));
+REX_IMPORT(__imp__sub_82178BB0, g_set_scene_rotation,
+           void(u32, u32, u32, u32, u32, u32));
+// The node's forward axis, pulled out of its world matrix. sub_82190438, the
+// reaction-cone test, measures facing with this rather than with the euler
+// triple above.
+REX_IMPORT(__imp__sub_8217C368, g_get_scene_forward, u32(u32, u32, u32));
 constexpr uint32_t kSceneManager = 0x824CF500u;
 
 // Set in OnPostSetup. Null until then, which is what makes every entry point
@@ -268,16 +275,16 @@ bool SetEnemyHp(int slot, int32_t hp) {
 // happen on the guest thread: the getter is sampled once per frame off the
 // back of the FSM hook and cached, and the setter is queued.
 
-struct UnitPosition {
+struct UnitTransform {
   bool valid = false;
-  float x = 0.0f;
-  float y = 0.0f;
-  float z = 0.0f;
+  EternalSonataBattlePosition position{};
+  EternalSonataBattlePosition rotation{};
+  EternalSonataBattlePosition forward{};
 };
 
 std::mutex g_position_mutex;
-UnitPosition g_party_positions[ETERNALSONATA_BATTLE_MAX_PARTY];
-UnitPosition g_enemy_positions[ETERNALSONATA_BATTLE_MAX_ENEMIES];
+UnitTransform g_party_positions[ETERNALSONATA_BATTLE_MAX_PARTY];
+UnitTransform g_enemy_positions[ETERNALSONATA_BATTLE_MAX_ENEMIES];
 uint32_t g_position_scratch = 0;
 
 uint32_t PositionScratch() {
@@ -306,7 +313,21 @@ uint32_t SceneNode(int kind, int slot) {
   return node == 0xFFFFFFFFu ? 0 : node;
 }
 
-void PollPositionSide(int kind, UnitPosition* out, int capacity) {
+EternalSonataBattlePosition ReadScratchVector(const uint8_t* vec) {
+  EternalSonataBattlePosition out{};
+  out.x = rex::memory::load_and_swap<float>(vec);
+  out.y = rex::memory::load_and_swap<float>(vec + 4);
+  out.z = rex::memory::load_and_swap<float>(vec + 8);
+  return out;
+}
+
+void WriteScratchVector(uint8_t* vec, const EternalSonataBattlePosition& value) {
+  rex::memory::store_and_swap<float>(vec, value.x);
+  rex::memory::store_and_swap<float>(vec + 4, value.y);
+  rex::memory::store_and_swap<float>(vec + 8, value.z);
+}
+
+void PollPositionSide(int kind, UnitTransform* out, int capacity) {
   const uint32_t scratch = PositionScratch();
   auto* memory = Mem();
   for (int slot = 0; slot < capacity; ++slot) {
@@ -316,16 +337,18 @@ void PollPositionSide(int kind, UnitPosition* out, int capacity) {
       out[slot].valid = false;
       continue;
     }
-    g_get_scene_position(scratch, kSceneManager, node);
     const auto* vec = memory->TranslateVirtual<const uint8_t*>(scratch);
     if (!vec) {
       continue;
     }
-    UnitPosition now;
+    UnitTransform now;
     now.valid = true;
-    now.x = rex::memory::load_and_swap<float>(vec);
-    now.y = rex::memory::load_and_swap<float>(vec + 4);
-    now.z = rex::memory::load_and_swap<float>(vec + 8);
+    g_get_scene_position(scratch, kSceneManager, node);
+    now.position = ReadScratchVector(vec);
+    g_get_scene_rotation(scratch, kSceneManager, node);
+    now.rotation = ReadScratchVector(vec);
+    g_get_scene_forward(scratch, kSceneManager, node);
+    now.forward = ReadScratchVector(vec);
     std::lock_guard<std::mutex> lock(g_position_mutex);
     out[slot] = now;
   }
@@ -348,7 +371,11 @@ void ForgetUnitPositions() {
   }
 }
 
-void SetUnitPositionOnGuestThread(int kind, int slot, UnitPosition position) {
+// `rotate` picks which of the node's two transforms this writes; the cached
+// snapshot is updated to match so a caller reading back in the same frame does
+// not see the pre-write value.
+void SetUnitTransformOnGuestThread(int kind, int slot,
+                                   EternalSonataBattlePosition value, bool rotate) {
   if (!Available()) {
     return;
   }
@@ -362,16 +389,27 @@ void SetUnitPositionOnGuestThread(int kind, int slot, UnitPosition position) {
   if (!vec) {
     return;
   }
-  rex::memory::store_and_swap<float>(vec, position.x);
-  rex::memory::store_and_swap<float>(vec + 4, position.y);
-  rex::memory::store_and_swap<float>(vec + 8, position.z);
-  g_set_scene_position(kSceneManager, node, scratch, 0, 0, 0xFFFFFFFFu);
-  position.valid = true;
+  WriteScratchVector(vec, value);
+  if (rotate) {
+    g_set_scene_rotation(kSceneManager, node, scratch, 0, 0, 0xFFFFFFFFu);
+  } else {
+    g_set_scene_position(kSceneManager, node, scratch, 0, 0, 0xFFFFFFFFu);
+  }
   std::lock_guard<std::mutex> lock(g_position_mutex);
+  UnitTransform* entry = nullptr;
   if (kind == ETERNALSONATA_BATTLE_ACTOR_PARTY && slot < ETERNALSONATA_BATTLE_MAX_PARTY) {
-    g_party_positions[slot] = position;
+    entry = &g_party_positions[slot];
   } else if (kind == ETERNALSONATA_BATTLE_ACTOR_ENEMY && slot < ETERNALSONATA_BATTLE_MAX_ENEMIES) {
-    g_enemy_positions[slot] = position;
+    entry = &g_enemy_positions[slot];
+  }
+  if (!entry) {
+    return;
+  }
+  entry->valid = true;
+  if (rotate) {
+    entry->rotation = value;
+  } else {
+    entry->position = value;
   }
 }
 
@@ -1209,15 +1247,43 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetBattleUnitPosition(
     return ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
   }
   std::lock_guard<std::mutex> lock(g_position_mutex);
-  const UnitPosition& entry = side == ETERNALSONATA_BATTLE_ACTOR_PARTY
-                                  ? g_party_positions[slot]
-                                  : g_enemy_positions[slot];
+  const UnitTransform& entry = side == ETERNALSONATA_BATTLE_ACTOR_PARTY
+                                   ? g_party_positions[slot]
+                                   : g_enemy_positions[slot];
   if (!entry.valid) {
     return ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
   }
-  out->x = entry.x;
-  out->y = entry.y;
-  out->z = entry.z;
+  *out = entry.position;
+  return ETERNALSONATA_BATTLE_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetBattleUnitFacing(
+    int side, int slot, EternalSonataBattleFacing* out) {
+  if (!out) {
+    return ETERNALSONATA_BATTLE_ERR_INVALID_ARGUMENT;
+  }
+  std::memset(out, 0, sizeof(*out));
+  if (!Available()) {
+    return ETERNALSONATA_BATTLE_ERR_UNAVAILABLE;
+  }
+  const int capacity = side == ETERNALSONATA_BATTLE_ACTOR_PARTY
+                           ? ETERNALSONATA_BATTLE_MAX_PARTY
+                           : ETERNALSONATA_BATTLE_MAX_ENEMIES;
+  if ((side != ETERNALSONATA_BATTLE_ACTOR_PARTY &&
+       side != ETERNALSONATA_BATTLE_ACTOR_ENEMY) ||
+      slot < 0 || slot >= capacity) {
+    return ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
+  }
+  std::lock_guard<std::mutex> lock(g_position_mutex);
+  const UnitTransform& entry = side == ETERNALSONATA_BATTLE_ACTOR_PARTY
+                                   ? g_party_positions[slot]
+                                   : g_enemy_positions[slot];
+  if (!entry.valid) {
+    return ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
+  }
+  out->rotation = entry.rotation;
+  out->forward = entry.forward;
+  out->yaw = std::atan2(entry.forward.x, entry.forward.z);
   return ETERNALSONATA_BATTLE_OK;
 }
 
@@ -1235,12 +1301,31 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetBattleUnitPosition(
       !SceneNode(side, slot)) {
     return ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
   }
-  UnitPosition target;
-  target.x = position->x;
-  target.y = position->y;
-  target.z = position->z;
-  PostToGuestMainThread(
-      [side, slot, target] { SetUnitPositionOnGuestThread(side, slot, target); });
+  const EternalSonataBattlePosition target = *position;
+  PostToGuestMainThread([side, slot, target] {
+    SetUnitTransformOnGuestThread(side, slot, target, false);
+  });
+  return ETERNALSONATA_BATTLE_QUEUED;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetBattleUnitFacing(
+    int side, int slot, const EternalSonataBattlePosition* rotation) {
+  if (!rotation || !std::isfinite(rotation->x) || !std::isfinite(rotation->y) ||
+      !std::isfinite(rotation->z)) {
+    return ETERNALSONATA_BATTLE_ERR_INVALID_ARGUMENT;
+  }
+  if (!Available()) {
+    return ETERNALSONATA_BATTLE_ERR_UNAVAILABLE;
+  }
+  if ((side != ETERNALSONATA_BATTLE_ACTOR_PARTY &&
+       side != ETERNALSONATA_BATTLE_ACTOR_ENEMY) ||
+      !SceneNode(side, slot)) {
+    return ETERNALSONATA_BATTLE_ERR_INVALID_SLOT;
+  }
+  const EternalSonataBattlePosition target = *rotation;
+  PostToGuestMainThread([side, slot, target] {
+    SetUnitTransformOnGuestThread(side, slot, target, true);
+  });
   return ETERNALSONATA_BATTLE_QUEUED;
 }
 
