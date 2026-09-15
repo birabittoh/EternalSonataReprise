@@ -1786,6 +1786,37 @@ bool IsSceneSprite(const GuestDrawCall& call, int vertex_slot) {
       std::abs(GuestFloat(bank, 7, 2)) > 0.000001f;
 }
 
+bool IsScreenImageSprite(const GuestDrawCall& call, int vertex_slot, int pixel_slot) {
+  if (vertex_slot != 9 || (pixel_slot != 3 && pixel_slot != 5) ||
+      call.indexed || call.primitive_type != 6 || call.count != 4)
+    return false;
+  TextureFetch fetch;
+  if (!GetBoundTextureFetch(call.memory_base, 0, fetch, nullptr) ||
+      fetch.width != 1280 || fetch.height != 720 ||
+      FrameResolveTextureByAddress(fetch.base_address, fetch.width, fetch.height) == nullptr)
+    return false;
+  const GuestDrawStream& stream = call.streams[0];
+  if (stream.data == nullptr || stream.stride < 12 || stream.size < stream.stride * 4)
+    return false;
+  const uint8_t* bank = call.device + d3d::kVertexConstantShadow;
+  uint32_t corners = 0;
+  for (uint32_t i = 0; i < 4; i += 1) {
+    const uint8_t* vertex = stream.data + i * stream.stride;
+    const float position[4] = {GuestFloat(vertex, 0, 0), GuestFloat(vertex, 0, 1),
+                               GuestFloat(vertex, 0, 2), 1.0f};
+    float clip[4] = {};
+    for (uint32_t row = 0; row < 4; row += 1) {
+      for (uint32_t column = 0; column < 4; column += 1)
+        clip[row] += position[column] * GuestFloat(bank, 12 + row, column);
+    }
+    if (clip[3] <= 0.0f || std::abs(clip[0]) < clip[3] * 0.98f ||
+        std::abs(clip[1]) < clip[3] * 0.98f)
+      return false;
+    corners |= 1u << (uint32_t(clip[0] > 0.0f) + 2u * uint32_t(clip[1] > 0.0f));
+  }
+  return corners == 15;
+}
+
 bool IsScreenColorFill(const GuestDrawCall& call) {
   const GuestDrawStream& stream = call.streams[0];
   if (call.indexed || call.primitive_type != 6 || call.count != 4 ||
@@ -2020,7 +2051,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
       IsScreenColorFill(call);
   // DoF combines scene color and depth, then filters using the blur amount in alpha.
   // Both passes sample the expanded scene and must cover the same viewport.
-  const bool screen_composite = (screen_fill || (draw_vertex_slot == 3 &&
+  const bool screen_image = IsScreenImageSprite(call, draw_vertex_slot, draw_pixel_slot);
+  const bool screen_composite = (screen_image || screen_fill || (draw_vertex_slot == 3 &&
       (draw_pixel_slot == 4 || draw_pixel_slot == 9 ||
        draw_pixel_slot == 0x67 || draw_pixel_slot == 0x68 || draw_pixel_slot == 0x80))) &&
       g_viewport.set && g_viewport.x == 0 && g_viewport.y == 0 &&
@@ -2040,7 +2072,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     return false;
   }
   // Flat sprite effects already cover their viewport; camera widening shrinks them.
-  if (draw_vertex_slot >= 0x0d && draw_vertex_slot <= 0x12 && !scene_sprite) {
+  if (screen_image ||
+      (draw_vertex_slot >= 0x0d && draw_vertex_slot <= 0x12 && !scene_sprite)) {
     clip_scale_x = 1.0f;
     clip_scale_y = 1.0f;
   }
