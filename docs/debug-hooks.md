@@ -1079,6 +1079,9 @@ injected code such as `NVENCODEAPI_Thunk` from a capture overlay. This is the
 tool for "what is actually running," as opposed to `native_profile_zones`'s
 "how long did our own code take."
 
-Turn it on with the F3 overlay (Guest Profiler window) or log continuously with
-`--guest_profile=true` / the `guest_profile` cvar. `guest_profile_top` caps how
-many ranked rows print; `guest_profile_hz` sets the sampling rate.
+`guest_profile` also gates the F3 overlay itself: F3 only opens the Guest
+Profiler window if `guest_profile` is already `true` (set via `--guest_profile=true`
+or the config file before launch), so a player who just wants the FPS counter
+never triggers the per-sample thread suspend/stack walk. Once open, F3 closes
+it as normal regardless of the cvar. `guest_profile_top` caps how many ranked
+rows print; `guest_profile_hz` sets the sampling rate.
