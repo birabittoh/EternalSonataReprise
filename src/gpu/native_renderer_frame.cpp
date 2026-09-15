@@ -137,6 +137,14 @@ struct GuestTarget {
   uint32_t content_width = 0;
   uint32_t content_height = 0;
 
+  // The guest size the content rectangle was scaled from: the surface, grown to
+  // the tiling extent when it is a band of it. Kept rather than recovered by
+  // dividing the content size by the scale, because that round trip only lands
+  // back on the guest size for some window sizes. Missing it by one pixel makes
+  // a resolve destination look like some other buffer and lose its margins.
+  uint32_t guest_width = 0;
+  uint32_t guest_height = 0;
+
   GuestLayer layer = GuestLayer::kWorld;
 
   bool window_sized = false;
@@ -1167,6 +1175,8 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
   }
   // The surface's own size at this layer's scale: what the guest's pixels
   // occupy, before any margin around them.
+  const uint32_t guest_width = host_width;
+  const uint32_t guest_height = host_height;
   const uint32_t content_width = ScaleExtent(host_width, scale_x);
   const uint32_t content_height = ScaleExtent(host_height, scale_y);
   int32_t offset_x = 0;
@@ -1218,6 +1228,8 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
   target->offset_y = offset_y;
   target->content_width = content_width;
   target->content_height = content_height;
+  target->guest_width = guest_width;
+  target->guest_height = guest_height;
   target->layer = layer;
   target->window_sized = window_sized;
   target->resolution = is_resolution;
@@ -1745,8 +1757,16 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
       target->content_width != 0 ? target->content_width : target->host_width;
   const uint32_t content_height_host =
       target->content_height != 0 ? target->content_height : target->host_height;
-  const int32_t target_width = int32_t(std::lround(double(content_width_host) / scale_x));
-  const int32_t target_height = int32_t(std::lround(double(content_height_host) / scale_y));
+  // The guest size the content was scaled from, taken from the target rather
+  // than divided back out of it: round(round(g * s) / s) is not g for every
+  // window size, and a miss of one pixel makes the margin test below fail and
+  // strips the destination of the margins the present needs.
+  const int32_t target_width = target->guest_width != 0
+      ? int32_t(target->guest_width)
+      : int32_t(std::lround(double(content_width_host) / scale_x));
+  const int32_t target_height = target->guest_height != 0
+      ? int32_t(target->guest_height)
+      : int32_t(std::lround(double(content_height_host) / scale_y));
   // The margins around it, which the destination has to carry too so that the
   // world showing through them survives the resolve and reaches the present.
   const int32_t margin_x = int32_t(target->host_width - content_width_host);
