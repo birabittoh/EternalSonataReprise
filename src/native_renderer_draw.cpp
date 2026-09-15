@@ -1838,12 +1838,6 @@ bool IsScreenColorFill(const GuestDrawCall& call) {
   return corners == 15;
 }
 
-// The draw that separates the world from the UI. One per frame in every field
-// frame measured, and absent from menu frames, which have no 3D to separate.
-// See the layer probe below for how it was found.
-constexpr int kLayerMarkerVertexSlot = 0x62;
-constexpr int kLayerMarkerPixelSlot = 0x65;
-
 // The layer probe.
 //
 // Two questions have to be answered from a running frame before the world and
@@ -1969,9 +1963,6 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   if (call.pipeline != nullptr)
     GuestPipelineShaderSlots(call.pipeline, &vertex_slot, &pixel_slot);
   if (GuestShaderDrawDisabled(vertex_slot, pixel_slot)) {
-    // Shader visibility must preserve the guest's world/UI boundary.
-    if (vertex_slot == kLayerMarkerVertexSlot && pixel_slot == kLayerMarkerPixelSlot)
-      FrameNoteLayerBoundary();
     Drop(kDropShaderDisabled, "toggled off in the F2 shader debugger");
     return false;
   }
@@ -2005,9 +1996,6 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
   NoteGuestShaderDraw(vertex_slot, pixel_slot, elapsed_ns);
   LayerProbeNoteDraw(vertex_slot, pixel_slot, call);
 
-  // Arm the UI transition here; intervening resolves still need the world.
-  if (vertex_slot == kLayerMarkerVertexSlot && pixel_slot == kLayerMarkerPixelSlot)
-    FrameNoteLayerBoundary();
   return true;
 }
 
@@ -2071,8 +2059,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
     return false;
   }
-  // Flat sprite effects already cover their viewport; camera widening shrinks them.
-  if (screen_image ||
+  // Screen fills and flat sprites already cover their viewport.
+  if (screen_fill || screen_image ||
       (draw_vertex_slot >= 0x0d && draw_vertex_slot <= 0x12 && !scene_sprite)) {
     clip_scale_x = 1.0f;
     clip_scale_y = 1.0f;

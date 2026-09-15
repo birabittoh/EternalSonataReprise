@@ -77,8 +77,7 @@ bool SameExtent(uint32_t a_w, uint32_t a_h, uint32_t b_w, uint32_t b_h) {
 //
 // The guest draws the world and then the UI into the same EDRAM surface, so one
 // surface needs two host images once the two are to be rendered at different
-// resolutions. The boundary between them is a single marker draw the guest emits
-// once per frame; see FrameNoteLayerBoundary.
+// resolutions. Scene completion marks the boundary after all world effects.
 //
 // kWorld is sized from the render scale, kComposite from the window, so the UI
 // is never resampled by the performance setting. Consecutive menu frames start
@@ -2608,6 +2607,11 @@ bool WindowExtentDisabled() {
 }
 
 void FrameNotePresentPhase(bool active) { g_in_present = active; }
+
+void FrameBeginWorld() {
+  g_layer = GuestLayer::kWorld;
+  g_marker_seen = false;
+}
 
 void FrameNoteLayerBoundary() {
   if (UiLayerDisabled())
