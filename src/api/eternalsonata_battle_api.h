@@ -362,6 +362,24 @@ typedef struct EternalSonataBattlePosition {
   float z;
 } EternalSonataBattlePosition;
 
+// Which way a unit is turned. Reported three ways because the game itself uses
+// two of them and they are not interchangeable.
+typedef struct EternalSonataBattleFacing {
+  // The node's own euler rotation, in radians, as the overworld API's camera
+  // rotation reports it. This is what the setter writes.
+  EternalSonataBattlePosition rotation;
+  // The unit's forward direction as a unit vector, taken from its world
+  // matrix. This is the game's own answer: sub_82190438, the "is my attacker
+  // inside my reaction cone" test, measures the angle between exactly this
+  // vector and the direction to the other unit. Prefer it over `rotation`
+  // whenever what you want is where the unit is looking, since a parent node
+  // or an animation can turn a unit without its own euler triple changing.
+  EternalSonataBattlePosition forward;
+  // The forward vector as a single angle around the vertical axis, radians,
+  // atan2(forward.x, forward.z): 0 faces +Z and the angle grows towards +X.
+  float yaw;
+} EternalSonataBattleFacing;
+
 // ---------------------------------------------------------------------------
 // Capability and state
 // ---------------------------------------------------------------------------
@@ -553,6 +571,24 @@ typedef int (*EternalSonataGetBattleUnitPositionFn)(
 // ETERNALSONATA_BATTLE_ERR_INVALID_ARGUMENT for a null or non-finite position.
 typedef int (*EternalSonataSetBattleUnitPositionFn)(
     int side, int slot, const EternalSonataBattlePosition* position);
+
+// Which way a unit is facing. Same `side` and `slot` as the position getter,
+// same once-per-frame snapshot, and the same return values.
+typedef int (*EternalSonataGetBattleUnitFacingFn)(
+    int side, int slot, EternalSonataBattleFacing* out);
+
+// Turns a unit, by writing the euler rotation triple (radians) that
+// EternalSonataBattleFacing::rotation reports. To aim by yaw alone, pass
+// {0, yaw, 0} using the same convention that field reports.
+//
+// Queued and re-driven by the game exactly as the position setter is: turning
+// towards a target is part of taking a turn, so a single call is a nudge and
+// holding a unit at an angle means calling this every frame.
+//
+// Returns ETERNALSONATA_BATTLE_QUEUED when accepted, or the same errors the
+// position setter returns.
+typedef int (*EternalSonataSetBattleUnitFacingFn)(
+    int side, int slot, const EternalSonataBattlePosition* rotation);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -75,6 +75,36 @@ typedef int (*EternalSonataGetFieldPositionFn)(EternalSonataFieldPosition* out);
 // is updated through the game's own position routine.
 typedef int (*EternalSonataSetFieldPositionFn)(const EternalSonataFieldPosition* position);
 
+// Which way the field leader is turned. Reported three ways because the game
+// uses two of them and they are not interchangeable.
+typedef struct EternalSonataFieldFacing {
+  // The scene node's own euler rotation, in radians, the same quantity
+  // EternalSonataFieldCamera::rotation carries for the camera. This is what
+  // the setter writes.
+  EternalSonataFieldPosition rotation;
+  // The forward direction as a unit vector, taken from the world matrix. This
+  // is the game's own answer to "where is this looking": it is what the battle
+  // side's reaction-cone test measures against. Prefer it over `rotation`,
+  // which a parent node or an animation can leave untouched while the
+  // character visibly turns.
+  EternalSonataFieldPosition forward;
+  // The forward vector as a single angle around the vertical axis, radians,
+  // atan2(forward.x, forward.z): 0 faces +Z and the angle grows towards +X.
+  float yaw;
+} EternalSonataFieldFacing;
+
+// Reads the field leader's facing. Same availability rules as
+// EternalSonataGetFieldPosition.
+typedef int (*EternalSonataGetFieldFacingFn)(EternalSonataFieldFacing* out);
+
+// Turns the field leader, by writing the euler rotation triple (radians) that
+// EternalSonataFieldFacing::rotation reports; to aim by yaw alone, pass
+// {0, yaw, 0}. Applied on the next guest main thread frame.
+//
+// Walking turns the character, so this holds only until the player moves
+// again; call it every frame to pin a heading.
+typedef int (*EternalSonataSetFieldFacingFn)(const EternalSonataFieldPosition* rotation);
+
 // Stops the field colliders from resolving movement, so positions are accepted
 // anywhere and characters keep their own height instead of being snapped to the
 // floor. Affects every field mover, NPCs included, and is refused during battle.

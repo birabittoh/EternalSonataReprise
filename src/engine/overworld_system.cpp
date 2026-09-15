@@ -39,6 +39,7 @@ std::mutex g_position_mutex;
 EternalSonataFieldPosition g_live_position{};
 uint32_t g_live_object = 0;
 bool g_live_valid = false;
+EternalSonataFieldFacing g_live_facing{};
 EternalSonataFieldCamera g_live_camera{};
 uint32_t g_live_camera_object = 0;
 bool g_live_camera_valid = false;
@@ -63,6 +64,10 @@ REX_IMPORT(__imp__sub_8217BFA8, g_get_scene_rotation,
            u32(u32, u32, u32));
 REX_IMPORT(__imp__sub_8217BED0, g_get_render_camera,
            u32(u32, u32));
+// The node's forward axis, pulled out of its world matrix. sub_82190438, the
+// battle side's reaction-cone test, measures facing with this rather than with
+// the euler triple sub_8217BFA8 reports.
+REX_IMPORT(__imp__sub_8217C368, g_get_scene_forward, u32(u32, u32, u32));
 
 uint32_t PositionScratch() {
   auto* kernel = rex::system::kernel_state();
@@ -246,8 +251,15 @@ void RefreshFieldPosition() {
     position.x = rex::memory::load_and_swap<float>(vec);
     position.y = rex::memory::load_and_swap<float>(vec + 4);
     position.z = rex::memory::load_and_swap<float>(vec + 8);
+    EternalSonataFieldFacing facing{};
+    g_get_scene_rotation(scratch, kSceneManager, scene);
+    facing.rotation = ReadVector(vec);
+    g_get_scene_forward(scratch, kSceneManager, scene);
+    facing.forward = ReadVector(vec);
+    facing.yaw = std::atan2(facing.forward.x, facing.forward.z);
     std::lock_guard<std::mutex> lock(g_position_mutex);
     g_live_position = position;
+    g_live_facing = facing;
     g_live_object = object;
     g_live_valid = true;
   }
@@ -282,6 +294,27 @@ void ApplyFieldPosition(EternalSonataFieldPosition position, std::string area_id
   g_live_position = position;
   g_live_object = object;
   g_live_valid = true;
+}
+
+void ApplyFieldFacing(EternalSonataFieldPosition rotation, std::string area_id) {
+  if (GetRoomPresence().CurrentArea().id != area_id) {
+    return;
+  }
+  uint32_t object = 0;
+  auto* host = FieldLeaderHost(&object);
+  if (!host) {
+    return;
+  }
+  const uint32_t scene = rex::memory::load_and_swap<uint32_t>(host + 4);
+  const uint32_t scratch = PositionScratch();
+  if (!scratch || !scene || scene == 0xFFFFFFFFu) {
+    return;
+  }
+  auto* vec = rex::system::kernel_state()->memory()->TranslateVirtual<uint8_t*>(scratch);
+  WriteVector(vec, rotation);
+  g_set_scene_rotation(kSceneManager, scene, scratch, 0, 0, 0xFFFFFFFFu);
+  std::lock_guard<std::mutex> lock(g_position_mutex);
+  g_live_facing.rotation = rotation;
 }
 
 void ApplyFieldCamera(EternalSonataFieldCamera camera, std::string area_id) {
@@ -542,6 +575,45 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetFieldPosition(
   const auto copy = *position;
   const auto area_id = GetRoomPresence().CurrentArea().id;
   PostToGuestMainThread([copy, area_id] { ApplyFieldPosition(copy, area_id); });
+  return ETERNALSONATA_OVERWORLD_QUEUED;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetFieldFacing(
+    EternalSonataFieldFacing* out) {
+  if (!out) {
+    return ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT;
+  }
+  if (GetRoomPresence().IsBattleActive()) {
+    return ETERNALSONATA_OVERWORLD_ERR_IN_BATTLE;
+  }
+  uint32_t object = 0;
+  auto* host = FieldLeaderHost(&object);
+  if (!host) {
+    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
+  }
+  std::lock_guard<std::mutex> lock(g_position_mutex);
+  if (!g_live_valid || g_live_object != object) {
+    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
+  }
+  *out = g_live_facing;
+  return ETERNALSONATA_OVERWORLD_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetFieldFacing(
+    const EternalSonataFieldPosition* rotation) {
+  if (!rotation || !std::isfinite(rotation->x) || !std::isfinite(rotation->y) ||
+      !std::isfinite(rotation->z)) {
+    return ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT;
+  }
+  if (GetRoomPresence().IsBattleActive()) {
+    return ETERNALSONATA_OVERWORLD_ERR_IN_BATTLE;
+  }
+  if (!FieldLeaderHost()) {
+    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
+  }
+  const auto copy = *rotation;
+  const auto area_id = GetRoomPresence().CurrentArea().id;
+  PostToGuestMainThread([copy, area_id] { ApplyFieldFacing(copy, area_id); });
   return ETERNALSONATA_OVERWORLD_QUEUED;
 }
 
