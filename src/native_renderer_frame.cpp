@@ -351,10 +351,13 @@ uint64_t g_draw_serial = 0;
 uint64_t g_layer_draws[2] = {0, 0};
 uint64_t g_layer_resolves[2] = {0, 0};
 
-// Keep the split opt in until UI framing and the readback crop are complete.
-// Set ES_UI_LAYER=1 to enable it.
+// Enabled by default now that arbitrary render resolution works with it.
+// Set ES_UI_LAYER=0 to fall back to the single layer path.
 bool UiLayerDisabled() {
-  static const bool disabled = std::getenv("ES_UI_LAYER") == nullptr;
+  static const bool disabled = [] {
+    const char* value = std::getenv("ES_UI_LAYER");
+    return value != nullptr && std::atoi(value) == 0;
+  }();
   return disabled;
 }
 
