@@ -1,0 +1,80 @@
+[functions]
+
+# ============================================================================
+# VTABLE SLOT 0 DESTRUCTORS (23 functions from 22 vtables)
+#
+# VERIFIED: these are all vtable slot 0 entries, i.e. destructors, not
+# constructors. Every one was decompiled and shows the same shape: store the
+# class vtable, tear down sub-objects, then overwrite the vtable with the OBJECT
+# base (off_82082B60) and call sub_8212DDA8. Those taking a char flag are the
+# deleting variants (the flag gates a final sub_82113FD0 free of `this`).
+#
+# NOT VERIFIED: the CLASS NAMES. The classes are real, but the address-to-class
+# assignment does not hold up:
+#
+#  * The Action/Param addresses ascend monotonically while matching the RTTI
+#    list's alphabetical order exactly. That is two sorted lists zipped
+#    together, not evidence.
+#  * Two assignments in this block were already disproved by vtable identity
+#    (OP_CREDIT_TASK, ED_CREDIT_TASK) and one by a duplicate vtable
+#    (BW_DRAW_ICON).
+#  * For the queue managers there was no signal to match on at all. On PS3 the
+#    C2dCanvasQueueManager and CLightQueueManager destructors are byte-for-byte
+#    the same shape, differing only in which TOC constant they load, so they
+#    cannot anchor distinct 360 functions. On the 360 side neither vtable's
+#    constructor copies a name literal, so there is no string anchor either.
+#  * Concretely, off_82087530 (called CLightQueueManager here) is constructed
+#    inline in sub_821F09A0 as a 104 byte object with x/y position and scale,
+#    placed by sub_821F66C8 and registered with 2D draw calls: a per item 2D
+#    element, not a light manager. off_8208754C (called C2dCanvasQueueManager)
+#    is the one with a 384 slot handle table, which is what actually looks like
+#    a manager. The names appear shifted within the family.
+#
+# So only the two whose class is pinned by vtable identity stay enabled. The
+# rest are commented out: the address and the destructor finding are preserved
+# as a worklist, the unfounded class name is not emitted. To restore one, tie
+# its vtable to a constructor that names itself, then add an `evidence` field.
+# ============================================================================
+
+# 0x82131758 / 0x82131908 install vtables off_820831F8 / off_82083200, which the
+# verified OP_CREDIT_TASK / ED_CREDIT_TASK constructors above also install. That
+# pins the class independently of the RTTI guesswork.
+"0x82131758" = { name = "OP_CREDIT_TASK__destructor_deleting", evidence = "installs off_820831F8, same vtable as the verified OP_CREDIT_TASK ctor at 0x82131668" }
+"0x82131908" = { name = "ED_CREDIT_TASK__destructor_deleting", evidence = "installs off_82083200, same vtable as the verified ED_CREDIT_TASK ctor at 0x821317F8" }
+
+# Camera system
+# "0x82101390" = { name = "CIntelligenceCamera__destructor" }           # vtable off_82082D08
+# "0x82109870" = { name = "CAMERA__destructor_deleting" }               # vtable off_82082E58
+
+# Action/Param hierarchy
+# "0x82132780" = { name = "CColorParam__destructor_deleting" }          # vtable off_82083240
+# "0x82141E18" = { name = "CDistanceAction__destructor_deleting" }      # vtable off_8208374C
+# "0x82144190" = { name = "CDistanceParam__destructor" }                # vtable off_82083780
+# "0x82145E98" = { name = "CFreeRangeAction__destructor" }              # vtable off_82083798
+
+# Queue managers. Names here are especially suspect: see the note above about
+# off_82087530 looking like a per item 2D element and off_8208754C looking like
+# the actual manager.
+# "0x821D16E8" = { name = "CEffectQueueManager__destructor_deleting" }  # vtable off_820873C0
+# "0x821D1A10" = { name = "CBaseQueueManager__destructor_deleting" }    # vtable off_820873C8
+# "0x821D1050" = { name = "CModelQueueManager__destructor_deleting" }   # vtable off_82087378
+# "0x821E91B8" = { name = "CMarkerQueueManager__destructor" }           # vtable off_82087468
+# "0x821F6660" = { name = "CLightQueueManager__destructor" }            # vtable off_82087530
+# "0x821F7A40" = { name = "C2dCanvasQueueManager__destructor" }         # vtable off_8208754C
+# "0x821DA350" = { name = "CTextureQueueManager__destructor" }          # vtable off_820873D0
+
+# UI/Window system
+# "0x8220FBA8" = { name = "CWindowView__destructor" }                   # vtable off_82087D0C
+# "0x8220A410" = { name = "CPopWindow__destructor_deleting" }           # vtable off_82087CC0
+# "0x8220F1A8" = { name = "CText__destructor_deleting" }                # vtable off_82087CD4
+
+# Draw system. 0x8223CB88 and 0x8223CC98 install the same vtable (off_820A9FEC),
+# so they are the deleting and plain destructors of one class, not two classes,
+# whatever that class turns out to be.
+# "0x8223B698" = { name = "BW_DRAW_RECT__destructor_deleting" }         # vtable off_820A9F84
+# "0x8223C3B0" = { name = "BW_DRAW_TEXT__destructor" }                  # vtable off_820A9FE4
+# "0x8223CB88" = { name = "BW_DRAW_ICON__destructor_deleting" }         # vtable off_820A9FEC
+# "0x8223CC98" = { name = "BW_DRAW_ICON__destructor" }                  # vtable off_820A9FEC
+# "0x8223E848" = { name = "BW_DRAW_EFFECT__destructor_deleting" }       # vtable off_820AA464
+# "0x8223F9E8" = { name = "BW_DRAW_TEXT1__destructor_deleting" }        # vtable off_820AA504
+# "0x82133038" = { name = "BW_DRAW_ICON__variant_destructor_deleting" } # vtable off_82083360

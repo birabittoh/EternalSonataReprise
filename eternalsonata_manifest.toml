@@ -6,5 +6,18 @@ name = "eternalsonata"
 file_path = "assets/default.xex"
 out_directory_path = "generated"
 includes = [
-  "eternalsonata_config.toml",
+  "config/rtti_names.toml",
+  "config/vtable_destructors.toml",
+  "config/d3d9.toml",
+  "config/crt.toml",
 ]
+
+# The game's image loader (sub_82279EC8) probes formats using setjmp/longjmp:
+# sub_822783A8 does setjmp(sub_822D0970) around a decode, and on a format mismatch
+# the JPEG reader's error handler (sub_822764D0) calls longjmp (sub_822D0620) to
+# bail out so the loop can try the next format (PNG). The recompiler only handles
+# these non-local jumps correctly when told the setjmp/longjmp addresses; without
+# them longjmp fell through an epilogue-less handler, leaking guest r1 and
+# corrupting callee-saved registers -> boot crash in sub_8228C860.
+setjmp_address = 0x822D0970
+longjmp_address = 0x822D0620

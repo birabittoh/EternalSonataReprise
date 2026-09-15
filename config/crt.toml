@@ -1,0 +1,12 @@
+# ============================================================================
+# memmove_s is intentionally absent: this title links memcpy_s but no standalone
+# 4-arg memmove_s -- every memmove caller is game code or an unrelated struct-arg
+# secure/locale routine, so there is no correct target to map.
+# ============================================================================
+[rexcrt]
+memcpy   = 0x822CF5B0
+memmove  = 0x822CE550
+memset   = 0x822CFB40
+memcpy_s = 0x822D5748
+XMemCpy  = 0x822530B8
+strncpy  = 0x822CCDB0
