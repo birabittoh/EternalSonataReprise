@@ -92,7 +92,7 @@ float NativeRenderScaleAtBoot() {
             ? std::clamp(g_render_scale, kMinRenderScaleF, kMaxRenderScaleF)
             : float(std::clamp(g_resolution_scale, kMinRenderScale, kMaxRenderScale));
     if (value != 1.0f)
-      REXLOG_INFO("native_renderer: rendering at {}x until the window publishes a size", value);
+      REXLOG_DEBUG("native_renderer: rendering at {}x until the window publishes a size", value);
     return value;
   }();
   return scale;
@@ -323,12 +323,12 @@ void InitNativeRenderer(rex::ui::Window* window) {
   void* handle = window ? window->GetNativeWindowHandle() : nullptr;
 #endif
 #if defined(__APPLE__)
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: no GPU plugin loaded, so there is no ring buffer and the guest's D3D "
       "packet writers are dead code. Native window handle {}, Metal layer {}.",
       handle, view);
 #else
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: no GPU plugin loaded, so there is no ring buffer and the guest's D3D "
       "packet writers are dead code. Native window handle {}.",
       handle);

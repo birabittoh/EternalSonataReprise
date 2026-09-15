@@ -275,7 +275,7 @@ bool PlumeImmediateDrawer::EnsureResources() {
     return false;
   }
 
-  REXLOG_INFO("native_renderer: overlay drawer up on Plume; the SDK's overlays are back");
+  REXLOG_DEBUG("native_renderer: overlay drawer up on Plume; the SDK's overlays are back");
   return true;
 }
 
