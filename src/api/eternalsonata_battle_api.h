@@ -353,6 +353,15 @@ typedef struct EternalSonataBattleUnit {
   int32_t reserved[3];  // zero-filled; room for later additions
 } EternalSonataBattleUnit;
 
+// A point in the battle scene, in the same units and axes the overworld API's
+// EternalSonataFieldPosition uses: the two sides share one scene graph, and a
+// battle runs with the field still loaded underneath it.
+typedef struct EternalSonataBattlePosition {
+  float x;
+  float y;
+  float z;
+} EternalSonataBattlePosition;
+
 // ---------------------------------------------------------------------------
 // Capability and state
 // ---------------------------------------------------------------------------
@@ -505,6 +514,45 @@ typedef int (*EternalSonataSetBattleEnemyHpFn)(int slot, int32_t hp);
 // This is a plain memory write (one dword into the FSM state field) and takes
 // effect on the next guest frame.
 typedef int (*EternalSonataSkipBattleTurnFn)(void);
+
+// ---------------------------------------------------------------------------
+// Unit positions
+// ---------------------------------------------------------------------------
+//
+// Where a unit is standing, for either side. `side` is
+// ETERNALSONATA_BATTLE_ACTOR_PARTY or ETERNALSONATA_BATTLE_ACTOR_ENEMY and
+// `slot` is 0-based within that side, the same pair
+// EternalSonataGetBattlePartyUnit / EternalSonataGetBattleEnemy take.
+//
+// Both sides' records carry a scene node id, and the battle shares its scene
+// graph with the field, so this is the same transform the overworld API reads
+// and writes for the field leader.
+//
+// The value is a snapshot taken once per guest frame, right after the battle
+// state machine has run, so it already includes the frame's movement.
+// Returns ETERNALSONATA_BATTLE_OK, ETERNALSONATA_BATTLE_ERR_UNAVAILABLE with
+// `out` zeroed when no battle is in progress, or
+// ETERNALSONATA_BATTLE_ERR_INVALID_SLOT (also for a unit whose node is not
+// resolvable yet, which happens for a frame or two around battle start).
+typedef int (*EternalSonataGetBattleUnitPositionFn)(
+    int side, int slot, EternalSonataBattlePosition* out);
+
+// Moves a unit. Queued onto the guest thread and applied on the next guest
+// frame, the same way the overworld API's position setter is.
+//
+// The game keeps driving the unit: attack approaches, knockback and the
+// end-of-turn repositioning pass all write the same transform, so a single
+// call reads as a nudge that the unit walks back from. Call it every frame to
+// pin a unit somewhere. Nothing here touches collision or the battle's own
+// idea of who is in range, so a unit moved out of the arena will still act
+// normally, just from further away.
+//
+// Returns ETERNALSONATA_BATTLE_QUEUED when accepted,
+// ETERNALSONATA_BATTLE_ERR_UNAVAILABLE outside a battle,
+// ETERNALSONATA_BATTLE_ERR_INVALID_SLOT, or
+// ETERNALSONATA_BATTLE_ERR_INVALID_ARGUMENT for a null or non-finite position.
+typedef int (*EternalSonataSetBattleUnitPositionFn)(
+    int side, int slot, const EternalSonataBattlePosition* position);
 
 #ifdef __cplusplus
 }  // extern "C"
