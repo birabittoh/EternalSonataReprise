@@ -913,6 +913,9 @@ struct PageState {
   std::vector<u32> slider_id;
   std::vector<u32> slider_num_id;
   bool bars_resolved = false;
+  // Whether a page turn left this page's bars off-screen. Decides which y an
+  // instant placement uses; see InstantBarBiasY.
+  bool bars_parked = false;
   // How many objects the screen's id array held the instant the display list
   // had finished being walked, or 0 if that could not be read. Our bars are the
   // last `rows` of *those* - not of however many the array holds later, because
@@ -1381,25 +1384,15 @@ int32_t BarY(int page, u32 row) {
   return RowRecordY(page, row) + kRecordToRuntimeY + kBarShrinkFixup + shift;
 }
 
-// Extra y the *instant* placement needs on page 1, on top of BarY.
+// Extra y for placing a bar of the screen that was just built with
+// sub_82178A88, which lands six rows off from where sub_82179F78 slides one to.
+// It belongs to that call alone: it must not reach the slide, and a screen that
+// has been left and come back to wants the plain value (see PlacePageBars).
 //
-// The two mechanisms do not agree about where a bar goes: setting it with
-// sub_82178A88 and sliding it there with sub_82179F78 land six rows apart, the
-// slide being the correct one. So this belongs to sub_82178A88 and must never
-// reach the slide. Adding it to both put the bar off the bottom of the screen
-// the moment a value changed. The tell is that the bar starts wrong and snaps
-// into place on the first value change.
-//
-// Both entry points need it, and by the same amount: it is a property of the
-// screen, not of which menu opened it. Page 2 places correctly from either and
-// is left alone.
-//
-// That the two spaces differ at all is not new: sub_82200FE8 places page 1's
-// stock bars at y 895/945 and its handler then slides them to 155/205, a
-// constant 740 apart. Same disagreement, same screen, different figure: 740
-// was tried here and overshoots. This one is measured against the real rows
-// rather than derived, so a live reading of a stock bar's own y is what should
-// eventually replace it.
+// Page 2 agrees with itself from either entry point. The same disagreement is
+// in the game's own code, at a different figure: sub_82200FE8 places page 1's
+// stock bars at y 895/945 and its handler slides them to 155/205. Reading a
+// stock bar's y live should eventually replace this measured constant.
 constexpr int32_t kInstantBarRows = 6;
 
 int32_t InstantBarBiasY(int page) {
@@ -1510,17 +1503,14 @@ void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
     return;
   }
   const OptionRow& def = Rows()[st.rows[row]];
-  // One y for both mechanisms, plus the instant path's own bias. An earlier
-  // version biased *both* by 740px, on the strength of sub_82200FE8 placing
-  // page 1's stock bars at 895/945 where its handler animates them to 155/205.
-  // That put the bar off the bottom of the screen the moment a value changed:
-  // the disagreement is real but belongs to sub_82178A88 alone, and the figure
-  // is not 740. See InstantBarBiasY.
+  // One y for both mechanisms; the instant one is biased only for a bar of the
+  // screen as built, never for one being put back on a settled screen.
   const int32_t y = BarY(page, row);
+  const int32_t instant_y = st.bars_parked ? y : y + InstantBarBiasY(page);
   const u32 bar_id = st.bar_id[row][0];
 
-  PlaceBar(base, bar_id, BarX(page, def, value_index),
-           move ? y : y + InstantBarBiasY(page), move);
+  PlaceBar(base, bar_id, BarX(page, def, value_index), move ? y : instant_y,
+           move);
   // Width is per value, so it is rewritten every time the bar moves. This is
   // what lets one bar serve a row whose values differ in length; the row used
   // to get a pre-sized bar per value instead, swapped in and out, which is why
@@ -1653,6 +1643,7 @@ void HideAllPageBars(u8* base, int page) {
       PlaceBar(base, id, kBarParkedX, 0, /*move=*/false);
     }
   }
+  st.bars_parked = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -2159,6 +2150,7 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   }
   st.built_rows = row_count;
   st.bars_resolved = false;
+  st.bars_parked = false;
   if (!g_bar_vec) {
     g_bar_vec = mem->SystemHeapAlloc(16, 0x20);
   }
@@ -2375,7 +2367,8 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
 
 // Puts every one of `page`'s bars back on its row's current value, instantly.
 // Used both at resolve time and whenever the page becomes active again after a
-// page turn parked its bars off-screen.
+// page turn parked its bars off-screen. Which of the two it is decides the y,
+// through PageState::bars_parked; see InstantBarBiasY.
 void PlacePageBars(u8* base, int page) {
   const PageState& st = g_page[page];
   const std::vector<OptionRow>& all = Rows();
