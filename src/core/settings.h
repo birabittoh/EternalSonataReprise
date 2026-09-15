@@ -59,6 +59,17 @@ void SetRenderScaleOption(int index);
 int RenderScalePercent();
 void SetRenderScalePercent(int percent);
 
+// camera_fov_scale as discrete steps, in the same shape as the render scale
+// above so the F4 overlay's slider and the native Options screen's gauge stay
+// in step. Percentages, matching the cvar's own 0.5 to 2.0 range. The setter
+// persists.
+int CameraFovOptionCount();
+int CameraFovOptionPercent(int index);
+int CameraFovOptionIndex();
+void SetCameraFovOption(int index);
+int CameraFovPercent();
+void SetCameraFovPercent(int percent);
+
 // Enumerates GPU plugins and (if built with Vulkan) Vulkan physical devices
 // once, caching the results for CreateSettingsDialog. Both enumerations load
 // GPU plugin DLLs / query the driver, so this is meant to run once at
@@ -248,8 +259,8 @@ const char* BootVoiceSuffix();
 //                       omitted, in which case the code is derived from the
 //                       label and the suffix from the id)
 //
-// Keys for the last one: `resolution_label`, `framerate_label`, `text_label`
-// and `overworld_model_label` for the rows this project adds to the game's own
+// Keys for the last one: `resolution_label`, `fov_label`, `framerate_label`,
+// `text_label` and `overworld_model_label` for the rows this project adds to the game's own
 // Options screen, and `achv_name_<id>`, `achv_desc_<id>`,
 // `achv_desc_locked_<id>` for the F7 achievements overlay and its unlock toast.
 // `<id>` is AchievementInfo::id, never the row's position.
