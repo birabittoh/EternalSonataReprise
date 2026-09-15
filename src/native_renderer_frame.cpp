@@ -2331,7 +2331,7 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
                                         int32_t* offset_x, int32_t* offset_y,
                                         float* clip_scale_x, float* clip_scale_y,
                                         bool screen_composite, bool scene_sprite,
-                                        bool self_composite) {
+                                        bool self_composite, bool screen_image) {
   // Resolves between the marker and this draw still read the world surface.
   if (g_marker_seen)
     g_layer = GuestLayer::kComposite;
@@ -2396,7 +2396,9 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   // Screen effects and the final copy sample the expanded world, including
   // when the guest binds a band of the screen as their destination.
   // Camera sprites can follow the marker and still belong to the world view.
-  const bool full_screen = (screen_composite || scene_sprite) && g_marker_seen &&
+  // Paused frames display a scene snapshot before any world completion marker.
+  const bool full_screen = (screen_image || self_composite ||
+      ((screen_composite || scene_sprite) && g_marker_seen)) &&
       sized->layer == GuestLayer::kComposite && sized->resolution &&
       sized->width == 1280 && (sized->height == 384 || sized->height == 720);
   const uint32_t content_width = sized->content_width != 0

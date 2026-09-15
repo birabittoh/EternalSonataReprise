@@ -2053,7 +2053,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     have_targets = FrameBindDrawTargets(commands, &target_width, &target_height, &target_scale_x,
                                         &target_scale_y, &target_offset_x, &target_offset_y,
                                         &clip_scale_x, &clip_scale_y, screen_composite,
-                                        scene_sprite, self_composite) != nullptr;
+                                        scene_sprite, self_composite,
+                                        screen_image && screen_composite) != nullptr;
   }
   if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
