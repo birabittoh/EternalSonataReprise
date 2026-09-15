@@ -1157,7 +1157,7 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
     return nullptr;
   }
 
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: pipeline #{} vs={} ps={} decl {:016X} topology {} over {} input "
       "element(s), {} stream(s){}",
       g_pipelines.size(), request.vertex_slot, request.pixel_slot, key.declaration_identity,
@@ -1173,34 +1173,34 @@ void LogPipelineSummary() {
   for (uint64_t count : g_refusals)
     refused += count;
 
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: pipelines={} requests={} hits={} refused={} (integer vertex inputs {}, "
       "unhandled vertex swizzles {})",
       g_pipelines.size(), g_requests, g_hits, refused, g_integer_inputs, g_swizzle_unhandled);
 
   for (uint32_t i = 0; i < kRefuseCount; ++i) {
     if (g_refusals[i] != 0)
-      REXLOG_INFO("native_renderer:   refused {}x: {}", g_refusals[i], kRefusalNames[i]);
+      REXLOG_DEBUG("native_renderer:   refused {}x: {}", g_refusals[i], kRefusalNames[i]);
   }
 
   // Render state the host cannot express, all of it counted rather than
   // substituted for. Zeroes here are what say the mapping above is complete for
   // this title.
   if (g_cull_both_draws != 0 || g_blend_factor_unknown != 0) {
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer:   render state not applied: both faces culled on {}, unknown blend "
         "factor {}x",
         g_cull_both_draws, g_blend_factor_unknown);
   }
   if (g_stencil_draws != 0)
-    REXLOG_INFO("native_renderer:   stencil enabled on {} pipeline(s)", g_stencil_draws);
+    REXLOG_DEBUG("native_renderer:   stencil enabled on {} pipeline(s)", g_stencil_draws);
 
   // The vertex formats the declarations actually use, which is what says whether
   // the packed-format gap above is a real problem for this title or a
   // hypothetical one.
   for (uint32_t format = 0; format < 64; ++format) {
     if (g_format_seen[format] != 0)
-      REXLOG_INFO("native_renderer:   vertex format {} used {}x", format, g_format_seen[format]);
+      REXLOG_DEBUG("native_renderer:   vertex format {} used {}x", format, g_format_seen[format]);
   }
 }
 

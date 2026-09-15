@@ -105,7 +105,7 @@ bool EnsureTextPack() {
   const std::filesystem::path path = rex::filesystem::GetExecutableFolder() / kDebugPackName;
   std::ifstream file(path, std::ios::binary);
   if (!file) {
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: no {} next to the exe, so the shader debugger lists shaders but shows "
         "no source",
         kDebugPackName);
@@ -377,7 +377,7 @@ void SetGuestShaderBlacklist(const std::vector<uint64_t>& ids) {
   for (uint64_t id : ids)
     applied += SetGuestShaderDisabled(id, true) ? 1 : 0;
   if (applied != 0) {
-    REXLOG_INFO("native_renderer: {} of {} shader(s) in shaders.toml disabled at startup", applied,
+    REXLOG_DEBUG("native_renderer: {} of {} shader(s) in shaders.toml disabled at startup", applied,
                 ids.size());
   }
 }

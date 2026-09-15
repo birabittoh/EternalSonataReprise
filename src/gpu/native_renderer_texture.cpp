@@ -219,7 +219,7 @@ bool DeviceSupportsBC() {
     // only way to exercise it where a frame debugger is available.
     if (std::getenv("ETERNALSONATA_NO_BC") != nullptr)
       g_bc_supported = 0;
-    REXLOG_INFO("native_renderer: device texture compression BC={}",
+    REXLOG_DEBUG("native_renderer: device texture compression BC={}",
                 g_bc_supported != 0 ? "yes" : "no, DXT will be decoded to B8G8R8A8");
   }
   return g_bc_supported != 0;
@@ -1200,7 +1200,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
     if (g_count_refusals && g_refused_unmapped + g_refused_extent <= 8) {
       const uint64_t wanted = SourceExtentBytes(fetch, info);
       const uint32_t offset = fetch.base_address & 0x1FFFFFFFu;
-      REXLOG_INFO(
+      REXLOG_DEBUG(
           "native_renderer: texture mirror refused {}x{} fmt {} {} pitch {} at 0x{:08X}, "
           "of {} source byte(s) readable: A={} C={} E={} 0={} 8={}",
           fetch.width, fetch.height, fetch.format, fetch.tiled ? "tiled" : "linear", fetch.pitch,
@@ -1302,7 +1302,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
 
   ++g_decoded;
   if (g_decoded <= 8) {
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: texture mirror decoded {}x{} fmt {} {} pitch {} endian {} at 0x{:08X}",
         fetch.width, fetch.height, fetch.format, fetch.tiled ? "tiled" : "linear", fetch.pitch,
         fetch.endianness, fetch.base_address);
@@ -1365,7 +1365,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     ++g_refused_format;
     if (fetch.format < 64 && !g_format_reported[fetch.format]) {
       g_format_reported[fetch.format] = true;
-      REXLOG_INFO("native_renderer: texture mirror has no host format for guest format {}",
+      REXLOG_DEBUG("native_renderer: texture mirror has no host format for guest format {}",
                   fetch.format);
     }
     return nullptr;
@@ -1468,7 +1468,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
 }
 
 void LogTextureMirrorSummary() {
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: textures decoded={} cached={} refreshed={} hashed={} MiB | "
       "binds resolve={} cache={} | "
       "refused format={} extent={} unmapped={} upload={} | retries={} recovered={}",
@@ -1476,7 +1476,7 @@ void LogTextureMirrorSummary() {
       g_decode_hits, g_refused_format, g_refused_extent, g_refused_unmapped, g_refused_upload,
       g_retries, g_recovered);
 
-  REXLOG_INFO("native_renderer:   aperture walks={} reused={}", g_aperture_walks,
+  REXLOG_DEBUG("native_renderer:   aperture walks={} reused={}", g_aperture_walks,
               g_aperture_reuses);
 
   size_t armed = 0;
@@ -1484,9 +1484,9 @@ void LogTextureMirrorSummary() {
     std::lock_guard<std::mutex> lock(g_watch_mutex);
     armed = g_watches.size();
   }
-  REXLOG_INFO("native_renderer:   write watches armed={} live={} notifications={}", g_watch_arms,
+  REXLOG_DEBUG("native_renderer:   write watches armed={} live={} notifications={}", g_watch_arms,
               armed, g_watch_hits);
-  REXLOG_INFO("native_renderer:   mip ranges hashed={} watched={} dirtied={} refreshed={}",
+  REXLOG_DEBUG("native_renderer:   mip ranges hashed={} watched={} dirtied={} refreshed={}",
               g_mip_ranges_hashed, g_mip_ranges_watched, g_mip_ranges_dirtied,
               g_mip_ranges_refreshed);
 }
@@ -1520,7 +1520,7 @@ uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
     ++count;
     if (g_rebaselines_reported < kMaxRebaselineReports) {
       ++g_rebaselines_reported;
-      REXLOG_INFO(
+      REXLOG_DEBUG(
           "native_renderer: readback re-baselined cached texture 0x{:08X} {}x{} fmt {} ({} byte(s), "
           "last bound in frame {} of {}) under resolve destination 0x{:08X}",
           entry->address, entry->width, entry->height, entry->format, source_bytes,

@@ -208,7 +208,7 @@ bool LoadGuestShaders(const char* path) {
   }
 
   g_loaded = true;
-  REXLOG_INFO("guest_shaders: loaded {} vertex, {} pixel from {} ({} KiB)",
+  REXLOG_DEBUG("guest_shaders: loaded {} vertex, {} pixel from {} ({} KiB)",
               GuestVertexShaderCount(), GuestPixelShaderCount(), resolved, g_pack.size() / 1024);
   return true;
 }

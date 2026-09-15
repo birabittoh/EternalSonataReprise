@@ -138,13 +138,13 @@ void BootstrapAppleVulkanRuntime() {
     // RTLD_GLOBAL, not RTLD_LOCAL: volk's later dlopen has to be able to match
     // this image. Never dlclose'd; it is needed for the life of the process.
     if (dlopen(loader.string().c_str(), RTLD_NOW | RTLD_GLOBAL) != nullptr) {
-      REXLOG_INFO("native_renderer: preloaded the bundled Vulkan loader from {}", loader.string());
+      REXLOG_DEBUG("native_renderer: preloaded the bundled Vulkan loader from {}", loader.string());
     } else {
       REXLOG_WARN("native_renderer: could not load the bundled Vulkan loader at {}: {}",
                   loader.string(), dlerror());
     }
   } else {
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: no Vulkan loader shipped with this build, falling back to whatever is "
         "installed on the system");
   }
@@ -164,7 +164,7 @@ void BootstrapAppleVulkanRuntime() {
 
   const fs::path icd = first_existing(icds);
   if (icd.empty()) {
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: no MoltenVK driver manifest shipped with this build; if Vulkan instance "
         "creation fails with ErrorIncompatibleDriver, that is why");
     return;
@@ -173,7 +173,7 @@ void BootstrapAppleVulkanRuntime() {
   // deprecated spelling older loaders still read.
   setenv("VK_DRIVER_FILES", icd.string().c_str(), 1);
   setenv("VK_ICD_FILENAMES", icd.string().c_str(), 1);
-  REXLOG_INFO("native_renderer: using the bundled MoltenVK driver manifest at {}", icd.string());
+  REXLOG_DEBUG("native_renderer: using the bundled MoltenVK driver manifest at {}", icd.string());
 }
 #endif  // __APPLE__
 
@@ -269,7 +269,7 @@ void ApplyVsyncIfChanged() {
     return;
   g_backend.swap_chain->setVsyncEnabled(wanted);
   g_vsync_applied.store(wanted, std::memory_order_relaxed);
-  REXLOG_INFO("native_renderer: vsync {}", wanted ? "on" : "off");
+  REXLOG_DEBUG("native_renderer: vsync {}", wanted ? "on" : "off");
 }
 
 // The SDK's ImGui drawer, once the app hands it over. Null until then, and
@@ -415,7 +415,7 @@ void ApplyResize() {
     return;
   }
   if (g_resize_failures != 0) {
-    REXLOG_INFO("native_renderer: Plume swap chain resize recovered after {} failure(s)",
+    REXLOG_DEBUG("native_renderer: Plume swap chain resize recovered after {} failure(s)",
                 g_resize_failures);
     g_resize_failures = 0;
   }
@@ -455,7 +455,7 @@ bool RebuildSwapChain(void* window_handle) {
   g_backend.swap_chain->resize();
   CreateFramebuffers();
   GrowReleaseSemaphores();
-  REXLOG_INFO("native_renderer: swap chain rebuilt on the new window surface, {}x{}",
+  REXLOG_DEBUG("native_renderer: swap chain rebuilt on the new window surface, {}x{}",
               g_backend.swap_chain->getWidth(), g_backend.swap_chain->getHeight());
   return true;
 }
@@ -556,7 +556,7 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
       (std::strcmp(api_override, "vulkan") == 0 || std::strcmp(api_override, "Vulkan") == 0 ||
        std::strcmp(api_override, "vk") == 0);
   if (force_vulkan) {
-    REXLOG_INFO("native_renderer: ETERNALSONATA_RENDER_API selects Vulkan over D3D12");
+    REXLOG_DEBUG("native_renderer: ETERNALSONATA_RENDER_API selects Vulkan over D3D12");
     g_backend.render_interface = CreateVulkanInterface();
     g_backend.api_name = "Vulkan";
     if (!g_backend.render_interface)
@@ -660,7 +660,7 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
   GrowReleaseSemaphores();
 
   const RenderDeviceDescription& description = g_backend.device->getDescription();
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: Plume up on {} using \"{}\", swap chain {}x{} with {} buffers, vsync {}, "
       "present wait {}. The window is now ours to draw into.",
       g_backend.api_name, description.name, g_backend.swap_chain->getWidth(),
@@ -880,7 +880,7 @@ void PlumePresentFrame() {
   BeginGuestDrawFrame(g_slot);
 
   if (++g_frames_presented % 600 == 0) {
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: Plume presented {} frames ({} acquire failures, {} present failures, "
         "{} resize failures, {} wait(s) owed)",
         g_frames_presented, g_acquire_failures, g_present_failures, g_resize_failures,

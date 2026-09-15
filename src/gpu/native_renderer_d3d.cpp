@@ -281,7 +281,7 @@ void RecordTextureFetch(uint8_t* base, uint32_t device, uint32_t stage) {
 
   if (first_bind && g_logged_examples < 12) {
     ++g_logged_examples;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: texture stage {} -> {}x{} fmt {} {} pitch {} at 0x{:08X} "
         "(endian {})",
         stage, fetch.width, fetch.height, fetch.format, fetch.tiled ? "tiled" : "linear",
@@ -344,7 +344,7 @@ void RecordLoopConstants(uint8_t* base, uint32_t device, uint32_t first, uint32_
     // On change only: unconditionally this was six log writes a frame on the
     // guest thread, and the summary already carries the per-slot counts.
     if (written != 0 && written != g_loop_last_written[slot]) {
-      REXLOG_INFO(
+      REXLOG_DEBUG(
           "native_renderer: loop i{} <- 0x{:08X} (count={} start={} step={}) from source 0x{:08X}",
           slot, written, trip, (written >> 8) & 0xFFu, int8_t((written >> 16) & 0xFFu),
           source + 16 * i);
@@ -372,7 +372,7 @@ void CheckShadow(uint8_t* base, const char* which, uint32_t device, uint32_t sha
   const bool match =
       std::memcmp(REX_RAW_ADDR(shadow), REX_RAW_ADDR(source), bytes) == 0;
 
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: {} constant shadow check: device=0x{:08X} start={} count={} "
       "shadow=0x{:08X} source=0x{:08X} -> {}",
       which, device, start, count, shadow, source, match ? "MATCH" : "MISMATCH");
@@ -595,7 +595,7 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
   // the captured strip topology says the guest submitted TRIANGLE_STRIP. Log
   // the raw primitive at the hook boundary to distinguish those cases.
   if (vs == 5229) {
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: VS 5229 draw: prim_type={} count={} indexed={} inlined={} PS={}",
         prim_type, vertex_count, params.indexed, params.inlined, ps);
   }
@@ -721,7 +721,7 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
 
   if (g_draw_examples_logged < 8) {
     ++g_draw_examples_logged;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: draw prim={} verts={} vs={} ps={} decl=0x{:08X} identity={:016X} "
         "stream0={{buf 0x{:08X} off {} stride {}}}",
         prim_type, vertex_count, vs, ps, decl_address, identity, g_streams[0].buffer,
@@ -822,7 +822,7 @@ void CheckSurface(uint8_t* base, uint32_t address, uint32_t want_width, uint32_t
 
   if (!g_surface_check_reported) {
     g_surface_check_reported = true;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: surface layout check: object 0x{:08X} decodes as {}x{} fmt 0x{:X} "
         "against created {}x{} fmt 0x{:X} -> {}",
         address, surface.width, surface.height, surface.format, want_width, want_height,
@@ -831,7 +831,7 @@ void CheckSurface(uint8_t* base, uint32_t address, uint32_t want_width, uint32_t
 
   if (g_surface_examples_logged < 8) {
     ++g_surface_examples_logged;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: surface 0x{:08X} {}x{} pitch {} msaa {} fmt 0x{:X} hw fmt {} | EDRAM "
         "{} tiles ({} bytes) at base tile {}",
         address, surface.width, surface.height, surface.pitch, surface.msaa, surface.format,
@@ -1060,7 +1060,7 @@ void LogD3DMirrorSummary() {
     ps_distinct += g_ps_slots_seen[i] ? 1 : 0;
   }
 
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: device=0x{:08X} | calls: vs_const={} ps_const={} settexture={} "
       "samplerstate={} shaderbind={} | distinct shader slots bound: vs={} ps={} (off-table "
       "binds: vs={} ps={}) | distinct textures {}{} tiled/linear {}/{}",
@@ -1072,18 +1072,18 @@ void LogD3DMirrorSummary() {
   // A slot written but never with a non-zero trip count is the interesting
   // case: the guest is maintaining the register and keeping the loop switched
   // off, rather than never getting to it.
-  REXLOG_INFO("native_renderer: loop constants: {} call(s), written=0x{:08X} ever-nonzero=0x{:08X}",
+  REXLOG_DEBUG("native_renderer: loop constants: {} call(s), written=0x{:08X} ever-nonzero=0x{:08X}",
               g_loop_constant_calls, g_loop_written, g_loop_nonzero);
   for (uint32_t slot = 0; slot < kLoopConstants; ++slot) {
     if ((g_loop_written & (1u << slot)) == 0)
       continue;
-    REXLOG_INFO("native_renderer:   i{} ({}): last trip count={} max={}", slot,
+    REXLOG_DEBUG("native_renderer:   i{} ({}): last trip count={} max={}", slot,
                 slot < 16 ? "vertex" : "pixel", g_loop_last_count[slot], g_loop_max_count[slot]);
   }
 }
 
 void LogDrawMirrorSummary() {
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: draws: indexed={} vertices={} inline={} total_verts={} | prim types "
       "1..8: {}/{}/{}/{}/{}/{}/{}/{}",
       g_draws_indexed, g_draws_vertices, g_draws_inline, g_draw_vertices_total,
@@ -1094,14 +1094,14 @@ void LogDrawMirrorSummary() {
   // leaving vertex fetch inside the shader costs little; if the variant count
   // is far larger, lifting fetch into a host input layout is what keeps the
   // static set finite.
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: pipelines: (vs,ps) programs={}{} (vs,decl) variants={}{} distinct "
       "declarations={}{}",
       g_program_pairs.count(), g_program_pairs.saturated() ? "+ (capped)" : "",
       g_shader_variants.count(), g_shader_variants.saturated() ? "+ (capped)" : "",
       g_declarations.count(), g_declarations.saturated() ? "+ (capped)" : "");
 
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: declarations decoded ok={} bad={} max elements={} | usage counts "
       "POSITION={} BLENDWEIGHT={} BLENDINDICES={} NORMAL={} TEXCOORD={} TANGENT={} COLOR={}",
       g_decl_decode_ok, g_decl_decode_bad, g_decl_max_elements, g_usages_seen[0],
@@ -1110,7 +1110,7 @@ void LogDrawMirrorSummary() {
 }
 
 void LogSurfaceMirrorSummary() {
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: surfaces created={} textures created={} | decode ok={} bad={} "
       "mismatched={} | bound rt0=0x{:08X} rt1=0x{:08X} rt2=0x{:08X} rt3=0x{:08X} "
       "depth=0x{:08X}",
@@ -1121,7 +1121,7 @@ void LogSurfaceMirrorSummary() {
   // The resolve traffic, and the overlap with the sampled texture set. The last
   // pair is the render-to-texture load a backend has to carry: distinct resolve
   // destinations that the game then samples, and how often it samples them.
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: clears={} (flag bits seen 0x{:X}) resolves={} (flag bits seen 0x{:X}) "
       "sources 0..4: {}/{}/{}/{}/{} | resolve destinations {}{}, of which sampled {} over {} "
       "binds",
@@ -1270,7 +1270,7 @@ REX_HOOK_RAW(D3D__CreateDevice) {
 
   const uint32_t device = REX_LOAD_U32(out);
   eternalsonata::g_device.store(device, std::memory_order_relaxed);
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: D3D device created at 0x{:08X} ({} bytes). Constant shadows at "
       "0x{:08X}/0x{:08X}, fetch constants at 0x{:08X}.",
       device, eternalsonata::d3d::kDeviceSize,
@@ -1634,7 +1634,7 @@ REX_HOOK_RAW(D3DDevice__Resolve) {
   const bool first = TrackResolveDestination(fetch.base_address);
   if (first && g_resolve_examples_logged < 8) {
     ++g_resolve_examples_logged;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: resolve flags 0x{:X} source {} -> texture 0x{:08X} {}x{} fmt {} {} "
         "at 0x{:08X}",
         flags, source, destination, fetch.width, fetch.height, fetch.format,
@@ -1676,7 +1676,7 @@ REX_HOOK_RAW(D3DDevice__Swap) {
 
   static uint64_t swaps = 0;
   if (++swaps % 300 == 0) {
-    REXLOG_INFO("native_renderer: guest swap #{}", swaps);
+    REXLOG_DEBUG("native_renderer: guest swap #{}", swaps);
     eternalsonata::LogD3DMirrorSummary();
     eternalsonata::LogDrawMirrorSummary();
     eternalsonata::LogSurfaceMirrorSummary();

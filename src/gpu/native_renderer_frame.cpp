@@ -436,7 +436,7 @@ void LayerTrace(const char* what, const GuestTarget* target, uint32_t detail = 0
     return;
   if (g_frame % 300 != 0)
     return;
-  REXLOG_INFO("native_renderer: layer trace {} on composite {}x{} (guest {}x{} msaa {}) detail {}",
+  REXLOG_DEBUG("native_renderer: layer trace {} on composite {}x{} (guest {}x{} msaa {}) detail {}",
               what, target->host_width, target->host_height, target->width, target->height,
               target->msaa, detail);
 }
@@ -1253,7 +1253,7 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
   if (!target->texture)
     return nullptr;
 
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: host {} {} target for EDRAM tile {}: {}x{} for a {}x{} guest surface, msaa "
       "{} (guest format 0x{:X})",
       layer == GuestLayer::kComposite ? "composite" : "world", depth ? "depth" : "colour",
@@ -1558,7 +1558,7 @@ void PollCaptureKey() {
     RENDERDOC_API_1_0_0* found = nullptr;
     if (get_api(eRENDERDOC_API_Version_1_0_0, reinterpret_cast<void**>(&found)) != 1)
       return nullptr;
-    REXLOG_INFO("native_renderer: RenderDoc in-application API ready, F11 captures two frames");
+    REXLOG_DEBUG("native_renderer: RenderDoc in-application API ready, F11 captures two frames");
     return found;
   }();
   if (api == nullptr)
@@ -1695,7 +1695,7 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
   // the value.
   if (g_clear_examples < 12) {
     ++g_clear_examples;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: clear flags 0x{:X} colour 0x{:08X} z {} on EDRAM tile {} ({}x{})",
         flags, argb, z, color ? color->base_tile : (depth ? depth->base_tile : 0),
         width, height);
@@ -1874,7 +1874,7 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     created->texture = device->createTexture(RenderTextureDesc::ColorTarget(
         image_width, image_height, is_depth ? RenderFormat::R32_FLOAT : kColorFormat));
     if (created->texture) {
-      REXLOG_INFO("native_renderer: resolve destination 0x{:08X} is {}x{} (host {}x{})",
+      REXLOG_DEBUG("native_renderer: resolve destination 0x{:08X} is {}x{} (host {}x{})",
                   dest_address, dest_width, dest_height, image_width, image_height);
       g_resolved.push_back(std::move(created));
       destination = g_resolved.back().get();
@@ -1918,7 +1918,7 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
       return;
     }
 
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: resolve destination 0x{:08X} rebuilt at {}x{} for a {}x{} guest extent "
         "(host {}x{}) in the {} layer",
         dest_address, scale_x, scale_y, destination->width, destination->height, image_width,
@@ -2094,7 +2094,7 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   // path has to lay back out in guest memory byte for byte.
   if (g_resolve_examples < 12 || (dest_width <= 512 && g_resolve_examples < 64)) {
     ++g_resolve_examples;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: resolved EDRAM tile {} ({},{})..({},{}) into 0x{:08X} at ({},{}) | "
         "requested ({},{})..({},{}) to ({},{}) | destination {}x{} pitch {} {} endian {} | source "
         "host {}x{}",
@@ -2184,7 +2184,7 @@ bool FrameResolveTextureIsScaled(uint32_t address, uint32_t width, uint32_t heig
 uint64_t FrameIndex() { return g_frame; }
 
 void LogFrameSummary() {
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: frame targets={} framebuffers={} resolve destinations={} | clears "
       "applied={} dropped={} aliased={} | resolves copied={} dropped={} banded={} extent mismatch={} "
       "scale rebuilds={} undersized={} extent rebuilds={} | "
@@ -2295,7 +2295,7 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
         1, composite_linear ? g_downscale.sampler.get() : g_downscale.sampler_nearest.get());
     composite->composite_source = world->texture.get();
     composite->composite_linear = composite_linear;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: composite for EDRAM tile {} ({}x{}) now reads the world target at tile "
         "{}, {}x{} host for a {}x{} guest surface",
         composite->base_tile, composite->host_width, composite->host_height, world->base_tile,
@@ -2774,7 +2774,7 @@ void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
     g_composite_extent_width = want_composite_width;
     g_composite_extent_height = want_composite_height;
     ++g_extent_generation;
-    REXLOG_INFO("native_renderer: render extent is {}x{} for a {}x{} window at {}x", want_width,
+    REXLOG_DEBUG("native_renderer: render extent is {}x{} for a {}x{} window at {}x", want_width,
                 want_height, width, height, pct);
     return;
   }
@@ -2788,7 +2788,7 @@ void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
   g_apply_extent_height = want_height;
   g_apply_composite_width = want_composite_width;
   g_apply_composite_height = want_composite_height;
-  REXLOG_INFO("native_renderer: window is now {}x{}, so the render extent becomes {}x{} at {}x",
+  REXLOG_DEBUG("native_renderer: window is now {}x{}, so the render extent becomes {}x{} at {}x",
               width, height, want_width, want_height, pct);
 }
 
@@ -2845,7 +2845,7 @@ void ApplyPendingExtent() {
   // generation above, so the present blit keeps the image it already has until
   // something draws over it.
   ++g_extent_rebuilds;
-  REXLOG_INFO("native_renderer: render extent now {}x{}; {} target(s) retired",
+  REXLOG_DEBUG("native_renderer: render extent now {}x{}; {} target(s) retired",
               g_render_extent_width, g_render_extent_height, retired_targets);
 }
 

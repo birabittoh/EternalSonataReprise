@@ -378,7 +378,7 @@ bool EnsureResources(RenderDevice* device) {
   }
 
   g_resources_ready = true;
-  REXLOG_INFO("native_renderer: guest draw path up, with the texture mirror behind it");
+  REXLOG_DEBUG("native_renderer: guest draw path up, with the texture mirror behind it");
   return true;
 }
 
@@ -1947,7 +1947,7 @@ void LayerProbeEndFrame() {
       line += fmt::format("x{}", run.count);
     line += fmt::format(" [{}]", run.geometry);
   }
-  REXLOG_INFO("native_renderer: layer probe frame ({} runs): {}", g_probe_runs.size(), line);
+  REXLOG_DEBUG("native_renderer: layer probe frame ({} runs): {}", g_probe_runs.size(), line);
   g_probe_runs.clear();
 }
 
@@ -2862,7 +2862,7 @@ void LogGuestDrawSummary() {
   for (uint64_t count : g_drops)
     dropped += count;
 
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: draws issued={} requested={} dropped={} | uploaded {} KiB vertices, {} "
       "KiB indices, {} KiB constants | stream cache hits={} | arena {} block(s) | rect lists={} "
       "(unexpanded {}) | quad lists={} (indexed {})",
@@ -2872,10 +2872,10 @@ void LogGuestDrawSummary() {
 
   for (uint32_t i = 0; i < kDropCount; ++i) {
     if (g_drops[i] != 0)
-      REXLOG_INFO("native_renderer:   dropped {}x: {}", g_drops[i], kDropNames[i]);
+      REXLOG_DEBUG("native_renderer:   dropped {}x: {}", g_drops[i], kDropNames[i]);
   }
 
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer:   samplers={} (overflowed {}x, inexact clamp mode {}x, alpha test {}x) | "
       "descriptor sets: texture={} (misses {}, forgets {}) sampler={} (misses {}) transient={} "
       "failed={}",
@@ -2883,28 +2883,28 @@ void LogGuestDrawSummary() {
       g_texture_sets.size(), g_texture_set_misses, g_texture_set_forgets, g_sampler_sets.size(),
       g_sampler_set_misses, g_texture_set_transient, g_binding_set_failed);
 
-  REXLOG_INFO("native_renderer:   binding cache: hits={} misses={}", g_binding_cache_hits,
+  REXLOG_DEBUG("native_renderer:   binding cache: hits={} misses={}", g_binding_cache_hits,
               g_binding_cache_misses);
 
   if (g_zero_pixel_bank_draws != 0) {
-    REXLOG_INFO("native_renderer:   {} draw(s) read an all-zero pixel float bank, over {} shader(s)",
+    REXLOG_DEBUG("native_renderer:   {} draw(s) read an all-zero pixel float bank, over {} shader(s)",
                 g_zero_pixel_bank_draws, g_zero_pixel_bank_slot_count);
   }
 
   if (g_projection_probe.valid) {
     const ProjectionProbe& probe = g_projection_probe;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer:   projection probe, slot {}: address u={} v={} w={} | mask 0x{:08X} "
         "{}x{} format {}",
         kProbeSlot, kClampNames[probe.sampler.clamp_x & 7u],
         kClampNames[probe.sampler.clamp_y & 7u], kClampNames[probe.sampler.clamp_z & 7u],
         probe.fetch.base_address, probe.fetch.width, probe.fetch.height, probe.fetch.format);
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer:     light loop i16 = 0x{:08X} (count={}) | c{} = {} {} {} {}",
         probe.loop, probe.loop & 0xFFu, kProbeLightScale, probe.light_scale[0],
         probe.light_scale[1], probe.light_scale[2], probe.light_scale[3]);
     for (uint32_t row = 0; row < kProbeConstantCount; ++row) {
-      REXLOG_INFO("native_renderer:     c{} = {: .6f} {: .6f} {: .6f} {: .6f}",
+      REXLOG_DEBUG("native_renderer:     c{} = {: .6f} {: .6f} {: .6f} {: .6f}",
                   kProbeConstant + row, probe.matrix[row][0], probe.matrix[row][1],
                   probe.matrix[row][2], probe.matrix[row][3]);
     }
@@ -3039,17 +3039,17 @@ void LogProfileSummary() {
       accounted += g_profile_ns[i];
   }
 
-  REXLOG_INFO("native_renderer: frame time over {:.1f} ms of wall clock, {:.2f} ms/frame average",
+  REXLOG_DEBUG("native_renderer: frame time over {:.1f} ms of wall clock, {:.2f} ms/frame average",
               double(wall_ns) / 1e6, double(wall_ns) / 1e6 / 300.0);
   for (uint32_t i = 0; i < kPhaseCount; ++i) {
     if (g_profile_hits[i] == 0)
       continue;
-    REXLOG_INFO("native_renderer:   {:<18} {:7.2f} ms/frame {:5.1f}% over {} call(s), {:.2f} us each",
+    REXLOG_DEBUG("native_renderer:   {:<18} {:7.2f} ms/frame {:5.1f}% over {} call(s), {:.2f} us each",
                 kPhaseNames[i], double(g_profile_ns[i]) / 1e6 / 300.0,
                 100.0 * double(g_profile_ns[i]) / double(wall_ns), g_profile_hits[i],
                 double(g_profile_ns[i]) / 1e3 / double(g_profile_hits[i]));
   }
-  REXLOG_INFO("native_renderer:   {:<18} {:7.2f} ms/frame {:5.1f}% (guest CPU and anything not instrumented)",
+  REXLOG_DEBUG("native_renderer:   {:<18} {:7.2f} ms/frame {:5.1f}% (guest CPU and anything not instrumented)",
               "other", double(wall_ns - accounted) / 1e6 / 300.0,
               100.0 * double(wall_ns - accounted) / double(wall_ns));
 
@@ -3057,14 +3057,14 @@ void LogProfileSummary() {
   // this is the same wall clock measured on the other processor, so it overlaps
   // every CPU phase rather than adding to them.
   if (g_gpu_frame_count != 0) {
-    REXLOG_INFO("native_renderer:   {:<18} {:7.2f} ms/frame {:5.1f}% of wall clock, over {} timed frame(s)",
+    REXLOG_DEBUG("native_renderer:   {:<18} {:7.2f} ms/frame {:5.1f}% of wall clock, over {} timed frame(s)",
                 "gpu", double(g_gpu_frame_ns) / 1e6 / double(g_gpu_frame_count),
                 100.0 * double(g_gpu_frame_ns) * 300.0 /
                     (double(g_gpu_frame_count) * double(wall_ns)),
                 g_gpu_frame_count);
   }
   const FrameBoundStats bound = GetFrameBoundStats();
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer:   verdict: {}: {:.2f} ms/frame = {:.2f} ms CPU busy + {:.2f} ms paced to "
       "the fps cap + {:.2f} ms waiting on the GPU, against {:.2f} ms of GPU work",
       bound.verdict, bound.frame_ms, bound.cpu_ms, bound.pacer_ms, bound.wait_ms, bound.gpu_ms);

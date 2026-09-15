@@ -1229,7 +1229,7 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   // First resolve only: the water simulation's 64x64 pair resolves every frame.
   // The last-resolved frame is on the per-destination summary line instead.
   if (dest.width <= 512 && destination->publishes == 0) {
-    REXLOG_INFO("native_renderer: readback resolve into 0x{:08X} {}x{}, first at frame {}",
+    REXLOG_DEBUG("native_renderer: readback resolve into 0x{:08X} {}x{}, first at frame {}",
                 dest.base_address, dest.width, dest.height, frame);
   }
 
@@ -1279,7 +1279,7 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
     if (!destination->refused) {
       destination->refused = true;
       ++g_refused_format;
-      REXLOG_INFO(
+      REXLOG_DEBUG(
           "native_renderer: readback will not write 0x{:08X} back to guest memory: format {} is "
           "not the colour format the host image is in",
           dest.base_address, dest.format);
@@ -1312,7 +1312,7 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
     if (!destination->refused) {
       destination->refused = true;
       ++g_refused_unmapped;
-      REXLOG_INFO(
+      REXLOG_DEBUG(
           "native_renderer: readback found no aperture spanning {} byte(s) of resolve destination "
           "0x{:08X}; guest memory there will not be written",
           destination->extent, dest.base_address);
@@ -1323,7 +1323,7 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
 
   if (g_logged < 24) {
     ++g_logged;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: readback tracking resolve destination 0x{:08X} (raw 0x{:08X}, aperture "
         "0x{:08X}), {}x{} fmt {} {} pitch {} endian {}, {} guest byte(s) to 0x{:08X}, mode {}",
         dest.base_address, dest.raw_base_address, destination->aperture, dest.width, dest.height,
@@ -1355,7 +1355,7 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
     if (!destination->arming_refused) {
       destination->arming_refused = true;
       ++g_refused_large;
-      REXLOG_INFO(
+      REXLOG_DEBUG(
           "native_renderer: readback will not trap on resolve destination 0x{:08X}: {}x{} is {} "
           "guest byte(s), too much to write back on a read fault alone",
           dest.base_address, dest.width, dest.height, destination->extent);
@@ -1460,7 +1460,7 @@ void ReadbackForgetAll() {
 
 void LogReadbackSummary() {
   std::lock_guard<std::mutex> lock(g_mutex);
-  REXLOG_INFO(
+  REXLOG_DEBUG(
       "native_renderer: readback destinations={} arms={} | faults read={} write={} outside={} "
       "disowned={} | mirror pulls={} | fills={} ({} MiB) | flushes={} waited={} "
       "unanswered={} (thread {}, flush {}) | "
@@ -1480,7 +1480,7 @@ void LogReadbackSummary() {
   for (const Destination& destination : g_destinations) {
     if (destination.reads == 0 && destination.writes == 0 && destination.pulls == 0)
       continue;
-    REXLOG_INFO(
+    REXLOG_DEBUG(
         "native_renderer: readback 0x{:08X} {}x{}: guest reads={} writes={} | mirror pulls={} | "
         "fills={} | last resolved at frame {} of {}",
         destination.address, destination.fetch.width, destination.fetch.height, destination.reads,
