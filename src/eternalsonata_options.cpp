@@ -173,6 +173,55 @@ constexpr u32 kSepYOffset = 0x08u;  // y within the record
 // record left behind.
 constexpr u32 kBarRecordOffset = 0x6B8u;  // {2101,2100,1} + bar + {2}
 constexpr u32 kBarRecordBytes = 0x2Cu;
+
+// The volume gauge, as page 1 draws its three: a **type-1200** record,
+// {1200, x, y, max}, 0x10 bytes, immediately followed by the **type-300**
+// record that draws the number beside it, {300, initial value, x, y, ...},
+// 0x1C bytes. One 0x2C clone from list offset 0x3E0 covers both.
+//
+// x/y are in the same space a text record's are (the Music label sits at y 135,
+// its gauge at 133). The number's own x/y must be moved with the gauge's or it
+// stays at the stock 1020/133, off in the corner of the screen.
+//
+// The pair is bracketed by two **type-3000** records, {3000, layer}, which set
+// the layer bias sub_821F1B48 builds the object with; the interpreter zeroes
+// that byte on entry, so a gauge outside the pair draws on the wrong layer.
+constexpr u32 kSliderRecordOffset = 0x3E0u;
+constexpr u32 kSliderRecordBytes = 0x2Cu;
+constexpr u32 kSliderXOffset = 0x04u;
+constexpr u32 kSliderYOffset = 0x08u;
+constexpr u32 kSliderNumXOffset = 0x18u;
+constexpr u32 kSliderNumYOffset = 0x1Cu;
+// sub_821F00F0 lays the number's box out for this many characters. The stock 3
+// is exactly "100", one short of "100%".
+constexpr u32 kSliderNumWidthOffset = 0x28u;
+constexpr u32 kSliderNumWidth = 4u;
+constexpr u32 kLayerRecord = 3000u;
+constexpr u32 kLayerRecordBytes = 0x08u;
+constexpr u32 kSliderLayer = 3u;  // what the stock pair opens with
+// A gauge's record y against its row's text y, from the stock Music row.
+constexpr int32_t kSliderRecordDY = -2;
+// Each kind appends its object id to a `-1`-terminated table on the screen, so
+// ours are the last entries of each, the same rule the highlight bars follow.
+// A screen refuses a fourth gauge, which is why slider rows are page 2 only:
+// page 1's volumes fill its table.
+constexpr u32 kScreenSliderIds = 1528u;
+constexpr u32 kScreenSliderNumIds = 644u;
+constexpr u32 kScreenSliderCount = 3u;
+constexpr u32 kScreenNumberMax = 48u;  // sub_821F00F0 refuses a 49th
+// The number is written by sub_821D3AC8(registry, object, value), which formats
+// it as decimal into +8 of a node on the chain at dword_82557568 (linked at
+// +932, keyed by the object at +0) and marks the node dirty.
+constexpr u32 kTextNodeHead = 0x82557568u;
+constexpr u32 kTextNodeNext = 932u;
+constexpr u32 kTextNodeBuffer = 8u;
+constexpr u32 kTextNodeWalkMax = 4096u;
+constexpr u32 kNumberRegistry = 0x82555690u;
+// The game writes an eleven-digit number and a sign into this same buffer.
+constexpr u32 kReadoutMaxChars = 8u;
+// Live gauge object: maximum, current value.
+constexpr u32 kSliderObjMaxOffset = 100u;
+constexpr u32 kSliderObjValueOffset = 104u;
 constexpr int32_t kBarShrinkFixup = 7;    // see below
 constexpr u32 kBarBlockXOffset = 0x14u;   // the bar record's x within the block
 constexpr u32 kBarBlockYOffset = 0x18u;   // the bar record's y within the block
@@ -521,6 +570,14 @@ struct OptionRow {
   // two pages. The built-in rows pick their page explicitly; a mod row
   // defaults to kModDefaultPage.
   int page = kPageOptions;
+  // A slider row draws the game's own volume gauge instead of a list of values:
+  // no `values`, no highlight bar, and get_index/set_index speak a step index.
+  // Page 2 only, see kScreenSliderIds.
+  bool slider = false;
+  // How many steps the gauge has, and what each one puts on it; without a
+  // display hook the step index is drawn as is.
+  int slider_steps = 0;
+  std::function<int(int)> slider_display;
   // The cvar this row writes, when that cvar only takes effect on the next
   // launch (rex::cvar::Lifecycle::kRequiresRestart). Non-null means the row
   // draws the restart marker once the cvar has actually been changed this
@@ -624,14 +681,13 @@ bool RowHasUniformBars(const OptionRow& row, int lang) {
 // How many bar objects `row` needs: one to slide, or one per value to swap
 // between.
 u32 BarsForRow(const OptionRow& row, int lang) {
+  // A slider row has no values to highlight; the gauge is its own indicator.
+  if (row.slider) {
+    return 0u;
+  }
   return RowHasUniformBars(row, lang) ? 1u
                                       : static_cast<u32>(row.values.size());
 }
-
-// Same presets, in the same order, as the overlay's Resolution row
-// (kResolutionPresetsAscending in settings.cpp); how many of them are actually
-// offered is decided per display by ResolutionRowValueCount below.
-constexpr const char* kResolutionIds[4] = {"720p", "1080p", "1440p", "4K"};
 
 // The Frame Rate row draws settings.cpp's own preset list (see
 // FrameRateOptionLabel) rather than a copy of it, so this row and the overlay's
@@ -639,8 +695,8 @@ constexpr const char* kResolutionIds[4] = {"720p", "1080p", "1440p", "4K"};
 // adaptive ladder, and uncapped.
 int FrameRateGetIndex();
 void FrameRateSetIndex(u8* base, int idx);
-int ResolutionGetIndex();
-void ResolutionSetIndex(u8* base, int idx);
+int RenderScaleGet();
+void RenderScaleSet(u8* base, int percent);
 int TextGetIndex();
 void TextSetIndex(u8* base, int idx);
 int OverworldModelGetIndex();
@@ -654,15 +710,6 @@ void OverworldModelSetIndex(u8* base, int idx);
 // and only collapses the pin to follow-party if the player actually moves the
 // row.
 constexpr const char* kOverworldModelValues[2] = {"Default", "Leader"};
-
-// Matches the ImGui overlay's Resolution row (settings.cpp): don't offer a
-// preset wider than the user's actual display. Resolved once, when the
-// registry is first built, same as the overlay's per-frame computation would
-// settle on for a display that doesn't change resolution mid-session.
-int ResolutionRowValueCount() {
-  return std::min<int>(static_cast<int>(std::size(kResolutionIds)),
-                       eternalsonata::AllowedResolutionCount());
-}
 
 // Narrows one value's bar to fit that value alone, instead of the row-wide
 // width its longest sibling asks for. Only worth doing where the gap between
@@ -726,7 +773,7 @@ void TranslateBuiltinLabel(OptionRow& row, const char* key) {
 }
 
 // Built-in rows are registered lazily rather than in a static initialiser:
-// ResolutionRowValueCount queries the display and the getters read cvars, and
+// RenderScalePercentMin queries the display and the getters read cvars, and
 // neither is safe to touch before the app has finished starting. Lazy
 // registration also fixes the ordering against mods for free - Rows() is first
 // reached from the Options screen build, long after every mod DLL has had its
@@ -743,18 +790,16 @@ std::vector<OptionRow>& Rows() {
     initial.resize(4);
 
     // Page 2, the graphics page, in the order they are drawn.
-    MakeLiteralRow(initial[0], kLabelResolution, kResolutionIds,
-                   ResolutionRowValueCount());
-    initial[0].get_index = &ResolutionGetIndex;
-    initial[0].set_index = &ResolutionSetIndex;
+    //
+    // Render Resolution draws the same steps the overlay's slider does and
+    // applies live, so it carries no restart marker.
+    MakeLiteralRow(initial[0], kLabelResolution, nullptr, 0);
+    initial[0].slider = true;
+    initial[0].slider_steps = eternalsonata::RenderScaleOptionCount();
+    initial[0].slider_display = &eternalsonata::RenderScaleOptionPercent;
+    initial[0].get_index = &RenderScaleGet;
+    initial[0].set_index = &RenderScaleSet;
     initial[0].page = kPageButtons;
-    // resolution (and the resolution_scale it moves with) is kRequiresRestart;
-    // tracking the one the row is named after is enough, since SetResolutionSetting
-    // always writes both together.
-    initial[0].restart_cvar = "resolution";
-    // Two characters against the five of "1080p"/"1440p": the row width leaves
-    // it swimming in bar.
-    FitBarToValue(initial[0], "4K");
     // Labels come from settings.cpp's preset list, so the row and the overlay's
     // slider offer the same states in the same order.
     std::vector<const char*> fps_values;
@@ -829,6 +874,11 @@ struct PageState {
   // swaps between pre-sized ones (see BarsForRow). 0xFFFFFFFF until the first
   // frame after the screen is built.
   std::vector<std::vector<u32>> bar_id;
+  // Gauge and number ids of each slider row, per row on this page in page
+  // order, 0xFFFFFFFF for a row that is not a slider. They come from the
+  // screen's own gauge/number tables, not from the array the bars come from.
+  std::vector<u32> slider_id;
+  std::vector<u32> slider_num_id;
   bool bars_resolved = false;
   // How many objects the screen's id array held the instant the display list
   // had finished being walked, or 0 if that could not be read. Our bars are the
@@ -839,6 +889,11 @@ struct PageState {
   // being slid around as if it were a highlight bar while the real bar sat on
   // the portrait's row.
   u32 list_objects = 0;
+  // The same boundary for the gauge and number tables, and for the same reason:
+  // the screen's handler keeps creating objects, numbers among them, after the
+  // list is done.
+  u32 list_gauges = 0;
+  u32 list_numbers = 0;
   // The language's value column, read out of the display list at build time
   // (it shifts per language) and reused when placing bars.
   int32_t value_base_x = 0;
@@ -969,6 +1024,13 @@ REX_IMPORT(__imp__sub_82178A88, g_set_object_pos, void(u32, u32, u32, u32, u32, 
 // sub_821F6580(root, id) -> object. The id->object resolver sub_82200FE8 itself
 // uses on these same ids.
 REX_IMPORT(__imp__sub_821F6580, g_resolve_object, u32(u32, u32));
+
+// sub_8220F938(gauge) redraws a volume gauge from the value at +104.
+REX_IMPORT(__imp__sub_8220F938, g_refresh_slider, u32(u32));
+
+// sub_821D3AC8(registry, text_object, value) writes `value` as decimal into a
+// text object and marks it for redraw.
+REX_IMPORT(__imp__sub_821D3AC8, g_set_number, u32(u32, u32, u32));
 
 // sub_821425D8(sound_mgr, cue_id, 0, 0) - the menu SFX trigger. Both Options
 // handlers use it for every noise the screen makes: cue 3 on cancel, 4 and 5 on
@@ -1219,6 +1281,112 @@ void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
              selected ? BarX(page, def, static_cast<int>(v)) : kBarParkedX, y,
              /*move=*/false);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Slider rows
+// ---------------------------------------------------------------------------
+
+// Entries in one of the screen's `-1`-terminated id tables.
+u32 CountIdArray(u8* base, u32 screen, u32 offset, u32 max) {
+  u32 n = 0;
+  while (n < max && REX_LOAD_U32(screen + offset + 4 * n) != 0xFFFFFFFFu) {
+    ++n;
+  }
+  return n;
+}
+
+// The text node sub_821D3AC8 would write into for `text_obj`, or 0.
+//
+// Walked the way sub_821D4708 walks it: any non-null node, no address test,
+// since these nodes sit outside the guest image's range and GuestPtr rejects
+// them.
+// The iteration cap keeps a corrupt chain from hanging a menu frame.
+u32 TextNodeFor(u8* base, u32 text_obj) {
+  u32 node = REX_LOAD_U32(kTextNodeHead);
+  for (u32 n = 0; node && node != 0xFFFFFFFFu && n < kTextNodeWalkMax; ++n) {
+    if (REX_LOAD_U32(node) == text_obj) {
+      return node;
+    }
+    node = REX_LOAD_U32(node + kTextNodeNext);
+  }
+  return 0;
+}
+
+// The gauge object of `row` (page-local index), or 0.
+u32 SliderObject(u8* base, int page, u32 row) {
+  const PageState& st = g_page[page];
+  if (row >= st.slider_id.size() || st.slider_id[row] == 0xFFFFFFFFu) {
+    return 0;
+  }
+  const u32 root = REX_LOAD_U32(kUiRoot);
+  if (!GuestPtr(root)) {
+    return 0;
+  }
+  const u32 obj = g_resolve_object(root, st.slider_id[row]);
+  return GuestPtr(obj) ? obj : 0;
+}
+
+// Extends the string sub_821D3AC8 just wrote, so the number reads "70%" rather
+// than "70", re-setting the flags that call sets. The digit test guards against
+// the second buffer it uses for one particular object.
+void AppendReadoutSuffix(u8* base, u32 text_obj, char suffix) {
+  const u32 node = TextNodeFor(base, text_obj);
+  if (!node) {
+    return;
+  }
+  const u32 buf = node + kTextNodeBuffer;
+  const u8 first = REX_LOAD_U8(buf);
+  if (first < '0' || first > '9') {
+    return;
+  }
+  u32 len = 0;
+  while (len < kReadoutMaxChars && REX_LOAD_U8(buf + len)) {
+    ++len;
+  }
+  if (len >= kReadoutMaxChars) {
+    return;
+  }
+  REX_STORE_U8(buf + len, static_cast<u8>(suffix));
+  REX_STORE_U8(buf + len + 1, 0);
+  REX_STORE_U8(node + 518, 0);
+  REX_STORE_U8(node + 840, 0);
+  REX_STORE_U8(node + 841, 0);
+  REX_STORE_U32(node + 4, 1);
+  REX_STORE_U8(node + 854, 0);
+  REX_STORE_U8(node + 925, 1);
+}
+
+// Draws `row`'s current step on its gauge and beside it, the way sub_82200FE8
+// seeds the volume ones: clamp to the gauge's maximum, store, redraw.
+void RefreshSlider(u8* base, int page, u32 row) {
+  const u32 obj = SliderObject(base, page, row);
+  if (!obj) {
+    return;
+  }
+  const PageState& st = g_page[page];
+  const OptionRow& def = Rows()[st.rows[row]];
+  const int index = def.get_index();
+  const int value = def.slider_display ? def.slider_display(index) : index;
+  const int max = static_cast<int>(REX_LOAD_U32(obj + kSliderObjMaxOffset));
+  const int shown = std::clamp(value, 0, max);
+  REX_STORE_U32(obj + kSliderObjValueOffset, static_cast<u32>(shown));
+  g_refresh_slider(obj);
+
+  const u32 root = REX_LOAD_U32(kUiRoot);
+  if (row >= st.slider_num_id.size() ||
+      st.slider_num_id[row] == 0xFFFFFFFFu || !GuestPtr(root)) {
+    return;
+  }
+  // A handle, not a pointer: what sub_821F6580 hands back for a number is the
+  // text registry's own id, which is what sub_821D3AC8 expects. Checking it
+  // with GuestPtr rejects every one of them.
+  const u32 text_obj = g_resolve_object(root, st.slider_num_id[row]);
+  if (!text_obj || text_obj == 0xFFFFFFFFu) {
+    return;
+  }
+  g_set_number(kNumberRegistry, text_obj, static_cast<u32>(shown));
+  AppendReadoutSuffix(base, text_obj, '%');
 }
 
 // Parks every one of `page`'s bars off-screen instantly. Called the moment
@@ -1475,24 +1643,15 @@ void FrameRateSetIndex(u8* base, int idx) {
               eternalsonata::FrameRateOptionLabel(idx));
 }
 
-int ResolutionGetIndex() {
-  const auto* entry = rex::cvar::GetFlagInfo("resolution");
-  const std::string cur = entry ? entry->getter() : std::string();
-  for (int i = 0; i < static_cast<int>(std::size(kResolutionIds)); ++i) {
-    if (cur == kResolutionIds[i]) {
-      return i;
-    }
-  }
-  return 0;
-}
+// The row's value is a step index; the percentage behind it is settings.h's
+// business, so this row and the overlay's slider offer the same steps.
+int RenderScaleGet() { return eternalsonata::RenderScaleOptionIndex(); }
 
-void ResolutionSetIndex(u8* base, int idx) {
-  eternalsonata::SetResolutionSetting(kResolutionIds[idx]);
-  // Logged from the cvar rather than from the argument: the row reads its
-  // selection back out of the cvar every frame, so a set that did not take is
-  // a row that appears stuck, and this is what tells the two apart.
-  REXLOG_INFO("[options] resolution -> {} (cvar now {})", kResolutionIds[idx],
-              rex::cvar::GetFlagByName("resolution"));
+void RenderScaleSet(u8* base, int index) {
+  eternalsonata::SetRenderScaleOption(index);
+  REXLOG_INFO("[options] render resolution -> {}% (cvar now {}%)",
+              eternalsonata::RenderScaleOptionPercent(index),
+              eternalsonata::RenderScalePercent());
 }
 
 // Text language. The guest reads its language once at boot, so this only
@@ -1560,6 +1719,34 @@ void WriteBarRecord(u8* base, u32 at, u32 src_list, int32_t x, int32_t y,
   REX_STORE_U32(at + kBarBlockYOffset, static_cast<u32>(y));
   REX_STORE_U32(at + kBarBlockWOffset, static_cast<u32>(width));
   REX_STORE_U32(at + kBarBlockHOffset, static_cast<u32>(kBarHeight));
+}
+
+// Clones a stock volume gauge onto our row, bracketed by its own layer pair.
+// Cloning keeps every field we have not identified, the maximum of 100 among
+// them. Returns the bytes written.
+u32 WriteSliderRecords(u8* base, u32 at, u32 tpl_list, int32_t x, int32_t y) {
+  REX_STORE_U32(at + 0x00, kLayerRecord);
+  REX_STORE_U32(at + 0x04, kSliderLayer);
+  at += kLayerRecordBytes;
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(tpl_list + kSliderRecordOffset),
+              kSliderRecordBytes);
+  // The number's offset from the gauge is taken from the record being cloned
+  // rather than hardcoded, so it keeps whatever gap the game itself uses.
+  const int32_t num_dx =
+      static_cast<int32_t>(REX_LOAD_U32(at + kSliderNumXOffset)) -
+      static_cast<int32_t>(REX_LOAD_U32(at + kSliderXOffset));
+  const int32_t num_dy =
+      static_cast<int32_t>(REX_LOAD_U32(at + kSliderNumYOffset)) -
+      static_cast<int32_t>(REX_LOAD_U32(at + kSliderYOffset));
+  REX_STORE_U32(at + kSliderXOffset, static_cast<u32>(x));
+  REX_STORE_U32(at + kSliderYOffset, static_cast<u32>(y));
+  REX_STORE_U32(at + kSliderNumXOffset, static_cast<u32>(x + num_dx));
+  REX_STORE_U32(at + kSliderNumYOffset, static_cast<u32>(y + num_dy));
+  REX_STORE_U32(at + kSliderNumWidthOffset, kSliderNumWidth);
+  at += kSliderRecordBytes;
+  REX_STORE_U32(at + 0x00, kLayerRecord);
+  REX_STORE_U32(at + 0x04, 0);
+  return 2 * kLayerRecordBytes + kSliderRecordBytes;
 }
 
 // Clone the stock row separator and move it to our row's y, same reasoning as
@@ -1677,6 +1864,9 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     bytes += 2 * kTextRecordBytes +
              static_cast<u32>(all[r].values.size()) * kTextRecordBytes +
              kSepRecordBytes + BarsForRow(all[r], DrawLanguage()) * kBarRecordBytes;
+    if (all[r].slider) {
+      bytes += 2 * kLayerRecordBytes + kSliderRecordBytes;
+    }
   }
   // One more text record per extra value on the game's own Voice row. Budgeted
   // unconditionally on page 1 so enabling a voice mod cannot be what makes the
@@ -1702,6 +1892,8 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   // bars a row needs depends on its values, and a mod may have given one its own
   // width since the last time this page was built.
   st.bar_id.assign(row_count, {});
+  st.slider_id.assign(row_count, 0xFFFFFFFFu);
+  st.slider_num_id.assign(row_count, 0xFFFFFFFFu);
   for (u32 i = 0; i < row_count; ++i) {
     st.bar_id[i].assign(BarsForRow(all[st.rows[i]], DrawLanguage()),
                         0xFFFFFFFFu);
@@ -1822,6 +2014,12 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
                       y);
       at += kTextRecordBytes;
     }
+    // A slider row draws a gauge where its values would have been, starting at
+    // the same column they do.
+    if (row.slider) {
+      at += WriteSliderRecords(base, at, tpl_list, st.value_base_x,
+                               y + kSliderRecordDY);
+    }
     WriteSeparatorRecord(base, at, tpl_list, y - kRowYStep + sep_dy);
     at += kSepRecordBytes;
   }
@@ -1921,6 +2119,9 @@ void PlacePageBars(u8* base, int page) {
   const std::vector<OptionRow>& all = Rows();
   for (u32 r = 0; r < st.rows.size(); ++r) {
     MoveOptionBar(base, page, r, all[st.rows[r]].get_index(), /*move=*/false);
+    if (all[st.rows[r]].slider) {
+      RefreshSlider(base, page, r);
+    }
   }
 }
 
@@ -1938,6 +2139,7 @@ void PlacePageBars(u8* base, int page) {
 void ResolveBars(u8* base, int page) {
   PageState& st = g_page[page];
   st.bars_resolved = true;
+  const std::vector<OptionRow>& all = Rows();
   const u32 rows = static_cast<u32>(st.rows.size());
   const u32 screen = CurrentScreenObject(base);
   if (!screen) {
@@ -1990,6 +2192,50 @@ void ResolveBars(u8* base, int page) {
   }
   REXLOG_INFO("[options] page {}: {} objects ({} from the list), {} bars: {}",
               page, n, st.list_objects, bars, ids_text);
+
+  // The gauges and their numbers, from the screen's own tables. Both are
+  // appended as the list is walked and ours are the last records to create
+  // either, so the tail of each table is ours. Counting from the front hands us
+  // page 2's own player numbers instead.
+  u32 sliders = 0;
+  for (u32 r = 0; r < rows; ++r) {
+    sliders += all[st.rows[r]].slider ? 1u : 0u;
+  }
+  if (sliders) {
+    // The counts taken the instant the list had been walked, not now: anything
+    // the handler created since sits past our entries. The live table is the
+    // fallback for a capture that failed outright.
+    const u32 live_gauges =
+        CountIdArray(base, screen, kScreenSliderIds, kScreenSliderCount);
+    const u32 live_numbers =
+        CountIdArray(base, screen, kScreenSliderNumIds, kScreenNumberMax);
+    const u32 gauges = (st.list_gauges && st.list_gauges <= live_gauges)
+                           ? st.list_gauges
+                           : live_gauges;
+    const u32 numbers = (st.list_numbers && st.list_numbers <= live_numbers)
+                            ? st.list_numbers
+                            : live_numbers;
+    u32 gauge_slot = gauges >= sliders ? gauges - sliders : 0;
+    u32 number_slot = numbers >= sliders ? numbers - sliders : 0;
+    REXLOG_INFO("[options] page {}: {} slider rows, from gauge slot {} of {} and "
+                "number slot {} of {}",
+                page, sliders, gauge_slot, gauges, number_slot, numbers);
+    for (u32 r = 0; r < rows && r < st.slider_id.size(); ++r) {
+      if (!all[st.rows[r]].slider) {
+        continue;
+      }
+      if (gauge_slot < gauges) {
+        st.slider_id[r] = REX_LOAD_U32(screen + kScreenSliderIds + 4 * gauge_slot++);
+      }
+      if (number_slot < numbers) {
+        st.slider_num_id[r] =
+            REX_LOAD_U32(screen + kScreenSliderNumIds + 4 * number_slot++);
+      }
+      // Seeded here because the record decides the gauge's maximum, never its
+      // value, same as sub_82200FE8 does for the volumes.
+      RefreshSlider(base, page, r);
+    }
+  }
 
   // Placed the way the screen init places the stock ones: instantly. No settling
   // delay - sub_82178A88 is not an animation.
@@ -2177,6 +2423,10 @@ REX_HOOK_RAW(sub_821F2F38) {
   const u32 screen = CurrentScreenObject(base);
   g_page[page].list_objects =
       screen ? ScreenObjectIds(base, screen, nullptr, 256) : 0;
+  g_page[page].list_gauges =
+      screen ? CountIdArray(base, screen, kScreenSliderIds, kScreenSliderCount) : 0;
+  g_page[page].list_numbers =
+      screen ? CountIdArray(base, screen, kScreenSliderNumIds, kScreenNumberMax) : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -2780,7 +3030,14 @@ REX_HOOK_RAW(sub_821F62B8) {
     }
     const u32 opt_row = row - pl.stock_rows;
     const OptionRow& def = all[st.rows[opt_row]];
-    const int value_count = static_cast<int>(def.values.size());
+
+    // A slider row's steps stand in for its values: it moves on the same press
+    // edges, and left/right walk the gauge one step at a time.
+    const int value_count =
+        def.slider ? def.slider_steps : static_cast<int>(def.values.size());
+    if (value_count < 1) {
+      return;
+    }
     const int cur = std::clamp(def.get_index(), 0, value_count - 1);
     int next = cur;
 
@@ -2802,7 +3059,11 @@ REX_HOOK_RAW(sub_821F62B8) {
 
     if (next != cur) {
       def.set_index(base, next);
-      MoveOptionBar(base, page, opt_row, next, /*move=*/true);
+      if (def.slider) {
+        RefreshSlider(base, page, opt_row);
+      } else {
+        MoveOptionBar(base, page, opt_row, next, /*move=*/true);
+      }
       PlayMenuSfx(base, pl.change_sfx);
     }
     return;

@@ -45,6 +45,20 @@ void ApplySettingDefaults();
 // display never shows up as selectable in either place.
 int AllowedResolutionCount();
 
+// Render resolution as discrete steps, shared by the F4 overlay's slider and
+// the native Options screen's gauge so the two cannot drift. Backed by
+// `render_scale` (30% to 100% in tens) or, under Xenos, by the integer
+// `resolution_scale`. Menus move the row by option index and draw the
+// percentage. RenderScaleRowAvailable is false when there is only one step.
+// Setters persist.
+bool RenderScaleRowAvailable();
+int RenderScaleOptionCount();
+int RenderScaleOptionPercent(int index);
+int RenderScaleOptionIndex();
+void SetRenderScaleOption(int index);
+int RenderScalePercent();
+void SetRenderScalePercent(int percent);
+
 // Enumerates GPU plugins and (if built with Vulkan) Vulkan physical devices
 // once, caching the results for CreateSettingsDialog. Both enumerations load
 // GPU plugin DLLs / query the driver, so this is meant to run once at

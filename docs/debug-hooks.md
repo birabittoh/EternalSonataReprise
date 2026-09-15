@@ -957,6 +957,71 @@ this group). So a new row should be declared with a `1502` record in the copied
 list rather than by the runtime count-bump the hook currently does in
 `sub_821F62B8` — that hack works, but it is patching around the real mechanism.
 
+#### The volume gauge is a record too (decoded 2026-09-15)
+
+The three sliders on the Options page (Music / Sound Effects / Voice) start at
+Options-list offsets `0x3E0` / `0x40C` / `0x438`. Each is **two** records, `0x2C`
+bytes together, which is why the stride looks like one big record and is not:
+
+| Record | Offset | Layout | Music |
+|---|---|---|---|
+| gauge | `+0x00` | `{1200, x, y, max}`, `0x10` bytes | `{1200, 750, 133, 100}` |
+| number | `+0x10` | `{300, value, x, y, …}`, `0x1C` bytes | `{300, 0, 1020, 133, …}` |
+
+X/Y are in the same space a text record's are (the Music label sits at y 135).
+The number is a plain numeric text object 270px right of the gauge, on its own
+y; clone the pair without moving the second record's x/y and the percentage
+lands at the top right of the screen instead of on the row. Its `+0x04` is the
+value it is *created* with (0 for all three stock ones), not an id, and its
+`+0x18` is how many characters the text box is laid out for: `sub_821F00F0`
+takes that as the digit count whenever it is 1..10. The stock rows carry 3,
+which is exactly "100"; a row that appends a `%` needs 4 or the last glyph is
+clipped.
+The three are bracketed by a pair of **type-3000** records, 8 bytes,
+`{3000, layer}`: the handler at `0x821F5FEC` stores `+4` into `root+2834`, the
+layer bias `sub_821F1B48` folds into the object it creates. The interpreter
+zeroes that byte on entry, so the pair is `{3000, 3}` before and `{3000, 0}`
+after.
+
+`sub_821F1B48(root, x, y, max, max, 0, animated)` creates the gauge
+(`sub_8220F4A8`, the two sprites named `VolumeBG` / `VolumeGauge`). Two things
+about it matter to anything else drawn on these screens:
+
+* its id lands in a **second** id array at `screen+1528`, three slots, counted
+  at `screen+1540`, not the `screen+0x4C` array everything else uses, so a
+  gauge record can never renumber the highlight bars;
+* a screen that already holds three gauges refuses to create a fourth, which is
+  why a gauge row can only go on page 2. Page 1's volumes fill its table.
+
+On the object, `+100` is the maximum and `+104` the value; `sub_8220F938`
+redraws it. That is the whole widget: `sub_82200FE8` seeds the volumes by
+writing `+104` and calling it, and `sub_82201FB0` (menu state 11) steps them
+with `sub_8220F8C0(gauge, ±1)` before applying through `sub_821E6EA8`.
+
+`sub_821F00F0` builds the number and **appends** its id to a second table at
+`screen+644`, `-1` terminated, the same shape as the gauge table (`sub_82200FE8`
+seeds gauge `1528` then refreshes the text at `644`, `1532` then `648`, `1536`
+then `652`; those are the first three entries, not fixed slots). A screen holds
+at most 48 numbers, counted at `screen+836`. Anything spliced into a list must
+therefore claim the **tail** of both tables, never slot 0: page 2 draws its own
+player numbers long before a spliced record is reached, and reading slot 0 there
+returns a stock object, which reads as a percentage that never changes. It is
+written by
+
+```
+sub_821D3AC8(&dword_82555690, text_object, value)
+```
+
+which formats `value` as decimal **into the object's own buffer** and marks it
+dirty. It is the general "set a text object to a number" primitive, and the only
+known way to change text on a screen after the display list has been walked. The
+buffer is `+8` of a node on the chain at `dword_82557568`, linked at `+932` and
+keyed by the object at `+0`; the dirty flags it sets afterwards are `+518 = 0`,
+`+840 = 0`, `+841 = 0`, `+4 = 1`, `+854 = 0`, `+925 = 1`. Writing a longer
+string into that buffer and re-setting those flags is what lets the Render
+Resolution row read `70%` rather than `70`.
+`src/eternalsonata_options.cpp` draws the Render Resolution row on this.
+
 ### Open work
 
 1. ~~Find what builds the selectable-item list~~ — done, it is declared by

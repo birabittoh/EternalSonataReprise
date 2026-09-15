@@ -943,93 +943,23 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   }
 #endif  // _WIN32
 
+  // Applies live: the extent is republished every present, so this rebuilds the
+  // render targets the same way dragging the window's corner does.
   void DrawRenderScaleRow() {
-    // render_scale only exists under the native renderer, which sizes its
-    // targets from the window and so can render at any fraction of it. Under
-    // Xenos the only meaningful values are still the integer steps below.
-    if (rex::cvar::GetFlagInfo("render_scale")) {
-      DrawContinuousRenderScaleRow();
+    if (!RenderScaleRowAvailable())
       return;
-    }
-    DrawIntegerRenderScaleRow();
-  }
-
-  // A fraction of the window, live: the extent is republished every present, so
-  // moving this rebuilds the render targets a fraction of a second later the
-  // same way dragging the window's corner does. The floor is 30% because below
-  // that the resolve rectangle's rounding starts to show on the EDRAM band
-  // edges; 100% renders at the native window resolution.
-  void DrawContinuousRenderScaleRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("render_scale");
-    if (!entry)
-      return;
-    const double current = std::atof(entry->getter().c_str());
-    // Zero is the cvar's "no opinion", which renders at the window's own size.
-    int percent = static_cast<int>(std::lround((current > 0.0 ? current : 1.0) * 100.0));
-    percent = std::clamp(percent, 30, 100);
+    int idx = RenderScaleOptionIndex();
+    char label[16];
+    std::snprintf(label, sizeof(label), "%d%%", RenderScaleOptionPercent(idx));
 
     ImGui::PushID("render_scale");
     ImGui::TextUnformatted("Render Resolution");
     ImGui::SameLine(180.0f);
     ImGui::SetNextItemWidth(160.0f);
-    if (ImGui::SliderInt("##v", &percent, 30, 100, "%d%%")) {
-      rex::cvar::SetFlagByName("render_scale", std::to_string(percent / 100.0),
-                               /*persist=*/true);
-      SaveBasic();
-    }
-    ImGui::PopID();
-  }
-
-  // resolution_scale is an integer cvar (range 1-8) whose named-resolution
-  // steps (1/2/3/4 for 720p/1080p/1440p/4K) are the only meaningful values.
-  void DrawIntegerRenderScaleRow() {
-    const auto* scale_entry = rex::cvar::GetFlagInfo("resolution_scale");
-    if (!scale_entry)
-      return;
-
-    int base = 1;
-    const int display_height = DesktopDisplayHeight();
-    if (display_height >= 2160) {
-      base = 4;
-    } else if (display_height >= 1440) {
-      base = 3;
-    } else if (display_height >= 1080) {
-      base = 2;
-    }
-    int current_scale = std::atoi(scale_entry->getter().c_str());
-
-    std::vector<int> valid_scales;
-    for (int k = 1; k <= base; ++k) {
-      valid_scales.push_back(k);
-    }
-
-    int idx = 0;
-    for (int i = 0; i < static_cast<int>(valid_scales.size()); ++i) {
-      if (valid_scales[i] == current_scale) {
-        idx = i;
-        break;
-      }
-    }
-
-    int max_idx = static_cast<int>(valid_scales.size()) - 1;
-    if (max_idx == 0)
-      return;  // Only one valid scale (720p) -- nothing to offer, hide the row.
-
-    ImGui::PushID("render_scale_percent");
-
-    ImGui::TextUnformatted("Render Resolution");
-    ImGui::SameLine(180.0f);
-    ImGui::SetNextItemWidth(160.0f);
-    bool changed = ImGui::SliderInt("##v", &idx, 0, max_idx, "");
-
-    int display_percent = static_cast<int>(std::lround(100.0 * valid_scales[idx] / base));
-    ImGui::SameLine();
-    ImGui::Text("%d%%", display_percent);
-
-    if (changed) {
-      rex::cvar::SetFlagByName("resolution_scale", std::to_string(valid_scales[idx]),
-                               /*persist=*/true);
-      SaveBasic();
+    // Discrete 0..N-1 slider; the format string carries the percentage.
+    if (ImGui::SliderInt("##v", &idx, 0, RenderScaleOptionCount() - 1, label,
+                         ImGuiSliderFlags_NoInput)) {
+      SetRenderScaleOption(idx);
     }
     ImGui::PopID();
   }
@@ -1315,6 +1245,110 @@ int AllowedResolutionCount() {
     ++count;
   }
   return count > 0 ? count : 1;  // Always leave at least 720p.
+}
+
+// ---------------------------------------------------------------------------
+// Render resolution, as a percentage
+// ---------------------------------------------------------------------------
+//
+// Backed by the native renderer's `render_scale` or, where only Xenos exists,
+// by the integer `resolution_scale`; the percentage is the common language, and
+// the integer path rounds to its nearest step in both directions.
+
+// Below 30% the resolve rectangle's rounding shows on the EDRAM band edges.
+constexpr int kRenderScaleMinPercent = 30;
+constexpr int kRenderScaleStepPercent = 10;
+
+// The largest resolution_scale worth offering: the one that renders at the
+// display's own height.
+static int IntegerRenderScaleBase() {
+  const int display_height = DesktopDisplayHeight();
+  if (display_height >= 2160) return 4;
+  if (display_height >= 1440) return 3;
+  if (display_height >= 1080) return 2;
+  return 1;
+}
+
+static bool HasContinuousRenderScale() {
+  return rex::cvar::GetFlagInfo("render_scale") != nullptr;
+}
+
+int RenderScaleOptionCount() {
+  if (HasContinuousRenderScale()) {
+    return (100 - kRenderScaleMinPercent) / kRenderScaleStepPercent + 1;
+  }
+  return rex::cvar::GetFlagInfo("resolution_scale") ? IntegerRenderScaleBase() : 0;
+}
+
+int RenderScaleOptionPercent(int index) {
+  if (index < 0 || index >= RenderScaleOptionCount()) {
+    return 100;
+  }
+  if (HasContinuousRenderScale()) {
+    return kRenderScaleMinPercent + index * kRenderScaleStepPercent;
+  }
+  // Steps 1..base, so index 0 is the coarsest and the last is native.
+  return static_cast<int>(
+      std::lround(100.0 * (index + 1) / IntegerRenderScaleBase()));
+}
+
+// One valid step means there is nothing to offer, and the row is not drawn.
+bool RenderScaleRowAvailable() { return RenderScaleOptionCount() > 1; }
+
+int RenderScaleOptionIndex() {
+  const int count = RenderScaleOptionCount();
+  const int percent = RenderScalePercent();
+  int best = 0;
+  for (int i = 1; i < count; ++i) {
+    if (std::abs(RenderScaleOptionPercent(i) - percent) <
+        std::abs(RenderScaleOptionPercent(best) - percent)) {
+      best = i;
+    }
+  }
+  return best;
+}
+
+void SetRenderScaleOption(int index) {
+  if (index < 0 || index >= RenderScaleOptionCount()) {
+    return;
+  }
+  SetRenderScalePercent(RenderScaleOptionPercent(index));
+}
+
+int RenderScalePercent() {
+  if (const auto* entry = rex::cvar::GetFlagInfo("render_scale")) {
+    // Zero is the cvar's "no opinion", which renders at the window's own size.
+    const double current = std::atof(entry->getter().c_str());
+    const int percent =
+        static_cast<int>(std::lround((current > 0.0 ? current : 1.0) * 100.0));
+    return std::clamp(percent, kRenderScaleMinPercent, 100);
+  }
+  const auto* scale_entry = rex::cvar::GetFlagInfo("resolution_scale");
+  if (!scale_entry) {
+    return 100;
+  }
+  const int base = IntegerRenderScaleBase();
+  const int scale = std::clamp(std::atoi(scale_entry->getter().c_str()), 1, base);
+  return static_cast<int>(std::lround(100.0 * scale / base));
+}
+
+void SetRenderScalePercent(int percent) {
+  if (HasContinuousRenderScale()) {
+    percent = std::clamp(percent, kRenderScaleMinPercent, 100);
+    rex::cvar::SetFlagByName("render_scale", std::to_string(percent / 100.0),
+                             /*persist=*/true);
+    SaveUserSettings();
+    return;
+  }
+  if (!rex::cvar::GetFlagInfo("resolution_scale")) {
+    return;
+  }
+  const int base = IntegerRenderScaleBase();
+  const int scale = std::clamp(
+      static_cast<int>(std::lround(percent * base / 100.0)), 1, base);
+  rex::cvar::SetFlagByName("resolution_scale", std::to_string(scale),
+                           /*persist=*/true);
+  SaveUserSettings();
 }
 
 void ApplySettingDefaults() {
