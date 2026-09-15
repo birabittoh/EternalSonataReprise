@@ -1876,7 +1876,7 @@ uint32_t LayerProbeInterval() {
   static const uint32_t interval = [] {
     const char* value = std::getenv("ES_LAYER_PROBE");
     if (value == nullptr)
-      return std::getenv("ES_UI_LAYER") != nullptr ? 300u : 0u;
+      return 0u;
     const int parsed = std::atoi(value);
     return parsed > 0 ? uint32_t(parsed) : 300u;
   }();
