@@ -24,7 +24,9 @@
 // made from any thread. The volumes have to go through the game's own mixer
 // routine, which is guest code, so setting one from a thread other than the
 // guest main thread defers it to that thread's next frame and answers
-// ETERNALSONATA_SETTING_QUEUED.
+// ETERNALSONATA_SETTING_QUEUED. The two language settings touch the host's
+// config rather than guest memory and answer OK from any thread, but only take
+// effect on the next launch.
 
 #pragma once
 
@@ -35,11 +37,14 @@ extern "C" {
 #endif
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
-// version; existing entry points keep their signature.
+// version; existing entry points keep their signature. Still 1 because this API
+// has not been released yet, so it is free to change under its own version.
 #define ETERNALSONATA_SETTINGS_ABI_VERSION 1u
 
-// The settings, and what their values mean. Every one of them is persisted in
-// the save, so a load replaces whatever a mod wrote.
+// The settings, and what their values mean. Everything up to CONTROLLER_P3 is
+// the game's own and is persisted in the save, so a load replaces whatever a
+// mod wrote. The two language settings are the host's and persist in its config
+// instead, so a save never touches them.
 enum {
   // 0 = OFF, 1 = ON. Default 1.
   ETERNALSONATA_SETTING_BATTLE_CAMERA = 0,
@@ -51,7 +56,12 @@ enum {
   ETERNALSONATA_SETTING_VOLUME_VOICE = 4,
   // 0 = OFF, 1 = ON. Default 1.
   ETERNALSONATA_SETTING_SUBTITLES = 5,
-  // 0 = Japanese, 1 = English. Default 1.
+  // An index into the host's voice language list: the two the game ships
+  // followed by any a mod added with [[voice_language]]. Ask
+  // EternalSonataGetSettingRange how many there are and
+  // EternalSonataGetSettingValueName what each is called; neither the count nor
+  // the order is fixed. A mod language needs a restart to be heard, since the
+  // guest caches banks keyed on its own selector byte.
   ETERNALSONATA_SETTING_VOICE_LANGUAGE = 6,
   // 0 = Stereo, 1 = Mono, 2 = 5.1ch Surround. Default 0.
   //
@@ -68,8 +78,14 @@ enum {
   ETERNALSONATA_SETTING_CONTROLLER_P1 = 8,
   ETERNALSONATA_SETTING_CONTROLLER_P2 = 9,
   ETERNALSONATA_SETTING_CONTROLLER_P3 = 10,
+  // An index into the host's text language list: the five the game ships
+  // followed by any a mod added with [[language]]. Enumerated like
+  // VOICE_LANGUAGE and independent of it, so text and voice are free to differ.
+  // Lives in the user_language cvar, and the guest latches its language at
+  // boot, so a write needs a restart.
+  ETERNALSONATA_SETTING_TEXT_LANGUAGE = 11,
 
-  ETERNALSONATA_SETTING_COUNT = 11
+  ETERNALSONATA_SETTING_COUNT = 12
 };
 
 enum {
@@ -109,6 +125,14 @@ typedef int (*EternalSonataSetSettingFn)(int setting, int value);
 // Fills `min` and `max` (both inclusive, either may be null) with the range
 // `setting` accepts. Returns ETERNALSONATA_SETTING_OK or a negative error.
 typedef int (*EternalSonataGetSettingRangeFn)(int setting, int* min, int* max);
+
+// The name of one value of a discrete setting ("ON", "English", "Portugues"),
+// or null for a continuous one (the volumes), an unknown setting, or a value
+// out of range. Walk the range EternalSonataGetSettingRange reports to present
+// a setting as a list without hardcoding what is in it.
+//
+// The pointer is owned by the host and valid for the process's lifetime.
+typedef const char* (*EternalSonataGetSettingValueNameFn)(int setting, int value);
 
 #ifdef __cplusplus
 }  // extern "C"

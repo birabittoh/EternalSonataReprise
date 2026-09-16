@@ -6,7 +6,9 @@ and how this project exposes them to mods. The surface mods build against is
 
 Everything here is a set of plain bytes in one contiguous block that the game
 itself writes, reads and persists across saves; a mod does not own a menu row
-to reach any of it. This is deliberately separate from
+to reach any of it. The two exceptions are the language settings, which are the
+host's and live in cvars: see [Languages](#languages-are-not-bytes). This is
+deliberately separate from
 `src/api/eternalsonata_options_api.h`, which lets a mod *add* a row of its own.
 A mod may use either or neither.
 
@@ -145,13 +147,22 @@ driving that screen's scratch rather than the byte gets bitten by it.
 `eternalsonata_settings_api.h` is read/write keyed by an enum, in the same
 shape as the score-piece half of the item API. A generic get/set keeps the
 header stable and lets the toggles (`0..1`), the volumes (`0..100`), Audio
-Output (`0..2`) and the controller ports (`0..3`) share one surface:
+Output (`0..2`), the controller ports (`0..3`) and the two language lists share
+one surface:
 
 ```c
 int EternalSonataGetSetting(int setting);
 int EternalSonataSetSetting(int setting, int value);
 int EternalSonataGetSettingRange(int setting, int* min, int* max);
+const char* EternalSonataGetSettingValueName(int setting, int value);
 ```
+
+`EternalSonataGetSettingValueName` names one value of a discrete setting
+("ON", "English", "Portugues") and returns null for a continuous one. It exists
+because a range is not enough to build a menu out of once mods are involved: a
+setting's values can be things only the running configuration knows the names
+of. Walk the reported range asking for each name rather than hardcoding a table.
+`src/settings_probe` in the mods repo is written that way and is the reference.
 
 `EternalSonataSetSetting` of a volume answers `QUEUED` from a non-guest thread
 (see above). Out-of-range values and unknown settings each get their own
@@ -160,3 +171,35 @@ registry bus (u64 = setting, f64 = new value) off a once-per-frame snapshot
 whenever a setting changes, by the player in a menu or by a mod; this is how a
 mod that forces a setting reapplies it after new-game or title-screen resets,
 which run the whole block back to defaults.
+
+## Languages are not bytes
+
+`VOICE_LANGUAGE` and `TEXT_LANGUAGE` are in the same enum as the rest and are
+the only two that are not a byte in the block. Both are an index into a host
+list: the languages the game ships followed by whatever mods registered (see
+`docs/making-mods.md`, "Adding a new language" and "Adding a new voice
+language"). Voice lives in the `voice_language` cvar, text in `user_language`,
+and `src/core/settings.cpp` owns both lists.
+
+The reason is that a mod language has no guest representation to read. BTX has
+a fixed table of seven language blocks and voice banks pick their language by a
+filename suffix, so a mod language borrows a donor's block or suffix and leaves
+the guest's own selector reading as that donor. A mod asking "which language?"
+and getting the byte would be told the donor's name.
+
+Three consequences:
+
+* **The range is not fixed.** It grows as mods register, which is what makes
+  `EternalSonataGetSettingRange` and `EternalSonataGetSettingValueName`
+  mandatory here rather than a convenience.
+* **The index is not the guest's byte, even for the two shipped voice
+  languages.** The list is ordered the way the Options screen draws the row
+  while the byte counts the other way; `VoiceLanguageGuestByte` in
+  `settings.cpp` is the only correct mapping. Writing a voice language that the
+  game does have a byte for moves that byte too, exactly as the native row does
+  in `eternalsonata_options.cpp`; otherwise the cvar and the guest would
+  disagree and the donor would keep playing.
+* **Neither is in the save**, so a load does not replace them and a new game
+  does not reset them. They persist in the host's config instead. Both need a
+  restart to take effect, since the guest latches its language at boot and
+  caches voice banks keyed on that selector byte.
