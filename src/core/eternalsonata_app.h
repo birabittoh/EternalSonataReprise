@@ -267,7 +267,7 @@ class EternalsonataApp : public rex::ReXApp {
     // does not need a key of its own. Dropped here because it is the last point
     // before mod plugins load: a mod asking for F7 after this gets it, instead
     // of being reassigned around a bind nothing reaches.
-    rex::ui::UnregisterBind("bind_achievements");
+    rex::ui::SetBindKey("bind_achievements", "");
   }
 
   void OnPreLaunchModule() override {
