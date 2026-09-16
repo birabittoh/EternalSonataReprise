@@ -2302,6 +2302,32 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
         world->host_width, world->host_height, world->width, world->height);
   }
 
+  // A plain copy whenever the two images are the same size, which they are
+  // unless the world renders at a different scale from the UI. Not only
+  // because it is cheaper: on Adreno the blit draw makes the UI draws that
+  // follow it in the layer (the area name banner) bleed a stretched, additive
+  // copy of themselves over the frame. Nothing in the draw's state explains
+  // it, a copy of the same pixels does not trigger it, so the draw is kept
+  // for the scaled case only.
+  if (world->host_width == composite->host_width && world->host_height == composite->host_height) {
+    Transition(commands, world->texture.get(), world->layout, RenderBarrierStage::COPY,
+               RenderTextureLayout::COPY_SOURCE);
+    Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::COPY,
+               RenderTextureLayout::COPY_DEST);
+    commands->copyTexture(composite->texture.get(), world->texture.get());
+    Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::GRAPHICS,
+               RenderTextureLayout::COLOR_WRITE);
+    if (depth && depth->texture) {
+      Transition(commands, depth->texture.get(), depth->layout, RenderBarrierStage::GRAPHICS,
+                 RenderTextureLayout::DEPTH_WRITE);
+      BindFramebuffer(commands, framebuffer);
+      commands->clearDepthStencil(true, true, 1.0f, 0);
+    }
+    composite->composited_frame = g_frame;
+    ++g_layer_composites;
+    return true;
+  }
+
   // Both transitions before the framebuffer is bound: a barrier issued inside a
   // render pass ends it on Plume's Vulkan backend.
   Transition(commands, world->texture.get(), world->layout, RenderBarrierStage::GRAPHICS,
