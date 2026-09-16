@@ -2365,19 +2365,26 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
         world->host_width, world->host_height, world->width, world->height);
   }
 
-  // A plain copy whenever the two images are the same size, which they are
-  // unless the world renders at a different scale from the UI. Not only
-  // because it is cheaper: on Adreno the blit draw makes the UI draws that
-  // follow it in the layer (the area name banner) bleed a stretched, additive
-  // copy of themselves over the frame. Nothing in the draw's state explains
-  // it, a copy of the same pixels does not trigger it, so the draw is kept
-  // for the scaled case only.
-  if (world->host_width == composite->host_width && world->host_height == composite->host_height) {
-    Transition(commands, world->texture.get(), world->layout, RenderBarrierStage::COPY,
-               RenderTextureLayout::COPY_SOURCE);
-    Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::COPY,
-               RenderTextureLayout::COPY_DEST);
+  // Through the copy engine wherever possible: a copy when the sizes match, a
+  // blit where the backend has one (Vulkan). Not only because it is cheaper:
+  // on Adreno a sampling draw of the world image right before the guest's own
+  // pass on the layer corrupts what follows (UI draws bleeding a stretched
+  // additive copy of themselves, the world image blown out to white), and a
+  // copy of the same pixels never has. The draw below is the fallback for
+  // backends without a blit.
+  const bool same_size =
+      world->host_width == composite->host_width && world->host_height == composite->host_height;
+  Transition(commands, world->texture.get(), world->layout, RenderBarrierStage::COPY,
+             RenderTextureLayout::COPY_SOURCE);
+  Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::COPY,
+             RenderTextureLayout::COPY_DEST);
+  bool copied = same_size;
+  if (same_size)
     commands->copyTexture(composite->texture.get(), world->texture.get());
+  else
+    copied = commands->blitTexture(composite->texture.get(), world->texture.get(),
+                                   composite_linear);
+  if (copied) {
     Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::GRAPHICS,
                RenderTextureLayout::COLOR_WRITE);
     if (depth && depth->texture) {
@@ -2391,18 +2398,38 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
     return true;
   }
 
+  // The scaled case draws, in a pass of its own over the colour plane alone.
+  // The pipeline is built without a depth attachment, so the layer's own
+  // framebuffer is not a compatible pass for it; and on Adreno a draw of ours
+  // sharing a pass with the guest's has now twice corrupted what followed it
+  // (the banner spill, and a fade quad blending against an image many times
+  // brighter than the one this draw wrote).
+  RenderFramebuffer* color_only = AcquireFramebuffer(composite, nullptr);
+  if (color_only == nullptr) {
+    ++g_layer_composites_failed;
+    return false;
+  }
+
   // Both transitions before the framebuffer is bound: a barrier issued inside a
   // render pass ends it on Plume's Vulkan backend.
   Transition(commands, world->texture.get(), world->layout, RenderBarrierStage::GRAPHICS,
              RenderTextureLayout::SHADER_READ);
   Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::GRAPHICS,
              RenderTextureLayout::COLOR_WRITE);
+  // The depth plane is cleared first, in a pass of its own: the UI draws that
+  // test depth have to see an empty buffer rather than whatever this image
+  // held last frame, and a vkCmdClearAttachments left inside the guest's own
+  // pass is what Adreno blends the fade quads that follow against garbage.
   if (depth && depth->texture) {
     Transition(commands, depth->texture.get(), depth->layout, RenderBarrierStage::GRAPHICS,
                RenderTextureLayout::DEPTH_WRITE);
+    BindFramebuffer(commands, framebuffer);
+    commands->clearDepthStencil(true, true, 1.0f, 0);
   }
 
-  BindFramebuffer(commands, framebuffer);
+  commands->setFramebuffer(nullptr);
+  g_bound_framebuffer = nullptr;
+  BindFramebuffer(commands, color_only);
 
   const float w = float(composite->host_width);
   const float h = float(composite->host_height);
@@ -2414,11 +2441,11 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
   commands->setGraphicsDescriptorSet(composite->composite_set.get(), 0);
   commands->drawInstanced(3, 1, 0, 0);
 
-  // The blit covers every pixel, so the colour plane needs no clear. The depth
-  // plane does: the UI draws that test depth have to see an empty buffer rather
-  // than whatever this image held last frame.
-  if (depth && depth->texture)
-    commands->clearDepthStencil(true, true, 1.0f, 0);
+  // The blit covers every pixel, so the colour plane needs no clear. Unbinding
+  // ends its pass even when the layer's framebuffer is this same colour only
+  // one, so the guest's draws open a pass of their own.
+  commands->setFramebuffer(nullptr);
+  g_bound_framebuffer = nullptr;
 
   composite->composited_frame = g_frame;
   ++g_layer_composites;
