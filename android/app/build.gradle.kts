@@ -5,11 +5,12 @@ plugins {
 /*
  * This Gradle project does NOT drive CMake. The native libraries are built
  * separately by CMake + NDK in CI (or locally), then Gradle packages the
- * prebuilt .so files and the guest_shaders.bin asset into an installable APK.
+ * prebuilt .so files into an installable APK. The guest shader pack is linked
+ * straight into libeternalsonata.so (see src/gpu/guest_shaders.h), so it needs
+ * no separate staging step.
  *
  * Before running Gradle, stage the files:
- *   - .so files  → android/app/jniLibs/arm64-v8a/
- *   - guest_shaders.bin → android/app/assets/
+ *   - .so files → android/app/jniLibs/arm64-v8a/
  *
  * The CI workflow handles this staging automatically.
  */
@@ -137,11 +138,6 @@ android {
             "python scripts/download-sdk.py sdk/android-arm64 --pinned --platform android-arm64"
     }
     sourceSets["main"].java.srcDirs(sdkJavaDir)
-
-    // guest_shaders.bin, staged by CI into assets/.
-    sourceSets["main"].assets.srcDirs(
-        layout.projectDirectory.dir("assets")
-    )
 
     buildTypes {
         release {

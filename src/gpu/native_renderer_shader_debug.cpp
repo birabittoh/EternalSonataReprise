@@ -6,14 +6,16 @@
 
 #include <atomic>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <string>
 
-#include <rex/filesystem.h>
 #include <rex/logging.h>
 
 #include "guest_shaders.h"
+
+extern "C" {
+extern const uint8_t kGuestShaderDebugPackData[];
+extern const uint8_t kGuestShaderDebugPackDataEnd[];
+}
 
 namespace eternalsonata {
 namespace {
@@ -61,16 +63,14 @@ const GuestShader& PackEntry(bool pixel, uint32_t slot) {
 //
 // guest_shaders_debug.bin carries, per shader, the name the extractor gave it,
 // the microcode disassembly and the HLSL the emitter produced. It is a separate
-// file from guest_shaders.bin, and read a span at a time rather than loaded,
-// because it is roughly twice the size of the pack the renderer actually needs
-// and none of it is touched unless the debugger is opened. Its absence costs
-// the details pane and nothing else.
+// pack from guest_shaders.bin because it is roughly twice the size and none of
+// it is touched unless the debugger is opened, but it is linked into the exe
+// the same way; see gen-guest-shaders.py's write_pack_asm.
 
 constexpr uint32_t kDebugMagic = 0x44475345;  // 'ESGD', little endian
 // Bumped to 2 when the point sprite geometry shader added one entry past the
 // two slot tables.
 constexpr uint32_t kDebugVersion = 2;
-constexpr char kDebugPackName[] = "guest_shaders_debug.bin";
 
 #pragma pack(push, 1)
 struct DebugHeader {
@@ -92,62 +92,55 @@ static_assert(sizeof(DebugEntry) == 24, "debug pack entry layout");
 
 // UI thread only, so no locking: the details provider is the only caller.
 bool g_text_attempted = false;
-std::ifstream g_text_file;
-std::vector<DebugEntry> g_text_entries;
-uint64_t g_text_base = 0;  // byte offset of the text section within the file
+bool g_text_loaded = false;
+const DebugEntry* g_text_entries = nullptr;
+const uint8_t* g_text_data = nullptr;  // start of the text section
 uint32_t g_text_bytes = 0;
 
 bool EnsureTextPack() {
   if (g_text_attempted)
-    return g_text_file.is_open();
+    return g_text_loaded;
   g_text_attempted = true;
 
-  const std::filesystem::path path = rex::filesystem::GetExecutableFolder() / kDebugPackName;
-  std::ifstream file(path, std::ios::binary);
-  if (!file) {
+  const uint8_t* const pack = kGuestShaderDebugPackData;
+  const size_t pack_size = size_t(kGuestShaderDebugPackDataEnd - kGuestShaderDebugPackData);
+
+  if (pack_size < sizeof(DebugHeader)) {
     REXLOG_DEBUG(
-        "native_renderer: no {} next to the exe, so the shader debugger lists shaders but shows "
-        "no source",
-        kDebugPackName);
+        "native_renderer: embedded debug pack is empty, so the shader debugger lists shaders but "
+        "shows no source");
     return false;
   }
 
-  DebugHeader header{};
-  file.read(reinterpret_cast<char*>(&header), sizeof(header));
-  if (!file || header.magic != kDebugMagic || header.version != kDebugVersion ||
-      header.slots != kSlots) {
-    REXLOG_WARN("native_renderer: {} is not a v{} debug pack", kDebugPackName, kDebugVersion);
+  DebugHeader header;
+  std::memcpy(&header, pack, sizeof(header));
+  if (header.magic != kDebugMagic || header.version != kDebugVersion || header.slots != kSlots) {
+    REXLOG_WARN("native_renderer: embedded debug pack is not a v{} pack", kDebugVersion);
     return false;
   }
 
   // One past the two tables for the point sprite geometry shader, which the
   // overlay does not list but which has to be skipped to find the text.
-  g_text_entries.resize(size_t(header.slots) * 2 + 1);
-  file.read(reinterpret_cast<char*>(g_text_entries.data()),
-            std::streamsize(g_text_entries.size() * sizeof(DebugEntry)));
-  if (!file) {
-    REXLOG_WARN("native_renderer: {} is truncated", kDebugPackName);
-    g_text_entries.clear();
+  const size_t entry_count = size_t(header.slots) * 2 + 1;
+  const size_t entries_bytes = entry_count * sizeof(DebugEntry);
+  const size_t expected = sizeof(DebugHeader) + entries_bytes + size_t(header.text_bytes);
+  if (pack_size != expected) {
+    REXLOG_WARN("native_renderer: embedded debug pack is {} bytes, expected {}", pack_size,
+               expected);
     return false;
   }
 
-  g_text_base = sizeof(DebugHeader) + g_text_entries.size() * sizeof(DebugEntry);
+  g_text_entries = reinterpret_cast<const DebugEntry*>(pack + sizeof(DebugHeader));
+  g_text_data = pack + sizeof(DebugHeader) + entries_bytes;
   g_text_bytes = header.text_bytes;
-  g_text_file = std::move(file);
+  g_text_loaded = true;
   return true;
 }
 
 std::string ReadText(uint32_t offset, uint32_t size) {
   if (size == 0 || offset > g_text_bytes || size > g_text_bytes - offset)
     return {};
-  std::string out(size, '\0');
-  g_text_file.seekg(std::streamoff(g_text_base + offset));
-  g_text_file.read(out.data(), std::streamsize(size));
-  if (!g_text_file) {
-    g_text_file.clear();
-    return {};
-  }
-  return out;
+  return std::string(reinterpret_cast<const char*>(g_text_data) + offset, size);
 }
 
 // Name, microcode disassembly and HLSL for one shader, or empties when the

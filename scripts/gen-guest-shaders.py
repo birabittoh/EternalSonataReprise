@@ -12,11 +12,12 @@ Nothing here runs at game time. That is the whole point of the native renderer:
 the guest's shader inventory is a closed set compiled into the executable, so
 translating it is a finite offline problem rather than a runtime one.
 
-Output is a single pack file, `guest_shaders.bin`, deployed next to the exe and
-read once at startup by src/gpu/guest_shaders.cpp. It is a file rather than an
-embedded byte array because the compiled blobs come to a few megabytes per
-format, and turning that into C++ array initialisers costs far more build time
-than reading it back does at runtime.
+Output is two pack files, `guest_shaders.bin` and `guest_shaders_debug.bin`,
+each with a tiny `.S` sidecar that `.incbin`s it into the executable's
+read-only data, so the game needs no files next to it at runtime. `.S` is
+assembled, not compiled, so the packs' few megabytes cost one file read at
+build time rather than a slow C++ array initialiser; src/gpu/guest_shaders.cpp
+and src/gpu/native_renderer_shader_debug.cpp read the results out of memory.
 
 The pack is indexed by *guest table slot*, not by position: the game binds
 shaders out of the 256 entry tables at dword_824BBEE8 and dword_824BC2E8, and
@@ -102,6 +103,41 @@ def write_if_different(path, data):
                 return False
     with open(path, "wb") as handle:
         handle.write(data)
+    return True
+
+
+def write_pack_asm(asm_path, pack_path, symbol):
+    """Emit a `.S` that `.incbin`s a pack, so it links straight into the exe.
+
+    Used for both guest_shaders.bin and guest_shaders_debug.bin.
+
+    Symbol names need a leading underscore on Mach-O only; ELF and Windows COFF
+    (built here with clang, not cl, so no /Zl-style decoration) use the name as
+    written. `.incbin`'s path is read at assemble time, so it has to survive
+    unescaped through GAS's string literal: forward slashes side-step the
+    backslash-escaping problem entirely and every assembler here accepts them.
+    """
+    incbin_path = os.path.abspath(pack_path).replace("\\", "/")
+    content = f"""\
+#if defined(__APPLE__)
+#define SYM(name) _##name
+.section __TEXT,__const
+#elif defined(_WIN32)
+#define SYM(name) name
+.section .rdata,"dr"
+#else
+#define SYM(name) name
+.section .rodata
+#endif
+
+.p2align 4
+.global SYM({symbol})
+SYM({symbol}):
+.incbin "{incbin_path}"
+.global SYM({symbol}End)
+SYM({symbol}End):
+"""
+    write_if_different(asm_path, content.encode("utf-8"))
     return True
 
 
@@ -365,9 +401,13 @@ def main():
                         help="working directory for the .hlsl and compiled blobs")
     parser.add_argument("--pack", help="pack file to write "
                                        "(default <out>/guest_shaders.bin)")
+    parser.add_argument("--pack-asm", help=".S file to write, .incbin-ing "
+                                           "--pack (default <pack>.S)")
     parser.add_argument("--debug-pack",
                         help="shader debugger sidecar to write (default "
                              "<out>/guest_shaders_debug.bin)")
+    parser.add_argument("--debug-pack-asm", help=".S file to write, .incbin-ing "
+                                                  "--debug-pack (default <debug-pack>.S)")
     parser.add_argument("--dxc", required=True, help="dxc executable")
     parser.add_argument("--dxc-lib-dir",
                         help="directory holding libdxcompiler, if it is not "
@@ -402,11 +442,17 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(pack_path)), exist_ok=True)
     write_if_different(pack_path, data)
 
+    asm_path = args.pack_asm or (pack_path + ".S")
+    write_pack_asm(asm_path, pack_path, "kGuestShaderPackData")
+
     debug_path = args.debug_pack or os.path.join(args.out,
                                                  "guest_shaders_debug.bin")
     debug_data = pack_debug(entries)
     os.makedirs(os.path.dirname(os.path.abspath(debug_path)), exist_ok=True)
     write_if_different(debug_path, debug_data)
+
+    debug_asm_path = args.debug_pack_asm or (debug_path + ".S")
+    write_pack_asm(debug_asm_path, debug_path, "kGuestShaderDebugPackData")
 
     vertex = sum(1 for e in entries if e.kind == "vs")
     pixel = sum(1 for e in entries if e.kind == "ps")

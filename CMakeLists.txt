@@ -183,19 +183,32 @@ plume_shaders_init()
 # microcode (scripts/xenos_hlsl.py), compile each with DXC, and pack the results
 # into guest_shaders.bin.
 #
-# The pack is deployed next to the exe rather than embedded as a byte array.
-# The compiled blobs come to a few megabytes per format, and turning that into
-# C++ array initialisers would cost more build time on every rebuild than
-# reading the file back costs once at startup.
+# The pack is linked into the exe: gen-guest-shaders.py also writes a `.S` that
+# `.incbin`s the pack's bytes into read-only data (see write_pack_asm there), so
+# there is no loose file to deploy, stage into an APK, or go missing on a user's
+# machine. `.incbin` is assembled rather than compiled, which is what keeps this
+# cheap despite the pack being a few megabytes per format; a C++ array
+# initialiser of the same bytes would cost far more build time.
 set(ETERNALSONATA_GUEST_SHADER_DIR ${CMAKE_BINARY_DIR}/guest_shaders)
 set(ETERNALSONATA_GUEST_SHADER_PACK ${CMAKE_BINARY_DIR}/guest_shaders.bin)
+set(ETERNALSONATA_GUEST_SHADER_PACK_ASM ${CMAKE_BINARY_DIR}/guest_shaders.bin.S)
+
+# `.S` files need the ASM language enabled; pin its compiler to the same clang
+# used for CXX; and since clang always uses its own integrated assembler for
+# `.S`, `-Wno-ignored-attributes`-style CXX-only flags are not injected here.
+if(NOT CMAKE_ASM_COMPILER)
+    set(CMAKE_ASM_COMPILER ${CMAKE_CXX_COMPILER})
+endif()
+enable_language(ASM)
 
 # The sidecar the F2 shader debugger reads: per shader, the microcode
 # disassembly and the emitted HLSL. Separate from the pack above because it is
-# the larger of the two and the renderer never reads it; only the overlay does,
-# a span at a time. See src/native_renderer_shader_debug.h.
+# the larger of the two and only the overlay reads it, not the renderer. Linked
+# the same way as the main pack; see src/gpu/native_renderer_shader_debug.cpp.
 set(ETERNALSONATA_GUEST_SHADER_DEBUG_PACK
     ${CMAKE_BINARY_DIR}/guest_shaders_debug.bin)
+set(ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM
+    ${CMAKE_BINARY_DIR}/guest_shaders_debug.bin.S)
 
 # DXIL is Windows-only; SPIR-V is built everywhere, since Plume reaches Vulkan
 # through volk on every platform it supports.
@@ -212,12 +225,15 @@ else()
 endif()
 
 add_custom_command(
-    OUTPUT ${ETERNALSONATA_GUEST_SHADER_PACK} ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK}
+    OUTPUT ${ETERNALSONATA_GUEST_SHADER_PACK} ${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
+           ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK} ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-guest-shaders.py
         --xex ${CMAKE_SOURCE_DIR}/assets/default.xex
         --out ${ETERNALSONATA_GUEST_SHADER_DIR}
         --pack ${ETERNALSONATA_GUEST_SHADER_PACK}
+        --pack-asm ${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
         --debug-pack ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK}
+        --debug-pack-asm ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM}
         --dxc ${PLUME_DXC_EXECUTABLE}
         ${ETERNALSONATA_DXC_LIB_ARG}
         --formats ${ETERNALSONATA_SHADER_FORMATS}
@@ -232,8 +248,8 @@ add_custom_command(
     VERBATIM
 )
 add_custom_target(eternalsonata_guest_shaders
-    DEPENDS ${ETERNALSONATA_GUEST_SHADER_PACK}
-            ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK})
+    DEPENDS ${ETERNALSONATA_GUEST_SHADER_PACK} ${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
+            ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK} ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM})
 
 # Sources
 set(ETERNALSONATA_SOURCES
@@ -286,6 +302,8 @@ set(ETERNALSONATA_SOURCES
     src/gpu/native_renderer_state.cpp
     src/gpu/native_renderer_texture.cpp
     src/core/settings.cpp
+    ${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
+    ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM}
     ${ETERNALSONATA_AREA_NAMES_HEADER}
     ${ETERNALSONATA_ICON_HEADER}
     ${ETERNALSONATA_FONTS_HEADER}
@@ -352,16 +370,9 @@ if(WIN32)
     target_link_libraries(eternalsonata PRIVATE d3d12)
 endif()
 
-# The guest shader pack has to exist before the exe runs, and lands next to it.
+# Both the guest shader pack and its F2 debugger sidecar are linked in via the
+# *_ASM sources above.
 add_dependencies(eternalsonata eternalsonata_guest_shaders)
-add_custom_command(TARGET eternalsonata POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${ETERNALSONATA_GUEST_SHADER_PACK} $<TARGET_FILE_DIR:eternalsonata>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK} $<TARGET_FILE_DIR:eternalsonata>
-    COMMENT "Deploying guest_shaders.bin"
-    VERBATIM
-)
 
 # Overlay shaders. Plume compiles nothing at runtime, so these are built ahead
 # of time to DXIL and SPIR-V and embedded as byte arrays -- small enough that

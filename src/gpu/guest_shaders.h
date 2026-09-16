@@ -9,10 +9,12 @@
 // 260 containers, translates the microcode to HLSL (scripts/xenos_hlsl.py) and
 // compiles it with DXC, all at build time. Nothing here translates anything.
 //
-// The result is `guest_shaders.bin`, deployed next to the exe, and this is the
-// reader for it. Lookups are by *guest table slot*, the same index the device
-// mirror resolves a bound shader object to, so binding is a direct index rather
-// than a hash of anything.
+// The result, `guest_shaders.bin`, is linked straight into the executable's
+// read-only data by a generated `.S` (see scripts/gen-guest-shaders.py's
+// write_pack_asm), so there is nothing to deploy or go missing at runtime; this
+// is the reader for the in-memory pack. Lookups are by *guest table slot*, the
+// same index the device mirror resolves a bound shader object to, so binding is
+// a direct index rather than a hash of anything.
 //
 // No Plume types here: the pack is bytes, and the caller turns a blob into a
 // RenderShader.
@@ -79,11 +81,10 @@ struct GuestShader {
   bool valid() const { return dxil_size != 0 || spirv_size != 0; }
 };
 
-// Read the pack. `path` is the pack file; passing nothing looks for
-// `guest_shaders.bin` next to the executable. Safe to call more than once; only
-// the first call does any work. Returns false and logs if the pack is missing or
-// malformed, in which case every lookup below returns an invalid shader.
-bool LoadGuestShaders(const char* path = nullptr);
+// Parse the pack linked into the executable. Safe to call more than once; only
+// the first call does any work. Returns false and logs if the pack is malformed,
+// in which case every lookup below returns an invalid shader.
+bool LoadGuestShaders();
 
 // Lookup by guest table slot, 1..255. An out-of-range slot, or one the game
 // never populated, gives an entry whose `valid()` is false.

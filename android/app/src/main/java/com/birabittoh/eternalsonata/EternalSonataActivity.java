@@ -14,8 +14,7 @@ import org.libsdl.app.SDLActivity;
 
 /**
  * Thin wrapper around SDL3's SDLActivity that tells it which native libraries
- * to load and copies bundled assets (guest_shaders.bin) to internal storage
- * where the native code can open them with std::ifstream.
+ * to load.
  */
 public class EternalSonataActivity extends SDLActivity {
 
@@ -41,42 +40,6 @@ public class EternalSonataActivity extends SDLActivity {
             return "rexruntime";
         } catch (UnsatisfiedLinkError e) {
             return "rexruntimerd";
-        }
-    }
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        copyAssetIfStale("guest_shaders.bin");
-        super.onCreate(savedInstanceState);
-    }
-
-    /**
-     * Copy an APK asset to the app's internal files directory so the native
-     * code can open it with a plain filesystem path.  Recopied whenever the
-     * package is newer than the copy: installing over an existing app keeps
-     * internal storage, so a copy-if-missing leaves a stale pack behind and
-     * the shader pack's format version does change between builds.
-     */
-    private void copyAssetIfStale(String name) {
-        File dest = new File(getFilesDir(), name);
-        if (dest.exists() && dest.lastModified() >= packageUpdateTime()) return;
-        try (InputStream in = getAssets().open(name);
-             OutputStream out = new FileOutputStream(dest)) {
-            byte[] buf = new byte[1 << 16];
-            int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-            Log.i(TAG, "Copied " + name + " to " + dest.getAbsolutePath());
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to copy asset " + name + ": " + e.getMessage());
-        }
-    }
-
-    /** When this APK was installed or last updated. 0 if it cannot be read, which recopies. */
-    private long packageUpdateTime() {
-        try {
-            return getPackageManager().getPackageInfo(getPackageName(), 0).lastUpdateTime;
-        } catch (Exception e) {
-            return 0;
         }
     }
 
