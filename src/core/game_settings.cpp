@@ -54,6 +54,7 @@
 #include "eternalsonata_settings_api.h"
 #include "game_settings.h"
 #include "guest_main_thread.h"
+#include "settings.h"
 
 namespace eternalsonata {
 namespace {
@@ -134,6 +135,7 @@ void WriteGuestByte(uint32_t address, uint8_t value) {
 // ---------------------------------------------------------------------------
 
 struct SettingInfo {
+  // Guest address of the byte, or 0 for a setting the host owns.
   uint32_t address;
   int min;
   int max;
@@ -148,15 +150,85 @@ constexpr SettingInfo kSettings[kSettingCount] = {
     /* VOLUME_SFX     */ {kVolumeMusic + 1u, 0, 100, 1},
     /* VOLUME_VOICE   */ {kVolumeMusic + 2u, 0, 100, 2},
     /* SUBTITLES      */ {kSubtitles, 0, 1, -1},
-    /* VOICE_LANGUAGE */ {kVoiceLanguage, 0, 1, -1},
+    /* VOICE_LANGUAGE */ {0u, 0, 0, -1},  // dynamic, see LanguageSettingMax
     /* AUDIO_OUTPUT   */ {kAudioOutput, 0, 2, -1},
     /* CONTROLLER_P1  */ {kControllerP1 + 0u, 0, 3, -1},
     /* CONTROLLER_P2  */ {kControllerP1 + 1u, 0, 3, -1},
     /* CONTROLLER_P3  */ {kControllerP1 + 2u, 0, 3, -1},
+    /* TEXT_LANGUAGE  */ {0u, 0, 0, -1},  // dynamic, see LanguageSettingMax
 };
 
 bool ValidSetting(int setting) {
   return setting >= 0 && setting < kSettingCount;
+}
+
+// Neither language setting is a byte in the block: a mod language borrows a
+// donor's BTX block or bank suffix and leaves the guest's selector reading as
+// the donor, so the cvar is the only thing that knows the real answer. The API
+// speaks the host's list index for both.
+
+bool LanguageSetting(int setting) {
+  return setting == ETERNALSONATA_SETTING_VOICE_LANGUAGE ||
+         setting == ETERNALSONATA_SETTING_TEXT_LANGUAGE;
+}
+
+// Inclusive, and it grows as mods register.
+int LanguageSettingMax(int setting) {
+  const int count = setting == ETERNALSONATA_SETTING_VOICE_LANGUAGE ? VoiceLanguageCount()
+                                                                    : UserLanguageCount();
+  return count > 0 ? count - 1 : 0;
+}
+
+int ReadLanguageSetting(int setting) {
+  return setting == ETERNALSONATA_SETTING_VOICE_LANGUAGE ? VoiceLanguageIndex()
+                                                         : UserLanguageIndex();
+}
+
+// Called without g_mutex held; takes it only for the guest byte.
+void WriteLanguageSetting(int setting, int value) {
+  if (setting == ETERNALSONATA_SETTING_TEXT_LANGUAGE) {
+    SetUserLanguageSetting(value);
+    return;
+  }
+
+  SetVoiceLanguageSetting(value);
+  // Returning to one of the game's own two also moves its selector byte, as the
+  // native Voice row does; a mod language has no byte and skips this.
+  const int guest_byte = VoiceLanguageGuestByte(value);
+  if (guest_byte < 0) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (BlockReadable()) {
+    WriteGuestByte(kVoiceLanguage, static_cast<uint8_t>(guest_byte));
+  }
+}
+
+int SettingMin(int setting) { return LanguageSetting(setting) ? 0 : kSettings[setting].min; }
+
+int SettingMax(int setting) {
+  return LanguageSetting(setting) ? LanguageSettingMax(setting) : kSettings[setting].max;
+}
+
+// The volumes and the controller ports are numbers and have no names. The
+// literals are the game's own strings for these rows, repeated rather than read
+// out of the BTX blob, which is in the player's language.
+const char* ValueName(int setting, int value) {
+  switch (setting) {
+    case ETERNALSONATA_SETTING_BATTLE_CAMERA:
+    case ETERNALSONATA_SETTING_SUBTITLES:
+      return value == 0 ? "OFF" : "ON";
+    case ETERNALSONATA_SETTING_ATTACK_BUTTON:
+      return value == 0 ? "A" : "B";
+    case ETERNALSONATA_SETTING_AUDIO_OUTPUT:
+      return value == 0 ? "Stereo" : value == 1 ? "Mono" : "5.1ch Surround";
+    case ETERNALSONATA_SETTING_VOICE_LANGUAGE:
+      return VoiceLanguageLabel(value);
+    case ETERNALSONATA_SETTING_TEXT_LANGUAGE:
+      return UserLanguageLabel(value);
+    default:
+      return nullptr;
+  }
 }
 
 // Audio Output's stored byte is not its menu index: sub_82200FE8 turns the
@@ -185,8 +257,12 @@ uint8_t AudioOutputToByte(int value) {
   }
 }
 
-// Caller holds g_mutex and has checked BlockReadable().
+// Caller holds g_mutex and, for a setting that is a guest byte, has checked
+// BlockReadable().
 int ReadSetting(int setting) {
+  if (LanguageSetting(setting)) {
+    return ReadLanguageSetting(setting);
+  }
   const uint8_t raw = ReadGuestByte(kSettings[setting].address);
   if (setting == ETERNALSONATA_SETTING_AUDIO_OUTPUT) {
     return AudioOutputFromByte(raw);
@@ -320,10 +396,13 @@ extern "C" REX_MOD_PLUGIN_EXPORT uint32_t EternalSonataSettingsAbiVersion(void) 
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetSetting(int setting) {
   using namespace eternalsonata;
-  std::lock_guard<std::mutex> lock(g_mutex);
   if (!ValidSetting(setting)) {
     return ETERNALSONATA_SETTING_ERR_INVALID_SETTING;
   }
+  if (LanguageSetting(setting)) {
+    return ReadLanguageSetting(setting);
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
   if (!BlockReadable()) {
     return ETERNALSONATA_SETTING_ERR_UNAVAILABLE;
   }
@@ -337,24 +416,40 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetSettingRange(int setting, i
     return ETERNALSONATA_SETTING_ERR_INVALID_SETTING;
   }
   if (min) {
-    *min = kSettings[setting].min;
+    *min = SettingMin(setting);
   }
   if (max) {
-    *max = kSettings[setting].max;
+    *max = SettingMax(setting);
   }
   return ETERNALSONATA_SETTING_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT const char* EternalSonataGetSettingValueName(int setting,
+                                                                             int value) {
+  using namespace eternalsonata;
+  if (!ValidSetting(setting) || value < SettingMin(setting) || value > SettingMax(setting)) {
+    return nullptr;
+  }
+  return ValueName(setting, value);
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetSetting(int setting, int value) {
   using namespace eternalsonata;
   int channel = -1;
+  if (!ValidSetting(setting)) {
+    return ETERNALSONATA_SETTING_ERR_INVALID_SETTING;
+  }
+  if (LanguageSetting(setting)) {
+    if (value < SettingMin(setting) || value > SettingMax(setting)) {
+      return ETERNALSONATA_SETTING_ERR_INVALID_VALUE;
+    }
+    WriteLanguageSetting(setting, value);
+    return ETERNALSONATA_SETTING_OK;
+  }
   {
     std::lock_guard<std::mutex> lock(g_mutex);
-    if (!ValidSetting(setting)) {
-      return ETERNALSONATA_SETTING_ERR_INVALID_SETTING;
-    }
     const auto& info = kSettings[setting];
-    if (value < info.min || value > info.max) {
+    if (value < SettingMin(setting) || value > SettingMax(setting)) {
       return ETERNALSONATA_SETTING_ERR_INVALID_VALUE;
     }
     if (!BlockReadable()) {
