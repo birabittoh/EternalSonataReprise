@@ -146,6 +146,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // RenderDoc captures require a debuggable APK. Opt in with
+            // -PwithRenderDoc=true so normal sideload builds stay non-debuggable.
+            isDebuggable = (project.findProperty("withRenderDoc") as String?) == "true"
             // Sideload key when one is present, otherwise debug-signed as before
             // so a fresh clone (and CI, which has no keystore) still builds.
             signingConfig = signingConfigs.findByName("sideload")
