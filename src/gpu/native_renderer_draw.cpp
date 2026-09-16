@@ -436,10 +436,16 @@ struct BindingSetEntry {
   uint64_t hash = 0;
   BindingKey key;
   std::unique_ptr<RenderDescriptorSet> set;
+  // The draw frame this entry was last handed to a draw, for eviction order.
+  uint64_t used_frame = 0;
 };
 
 std::vector<BindingSetEntry> g_texture_sets;
 std::vector<BindingSetEntry> g_sampler_sets;
+
+// Bumped once per recorded frame, so an entry's age is comparable across the
+// two caches. Only ever compared for ordering and equality.
+uint64_t g_draw_frame = 0;
 
 // What each heap can actually hold, in sets of sixteen, less a margin for the
 // overlay and the transient sets. These are not arbitrary: they are the heap
@@ -449,6 +455,7 @@ constexpr uint32_t kMaxSamplerSets = 48;    // sampler heap is 1024 / 16 = 64
 uint64_t g_texture_set_misses = 0;
 uint64_t g_sampler_set_misses = 0;
 uint64_t g_texture_set_transient = 0;
+uint64_t g_binding_set_evicted = 0;
 uint64_t g_binding_set_failed = 0;
 
 RenderDescriptorSet* AcquireBindingSet(RenderDevice* device, std::vector<BindingSetEntry>& cache,
@@ -456,8 +463,10 @@ RenderDescriptorSet* AcquireBindingSet(RenderDevice* device, std::vector<Binding
                                        uint64_t* misses) {
   const uint64_t hash = key.Hash();
   for (auto& entry : cache) {
-    if (entry.hash == hash && entry.key == key)
+    if (entry.hash == hash && entry.key == key) {
+      entry.used_frame = g_draw_frame;
       return entry.set.get();
+    }
   }
 
   ++*misses;
@@ -487,21 +496,39 @@ RenderDescriptorSet* AcquireBindingSet(RenderDevice* device, std::vector<Binding
                       RenderTextureLayout::SHADER_READ);
   }
 
-  // The safety valve: correct but allocating per draw, so a non-zero count in
-  // the summary means the cap wants raising rather than that anything is wrong.
-  // Held on the frame slot, because a draw in this slot's command list is what
-  // reads it.
   if (cache.size() >= cap) {
-    ++g_texture_set_transient;
-    auto& transient = g_arenas[g_arena_slot].transient_sets;
-    transient.push_back(std::move(set));
-    return transient.back().get();
+    // At the cap, drop the entry no draw has wanted for longest. Without this
+    // the cache only ever grew, and every further miss took the transient path
+    // below, which allocates a set per draw per frame and exhausts the heap
+    // within a frame or two: draws then fail here and vanish from the frame.
+    //
+    // Retired rather than destroyed, for the reason DrawForgetTextureBindings
+    // gives: a command list already names the set by pointer.
+    size_t oldest = 0;
+    for (size_t i = 1; i < cache.size(); ++i) {
+      if (cache[i].used_frame < cache[oldest].used_frame)
+        oldest = i;
+    }
+    if (cache[oldest].used_frame != g_draw_frame) {
+      ++g_binding_set_evicted;
+      FrameRetireDescriptorSet(std::move(cache[oldest].set));
+      cache.erase(cache.begin() + oldest);
+    } else {
+      // Every entry is live in the frame being recorded, so there is nothing to
+      // evict that a draw is not already reading. Held on the frame slot,
+      // because a draw in this slot's command list is what reads it.
+      ++g_texture_set_transient;
+      auto& transient = g_arenas[g_arena_slot].transient_sets;
+      transient.push_back(std::move(set));
+      return transient.back().get();
+    }
   }
 
   BindingSetEntry entry;
   entry.hash = hash;
   entry.key = key;
   entry.set = std::move(set);
+  entry.used_frame = g_draw_frame;
   cache.push_back(std::move(entry));
   return cache.back().set.get();
 }
@@ -2825,6 +2852,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 }  // namespace
 
 void BeginGuestDrawFrame(uint32_t slot) {
+  ++g_draw_frame;
   g_arena_slot = slot < kFramesInFlight ? slot : 0;
   for (ArenaBlock& block : Arena())
     block.used = 0;
@@ -2877,11 +2905,11 @@ void LogGuestDrawSummary() {
 
   REXLOG_DEBUG(
       "native_renderer:   samplers={} (overflowed {}x, inexact clamp mode {}x, alpha test {}x) | "
-      "descriptor sets: texture={} (misses {}, forgets {}) sampler={} (misses {}) transient={} "
-      "failed={}",
+      "descriptor sets: texture={} (misses {}, forgets {}) sampler={} (misses {}) evicted={} "
+      "transient={} failed={}",
       g_sampler_count, g_sampler_overflow, g_clamp_inexact, g_alpha_test_draws,
       g_texture_sets.size(), g_texture_set_misses, g_texture_set_forgets, g_sampler_sets.size(),
-      g_sampler_set_misses, g_texture_set_transient, g_binding_set_failed);
+      g_sampler_set_misses, g_binding_set_evicted, g_texture_set_transient, g_binding_set_failed);
 
   REXLOG_DEBUG("native_renderer:   binding cache: hits={} misses={}", g_binding_cache_hits,
               g_binding_cache_misses);
