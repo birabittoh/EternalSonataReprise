@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Packages a built macOS binary as an .app inside a .dmg.
 
-Run after `build.py --release`, which leaves the executable, the SDK's dylibs
-and guest_shaders.bin in the repo root. This only assembles.
+Run after `build.py --release`, which leaves the executable and the SDK's
+dylibs in the repo root. This only assembles.
 
 Ships the Vulkan loader and MoltenVK, since macOS has neither; see
 BootstrapAppleVulkanRuntime in native_renderer_plume.cpp for the runtime half.
 Everything goes in Contents/MacOS rather than Contents/Frameworks, because the
-dylibs' @executable_path rpaths and guest_shaders.bin's lookup both already
-resolve there.
+dylibs' @executable_path rpaths already resolve there.
 
 Ad-hoc signed at the end because arm64 will not run unsigned binaries and
 copying a dylib invalidates its signature. Not notarised, so a first launch
@@ -208,7 +207,7 @@ def build_app(app_path, project_name, version):
     os.makedirs(macos_dir)
     os.makedirs(resources)
 
-    payload = [project_name, "guest_shaders.bin"]
+    payload = [project_name]
     payload += sorted(f for f in os.listdir(ROOT) if f.endswith(".dylib"))
     for name in payload:
         src = os.path.join(ROOT, name)

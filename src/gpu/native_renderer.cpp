@@ -341,7 +341,7 @@ void InitNativeRenderer(rex::ui::Window* window) {
   if (!LoadGuestShaders()) {
     REXLOG_WARN(
         "native_renderer: no guest shader pack, so nothing the game draws can be translated into "
-        "a host pipeline. Rebuild to regenerate guest_shaders.bin.");
+        "a host pipeline. Rebuild to regenerate the embedded pack.");
   }
 
 #if defined(__APPLE__)

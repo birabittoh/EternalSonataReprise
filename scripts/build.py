@@ -104,16 +104,6 @@ def compute_codegen_hash(manifest, manifest_path):
     return h.hexdigest()
 
 
-# The native renderer's ahead-of-time compiled shader pack, built by
-# scripts/gen-guest-shaders.py as part of the CMake build.
-GUEST_SHADER_PACK = "guest_shaders.bin"
-
-# The F2 shader debugger's sidecar (microcode disassembly + HLSL per shader).
-# Deployed next to the exe for local runs, but deliberately left out of the
-# packaged build: it is a debugging aid, and it is larger than the pack the
-# renderer actually needs. See src/gpu/native_renderer_shader_debug.h.
-GUEST_SHADER_DEBUG_PACK = "guest_shaders_debug.bin"
-
 # macOS has no Vulkan of its own, so the SDK's CMake stages a loader, MoltenVK
 # and the driver manifest into <build dir>/vulkan (rexglue_helpers.cmake). The
 # manifest is the only way the loader finds a driver: without it vkCreateInstance
@@ -142,7 +132,7 @@ def do_package(name, project_name, is_windows):
 
     exe = f"{project_name}.exe" if is_windows else project_name
     lib_suffix = lib_extension()
-    candidates = [exe, GUEST_SHADER_PACK] + \
+    candidates = [exe] + \
         sorted(f for f in os.listdir(".") if f.endswith(lib_suffix))
     for src in candidates:
         if os.path.isfile(src):
@@ -286,14 +276,10 @@ def main():
     print(f"+ cp {build_output} {exe_name}")
     shutil.copy2(build_output, exe_name)
 
-    # The native renderer reads its ahead-of-time compiled shaders from a pack
-    # next to the exe (see src/gpu/guest_shaders.h), so it follows the exe out of
-    # the build directory.
-    for name in (GUEST_SHADER_PACK, GUEST_SHADER_DEBUG_PACK):
-        pack = os.path.join("out", "build", preset, name)
-        if os.path.isfile(pack):
-            print(f"+ cp {pack} {name}")
-            shutil.copy2(pack, name)
+    # The native renderer's ahead-of-time compiled shaders, and the F2
+    # debugger's disassembly/HLSL sidecar, are both linked into the exe itself
+    # (see src/gpu/guest_shaders.h and src/gpu/native_renderer_shader_debug.cpp).
+    # Neither is a loose file to stage.
 
     staged_vulkan = os.path.join("out", "build", preset, VULKAN_RUNTIME_DIR)
     if os.path.isdir(staged_vulkan):

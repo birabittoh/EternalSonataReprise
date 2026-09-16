@@ -3,8 +3,10 @@
 // See guest_shaders.h.
 //
 // The pack format, written by scripts/gen-guest-shaders.py. Everything is
-// little endian and the whole file is read into one buffer that is kept alive
-// for the process, so the pointers handed out below point straight into it.
+// little endian. The bytes come from kGuestShaderPackData/-End, defined by a
+// generated `.S` that `.incbin`s guest_shaders.bin into the executable's own
+// read-only data (see write_pack_asm), so the pointers handed out below point
+// straight into the running process's image rather than a heap buffer.
 //
 //   header    magic 'ESGS', version, slot count, input count, key bytes,
 //             literal block count, blob bytes
@@ -23,13 +25,14 @@
 #include "guest_shaders.h"
 
 #include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <string>
 #include <vector>
 
-#include <rex/filesystem.h>
 #include <rex/logging.h>
+
+extern "C" {
+extern const uint8_t kGuestShaderPackData[];
+extern const uint8_t kGuestShaderPackDataEnd[];
+}
 
 namespace eternalsonata {
 namespace {
@@ -42,7 +45,6 @@ constexpr uint32_t kMagic = 0x53475345;  // 'ESGS', little endian
 // sprite geometry shader's entry past the two slot tables, and to 7 for the
 // clip scale, which every vertex shader's emitted HLSL depends on.
 constexpr uint32_t kVersion = 7;
-constexpr char kDefaultName[] = "guest_shaders.bin";
 
 constexpr uint8_t kFlagPointSize = 1 << 0;
 constexpr uint8_t kFlagHasCube = 1 << 1;
@@ -77,25 +79,12 @@ struct PackEntry {
 static_assert(sizeof(PackHeader) == 28, "pack header layout");
 static_assert(sizeof(PackEntry) == 30, "pack entry layout");
 
-std::vector<uint8_t> g_pack;
 std::vector<GuestShader> g_vertex;
 std::vector<GuestShader> g_pixel;
 GuestShader g_point_sprite;
 const GuestShader g_absent;
 bool g_attempted = false;
 bool g_loaded = false;
-
-bool ReadFile(const std::filesystem::path& path, std::vector<uint8_t>& out) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file)
-    return false;
-  const std::streamoff size = file.tellg();
-  if (size <= 0)
-    return false;
-  out.resize(static_cast<size_t>(size));
-  file.seekg(0);
-  return static_cast<bool>(file.read(reinterpret_cast<char*>(out.data()), size));
-}
 
 // Decode one record. Returns false on any offset that does not fit its section,
 // which is the whole validation: a truncated or mismatched pack is rejected here
@@ -140,28 +129,22 @@ bool Decode(const PackEntry& entry, const PackHeader& header, const uint8_t* blo
 
 }  // namespace
 
-bool LoadGuestShaders(const char* path) {
+bool LoadGuestShaders() {
   if (g_attempted)
     return g_loaded;
   g_attempted = true;
 
-  const std::filesystem::path pack_path =
-      path ? rex::to_path(path) : rex::filesystem::GetExecutableFolder() / kDefaultName;
-  const std::string resolved = rex::path_to_utf8(pack_path);
+  const uint8_t* const pack = kGuestShaderPackData;
+  const size_t pack_size = size_t(kGuestShaderPackDataEnd - kGuestShaderPackData);
 
-  if (!ReadFile(pack_path, g_pack)) {
-    REXLOG_ERROR("guest_shaders: cannot read {}", resolved);
-    return false;
-  }
-
-  if (g_pack.size() < sizeof(PackHeader)) {
-    REXLOG_ERROR("guest_shaders: {} is too small to be a pack", resolved);
+  if (pack_size < sizeof(PackHeader)) {
+    REXLOG_ERROR("guest_shaders: embedded pack is too small to be a pack");
     return false;
   }
   PackHeader header;
-  std::memcpy(&header, g_pack.data(), sizeof(header));
+  std::memcpy(&header, pack, sizeof(header));
   if (header.magic != kMagic || header.version != kVersion) {
-    REXLOG_ERROR("guest_shaders: {} is not a v{} pack (magic {:08X} version {})", resolved,
+    REXLOG_ERROR("guest_shaders: embedded pack is not a v{} pack (magic {:08X} version {})",
                  kVersion, header.magic, header.version);
     return false;
   }
@@ -174,12 +157,12 @@ bool LoadGuestShaders(const char* path) {
                           size_t(header.input_count) * sizeof(GuestVertexInput) +
                           size_t(header.key_bytes) + size_t(header.literal_blocks) * 64 +
                           size_t(header.blob_bytes);
-  if (g_pack.size() != expected) {
-    REXLOG_ERROR("guest_shaders: {} is {} bytes, expected {}", resolved, g_pack.size(), expected);
+  if (pack_size != expected) {
+    REXLOG_ERROR("guest_shaders: embedded pack is {} bytes, expected {}", pack_size, expected);
     return false;
   }
 
-  const uint8_t* cursor = g_pack.data() + sizeof(PackHeader);
+  const uint8_t* cursor = pack + sizeof(PackHeader);
   const PackEntry* records = reinterpret_cast<const PackEntry*>(cursor);
   cursor += entries_bytes;
   const GuestVertexInput* inputs = reinterpret_cast<const GuestVertexInput*>(cursor);
@@ -198,18 +181,17 @@ bool LoadGuestShaders(const char* path) {
                        : i < header.slots            ? g_vertex[i]
                                                      : g_pixel[i - header.slots];
     if (!Decode(records[i], header, blob, inputs, keys, literals, out)) {
-      REXLOG_ERROR("guest_shaders: entry {} in {} is out of range", i, resolved);
+      REXLOG_ERROR("guest_shaders: entry {} in embedded pack is out of range", i);
       g_vertex.clear();
       g_pixel.clear();
       g_point_sprite = GuestShader{};
-      g_pack.clear();
       return false;
     }
   }
 
   g_loaded = true;
-  REXLOG_DEBUG("guest_shaders: loaded {} vertex, {} pixel from {} ({} KiB)",
-              GuestVertexShaderCount(), GuestPixelShaderCount(), resolved, g_pack.size() / 1024);
+  REXLOG_DEBUG("guest_shaders: loaded {} vertex, {} pixel from embedded pack ({} KiB)",
+              GuestVertexShaderCount(), GuestPixelShaderCount(), pack_size / 1024);
   return true;
 }
 
