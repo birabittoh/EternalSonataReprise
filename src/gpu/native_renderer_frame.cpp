@@ -254,6 +254,10 @@ struct ResolvedTexture {
   std::unique_ptr<RenderDescriptorSet> depth_set;
   std::unique_ptr<RenderTextureView> depth_source_view;
   const RenderTexture* depth_set_source = nullptr;
+  // On Vulkan the depth resolve goes through a buffer instead of the draw
+  // above, one texel row per row of the resolved box. See DepthResolveCopy.
+  std::unique_ptr<RenderBuffer> depth_staging;
+  uint64_t depth_staging_bytes = 0;
 
   // The guest's own copy of this image, for the guest's own CPU to read. See
   // native_renderer_readback.h: the copy into this buffer is recorded into the
@@ -484,6 +488,7 @@ struct RetiredBatch {
   std::vector<std::unique_ptr<RenderTexture>> textures;
   std::vector<std::unique_ptr<RenderFramebuffer>> framebuffers;
   std::vector<std::unique_ptr<RenderDescriptorSet>> sets;
+  std::vector<std::unique_ptr<RenderBuffer>> buffers;
   // Views outlive the set that names them by exactly as long, so they retire
   // together; a view whose texture is gone is as dangerous as the texture.
   std::vector<std::unique_ptr<RenderTextureView>> views;
@@ -930,6 +935,52 @@ bool DepthResolveDraw(RenderCommandList* commands, GuestTarget* target,
   commands->setGraphicsPushConstants(0, &push);
   commands->setGraphicsDescriptorSet(destination->depth_set.get(), 0);
   commands->drawInstanced(3, 1, 0, 0);
+  return true;
+}
+
+// The same resolve as two buffer copies. D32_FLOAT_S8_UINT and R32_FLOAT are
+// not image copy compatible, but the depth plane alone is buffer copy
+// compatible with R32_FLOAT, so the box goes out to a buffer and back in.
+// Preferred on Vulkan: on Adreno, a fullscreen draw of ours right before a
+// guest draw that reads its output has produced fragments the guest draw never
+// asked for (the world composite was one, and the death sequence's depth edge
+// pass looked the same), and a copy has never done so.
+bool DepthResolveCopy(RenderCommandList* commands, GuestTarget* target,
+                      ResolvedTexture* destination, const RenderBox& box, int32_t place_x,
+                      int32_t place_y) {
+  RenderDevice* device = PlumeDevice();
+  if (device == nullptr) {
+    ++g_depth_resolve_failed;
+    return false;
+  }
+  const uint32_t width = uint32_t(box.right - box.left);
+  const uint32_t height = uint32_t(box.bottom - box.top);
+  const uint64_t bytes = uint64_t(width) * height * 4;
+  if (!destination->depth_staging || destination->depth_staging_bytes < bytes) {
+    if (destination->depth_staging)
+      RetireBatch().buffers.push_back(std::move(destination->depth_staging));
+    destination->depth_staging = device->createBuffer(RenderBufferDesc::DefaultBuffer(bytes));
+    if (!destination->depth_staging) {
+      ++g_depth_resolve_failed;
+      return false;
+    }
+    destination->depth_staging_bytes = bytes;
+  }
+
+  Transition(commands, target->texture.get(), target->layout, RenderBarrierStage::COPY,
+             RenderTextureLayout::COPY_SOURCE);
+  Transition(commands, destination->texture.get(), destination->layout, RenderBarrierStage::COPY,
+             RenderTextureLayout::COPY_DEST);
+
+  const RenderTextureCopyLocation staging = RenderTextureCopyLocation::PlacedFootprint(
+      destination->depth_staging.get(), RenderFormat::R32_FLOAT, width, height, 1, width);
+  commands->copyTextureRegion(staging, RenderTextureCopyLocation::Subresource(target->texture.get()),
+                              0, 0, 0, &box);
+  commands->barriers(RenderBarrierStage::COPY,
+                     RenderBufferBarrier(destination->depth_staging.get(),
+                                         RenderBufferAccess::READ));
+  commands->copyTextureRegion(RenderTextureCopyLocation::Subresource(destination->texture.get()),
+                              staging, uint32_t(place_x), uint32_t(place_y), 0, nullptr);
   return true;
 }
 
@@ -2045,10 +2096,16 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   const RenderBox box(host_x1, host_y1, host_x2, host_y2);
 
   if (is_depth) {
-    // Not a copy: the depth image is D32_FLOAT_S8_UINT and the destination is
-    // R32_FLOAT, which are not copy compatible on either API now that there is
-    // a stencil plane. The draw samples the depth aspect instead.
-    if (!DepthResolveDraw(commands, target, destination, box, host_place_x, host_place_y)) {
+    // Not an image copy: the depth image is D32_FLOAT_S8_UINT and the
+    // destination is R32_FLOAT, which are not copy compatible on either API now
+    // that there is a stencil plane. Vulkan copies the depth plane through a
+    // buffer; D3D12 samples it with a draw.
+    const bool copied = PlumeShaderFormat() == RenderShaderFormat::SPIRV
+                            ? DepthResolveCopy(commands, target, destination, box, host_place_x,
+                                               host_place_y)
+                            : DepthResolveDraw(commands, target, destination, box, host_place_x,
+                                               host_place_y);
+    if (!copied) {
       ++g_resolves_dropped;
       return;
     }
