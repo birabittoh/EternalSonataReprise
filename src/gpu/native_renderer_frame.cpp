@@ -972,8 +972,14 @@ bool DepthResolveCopy(RenderCommandList* commands, GuestTarget* target,
   Transition(commands, destination->texture.get(), destination->layout, RenderBarrierStage::COPY,
              RenderTextureLayout::COPY_DEST);
 
+  // Plume takes a buffer barrier's source stage from the stage the buffer was
+  // last barriered for, so the write has to be announced as a copy stage use
+  // before it happens for the barrier after it to wait on it.
   const RenderTextureCopyLocation staging = RenderTextureCopyLocation::PlacedFootprint(
       destination->depth_staging.get(), RenderFormat::R32_FLOAT, width, height, 1, width);
+  commands->barriers(RenderBarrierStage::COPY,
+                     RenderBufferBarrier(destination->depth_staging.get(),
+                                         RenderBufferAccess::WRITE));
   commands->copyTextureRegion(staging, RenderTextureCopyLocation::Subresource(target->texture.get()),
                               0, 0, 0, &box);
   commands->barriers(RenderBarrierStage::COPY,
