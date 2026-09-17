@@ -116,8 +116,18 @@ REXCVAR_DEFINE_BOOL(native_texture_mips, false, "Eternal Sonata",
                     "Upload full mip chains for guest textures. Off uploads only level 0, "
                     "which halves the texture cache's source ranges and with them the "
                     "aperture walks, content hashing and write watches. Toggling at runtime "
-                    "leaves the textures cached under the old setting behind, since the "
-                    "mirror never evicts.");
+                    "leaves the textures cached under the old setting behind until they "
+                    "age out of the mirror.");
+
+// The mirror's own working set is a few hundred textures; the rest of what it
+// accumulates is areas the game has left. Counted in uploaded bytes rather than
+// in entries because a 32x32 icon and a 2048x2048 background are both one entry
+// and four thousand times apart in cost.
+REXCVAR_DEFINE_INT32(native_texture_budget_mb, 384, "Eternal Sonata",
+                   "How much texture memory the native renderer's mirror may hold, in MiB. "
+                   "Over budget it drops the textures bound least recently. 0 removes the "
+                   "limit, which lets the mirror grow for as long as the session lasts.")
+    .range(0, 4096);
 
 // A multiplier rather than an angle, because the guest picks its own vertical
 // field of view per camera and cutscenes set theirs deliberately. Applied in

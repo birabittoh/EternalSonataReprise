@@ -1665,6 +1665,11 @@ void FrameRetireDescriptorSet(std::unique_ptr<RenderDescriptorSet> set) {
     RetireBatch().sets.push_back(std::move(set));
 }
 
+void FrameRetireTexture(std::unique_ptr<RenderTexture> texture) {
+  if (texture)
+    RetireBatch().textures.push_back(std::move(texture));
+}
+
 void FrameSetColorSurface(uint32_t index, const Surface* surface) {
   if (index >= d3d::kColorSurfaceCount)
     return;

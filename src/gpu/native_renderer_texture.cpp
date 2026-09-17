@@ -10,6 +10,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -31,6 +32,7 @@
 #include "native_renderer_profile.h"
 
 REXCVAR_DECLARE(bool, native_texture_mips);
+REXCVAR_DECLARE(int32_t, native_texture_budget_mb);
 
 namespace eternalsonata {
 namespace {
@@ -371,6 +373,14 @@ struct MirroredTexture {
   uint32_t height = 0;
   std::unique_ptr<RenderTexture> texture;
 
+  // What this entry is filed under in g_texture_index, so eviction can drop the
+  // index entry without reconstructing a fetch constant it no longer has.
+  uint64_t key_layout = 0;
+  uint32_t key_interpretation = 0;
+
+  // The host footprint of `texture`, and this entry's share of g_texture_bytes.
+  uint64_t bytes = 0;
+
   // What the guest bytes behind this texture looked like when it was uploaded.
   // Without it the cache serves whatever was at this address the first time it
   // was bound, forever, which is not a corner case in this title: the game
@@ -430,12 +440,12 @@ uint64_t g_aperture_reuses = 0;
 
 std::vector<std::unique_ptr<MirroredTexture>> g_textures;
 
-// An index over the same entries, because the cache is unbounded and a linear
-// scan of it is paid per texture slot per draw. At a few hundred entries that
-// was the single largest cost in the frame; the working set here reaches ~390.
+// An index over the same entries, because a linear scan of the cache is paid
+// per texture slot per draw. At a few hundred entries that was the single
+// largest cost in the frame; the working set here reaches ~390.
 //
-// Nothing is ever evicted (see the note on the cache being unbounded), so this
-// only ever grows alongside g_textures and needs no invalidation.
+// Entries are heap allocated, so the raw pointers here survive g_textures being
+// reordered; eviction is what has to keep the two in step. See EvictTexture.
 struct TextureCacheKey {
   uint64_t layout;
   uint32_t interpretation;
@@ -489,6 +499,12 @@ void CountRefusal(uint64_t& counter) {
 
 // Cached textures whose guest bytes changed under them and were re-uploaded.
 uint64_t g_refreshed = 0;
+
+// Cached textures dropped for going unbound or for the budget, and what the
+// cache is holding right now. See EvictStaleTextures.
+uint64_t g_textures_evicted = 0;
+uint64_t g_textures_evicted_budget = 0;
+uint64_t g_texture_bytes = 0;
 
 // ---------------------------------------------------------------------------
 // Guest write watches
@@ -1054,8 +1070,11 @@ void DecodeBlockRows(const std::vector<uint8_t>& in, uint32_t in_row_bytes, uint
 // where destroying and replacing it would be a use-after-free on whatever is
 // still in flight. It is always the same size and format, because those are part
 // of the cache key.
+// `bytes_out`, when given, receives what the upload wrote, which is the host
+// footprint of the image and so what the cache is charged for holding it.
 std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const TextureFetch& fetch,
-                                               const FormatInfo& info, RenderTexture* existing) {
+                                               const FormatInfo& info, RenderTexture* existing,
+                                               uint64_t* bytes_out = nullptr) {
   ProfileZone zone(kPhaseTextureUpload);
 
   // If this address is a resolve destination, guest memory holds nothing the
@@ -1159,6 +1178,8 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
     queue->executeCommandLists(&submit, 1, nullptr, 0, nullptr, 0, fence.get());
     queue->waitForCommandFence(fence.get());
     ++g_decoded;
+    if (bytes_out != nullptr)
+      *bytes_out = staging_size;
     return created;
   }
 
@@ -1300,6 +1321,8 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
   queue->executeCommandLists(&submit, 1, nullptr, 0, nullptr, 0, fence.get());
   queue->waitForCommandFence(fence.get());
 
+  if (bytes_out != nullptr)
+    *bytes_out = texels.size();
   ++g_decoded;
   if (g_decoded <= 8) {
     REXLOG_DEBUG(
@@ -1395,10 +1418,11 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     if (!candidate->texture) {
       ++g_retries;
       g_count_refusals = false;
-      candidate->texture = DecodeAndUpload(memory_base, fetch, info, nullptr);
+      candidate->texture = DecodeAndUpload(memory_base, fetch, info, nullptr, &candidate->bytes);
       g_count_refusals = true;
       if (!candidate->texture)
         return nullptr;
+      g_texture_bytes += candidate->bytes;
       ++g_recovered;
       candidate->hashed_frame = g_frame;
       candidate->content_hash = HashSources(candidate, memory_base);
@@ -1449,8 +1473,11 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   entry->format = fetch.format;
   entry->width = fetch.width;
   entry->height = fetch.height;
+  entry->key_layout = key.layout;
+  entry->key_interpretation = key.interpretation;
   entry->sources = TextureSourceRanges(fetch, info);
-  entry->texture = DecodeAndUpload(memory_base, fetch, info, nullptr);
+  entry->texture = DecodeAndUpload(memory_base, fetch, info, nullptr, &entry->bytes);
+  g_texture_bytes += entry->bytes;
 
   // Hashed after the upload rather than before, so a source that changed
   // between the two is noticed on the next bind instead of being recorded as
@@ -1469,10 +1496,11 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
 
 void LogTextureMirrorSummary() {
   REXLOG_DEBUG(
-      "native_renderer: textures decoded={} cached={} refreshed={} hashed={} MiB | "
-      "binds resolve={} cache={} | "
+      "native_renderer: textures decoded={} cached={} holding={} MiB evicted={} (budget {}) "
+      "refreshed={} hashed={} MiB | binds resolve={} cache={} | "
       "refused format={} extent={} unmapped={} upload={} | retries={} recovered={}",
-      g_decoded, g_textures.size(), g_refreshed, g_hash_bytes / (1024 * 1024), g_resolve_hits,
+      g_decoded, g_textures.size(), g_texture_bytes / (1024 * 1024), g_textures_evicted,
+      g_textures_evicted_budget, g_refreshed, g_hash_bytes / (1024 * 1024), g_resolve_hits,
       g_decode_hits, g_refused_format, g_refused_extent, g_refused_unmapped, g_refused_upload,
       g_retries, g_recovered);
 
@@ -1547,8 +1575,120 @@ uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
   return count;
 }
 
+// Eviction.
+//
+// The cache is keyed by guest layout, so it does not grow within an area: it
+// grows across them, and over a long session it holds every texture the run has
+// ever bound. That is host and device memory nothing will read again.
+//
+// Two rules, because entry count and memory are not the same question.
+//
+// Age is the cheap one: an entry nothing has bound for a while is an area the
+// game has left, and dropping it costs a decode on the next bind if it comes
+// back. The floor keeps the ordinary case untouched, since a cache that has not
+// grown past the ~390 working set has nothing worth reclaiming.
+//
+// The budget is the one that bounds memory, and it has to be in bytes: entry
+// count says nothing about footprint when a 32x32 icon and a 2048x2048
+// background are both one entry. Over budget, the least recently bound go until
+// it fits, which is what stops the mirror tracking the size of the session
+// rather than the size of the scene.
+constexpr size_t kEvictFloor = 1024;
+constexpr uint64_t kEvictAfterFrames = 1800;
+
+// Never evicted, whatever the budget says: re-decoding costs a synchronous
+// upload and fence wait, so shedding the frames the game is actually drawing
+// would trade memory for a stall every frame.
+constexpr uint64_t kEvictKeepFrames = 120;
+
+static void DropTextureWatches(MirroredTexture* entry) {
+  std::lock_guard<std::mutex> lock(g_watch_mutex);
+  for (size_t i = 0; i < g_watches.size();) {
+    if (g_watches[i].entry != entry) {
+      ++i;
+      continue;
+    }
+    g_watches[i] = g_watches.back();
+    g_watches.pop_back();
+  }
+  // The pages stay protected. An unmatched fault costs one notification that
+  // finds nothing and unprotects the range it was given, which is cheaper than
+  // taking the memory subsystem's lock here for a texture nobody is reading.
+}
+
+static void EvictTexture(size_t index) {
+  std::unique_ptr<MirroredTexture>& entry = g_textures[index];
+  // First: these hold a raw pointer to the entry and are reached from a guest
+  // thread taking a write fault, not from here.
+  DropTextureWatches(entry.get());
+  if (entry->texture) {
+    // The draw path caches descriptor sets on raw texture pointers, and a later
+    // allocation landing on this one's address would compare equal.
+    DrawForgetTextureBindingsFor(entry->texture.get());
+    FrameRetireTexture(std::move(entry->texture));
+  }
+  g_texture_index.erase(TextureCacheKey{entry->key_layout, entry->key_interpretation});
+  g_texture_bytes -= std::min(g_texture_bytes, entry->bytes);
+  ++g_textures_evicted;
+  // Order carries no meaning here, and the index names the entry rather than its
+  // position, so the cheap erase is also the safe one.
+  if (index + 1 != g_textures.size())
+    g_textures[index] = std::move(g_textures.back());
+  g_textures.pop_back();
+}
+
+static void EvictStaleTextures() {
+  if (g_textures.empty())
+    return;
+
+  const int32_t budget_mb = REXCVAR_GET(native_texture_budget_mb);
+  const uint64_t budget = budget_mb > 0 ? uint64_t(budget_mb) << 20 : 0;
+  const bool over_budget = budget != 0 && g_texture_bytes > budget;
+  if (g_textures.size() <= kEvictFloor && !over_budget)
+    return;
+
+  // Oldest bind first, so the budget sheds what the game is least likely to ask
+  // for again. Decided in full before anything is dropped, because EvictTexture
+  // reorders the cache under an index.
+  std::vector<uint32_t> order(g_textures.size());
+  std::iota(order.begin(), order.end(), 0u);
+  std::sort(order.begin(), order.end(), [](uint32_t a, uint32_t b) {
+    return g_textures[a]->bound_frame < g_textures[b]->bound_frame;
+  });
+
+  std::vector<bool> drop(g_textures.size(), false);
+  uint64_t live = g_texture_bytes;
+  const bool floor_reached = g_textures.size() > kEvictFloor;
+  for (const uint32_t index : order) {
+    const MirroredTexture* entry = g_textures[index].get();
+    if (entry == nullptr)
+      continue;
+    const uint64_t age = g_frame - entry->bound_frame;
+    if (age < kEvictKeepFrames)
+      break;  // Sorted by age, so nothing after this is older either.
+    const bool stale = floor_reached && age >= kEvictAfterFrames;
+    if (!stale) {
+      if (budget == 0 || live <= budget)
+        break;
+      ++g_textures_evicted_budget;
+    }
+    drop[index] = true;
+    live -= std::min(live, entry->bytes);
+  }
+
+  // Back to front: EvictTexture fills the hole from the end, which only ever
+  // moves an entry this pass has already been past.
+  for (size_t i = g_textures.size(); i-- > 0;) {
+    if (drop[i])
+      EvictTexture(i);
+  }
+}
+
 void TextureMirrorBeginFrame() {
   ++g_frame;
+  // Before the frame's first bind, so nothing evicted here is a texture a draw
+  // in this frame has already been handed.
+  EvictStaleTextures();
   g_texture_mips_enabled.store(REXCVAR_GET(native_texture_mips), std::memory_order_relaxed);
 }
 

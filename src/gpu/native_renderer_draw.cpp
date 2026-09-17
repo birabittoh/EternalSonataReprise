@@ -536,6 +536,9 @@ RenderDescriptorSet* AcquireBindingSet(RenderDevice* device, std::vector<Binding
 // How many times a rebuild has emptied the texture set cache, for the summary.
 uint64_t g_texture_set_forgets = 0;
 
+// Sets dropped one at a time because the mirror evicted the texture they name.
+uint64_t g_texture_set_forgets_for = 0;
+
 // ---------------------------------------------------------------------------
 // Samplers, out of the guest's texture fetch constants.
 //
@@ -2905,11 +2908,12 @@ void LogGuestDrawSummary() {
 
   REXLOG_DEBUG(
       "native_renderer:   samplers={} (overflowed {}x, inexact clamp mode {}x, alpha test {}x) | "
-      "descriptor sets: texture={} (misses {}, forgets {}) sampler={} (misses {}) evicted={} "
+      "descriptor sets: texture={} (misses {}, forgets {}+{}) sampler={} (misses {}) evicted={} "
       "transient={} failed={}",
       g_sampler_count, g_sampler_overflow, g_clamp_inexact, g_alpha_test_draws,
-      g_texture_sets.size(), g_texture_set_misses, g_texture_set_forgets, g_sampler_sets.size(),
-      g_sampler_set_misses, g_binding_set_evicted, g_texture_set_transient, g_binding_set_failed);
+      g_texture_sets.size(), g_texture_set_misses, g_texture_set_forgets,
+      g_texture_set_forgets_for, g_sampler_sets.size(), g_sampler_set_misses,
+      g_binding_set_evicted, g_texture_set_transient, g_binding_set_failed);
 
   REXLOG_DEBUG("native_renderer:   binding cache: hits={} misses={}", g_binding_cache_hits,
               g_binding_cache_misses);
@@ -2979,6 +2983,31 @@ void DrawForgetTextureBindings() {
   g_texture_sets.clear();
   g_binding_cache.valid = false;
   g_binding_cache.texture_set = nullptr;
+}
+
+void DrawForgetTextureBindingsFor(const void* texture) {
+  if (texture == nullptr)
+    return;
+  bool dropped = false;
+  for (size_t i = 0; i < g_texture_sets.size();) {
+    BindingSetEntry& entry = g_texture_sets[i];
+    bool names = false;
+    for (const void* slot : entry.key.slots)
+      names |= slot == texture;
+    if (!names) {
+      ++i;
+      continue;
+    }
+    ++g_texture_set_forgets_for;
+    FrameRetireDescriptorSet(std::move(entry.set));
+    g_texture_sets.erase(g_texture_sets.begin() + i);
+    dropped = true;
+  }
+  // It holds the set a matching entry owned, and is about to name a dead one.
+  if (dropped) {
+    g_binding_cache.valid = false;
+    g_binding_cache.texture_set = nullptr;
+  }
 }
 
 void ProfileEndFrame() {
