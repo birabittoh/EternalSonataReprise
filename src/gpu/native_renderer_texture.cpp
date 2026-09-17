@@ -28,6 +28,7 @@
 
 #include "native_renderer_frame.h"
 #include "native_renderer_readback.h"
+#include "native_renderer_plume.h"
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_profile.h"
 
@@ -1063,6 +1064,73 @@ void DecodeBlockRows(const std::vector<uint8_t>& in, uint32_t in_row_bytes, uint
   }
 }
 
+// Uploads are batched: the copies go into one command list that is submitted
+// once, before the frame's own list, instead of one list, one fence and one
+// blocking GPU round trip per texture. There is a single queue, so submission
+// order is execution order and every copy still runs before any draw that
+// samples it, exactly as the per-upload wait used to guarantee.
+//
+// The staging buffers cannot be freed at the end of the decode any more, so a
+// submitted batch holds them (and its list) until the frame it was submitted
+// under has retired.
+constexpr uint64_t kUploadBatchByteLimit = 16ull << 20;
+
+struct UploadBatch {
+  std::unique_ptr<RenderCommandList> commands;
+  std::vector<std::unique_ptr<RenderBuffer>> staging;
+  uint64_t frame = 0;
+  uint64_t bytes = 0;
+};
+
+UploadBatch g_upload_batch;
+std::vector<UploadBatch> g_upload_in_flight;
+
+void ReleaseRetiredUploads() {
+  auto done = std::remove_if(g_upload_in_flight.begin(), g_upload_in_flight.end(),
+                             [](const UploadBatch& batch) { return PlumeFrameRetired(batch.frame); });
+  g_upload_in_flight.erase(done, g_upload_in_flight.end());
+}
+
+// The open batch's list, started on first use.
+RenderCommandList* UploadCommands(RenderCommandQueue* queue) {
+  if (!g_upload_batch.commands) {
+    ReleaseRetiredUploads();
+    g_upload_batch.commands = queue->createCommandList();
+    if (!g_upload_batch.commands)
+      return nullptr;
+    g_upload_batch.commands->begin();
+  }
+  return g_upload_batch.commands.get();
+}
+
+}  // namespace
+
+void TextureUploadFlush() {
+  if (!g_upload_batch.commands)
+    return;
+  RenderCommandQueue* queue = PlumeQueue();
+  if (queue == nullptr)
+    return;
+  g_upload_batch.commands->end();
+  const RenderCommandList* submit = g_upload_batch.commands.get();
+  queue->executeCommandLists(&submit, 1, nullptr, 0, nullptr, 0, nullptr);
+  g_upload_batch.frame = FrameIndex();
+  g_upload_in_flight.push_back(std::move(g_upload_batch));
+  g_upload_batch = UploadBatch{};
+}
+
+namespace {
+
+// Hand the staging bytes to the open batch and flush it if it has grown past
+// the limit, so a frame that decodes a whole area's worth of textures does not
+// have to keep all of them mapped at once.
+void EndUpload(std::unique_ptr<RenderBuffer> staging, uint64_t bytes) {
+  g_upload_batch.bytes += bytes;
+  g_upload_batch.staging.push_back(std::move(staging));
+  if (g_upload_batch.bytes >= kUploadBatchByteLimit)
+    TextureUploadFlush();
+}
+
 // Decode and upload. `existing` is null on a cache miss, in which case a texture
 // is created; on a refresh it is the texture already in the cache and the texels
 // are copied over it in place. Reusing the object is what makes a refresh safe:
@@ -1160,9 +1228,8 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
     for (const Level& level : levels)
       std::memcpy(mapped + level.offset, level.data.data(), level.data.size());
     staging->unmap();
-    auto commands = queue->createCommandList();
-    auto fence = device->createCommandFence();
-    commands->begin();
+    RenderCommandList* commands = UploadCommands(queue);
+    if (commands == nullptr) return nullptr;
     commands->barriers(RenderBarrierStage::COPY,
                        RenderTextureBarrier(existing, RenderTextureLayout::COPY_DEST));
     for (uint32_t mip = 0; mip < levels.size(); ++mip) {
@@ -1173,10 +1240,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
     }
     commands->barriers(RenderBarrierStage::GRAPHICS,
                        RenderTextureBarrier(existing, RenderTextureLayout::SHADER_READ));
-    commands->end();
-    const RenderCommandList* submit = commands.get();
-    queue->executeCommandLists(&submit, 1, nullptr, 0, nullptr, 0, fence.get());
-    queue->waitForCommandFence(fence.get());
+    EndUpload(std::move(staging), staging_size);
     ++g_decoded;
     if (bytes_out != nullptr)
       *bytes_out = staging_size;
@@ -1302,11 +1366,13 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
   std::memcpy(mapped, texels.data(), texels.size());
   staging->unmap();
 
-  // A one-shot list, not the frame's, for the same reason the overlay's upload
-  // uses one: this runs from inside a draw, and the frame's list is mid-record.
-  auto upload = queue->createCommandList();
-  auto fence = device->createCommandFence();
-  upload->begin();
+  // Not the frame's list, for the same reason the overlay's upload uses its
+  // own: this runs from inside a draw, and the frame's list is mid-record.
+  RenderCommandList* upload = UploadCommands(queue);
+  if (upload == nullptr) {
+    CountRefusal(g_refused_upload);
+    return nullptr;
+  }
   upload->barriers(RenderBarrierStage::COPY,
                    RenderTextureBarrier(existing, RenderTextureLayout::COPY_DEST));
   upload->copyTextureRegion(
@@ -1315,11 +1381,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
                                                  fetch.height, 1, upload_row_texels));
   upload->barriers(RenderBarrierStage::GRAPHICS,
                    RenderTextureBarrier(existing, RenderTextureLayout::SHADER_READ));
-  upload->end();
-
-  const RenderCommandList* submit = upload.get();
-  queue->executeCommandLists(&submit, 1, nullptr, 0, nullptr, 0, fence.get());
-  queue->waitForCommandFence(fence.get());
+  EndUpload(std::move(staging), texels.size());
 
   if (bytes_out != nullptr)
     *bytes_out = texels.size();
@@ -1706,6 +1768,10 @@ void ShutdownTextureMirror() {
   }
   g_texture_index.clear();
   g_textures.clear();
+  // Dropped rather than flushed: the queue is already idle and the device is
+  // going away, so a batch left open has nothing left to copy into.
+  g_upload_batch = UploadBatch{};
+  g_upload_in_flight.clear();
 }
 
 }  // namespace eternalsonata
