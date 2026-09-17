@@ -362,6 +362,7 @@ void FlushWithoutPresent() {
   slot.timer_open = false;
   slot.command_list->end();
 
+  TextureUploadFlush();
   const RenderCommandList* submit = slot.command_list.get();
   g_backend.queue->executeCommandLists(&submit, 1, nullptr, 0, nullptr, 0, slot.fence.get());
   slot.submitted = true;
@@ -841,6 +842,7 @@ void PlumePresentFrame() {
   commands->end();
   g_recording = false;
 
+  TextureUploadFlush();
   const RenderCommandList* submit = commands;
   RenderCommandSemaphore* wait = submitting.acquire_semaphore.get();
   RenderCommandSemaphore* signal = g_backend.release_semaphores[image].get();

@@ -80,6 +80,10 @@ uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
 
 void TextureMirrorBeginFrame();
 
+// Submit the pending texture copies. Must run before the frame's own command
+// list is submitted, or that frame draws against textures never copied.
+void TextureUploadFlush();
+
 void LogTextureMirrorSummary();
 
 // Drop every host texture. The device is going away, so this has to run first.
