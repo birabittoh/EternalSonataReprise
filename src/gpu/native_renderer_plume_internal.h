@@ -137,12 +137,20 @@ void FrameNotifyCommandListBegun();
 // the spot mid frame, and the draw path holds sets of its own.
 void FrameRetireDescriptorSet(std::unique_ptr<plume::RenderDescriptorSet> set);
 
+// The same, for a host texture the mirror has evicted. A draw recorded earlier
+// this frame still names it, so it cannot be freed on the spot either.
+void FrameRetireTexture(std::unique_ptr<plume::RenderTexture> texture);
+
 // Drop every cached texture descriptor set, because something they name is
 // about to be freed. The cache is keyed on raw texture pointers, so an
 // allocation that lands on a freed one's address would otherwise compare equal
 // and hand a draw a view onto a dead resource. Defined in the draw path and
 // called from wherever a target or resolve destination image is replaced.
 void DrawForgetTextureBindings();
+
+// The same, narrowed to the sets naming one texture, for the mirror evicting a
+// single cached entry rather than the frame path replacing a target.
+void DrawForgetTextureBindingsFor(const void* texture);
 
 // The formats the guest's host render targets are created in. A pipeline has to
 // be built against the formats of the targets it will draw into, so these are
