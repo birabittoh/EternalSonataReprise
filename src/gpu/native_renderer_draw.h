@@ -83,6 +83,21 @@ struct GuestDrawCall {
   // which is fixed function on the console and has to reach the pixel shader as
   // constants because no host pipeline state can express it.
   GuestRenderState state;
+
+  // Constant banks to upload in place of the device's shadows, 256 registers
+  // in guest order each, or null for the shadows. The sprite batcher uses them
+  // to hand a merged draw the registers its sprites were recorded with.
+  const uint8_t* vertex_bank_override = nullptr;
+  const uint8_t* pixel_bank_override = nullptr;
+
+  // The streams are already in host byte order (the sprite batcher writes its
+  // merged vertices that way), so the upload copies them without the swap.
+  bool host_order_streams = false;
+
+  // The vertices came through BeginVertices rather than SetStreamSource. Those
+  // rotate through scratch memory, so their pointers say nothing across frames
+  // and the persistent stream cache leaves them alone.
+  bool inlined = false;
 };
 
 // Record the draw. False when it could not be issued, which is always counted

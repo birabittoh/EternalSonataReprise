@@ -291,6 +291,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/dlc_auto_install.cpp
     src/gpu/guest_shaders.cpp
     src/gpu/native_renderer.cpp
+    src/gpu/native_renderer_batch.cpp
     src/gpu/native_renderer_d3d.cpp
     src/gpu/native_renderer_draw.cpp
     src/gpu/native_renderer_frame.cpp
@@ -376,6 +377,12 @@ endif()
 # Both the guest shader pack and its F2 debugger sidecar are linked in via the
 # *_ASM sources above.
 add_dependencies(eternalsonata eternalsonata_guest_shaders)
+# The .S stubs only name the packs, so their text does not change when the
+# pack does; the assembled objects have to depend on the packs themselves.
+set_source_files_properties(${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
+    PROPERTIES OBJECT_DEPENDS ${ETERNALSONATA_GUEST_SHADER_PACK})
+set_source_files_properties(${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM}
+    PROPERTIES OBJECT_DEPENDS ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK})
 
 # Overlay shaders. Plume compiles nothing at runtime, so these are built ahead
 # of time to DXIL and SPIR-V and embedded as byte arrays -- small enough that

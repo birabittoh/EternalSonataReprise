@@ -9,11 +9,15 @@
 #include <cstring>
 #include <vector>
 
+#include <rex/cvar.h>
 #include <rex/hook.h>
 #include <rex/logging.h>
+#include <rex/system/kernel_state.h>
 
 #include "generated/eternalsonata_init.h"
+#include "guest_profiler.h"
 #include "native_renderer.h"
+#include "native_renderer_batch.h"
 #include "native_renderer_draw.h"
 #include "native_renderer_texture.h"
 #include "native_renderer_frame.h"
@@ -25,6 +29,8 @@
 
 REX_EXTERN(__imp__D3D__CreateDevice);
 REX_EXTERN(__imp__sub_8212C3B0);
+REX_EXTERN(__imp__sub_8212FB70);
+REXCVAR_DECLARE(bool, sprite_batching);
 REX_EXTERN(__imp__sub_8212C470);
 REX_EXTERN(__imp__D3DDevice__SetVertexShaderConstantF);
 REX_EXTERN(__imp__D3DDevice__SetPixelShaderConstantF);
@@ -550,10 +556,38 @@ struct DrawParams {
 // the guest closes each one before opening the next.
 struct InlineDraw {
   bool open = false;
+  bool host_block = false;  // the vertices land in g_sprite_scratch, not the guest's ring
   uint32_t device = 0;
   DrawParams params;
 };
 InlineDraw g_inline;
+
+// The effect system's sprite draw (sub_8212FB70) is the one BeginVertices
+// caller worth short-circuiting: it is issued a few thousand times a frame and
+// the batcher consumes the quad the moment EndVertices runs. While it is on the
+// stack, BeginVertices hands back a block from this guest side ring instead of
+// running the D3D runtime's allocation and dirty state flush, and EndVertices
+// skips the runtime too. Ring rather than one block because the per frame
+// stream cache keys uploads on the pointer, and a rejected sprite goes through
+// it as an ordinary draw.
+bool g_in_sprite_draw = false;
+constexpr uint32_t kSpriteScratchBytes = 80;
+constexpr uint32_t kSpriteScratchBlocks = 8192;
+uint32_t g_sprite_scratch = 0;  // guest address of the ring, 0 until allocated
+uint32_t g_sprite_scratch_next = 0;
+
+uint32_t NextSpriteScratchBlock() {
+  if (g_sprite_scratch == 0) {
+    auto* mem = rex::system::kernel_memory();
+    g_sprite_scratch =
+        mem ? mem->SystemHeapAlloc(kSpriteScratchBytes * kSpriteScratchBlocks, 0x20) : 0;
+    if (g_sprite_scratch == 0)
+      return 0;
+  }
+  const uint32_t block = g_sprite_scratch + g_sprite_scratch_next * kSpriteScratchBytes;
+  g_sprite_scratch_next = (g_sprite_scratch_next + 1) % kSpriteScratchBlocks;
+  return block;
+}
 
 // The 360's physical address aperture. Every place the D3D block turns a
 // resource address into something the GPU sees, it strips the cache attribute
@@ -654,6 +688,7 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
     call.primitive_type = prim_type;
     call.count = vertex_count;
     call.indexed = params.indexed;
+    call.inlined = params.inlined;
     call.base_vertex = params.base_vertex;
     call.state = request.state;
 
@@ -716,7 +751,11 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
       }
     }
 
-    IssueGuestDraw(call);
+    // A sprite joins the pending batch; anything else goes out after it.
+    if (!SpriteBatchAbsorb(call, request)) {
+      SpriteBatchFlush();
+      IssueGuestDraw(call);
+    }
   }
 
   if (g_draw_examples_logged < 8) {
@@ -1143,12 +1182,14 @@ void SetGuestFrameCallback(std::function<void()> callback) {
 
 // Scene phases survive the optional effect pass used by blinking models.
 REX_HOOK_RAW(sub_8212C3B0) {
+  eternalsonata::SpriteBatchFlush();
   if (eternalsonata::NativeRendererEnabled())
     eternalsonata::FrameBeginWorld();
   __imp__sub_8212C3B0(ctx, base);
 }
 
 REX_HOOK_RAW(sub_8212C470) {
+  eternalsonata::SpriteBatchFlush();
   __imp__sub_8212C470(ctx, base);
   if (eternalsonata::NativeRendererEnabled())
     eternalsonata::FrameNoteLayerBoundary();
@@ -1163,7 +1204,11 @@ REX_HOOK_RAW(D3DDevice__DrawIndexedVertices) {
   params.start_index = ctx.r6.u32;
   params.count = ctx.r7.u32;
   params.indexed = true;
-  __imp__D3DDevice__DrawIndexedVertices(ctx, base);
+  {
+    const uint64_t zone_start = eternalsonata::GuestZoneStart();
+    __imp__D3DDevice__DrawIndexedVertices(ctx, base);
+    eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DDrawIndexed, zone_start);
+  }
   if (!eternalsonata::NativeRendererEnabled())
     return;
 
@@ -1177,7 +1222,11 @@ REX_HOOK_RAW(D3DDevice__DrawVertices) {
   eternalsonata::DrawParams params;
   params.prim_type = ctx.r4.u32;
   params.count = ctx.r6.u32;
-  __imp__D3DDevice__DrawVertices(ctx, base);
+  {
+    const uint64_t zone_start = eternalsonata::GuestZoneStart();
+    __imp__D3DDevice__DrawVertices(ctx, base);
+    eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DDrawVertices, zone_start);
+  }
   if (!eternalsonata::NativeRendererEnabled())
     return;
 
@@ -1196,7 +1245,19 @@ REX_HOOK_RAW(D3DDevice__BeginVertices) {
   const uint32_t prim_type = ctx.r4.u32;
   const uint32_t vertex_count = ctx.r5.u32;
   const uint32_t stride = ctx.r6.u32;
-  __imp__D3DDevice__BeginVertices(ctx, base);
+  bool host_block = false;
+  if (eternalsonata::g_in_sprite_draw && vertex_count * stride == eternalsonata::kSpriteScratchBytes) {
+    const uint32_t block = eternalsonata::NextSpriteScratchBlock();
+    if (block != 0) {
+      ctx.r3.u32 = block;
+      host_block = true;
+    }
+  }
+  if (!host_block) {
+    const uint64_t zone_start = eternalsonata::GuestZoneStart();
+    __imp__D3DDevice__BeginVertices(ctx, base);
+    eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DBeginVertices, zone_start);
+  }
   if (!eternalsonata::NativeRendererEnabled())
     return;
 
@@ -1212,10 +1273,15 @@ REX_HOOK_RAW(D3DDevice__BeginVertices) {
   eternalsonata::g_inline.params.inline_address = ctx.r3.u32;
   eternalsonata::g_inline.params.inline_stride = stride;
   eternalsonata::g_inline.open = ctx.r3.u32 != 0;
+  eternalsonata::g_inline.host_block = host_block;
 }
 
 REX_HOOK_RAW(D3DDevice__EndVertices) {
-  __imp__D3DDevice__EndVertices(ctx, base);
+  if (!(eternalsonata::g_inline.open && eternalsonata::g_inline.host_block)) {
+    const uint64_t zone_start = eternalsonata::GuestZoneStart();
+    __imp__D3DDevice__EndVertices(ctx, base);
+    eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DEndVertices, zone_start);
+  }
   if (!eternalsonata::NativeRendererEnabled())
     return;
   if (!eternalsonata::g_inline.open)
@@ -1223,6 +1289,19 @@ REX_HOOK_RAW(D3DDevice__EndVertices) {
 
   eternalsonata::g_inline.open = false;
   eternalsonata::RecordDraw(base, eternalsonata::g_inline.device, eternalsonata::g_inline.params);
+}
+
+// The effect sprite draw. Only the flag is ours: the guest still sets its
+// constants, texture and shaders exactly as before, and the two hooks above do
+// the rest. Nested calls do not happen; the flag is plain on purpose.
+REX_HOOK_RAW(sub_8212FB70) {
+  if (!eternalsonata::NativeRendererEnabled() || !REXCVAR_GET(sprite_batching)) {
+    __imp__sub_8212FB70(ctx, base);
+    return;
+  }
+  eternalsonata::g_in_sprite_draw = true;
+  __imp__sub_8212FB70(ctx, base);
+  eternalsonata::g_in_sprite_draw = false;
 }
 
 // (dev, index, vertexBuffer, offset, stride, ?). Stride is recorded because it
@@ -1310,7 +1389,11 @@ REX_HOOK_RAW(D3DDevice__SetVertexShaderConstantF) {
   const uint32_t source = ctx.r5.u32;
   const uint32_t count = ctx.r6.u32;
 
-  __imp__D3DDevice__SetVertexShaderConstantF(ctx, base);
+  {
+    const uint64_t zone_start = eternalsonata::GuestZoneStart();
+    __imp__D3DDevice__SetVertexShaderConstantF(ctx, base);
+    eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DVsConstF, zone_start);
+  }
 
   if (!eternalsonata::NativeRendererEnabled())
     return;
@@ -1329,7 +1412,11 @@ REX_HOOK_RAW(D3DDevice__SetPixelShaderConstantF) {
   const uint32_t source = ctx.r5.u32;
   const uint32_t count = ctx.r6.u32;
 
-  __imp__D3DDevice__SetPixelShaderConstantF(ctx, base);
+  {
+    const uint64_t zone_start = eternalsonata::GuestZoneStart();
+    __imp__D3DDevice__SetPixelShaderConstantF(ctx, base);
+    eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DPsConstF, zone_start);
+  }
 
   if (!eternalsonata::NativeRendererEnabled())
     return;
@@ -1435,6 +1522,7 @@ REX_HOOK_RAW(D3DDevice__ThrottleWait_Poll) {
 // retired the moment it is asked about. Returns its first argument, which is
 // the device, so leaving r3 alone is the correct return value.
 REX_HOOK_RAW(D3DDevice__BlockUntilFenceRetired) {
+  eternalsonata::SpriteBatchFlush();
   if (!eternalsonata::NativeRendererEnabled()) {
     __imp__D3DDevice__BlockUntilFenceRetired(ctx, base);
     return;
@@ -1456,6 +1544,7 @@ REX_HOOK_RAW(D3DDevice__BlockUntilFenceRetired) {
 // guest's packet writers keep writing somewhere harmless instead of through a
 // null write pointer.
 REX_HOOK_RAW(D3DDevice__BlockUntilGpuIdle) {
+  eternalsonata::SpriteBatchFlush();
   if (!eternalsonata::NativeRendererEnabled()) {
     __imp__D3DDevice__BlockUntilGpuIdle(ctx, base);
     return;
@@ -1494,6 +1583,7 @@ REX_HOOK_RAW(D3DDevice__CreateTexture) {
 // (device, index, surface). The store is to device+12304+4*index, so the hook
 // records the index it was given and the summary reads the device to confirm.
 REX_HOOK_RAW(D3DDevice__SetRenderTarget) {
+  eternalsonata::SpriteBatchFlush();
   // Every argument is read *before* the call, because r3..r12 are volatile: the
   // callee has overwritten r3 with its return value by the time it comes back,
   // and the device pointer is gone. This is exactly what the index and surface
@@ -1521,6 +1611,7 @@ REX_HOOK_RAW(D3DDevice__SetRenderTarget) {
 }
 
 REX_HOOK_RAW(D3DDevice__SetDepthStencilSurface) {
+  eternalsonata::SpriteBatchFlush();
   const uint32_t device = ctx.r3.u32;  // volatile across the call; see above
   const uint32_t surface = ctx.r4.u32;
   __imp__D3DDevice__SetDepthStencilSurface(ctx, base);
@@ -1542,6 +1633,7 @@ REX_HOOK_RAW(D3DDevice__SetDepthStencilSurface) {
 // floats before converting them, which is what makes the layout below a reading
 // of the code rather than an assumption about the struct.
 REX_HOOK_RAW(D3DDevice__SetViewport) {
+  eternalsonata::SpriteBatchFlush();
   const uint32_t viewport = ctx.r4.u32;
   __imp__D3DDevice__SetViewport(ctx, base);
   if (!eternalsonata::NativeRendererEnabled() || viewport == 0)
@@ -1566,6 +1658,7 @@ REX_HOOK_RAW(D3DDevice__SetViewport) {
 // host render target standing in for the bound EDRAM surface, which is what
 // puts the guest's own colours on screen.
 REX_HOOK_RAW(D3DDevice__Clear) {
+  eternalsonata::SpriteBatchFlush();
   const uint32_t flags = ctx.r6.u32;
   const uint32_t color = ctx.r7.u32;
   const float z = float(ctx.f1.f64);
@@ -1589,6 +1682,7 @@ REX_HOOK_RAW(D3DDevice__Clear) {
 // the join between this and the texture mirror: a texture the game samples from
 // the same address is a render target, not an asset.
 REX_HOOK_RAW(D3DDevice__Resolve) {
+  eternalsonata::SpriteBatchFlush();
   const uint32_t flags = ctx.r4.u32;
   const uint32_t rect = ctx.r5.u32;
   const uint32_t destination = ctx.r6.u32;
@@ -1647,6 +1741,7 @@ REX_HOOK_RAW(D3DDevice__Resolve) {
 // want while the host frame is derived entirely from guest state: there is
 // nothing to show that the guest has not finished producing.
 REX_HOOK_RAW(D3DDevice__Swap) {
+  eternalsonata::SpriteBatchFlush();
   __imp__D3DDevice__Swap(ctx, base);
   if (!eternalsonata::NativeRendererEnabled())
     return;
@@ -1684,6 +1779,7 @@ REX_HOOK_RAW(D3DDevice__Swap) {
     eternalsonata::LogReadbackSummary();
     eternalsonata::LogPipelineSummary();
     eternalsonata::LogGuestDrawSummary();
+    eternalsonata::LogSpriteBatchSummary();
     eternalsonata::LogTextureMirrorSummary();
     eternalsonata::LogProfileSummary();
   }
@@ -1694,7 +1790,11 @@ REX_HOOK_RAW(D3DDevice__SetTexture) {
   const uint32_t device = ctx.r3.u32;
   const uint32_t sampler = ctx.r4.u32;
   const uint32_t texture = ctx.r5.u32;
-  __imp__D3DDevice__SetTexture(ctx, base);
+  {
+    const uint64_t zone_start = eternalsonata::GuestZoneStart();
+    __imp__D3DDevice__SetTexture(ctx, base);
+    eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DSetTexture, zone_start);
+  }
   if (!eternalsonata::NativeRendererEnabled())
     return;
 

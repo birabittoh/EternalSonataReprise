@@ -507,6 +507,7 @@ struct PipelineKey {
   uint8_t pixel_slot = 0;
   uint8_t topology = 0;
   uint8_t targets = 0;  // bit 0 colour, bit 1 depth
+  uint8_t sprite_batch = 0;
   uint64_t declaration_identity = 0;
   uint32_t strides[kMaxPipelineStreams] = {};
 
@@ -524,6 +525,7 @@ struct PipelineKey {
   bool operator==(const PipelineKey& other) const {
     if (vertex_slot != other.vertex_slot || pixel_slot != other.pixel_slot ||
         topology != other.topology || targets != other.targets ||
+        sprite_batch != other.sprite_batch ||
         declaration_identity != other.declaration_identity ||
         depth_control != other.depth_control || blend_control != other.blend_control ||
         mode_cntl != other.mode_cntl || color_mask != other.color_mask ||
@@ -610,6 +612,8 @@ std::unique_ptr<RenderShader> g_pixel_shaders[d3d::kShaderTableEntries];
 // rather than one per slot: every vertex shader declares the same output
 // signature, so the same geometry shader links against all of them.
 std::unique_ptr<RenderShader> g_point_sprite_shader;
+std::unique_ptr<RenderShader> g_sprite_batch_vertex_shader;
+std::unique_ptr<RenderShader> g_sprite_batch_pixel_shader;
 
 uint64_t g_requests = 0;
 uint64_t g_hits = 0;
@@ -844,6 +848,7 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   key.pixel_slot = uint8_t(request.pixel_slot);
   key.topology = uint8_t(topology);
   key.targets = uint8_t((request.has_color_target ? 1u : 0u) | (request.has_depth_target ? 2u : 0u));
+  key.sprite_batch = request.sprite_batch ? 1u : 0u;
   key.declaration_identity = request.declaration->identity;
   if (request.state.valid) {
     key.depth_control = request.state.depth_control;
@@ -889,8 +894,10 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   if (layout == nullptr)
     return nullptr;
 
-  const GuestShader& vertex = GuestVertexShader(uint32_t(request.vertex_slot));
-  const GuestShader& pixel = GuestPixelShader(uint32_t(request.pixel_slot));
+  const GuestShader& vertex = request.sprite_batch ? GuestSpriteBatchVertexShader()
+                                                   : GuestVertexShader(uint32_t(request.vertex_slot));
+  const GuestShader& pixel = request.sprite_batch ? GuestSpriteBatchPixelShader()
+                                                  : GuestPixelShader(uint32_t(request.pixel_slot));
   if (!vertex.valid() || !pixel.valid()) {
     Refuse(kRefuseNoBlob, "guest_shaders.bin is missing, stale, or was built without this format", request.vertex_slot, request.pixel_slot);
     return nullptr;
@@ -902,8 +909,14 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
     return nullptr;
   }
 
-  RenderShader* vertex_shader = EnsureShader(device, vertex, g_vertex_shaders[request.vertex_slot]);
-  RenderShader* pixel_shader = EnsureShader(device, pixel, g_pixel_shaders[request.pixel_slot]);
+  RenderShader* vertex_shader =
+      EnsureShader(device, vertex,
+                   request.sprite_batch ? g_sprite_batch_vertex_shader
+                                        : g_vertex_shaders[request.vertex_slot]);
+  RenderShader* pixel_shader =
+      EnsureShader(device, pixel,
+                   request.sprite_batch ? g_sprite_batch_pixel_shader
+                                        : g_pixel_shaders[request.pixel_slot]);
   if (vertex_shader == nullptr || pixel_shader == nullptr) {
     Refuse(kRefuseNoBlob, "the pack carries no blob in the format this render interface wants", request.vertex_slot, request.pixel_slot);
     return nullptr;
@@ -1211,6 +1224,8 @@ void ShutdownGuestPipelines() {
   for (auto& shader : g_pixel_shaders)
     shader.reset();
   g_point_sprite_shader.reset();
+  g_sprite_batch_vertex_shader.reset();
+  g_sprite_batch_pixel_shader.reset();
   g_layout.reset();
   g_layout_failed = false;
 }

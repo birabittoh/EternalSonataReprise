@@ -141,6 +141,10 @@ struct PipelineRequest {
   bool has_color_target = false;
   bool has_depth_target = false;
 
+  // Build with the sprite batcher's shader pair instead of the slots' own. The
+  // slots stay what the guest bound, so everything keyed on them still applies.
+  bool sprite_batch = false;
+
   // The guest's depth, cull, blend and colour write state, read straight out of
   // the register shadows rather than mirrored from the setters. The raw register
   // values are part of the cache key, so a state change makes a new pipeline the
