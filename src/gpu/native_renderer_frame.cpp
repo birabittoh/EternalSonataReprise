@@ -176,6 +176,10 @@ struct GuestTarget {
   // CompositeWorldIntoLayer.
   uint64_t drawn_frame = 0;
   uint64_t drawn_serial = 0;
+  // Dropped from g_targets by an extent change but still held by a caller that
+  // acquired it before asking for the command list. See AcquireFramebuffer.
+  bool retired = false;
+  uint64_t retired_frame = 0;
 };
 
 // Framebuffers are per (colour, depth) pair, which is the granularity Plume
@@ -485,6 +489,15 @@ const RenderFramebuffer* g_bound_framebuffer = nullptr;
 // own counters can see.
 struct RetiredBatch {
   uint64_t frame = 0;
+  // Whole targets, kept intact rather than stripped of their textures. Callers
+  // acquire a GuestTarget* and only then ask for the command list, which is
+  // where an extent change is applied, so a target dropped from g_targets has to
+  // stay readable for the rest of that frame.
+  //
+  // Declared first so they are freed last: members die in reverse order, and
+  // the framebuffers below hold views onto these targets' depth textures that
+  // Plume's Vulkan backend dereferences on destruction.
+  std::vector<std::unique_ptr<GuestTarget>> targets;
   std::vector<std::unique_ptr<RenderTexture>> textures;
   std::vector<std::unique_ptr<RenderFramebuffer>> framebuffers;
   std::vector<std::unique_ptr<RenderDescriptorSet>> sets;
@@ -492,12 +505,6 @@ struct RetiredBatch {
   // Views outlive the set that names them by exactly as long, so they retire
   // together; a view whose texture is gone is as dangerous as the texture.
   std::vector<std::unique_ptr<RenderTextureView>> views;
-  // Whole targets, kept intact rather than stripped of their textures. Callers
-  // acquire a GuestTarget* and only then ask for the command list, which is
-  // where an extent change is applied, so a target dropped from g_targets has to
-  // stay readable for the rest of that frame. The worst this costs is one clear
-  // or draw landing in an image nothing will present.
-  std::vector<std::unique_ptr<GuestTarget>> targets;
 };
 std::deque<RetiredBatch> g_retired;
 
@@ -1366,6 +1373,23 @@ RenderFramebuffer* AcquireFramebuffer(GuestTarget* color, GuestTarget* depth) {
   entry.framebuffer = device->createFramebuffer(desc);
   if (!entry.framebuffer)
     return nullptr;
+
+  // A framebuffer over a retired target must die with that target, not in a
+  // later batch: caching it here would keep it past the batch that frees the
+  // textures, and Plume's Vulkan framebuffer dereferences its depth attachment
+  // on destruction.
+  const GuestTarget* retired = color && color->retired ? color : depth && depth->retired ? depth : nullptr;
+  if (retired != nullptr) {
+    RetiredBatch* batch = nullptr;
+    for (RetiredBatch& candidate : g_retired) {
+      if (candidate.frame == retired->retired_frame)
+        batch = &candidate;
+    }
+    if (batch == nullptr)
+      batch = &RetireBatch();
+    batch->framebuffers.push_back(std::move(entry.framebuffer));
+    return batch->framebuffers.back().get();
+  }
 
   g_framebuffers.push_back(std::move(entry));
   return g_framebuffers.back().framebuffer.get();
@@ -2937,8 +2961,11 @@ void ApplyPendingExtent() {
   // again and a second set would quietly appear beside them while the guest's
   // resolves kept reading the first.
   const size_t retired_targets = g_targets.size();
-  for (auto& target : g_targets)
+  for (auto& target : g_targets) {
+    target->retired = true;
+    target->retired_frame = g_frame;
     RetireBatch().targets.push_back(std::move(target));
+  }
   g_targets.clear();
   for (auto& entry : g_framebuffers) {
     if (entry.framebuffer)
