@@ -37,8 +37,7 @@ extern "C" {
 #endif
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
-// version; existing entry points keep their signature. Still 1 because this API
-// has not been released yet, so it is free to change under its own version.
+// version; existing entry points keep their signature.
 #define ETERNALSONATA_SETTINGS_ABI_VERSION 1u
 
 // The settings, and what their values mean. Everything up to CONTROLLER_P3 is
