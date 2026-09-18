@@ -30,32 +30,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: windows
+          - platform: windows-x64
             runner: windows-latest
             sdk_dir: win-amd64
-            artifact_suffix: windows-x64
 
           - platform: linux-x64
             runner: ubuntu-latest
             sdk_dir: linux-amd64
-            artifact_suffix: linux-x64
 
           - platform: linux-arm64
             runner: ubuntu-24.04-arm
             sdk_dir: linux-arm64
-            artifact_suffix: linux-arm64
 
-          - platform: mac-amd64
+          - platform: mac-x64
             runner: macos-26-intel
             sdk_dir: mac-amd64
-            # Not mac-amd64: the suffix has to be the id ModState::HostPlatformId()
-            # reports, which is what the auto updater asks GitHub for.
-            artifact_suffix: mac-x64
 
           - platform: mac-arm64
             runner: macos-26
             sdk_dir: mac-arm64
-            artifact_suffix: mac-arm64
 
           - platform: android-arm64
             runner: ubuntu-latest
@@ -63,7 +56,6 @@ jobs:
             sdk_dir: linux-amd64
             # Target SDK for cross-compile (Android ARM64 libraries)
             target_sdk_dir: android-arm64
-            artifact_suffix: android-arm64
             ndk_version: "27.0.12077973"
     steps:
       - name: Checkout
@@ -98,7 +90,7 @@ jobs:
         run: xcodebuild -downloadComponent MetalToolchain
 
       - name: Install LLVM, CMake, Ninja (Windows)
-        if: matrix.platform == 'windows'
+        if: matrix.platform == 'windows-x64'
         run: choco install llvm cmake ninja -y
 
       - name: Install Android NDK
@@ -232,9 +224,9 @@ jobs:
         shell: bash
         run: |
           if [ "${{ inputs.publish_mode }}" = "artifact" ]; then
-            out="${{ inputs.artifact_name }}-${{ matrix.artifact_suffix }}"
+            out="${{ inputs.artifact_name }}-${{ matrix.platform }}"
           else
-            out="eternalsonata-${{ inputs.tag }}-${{ matrix.artifact_suffix }}"
+            out="eternalsonata-${{ inputs.tag }}-${{ matrix.platform }}"
           fi
           python scripts/build.py --package "${out}"
 
@@ -248,10 +240,10 @@ jobs:
         shell: bash
         run: |
           if [ "${{ inputs.publish_mode }}" = "artifact" ]; then
-            out="${{ inputs.artifact_name }}-${{ matrix.artifact_suffix }}"
+            out="${{ inputs.artifact_name }}-${{ matrix.platform }}"
             version="0.0.0"
           else
-            out="eternalsonata-${{ inputs.tag }}-${{ matrix.artifact_suffix }}"
+            out="eternalsonata-${{ inputs.tag }}-${{ matrix.platform }}"
             version="$(echo "${{ inputs.tag }}" | sed 's/^v//')"
           fi
           python scripts/package-mac.py --name "${out}" --version "${version}"
@@ -290,9 +282,9 @@ jobs:
           ES_KEY_PASSWORD: ${{ secrets.ES_KEY_PASSWORD }}
         run: |
           if [ "${{ inputs.publish_mode }}" = "artifact" ]; then
-            name="${{ inputs.artifact_name }}-${{ matrix.artifact_suffix }}"
+            name="${{ inputs.artifact_name }}-${{ matrix.platform }}"
           else
-            name="eternalsonata-${{ inputs.tag }}-${{ matrix.artifact_suffix }}"
+            name="eternalsonata-${{ inputs.tag }}-${{ matrix.platform }}"
           fi
 
           BUILD_DIR="$PWD/out/build/android-arm64-release"
