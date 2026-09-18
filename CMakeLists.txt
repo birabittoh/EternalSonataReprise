@@ -333,9 +333,12 @@ elseif(ANDROID)
     )
 else()
     add_executable(eternalsonata ${ETERNALSONATA_SOURCES})
+    # ELF executables do not auto-export their own symbols, so without this the
+    # REX_MOD_PLUGIN_EXPORT mod API is invisible to mods' dlsym(RTLD_DEFAULT).
     set_target_properties(eternalsonata PROPERTIES
         BUILD_RPATH "$ORIGIN"
         INSTALL_RPATH "$ORIGIN"
+        ENABLE_EXPORTS ON
     )
 endif()
 
