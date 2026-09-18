@@ -67,6 +67,33 @@ void GuestProfilerReport();
 // everything the guest did before reaching it.
 void GuestProfilerNotePresent(uint64_t present_ns);
 
+// Exactly timed guest zones. The hooks in guest_profiler.cpp cover the render
+// and animation tree; the guest D3D runtime's own entry points are already
+// hooked by the native renderer, so those zones are timed from inside its
+// hooks with the pair below. GuestZoneStart returns 0 when nothing is
+// listening, and GuestZoneEnd is a no-op for a 0 start.
+enum GuestZone : uint32_t {
+  kZoneRenderTask = 0,  // sub_82125378
+  kZoneRenderOuter,     // sub_82124C40
+  kZoneAuxTask,         // sub_82123508
+  kZoneAuxNode,         // sub_82123470
+  kZoneAnimUpdate,      // sub_820C7538
+  kZoneAnimEntry,       // sub_820C8378
+  kZoneAnimPart,        // sub_820C9550
+  kZoneConstFlush,      // sub_8212CDE0, the game's constant cache flush
+  kZoneD3DDrawIndexed,  // D3DDevice__DrawIndexedVertices, original only
+  kZoneD3DDrawVertices, // D3DDevice__DrawVertices, original only
+  kZoneD3DBeginVertices,
+  kZoneD3DEndVertices,
+  kZoneD3DVsConstF,     // D3DDevice__SetVertexShaderConstantF, original only
+  kZoneD3DPsConstF,
+  kZoneD3DSetTexture,
+  kZoneCount,
+};
+
+uint64_t GuestZoneStart();
+void GuestZoneEnd(GuestZone zone, uint64_t start);
+
 // The F3 panel. Always constructed; it draws only while toggled on, and it
 // turns sampling on for exactly as long as it is open, so reading the numbers
 // never costs anything when nobody is looking.

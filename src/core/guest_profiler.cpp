@@ -128,21 +128,11 @@ struct WaitCounters {
 // it is also the place where a frame-rate-dependent animation cost would live.
 // ---------------------------------------------------------------------------
 
-enum GuestZone : uint32_t {
-  kZoneRenderTask = 0,  // sub_82125378
-  kZoneRenderOuter,     // sub_82124C40
-  kZoneAuxTask,         // sub_82123508
-  kZoneAuxNode,         // sub_82123470
-  kZoneAnimUpdate,      // sub_820C7538
-  kZoneAnimEntry,       // sub_820C8378
-  kZoneAnimPart,        // sub_820C9550
-  kZoneCount,
-};
-
-const char* const kZoneNames[kZoneCount] = {"render_82125378",  "render_82124C40",
-                                            "auxtask_82123508", "auxnode_82123470",
-                                            "anim_820C7538",    "animentry_820C8378",
-                                            "animpart_820C9550"};
+const char* const kZoneNames[kZoneCount] = {
+    "render_82125378",  "render_82124C40", "auxtask_82123508", "auxnode_82123470",
+    "anim_820C7538",    "animentry_820C8378", "animpart_820C9550", "constflush_8212CDE0",
+    "d3d_drawidx",      "d3d_drawv",       "d3d_beginv",       "d3d_endv",
+    "d3d_vsconstf",     "d3d_psconstf",    "d3d_settex"};
 
 struct ZoneCounters {
   uint64_t calls[kZoneCount] = {};
@@ -263,6 +253,27 @@ class ZoneScope {
   bool active_;
   std::chrono::steady_clock::time_point start_;
 };
+
+}  // namespace
+
+uint64_t GuestZoneStart() {
+  if (!(OnTargetThread() && ProfilingEnabled()))
+    return 0;
+  const auto now = std::chrono::steady_clock::now().time_since_epoch();
+  const uint64_t ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+  return ns ? ns : 1;
+}
+
+void GuestZoneEnd(GuestZone zone, uint64_t start) {
+  if (!start)
+    return;
+  const auto now = std::chrono::steady_clock::now().time_since_epoch();
+  const uint64_t ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+  ++g_zones.calls[zone];
+  g_zones.ns[zone] += ns - start;
+}
+
+namespace {
 
 // ---------------------------------------------------------------------------
 // The snapshot the overlay draws
@@ -952,6 +963,7 @@ ETERNALSONATA_ZONE_HOOK(sub_82123470, eternalsonata::kZoneAuxNode)
 ETERNALSONATA_ZONE_HOOK(sub_820C7538, eternalsonata::kZoneAnimUpdate)
 ETERNALSONATA_ZONE_HOOK(sub_820C8378, eternalsonata::kZoneAnimEntry)
 ETERNALSONATA_ZONE_HOOK(sub_820C9550, eternalsonata::kZoneAnimPart)
+ETERNALSONATA_ZONE_HOOK(sub_8212CDE0, eternalsonata::kZoneConstFlush)
 
 #undef ETERNALSONATA_ZONE_HOOK
 
