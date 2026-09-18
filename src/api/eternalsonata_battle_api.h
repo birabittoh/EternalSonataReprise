@@ -41,7 +41,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_BATTLE_ABI_VERSION 2u
+#define ETERNALSONATA_BATTLE_ABI_VERSION 1u
 
 // Battle action events on the shared mod registry bus. Each carries an
 // EternalSonataBattleAction in payload.bytes. payload.u64 is action_id and

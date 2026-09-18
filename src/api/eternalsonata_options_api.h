@@ -30,7 +30,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_OPTIONS_ABI_VERSION 4u
+#define ETERNALSONATA_OPTIONS_ABI_VERSION 1u
 
 // Options is two pages, paged between with LB/RB. Page 1 is the Options screen
 // proper: the game's own Subtitles and Voice rows plus this project's Text
@@ -138,14 +138,13 @@ typedef int (*EternalSonataSetOptionRowLabelFn)(int row, int language,
 //
 // Safe to call after registration and after the screen has been built: values
 // are rewritten on every Options entry, so a change shows up the next time it
-// opens. Added in ABI version 3 - null-check the symbol.
+// opens.
 typedef int (*EternalSonataSetOptionValueFn)(int row, int value, int language,
                                              const char* text, int bar_width);
 
 // Moves `row` to another page (ETERNALSONATA_PAGE_*). Returns false for an
 // unknown row, an unknown page, or a destination page that is already full.
 // Safe to call any time; the move shows up the next time each page is built.
-// Added in ABI version 2 - null-check the symbol.
 typedef int (*EternalSonataSetOptionRowPageFn)(int row, int page);
 
 // Host ABI version, so a mod can tell what it is talking to.
