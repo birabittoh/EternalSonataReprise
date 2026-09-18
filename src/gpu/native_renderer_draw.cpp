@@ -175,6 +175,24 @@ uint64_t g_vertex_bytes = 0;
 uint64_t g_index_bytes = 0;
 uint64_t g_constant_bytes = 0;
 uint64_t g_stream_cache_hits = 0;
+
+// Cross frame vertex cache for the streams the guest binds with SetStreamSource.
+// Those are real vertex buffers at stable addresses, and most of them are
+// static meshes whose bytes never change, so re-swapping them every frame is
+// the largest single cost in the draw path. An entry keeps its own copy of the
+// guest bytes and a GPU buffer holding the swapped result; a hit is a memcmp
+// against the copy, which is an order of magnitude cheaper than the swap. The
+// per frame cache above still runs first, so a buffer drawn several times in a
+// frame is compared once.
+//
+// A buffer whose bytes changed gets a new GPU buffer; the old one is retired
+// and destroyed once every frame that could have referenced it has drained,
+// the same window the arena slots are recycled on.
+constexpr uint32_t kPersistentStreamMinBytes = 1024;
+constexpr uint64_t kPersistentStreamIdleFrames = 300;
+uint64_t g_persistent_stream_hits = 0;
+uint64_t g_persistent_stream_misses = 0;
+uint64_t g_persistent_stream_bytes = 0;
 uint64_t g_rect_draws = 0;
 uint64_t g_rect_fallbacks = 0;
 
@@ -953,6 +971,49 @@ struct StreamCacheEntry {
 // reset does not rehash.
 std::unordered_map<StreamCacheKey, StreamCacheEntry, StreamCacheKeyHash> g_stream_cache;
 
+struct PersistentStream {
+  std::unique_ptr<RenderBuffer> buffer;
+  std::vector<uint8_t> raw;  // the guest bytes the buffer was built from
+  uint32_t bytes = 0;
+  uint64_t last_frame = 0;
+};
+std::unordered_map<StreamCacheKey, PersistentStream, StreamCacheKeyHash> g_persistent_streams;
+
+struct RetiredBuffer {
+  std::unique_ptr<RenderBuffer> buffer;
+  uint64_t frame = 0;
+};
+std::vector<RetiredBuffer> g_retired_buffers;
+
+void RetireBuffer(std::unique_ptr<RenderBuffer> buffer) {
+  if (buffer)
+    g_retired_buffers.push_back({std::move(buffer), g_draw_frame});
+}
+
+// Called once per frame: frees retired buffers no frame in flight can still
+// reference, and drops entries the scene has stopped drawing.
+void AgePersistentStreams() {
+  size_t kept = 0;
+  for (RetiredBuffer& retired : g_retired_buffers) {
+    if (g_draw_frame - retired.frame > kFramesInFlight + 1)
+      continue;
+    if (kept != &retired - g_retired_buffers.data())
+      g_retired_buffers[kept] = std::move(retired);
+    ++kept;
+  }
+  g_retired_buffers.resize(kept);
+
+  for (auto it = g_persistent_streams.begin(); it != g_persistent_streams.end();) {
+    if (g_draw_frame - it->second.last_frame > kPersistentStreamIdleFrames) {
+      g_persistent_stream_bytes -= it->second.bytes;
+      RetireBuffer(std::move(it->second.buffer));
+      it = g_persistent_streams.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 struct ConstantCacheEntry {
   std::vector<uint8_t> raw;  // the guest bytes, unswapped, as last uploaded
   // The literal pool overlaid on top of them, which belongs to the bound shader
@@ -1007,6 +1068,16 @@ constexpr uint32_t kPixelDumpLimit = 8;
 constexpr auto kPixelDumpInterval = std::chrono::seconds(10);
 uint32_t g_pixel_dumps = 0;
 std::chrono::steady_clock::time_point g_pixel_dump_last;
+
+// The vertex constants a draw is classified and uploaded from: the sprite
+// batcher's captured bank when it supplied one, else the device's live shadow.
+// Every reader goes through this, because by the time a batch is flushed the
+// shadow already holds the next draw's registers, and classifying a merged
+// sprite by those put a screen filling one under world clip compression.
+const uint8_t* GuestVertexBank(const GuestDrawCall& call) {
+  return call.vertex_bank_override != nullptr ? call.vertex_bank_override
+                                              : call.device + d3d::kVertexConstantShadow;
+}
 
 float GuestFloat(const uint8_t* bank, uint32_t reg, uint32_t component) {
   uint32_t raw;
@@ -1274,7 +1345,7 @@ void WaterProbeNoteConstants(const GuestDrawCall& call) {
                                &g_water_frame.color_mask[surface]);
 
   const uint8_t* pixel = call.device + d3d::kPixelConstantShadow;
-  const uint8_t* vertex = call.device + d3d::kVertexConstantShadow;
+  const uint8_t* vertex = GuestVertexBank(call);
   for (uint32_t i = 0; i < d3d::kConstantRegisters * 4; ++i) {
     g_water_frame.pixel[surface][i] = GuestFloat(pixel, i / 4, i % 4);
     g_water_frame.vertex[surface][i] = GuestFloat(vertex, i / 4, i % 4);
@@ -1445,7 +1516,7 @@ void PutGuestFloat(uint8_t* bank, uint32_t reg, uint32_t component, float value)
 
 const uint8_t* WaterSlowVertexBank(const GuestDrawCall& call, bool* patched) {
   *patched = false;
-  const uint8_t* bank = call.device + d3d::kVertexConstantShadow;
+  const uint8_t* bank = GuestVertexBank(call);
   const float scale = WaterRotationScale();
   if (scale == 1.0f)
     return bank;
@@ -1706,7 +1777,7 @@ void CaptureProjectionProbe(const GuestDrawCall& call, uint32_t texture_mask) {
   if (!GetBoundTextureFetch(call.memory_base, kProbeSlot, fetch, &sampler))
     return;
 
-  const uint8_t* bank = call.device + d3d::kVertexConstantShadow + kProbeConstant * 16;
+  const uint8_t* bank = GuestVertexBank(call) + kProbeConstant * 16;
   for (uint32_t row = 0; row < kProbeConstantCount; ++row) {
     for (uint32_t col = 0; col < 4; ++col) {
       uint32_t word;
@@ -1811,7 +1882,7 @@ bool IsSceneSprite(const GuestDrawCall& call, int vertex_slot) {
   if (vertex_slot < 0x0d || vertex_slot > 0x12 || call.device == nullptr)
     return false;
   // These sprites use c4..7 for the camera. UI projections have constant W.
-  const uint8_t* bank = call.device + d3d::kVertexConstantShadow;
+  const uint8_t* bank = GuestVertexBank(call);
   return std::abs(GuestFloat(bank, 7, 0)) > 0.000001f ||
       std::abs(GuestFloat(bank, 7, 1)) > 0.000001f ||
       std::abs(GuestFloat(bank, 7, 2)) > 0.000001f;
@@ -1829,7 +1900,7 @@ bool IsScreenImageSprite(const GuestDrawCall& call, int vertex_slot, int pixel_s
   const GuestDrawStream& stream = call.streams[0];
   if (stream.data == nullptr || stream.stride < 12 || stream.size < stream.stride * 4)
     return false;
-  const uint8_t* bank = call.device + d3d::kVertexConstantShadow;
+  const uint8_t* bank = GuestVertexBank(call);
   uint32_t corners = 0;
   for (uint32_t i = 0; i < 4; i += 1) {
     const uint8_t* vertex = stream.data + i * stream.stride;
@@ -2286,9 +2357,63 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     const StreamCacheKey stream_key{stream.data, uint32_t(out_bytes), stream.stride, cache_kind};
     const auto cached = g_stream_cache.find(stream_key);
 
+    // Only the SetStreamSource streams, uploaded plain, are worth remembering
+    // across frames; see g_persistent_streams.
+    const bool persistent = !call.inlined && !expand && !expand_quads &&
+                            !call.host_order_streams && out_bytes >= kPersistentStreamMinBytes;
+    PersistentStream* remembered = nullptr;
+    if (cached == g_stream_cache.end() && persistent) {
+      ProfileZone upload_zone(kPhaseVertexUpload);
+      const auto found = g_persistent_streams.find(stream_key);
+      if (found != g_persistent_streams.end()) {
+        remembered = &found->second;
+        if (remembered->bytes == out_bytes &&
+            std::memcmp(remembered->raw.data(), stream.data, size_t(out_bytes)) == 0) {
+          ++g_persistent_stream_hits;
+          remembered->last_frame = g_draw_frame;
+          views[slot] = RenderVertexBufferView(remembered->buffer->at(0), uint32_t(out_bytes));
+          g_stream_cache.emplace(stream_key,
+                                 StreamCacheEntry{remembered->buffer->at(0), uint32_t(out_bytes)});
+          continue;
+        }
+      }
+    }
+
     if (cached != g_stream_cache.end()) {
       ++g_stream_cache_hits;
       views[slot] = RenderVertexBufferView(cached->second.ref, cached->second.size);
+    } else if (persistent) {
+      // Swapped into a buffer of its own that outlives the frame.
+      ProfileZone upload_zone(kPhaseVertexUpload);
+      ++g_persistent_stream_misses;
+      std::unique_ptr<RenderBuffer> buffer = device->createBuffer(
+          RenderBufferDesc::UploadBuffer(out_bytes, RenderBufferFlag::VERTEX));
+      uint8_t* mapped = buffer ? static_cast<uint8_t*>(buffer->map()) : nullptr;
+      if (mapped == nullptr) {
+        Drop(kDropNoArena, "a persistent vertex buffer could not be created");
+        return false;
+      }
+      if (remembered == nullptr) {
+        remembered = &g_persistent_streams[stream_key];
+      } else {
+        g_persistent_stream_bytes -= remembered->bytes;
+        RetireBuffer(std::move(remembered->buffer));
+      }
+      remembered->raw.assign(stream.data, stream.data + size_t(out_bytes));
+      g_swap_scratch.resize(size_t(out_bytes));
+      std::memcpy(g_swap_scratch.data(), stream.data, size_t(out_bytes));
+      for (uint32_t v = 0; v < out_vertices; ++v)
+        SwapVertex(g_swap_scratch.data() + size_t(v) * stream.stride, plan);
+      std::memcpy(mapped, g_swap_scratch.data(), size_t(out_bytes));
+      buffer->unmap();
+      remembered->buffer = std::move(buffer);
+      remembered->bytes = uint32_t(out_bytes);
+      remembered->last_frame = g_draw_frame;
+      g_persistent_stream_bytes += out_bytes;
+      g_vertex_bytes += out_bytes;
+      views[slot] = RenderVertexBufferView(remembered->buffer->at(0), uint32_t(out_bytes));
+      g_stream_cache.emplace(stream_key,
+                             StreamCacheEntry{remembered->buffer->at(0), uint32_t(out_bytes)});
     } else {
       ProfileZone upload_zone(kPhaseVertexUpload);
       const Allocation allocation = ArenaAllocate(device, out_bytes);
@@ -2354,6 +2479,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
           for (uint32_t v = 0; v < 6; ++v)
             std::memcpy(out + size_t(v) * stride, source + size_t(kQuadOrder[v]) * stride, stride);
         }
+      } else if (call.host_order_streams) {
+        std::memcpy(allocation.cpu, stream.data, size_t(out_bytes));
       } else {
         // Swapped in ordinary memory and written out once, rather than swapped
         // in place in the arena.
@@ -2466,12 +2593,17 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     bool bool_patched = false;
     const uint8_t* bool_bank = WaterCutBoolBank(call, &bool_patched);
     bool vertex_patched = false;
-    const uint8_t* vertex_bank = WaterSlowVertexBank(call, &vertex_patched);
+    const uint8_t* vertex_bank = call.vertex_bank_override != nullptr
+                                     ? call.vertex_bank_override
+                                     : WaterSlowVertexBank(call, &vertex_patched);
+    const uint8_t* pixel_bank = call.pixel_bank_override != nullptr
+                                    ? call.pixel_bank_override
+                                    : call.device + d3d::kPixelConstantShadow;
     constants_ok =
         UploadConstantBank(device, vertex_bank, d3d::kConstantRegisters * 16,
                            g_constant_cache[vertex_patched ? 4 : 0], &vertex_floats,
                            GuestPipelineVertexLiterals(call.pipeline)) &&
-        UploadConstantBank(device, call.device + d3d::kPixelConstantShadow,
+        UploadConstantBank(device, pixel_bank,
                            d3d::kConstantRegisters * 16, g_constant_cache[1], &pixel_floats,
                            GuestPipelinePixelLiterals(call.pipeline), &pixel_bank_uploaded) &&
         UploadConstantBank(device, bool_bank, d3d::kBoolLoopConstantBytes,
@@ -2857,6 +2989,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 void BeginGuestDrawFrame(uint32_t slot) {
   ++g_draw_frame;
   g_arena_slot = slot < kFramesInFlight ? slot : 0;
+  AgePersistentStreams();
   for (ArenaBlock& block : Arena())
     block.used = 0;
   g_arena_block = 0;
@@ -2895,11 +3028,13 @@ void LogGuestDrawSummary() {
 
   REXLOG_DEBUG(
       "native_renderer: draws issued={} requested={} dropped={} | uploaded {} KiB vertices, {} "
-      "KiB indices, {} KiB constants | stream cache hits={} | arena {} block(s) | rect lists={} "
-      "(unexpanded {}) | quad lists={} (indexed {})",
+      "KiB indices, {} KiB constants | stream cache hits={} | persistent streams {} ({} KiB) "
+      "hits={} misses={} | arena {} block(s) | rect lists={} (unexpanded {}) | quad lists={} "
+      "(indexed {})",
       g_draws_issued, g_draws_requested, dropped, g_vertex_bytes / 1024, g_index_bytes / 1024,
-      g_constant_bytes / 1024, g_stream_cache_hits, Arena().size(), g_rect_draws, g_rect_fallbacks,
-      g_quad_draws, g_quad_indexed_draws);
+      g_constant_bytes / 1024, g_stream_cache_hits, g_persistent_streams.size(),
+      g_persistent_stream_bytes / 1024, g_persistent_stream_hits, g_persistent_stream_misses,
+      Arena().size(), g_rect_draws, g_rect_fallbacks, g_quad_draws, g_quad_indexed_draws);
 
   for (uint32_t i = 0; i < kDropCount; ++i) {
     if (g_drops[i] != 0)
@@ -3147,6 +3282,9 @@ void ShutdownGuestDraws() {
   }
   g_arena_block = 0;
   g_stream_cache.clear();
+  g_persistent_streams.clear();
+  g_retired_buffers.clear();
+  g_persistent_stream_bytes = 0;
   for (ConstantCacheEntry& cache : g_constant_cache) {
     cache.valid = false;
     cache.raw.clear();

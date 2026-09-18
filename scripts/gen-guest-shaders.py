@@ -55,7 +55,7 @@ import xenos_hlsl as H  # noqa: E402
 import xenos_ucode as U  # noqa: E402
 
 PACK_MAGIC = b"ESGS"
-PACK_VERSION = 7
+PACK_VERSION = 8
 
 # The sidecar the F2 shader debugger reads: per shader, the extractor's name,
 # the microcode disassembly and the emitted HLSL. Kept out of guest_shaders.bin
@@ -81,6 +81,35 @@ PROFILE = {"vs": "vs_6_0", "ps": "ps_6_0", "gs": "gs_6_0"}
 # has no table slot, so it rides in one extra entry past the two 256 slot
 # tables. See xenos_hlsl.point_sprite_gs.
 POINT_SPRITE_NAME = "point_sprite_gs"
+
+# The sprite batcher's pair (src/gpu/native_renderer_batch.cpp): vs_015 with a
+# COLOR0 input passed through interpolator 1, and ps_003 modulating by that
+# interpolator instead of pixel c0, so sprites with different colours can share
+# one draw. Derived from the translated sources by patching, so they track the
+# guest shaders exactly. Ours like the geometry shader, so no table slot; the
+# three ride in fixed order after the two tables.
+SPRITE_BATCH_VS_NAME = "sprite_batch_vs"
+SPRITE_BATCH_PS_NAME = "sprite_batch_ps"
+EXTRA_NAMES = [POINT_SPRITE_NAME, SPRITE_BATCH_VS_NAME, SPRITE_BATCH_PS_NAME]
+SPRITE_BATCH_VS_SLOT = 15
+SPRITE_BATCH_PS_SLOT = 3
+SPRITE_BATCH_TEXTURES = 8
+
+SPRITE_BATCH_TEXTURE_DECLS = "".join(
+    "Texture2D xe_texture%d : register(t%d, space0);\n"
+    "SamplerState xe_sampler%d : register(s%d, space1);\n" % (i, i, i, i)
+    for i in range(SPRITE_BATCH_TEXTURES))
+
+# The sprite's texture, chosen by the index the batcher wrote into TEXCOORD1.
+# A switch rather than a resource array so it needs no descriptor indexing
+# extension on Vulkan.
+SPRITE_BATCH_SAMPLE = ("float4 xe_batch_sample(float which, float2 uv) {\n"
+                       "    switch (int(which + 0.5f)) {\n" + "".join(
+    "        case %d: return xe_texture%d.Sample(xe_sampler%d, uv);\n" % (i, i, i)
+    for i in range(1, SPRITE_BATCH_TEXTURES)) +
+    "        default: return xe_texture0.Sample(xe_sampler0, uv);\n"
+    "    }\n"
+    "}\n\n")
 
 # Matches Plume's own helper (examples/cmake/modules/PlumeDXC.cmake) so the
 # guest shaders and the overlay shaders are compiled the same way. -fvk-invert-y
@@ -224,6 +253,51 @@ def translate(xex, hlsl_dir):
     gs.source = os.path.join(hlsl_dir, POINT_SPRITE_NAME + ".hlsl")
     write_if_different(gs.source, gs.hlsl)
     out.append(gs)
+
+    def patched(kind, slot, name, edits):
+        base = next(e for e in out if e.kind == kind and e.slot == slot)
+        text = base.hlsl.decode("utf-8")
+        for old, new in edits:
+            if text.count(old) != 1:
+                raise SystemExit("%s: cannot derive %s, %r not found once"
+                                 % (base.name, name, old))
+            text = text.replace(old, new)
+        entry = Translated(kind, 0, name, None)
+        entry.extra = True
+        entry.inputs = list(base.inputs)
+        entry.keys = sorted(set(base.keys) | {1, 2})
+        entry.texture_mask = base.texture_mask
+        entry.flags = base.flags
+        entry.literals = base.literals
+        entry.hlsl = text.encode("utf-8")
+        entry.source = os.path.join(hlsl_dir, name + ".hlsl")
+        write_if_different(entry.source, entry.hlsl)
+        return entry
+
+    vs = patched("vs", SPRITE_BATCH_VS_SLOT, SPRITE_BATCH_VS_NAME, [
+        ("    float4 in_texcoord0 : TEXCOORD0;\n};",
+         "    float4 in_texcoord0 : TEXCOORD0;\n    float4 in_color0 : COLOR0;\n"
+         "    float4 in_texcoord1 : TEXCOORD1;\n};"),
+        ("    output.out_position = out_position;",
+         "    output.out_p1 = input.in_color0;\n"
+         "    output.out_p2 = input.in_texcoord1;\n"
+         "    output.out_position = out_position;"),
+    ])
+    vs.inputs.append((10, 0))  # D3DDECLUSAGE_COLOR
+    vs.inputs.append((5, 1))   # D3DDECLUSAGE_TEXCOORD, 1: the texture index
+    out.append(vs)
+    ps = patched("ps", SPRITE_BATCH_PS_SLOT, SPRITE_BATCH_PS_NAME, [
+        ("Texture2D xe_texture0 : register(t0, space0);\n"
+         "SamplerState xe_sampler0 : register(s0, space1);\n",
+         SPRITE_BATCH_TEXTURE_DECLS + "\n" + SPRITE_BATCH_SAMPLE),
+        ("xe_texture0.Sample(xe_sampler0, r0.xy)",
+         "xe_batch_sample(input.in_p2.x, r0.xy)"),
+        ("xe_texture0.Sample(xe_sampler0, r1.xy)",
+         "xe_batch_sample(input.in_p2.x, r1.xy)"),
+        ("xe_mul(r2.xyzw, c[0].xyzw)", "xe_mul(r2.xyzw, input.in_p1)"),
+    ])
+    ps.texture_mask = (1 << SPRITE_BATCH_TEXTURES) - 1
+    out.append(ps)
     return out
 
 
@@ -319,12 +393,12 @@ def pack(entries, formats):
         seen[data] = where
         return where
 
-    # Two 256 slot tables, then one entry for the point sprite geometry shader,
-    # which is ours and has no guest table slot.
-    table = [None] * (SLOTS * 2 + 1)
+    # Two 256 slot tables, then the renderer's own shaders, which have no
+    # guest table slot, in EXTRA_NAMES order.
+    table = [None] * (SLOTS * 2 + len(EXTRA_NAMES))
     for entry in entries:
-        if entry.kind == "gs":
-            index = SLOTS * 2
+        if entry.name in EXTRA_NAMES:
+            index = SLOTS * 2 + EXTRA_NAMES.index(entry.name)
         else:
             index = (0 if entry.kind == "vs" else SLOTS) + entry.slot
         if table[index] is not None:
@@ -379,6 +453,8 @@ def pack_debug(entries):
     empty = struct.pack("<IIIIII", 0, 0, 0, 0, 0, 0)
     table = [empty] * (SLOTS * 2 + 1)
     for entry in entries:
+        if getattr(entry, "extra", False):
+            continue
         if entry.kind == "gs":
             index = SLOTS * 2
         else:

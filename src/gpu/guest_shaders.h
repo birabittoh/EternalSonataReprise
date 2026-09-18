@@ -97,6 +97,11 @@ const GuestShader& GuestPixelShader(uint32_t slot);
 // sprite coordinate across it, and a host point list does neither. See
 // scripts/xenos_hlsl.py's point_sprite_gs.
 const GuestShader& GuestPointSpriteShader();
+// The sprite batcher's pair: vs_015 with a COLOR0 input carried on interpolator
+// 1, and ps_003 modulating by it instead of pixel c0. See
+// native_renderer_batch.cpp and the derivation in scripts/gen-guest-shaders.py.
+const GuestShader& GuestSpriteBatchVertexShader();
+const GuestShader& GuestSpriteBatchPixelShader();
 
 // How many slots of each table the pack actually filled, for the startup log.
 uint32_t GuestVertexShaderCount();

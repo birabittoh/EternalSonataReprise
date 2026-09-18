@@ -44,7 +44,7 @@ constexpr uint32_t kMagic = 0x53475345;  // 'ESGS', little endian
 // Bumped to 5 for the literal constant pool section, and to 6 for the point
 // sprite geometry shader's entry past the two slot tables, and to 7 for the
 // clip scale, which every vertex shader's emitted HLSL depends on.
-constexpr uint32_t kVersion = 7;
+constexpr uint32_t kVersion = 8;
 
 constexpr uint8_t kFlagPointSize = 1 << 0;
 constexpr uint8_t kFlagHasCube = 1 << 1;
@@ -82,6 +82,9 @@ static_assert(sizeof(PackEntry) == 30, "pack entry layout");
 std::vector<GuestShader> g_vertex;
 std::vector<GuestShader> g_pixel;
 GuestShader g_point_sprite;
+GuestShader g_sprite_batch_vs;
+GuestShader g_sprite_batch_ps;
+constexpr size_t kExtraEntries = 3;  // point sprite gs, sprite batch vs, sprite batch ps
 const GuestShader g_absent;
 bool g_attempted = false;
 bool g_loaded = false;
@@ -151,7 +154,7 @@ bool LoadGuestShaders() {
 
   // One entry past the two tables holds the point sprite geometry shader, which
   // is ours rather than the guest's and so has no table slot of its own.
-  const size_t entry_count = size_t(header.slots) * 2 + 1;
+  const size_t entry_count = size_t(header.slots) * 2 + kExtraEntries;
   const size_t entries_bytes = entry_count * sizeof(PackEntry);
   const size_t expected = sizeof(PackHeader) + entries_bytes +
                           size_t(header.input_count) * sizeof(GuestVertexInput) +
@@ -176,8 +179,12 @@ bool LoadGuestShaders() {
   g_vertex.assign(header.slots, GuestShader{});
   g_pixel.assign(header.slots, GuestShader{});
   g_point_sprite = GuestShader{};
+  g_sprite_batch_vs = GuestShader{};
+  g_sprite_batch_ps = GuestShader{};
+  GuestShader* const extras[kExtraEntries] = {&g_point_sprite, &g_sprite_batch_vs,
+                                              &g_sprite_batch_ps};
   for (size_t i = 0; i < entry_count; ++i) {
-    GuestShader& out = i >= size_t(header.slots) * 2 ? g_point_sprite
+    GuestShader& out = i >= size_t(header.slots) * 2 ? *extras[i - size_t(header.slots) * 2]
                        : i < header.slots            ? g_vertex[i]
                                                      : g_pixel[i - header.slots];
     if (!Decode(records[i], header, blob, inputs, keys, literals, out)) {
@@ -204,6 +211,8 @@ const GuestShader& GuestPixelShader(uint32_t slot) {
 }
 
 const GuestShader& GuestPointSpriteShader() { return g_point_sprite; }
+const GuestShader& GuestSpriteBatchVertexShader() { return g_sprite_batch_vs; }
+const GuestShader& GuestSpriteBatchPixelShader() { return g_sprite_batch_ps; }
 
 uint32_t GuestVertexShaderCount() {
   uint32_t count = 0;
