@@ -217,7 +217,8 @@ class EternalsonataApp : public rex::ReXApp {
     // Lets the SDK's AutoUpdater (F1 mod manager overlay) check
     // github.com/birabittoh/EternalSonataReprise's Releases for a newer build
     // and offer to download + apply it. "{tag}"/"{platform}" are substituted
-    // by the SDK.
+    // by the SDK; {platform} is the SDK's own naming (win-amd64 etc.), which
+    // is what the CI matrix publishes.
     config.update_asset_format = "eternalsonata-{tag}-{platform}";
     config.update_repo = "birabittoh/EternalSonataReprise";
 
