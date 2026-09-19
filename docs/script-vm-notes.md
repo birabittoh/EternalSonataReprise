@@ -2,7 +2,9 @@
 
 Companion to `docs/asset-formats.md`. That document describes what the formats
 *are*; this one records where things live in `default.xex`, what has been ruled
-out, and what the open leads are.
+out, and what the open leads are. The script VM itself is decoded: §7 is how it
+was found and how it is entered, §8 is the opcode table, calling convention and
+native binding, and `scripts/e_disasm.py` disassembles any decoded `.e`.
 
 Target binary: `assets/default.xex` (IDA database `assets/default.xex.i64`).
 Big-endian PowerPC, Xbox 360. Image base `0x82000000`;
@@ -34,7 +36,7 @@ of searching the battle-tick call graph never found it.
 | `sub_820FF2B8` | Entry; validates magic `(*a2 & 0xFFFFFFFE) != 0x180` → reject |
 | `sub_820FF9C8` | The loader — allocates, memcpy's the image, runs relocations, copies `block2` |
 | `sub_820FF6C0` | Relocator; patches a 32-bit word per list entry |
-| `sub_820FF748`, `sub_820FF838`, `sub_820FF910` ×2 | `block2` fixup passes |
+| `sub_820FF748`, `sub_820FF838`, `sub_820FF910` ×2 | `block2` fixup passes; `sub_820FF748` binds native ids to function pointers (§8) |
 
 `sub_820FF6C0` stores each relocated dword **byte-reversed**, so relocated
 pointers end up little-endian in the stream while everything around them is
@@ -85,13 +87,10 @@ instantiated in several places, not one global structure.
 
 ## 1.5 `sub_821C9FE0`/`sub_821C0300` are FSMs, not the interpreter
 
-> **Superseded in part (2026-07-29, see §7).** The title of this section used
-> to read "There is no central bytecode VM". That went too far. Everything
-> below is still correct — `sub_821C9FE0` and `sub_821C0300` really are
-> hardcoded state machines, not interpreters — but a real bytecode VM *does*
-> exist elsewhere in the binary: **`sub_820FFE28`**, found via an lldb
-> backtrace. See §7. Read this section as "these two functions are not it",
-> not as "there isn't one".
+> The real bytecode VM is `sub_820FFE28` (§7, §8). This section and §2 are
+> about two functions that were mistaken for it: they are hardcoded state
+> machines that consume `.e` *data*, and the notes below stay correct about
+> them. The VM-hunting conclusions they used to draw are gone.
 
 `sub_821C0300` (0x22C8 bytes,
 also a slot in the per-object-type tick table alongside `sub_821C9FE0`) has
@@ -113,32 +112,23 @@ Case `01` in both functions is the same idiom too: `cmplwi cr6,r7,0 / beq
 So this is not one interpreter — it's a **pattern that recurs across multiple
 independently compiled, hardcoded finite-state machines**, each with its own
 fixed case count and jump table, reached through the same per-object-type
-tick dispatch (`0x82087108`+). Each `.e` "script" most likely selects *which*
-pre-baked FSM function an object runs (by type/folder: AI scripts vs.
-dialogue/tutorial scripts likely map to different FSMs — `sub_821C9FE0` at 67
-states is a plausible fit for the AI executor, `sub_821C0300` at 97 states for
-something richer, e.g. the message/dialogue box). The `.e` image bytes almost
-certainly supply *data* the FSM's states read (text, resource ids, relocated
-pointers, parameters) — not instructions that drive control flow themselves.
-
-**This retires the "disassemble the `.e` image as a bytecode stream" plan.**
-The productive next steps are: (1) enumerate every entry in the
-`0x82087108`–`0x8208726C` tick table and identify which script *kind*
-(AI/tutorial/dialogue/etc.) maps to which FSM function, most likely by finding
-where an object's `a1+4` is *initialized* per instance; (2) for the FSM
-believed to own dialogue playback, map its states to the markup control codes
-(1/2/13) from §3 below — `sub_821C0300` is the current best candidate given
-its size and its own call to `sub_8218D408` (§2.1).
+tick dispatch (`0x82087108`+). `sub_821C9FE0` (67 states) is the
+per-party-member narration-line object (§5.3); `sub_821C0300` (97 states)
+works on the per-battle-unit struct family (§2.1). These FSMs read `.e`
+*data* (text, resource ids, relocated pointers, parameters); the control flow
+in the image is run by the VM in §7/§8. Where an object's `a1+4` is
+initialised is answered in §5.2 (constructor sets it to 1). Which FSM owns
+dialogue playback and acts on the markup control codes (1/2/13) from §3 is
+still open; `sub_821C0300` is ruled out in §2.1.
 
 ---
 
-## 2. `sub_821C9FE0` — the 67-case dispatcher (hypothesis revised, see §2.1)
+## 2. `sub_821C9FE0` — the 67-state narration-line FSM
 
-`0x821C9FE0`, 0x24E0 bytes. The strongest candidate for the script VM.
-
-Only static xref is a **data-only function-pointer-table slot at `0x820B1030`**,
-which itself has no xrefs — so it is dispatched at runtime and static analysis
-cannot resolve what supplies its `a1`.
+`0x821C9FE0`, 0x24E0 bytes. Once thought to be the script VM; it is one state
+step of a per-party-member narration object (§2.1, §5.2, §5.3), reached
+through vtable slot `+168` of `off_82087108`. The `0x820B1030` xref is
+`.pdata`, not a call site.
 
 Hex-Rays produces a 3-line stub ending in `__asm { bctr }`. Use raw `disasm` at
 each case address; never `decompile` the whole function.
@@ -155,11 +145,7 @@ add    r12, loc_821CA078, r0
 mtctr  r12 / bctr
 ```
 
-**The opcode is a dword at `a1+4`, 1-based (1..0x43) — not a raw stream byte.**
-So a fetch/decode step sits in front of this and has not been found. Find it
-before guessing operand widths; it defines the real instruction encoding.
-
-All 67 case targets, derived from `word_820824A0` + base `loc_821CA078`:
+**The state is a dword at `a1+4`, 1-based (1..0x43).** All 67 case targets, derived from `word_820824A0` + base `loc_821CA078`:
 
 ```
 01 0x821ca078   0f 0x821ca67c   1d 0x821ca4d4^  2b 0x821cbc90   39 0x821cc1c0
@@ -182,7 +168,7 @@ All 67 case targets, derived from `word_820824A0` + base `loc_821CA078`:
 no-ops. `^` = `0x821CA4D4`, shared by `0x1d 0x23 0x28 0x31`. Ops
 `0x0b 0x0d 0x0f 0x1f` share `0x821CA67C`; ops `0x2a 0x2c` share `0x821CBC84`.
 
-### 2.1 The fetch/decode step doesn't exist — the "opcode = bytecode" model is likely wrong
+### 2.1 One state per call: it is an FSM, not an interpreter
 
 Found by tracing `sub_821C9FE0`'s real (non-`.pdata`) data xrefs, which `xrefs_to`
 misses (same `lis`/`ori`-split blind spot as §5) but `find_bytes` on the raw
@@ -209,17 +195,9 @@ loop back to the dispatch header at `0x821ca030`.
 So `sub_821C9FE0` runs **exactly one case per call** and returns. There is no
 internal loop, and no separate fetch/decode function feeding `a1+4` — each
 case computes or hardcodes its own successor state inline and writes it back
-for the *next* call. That fully explains why searching for a shared
-byte-stream decoder never found anything: it doesn't exist.
-
-**Revised hypothesis:** this is not a bytecode interpreter reading the `.e`
-image as an instruction stream at runtime. It reads more like a
-hand-authored-or-codegen'd finite-state machine that was compiled *from* the
-original script at build time, where each of the 67 states is native PPC code
-baked in as a case, and the `.e` image supplies only *data* (dialogue ids,
-relocated pointers, parameters) that individual states read — not control
-flow. The "opcode" dword at `a1+4` is a **state index into this function**,
-not a cursor position in the byte stream.
+for the *next* call. The dword at `a1+4` is a **state index into this function**, not a
+cursor into the `.e` byte stream; the image's control flow runs in
+`sub_820FFE28` (§7).
 
 **Corroborated** against cases `02` and `03` (`0x821ca140`, `0x821ca244`):
 both follow the same shape, and both add a **poll/park** variant not seen in
@@ -242,13 +220,6 @@ not the wait condition. The real poll condition for case `02` is whatever
 `sub_8218D408` and the two bytes at `r30+0x83238/39` represent; that is the
 next thing to chase if pursuing the control-code-consumer angle through this
 function.
-
-Where `a1+4`'s *initial* value comes from per object instance (i.e. what
-selects which of the 67 states an object starts in, and by extension which
-fixed "program" it runs) is still unknown — the `sub_821C9FE0` xrefs are all
-indirect through the per-object-type tick table (`0x82087108`+), so finding
-the allocator/initializer for these objects (probably where `a1[0]`'s vtable
-gets assigned) is the next concrete step, not further case-by-case disasm.
 
 **`sub_821C0300` is not the dialogue system — walk that back.** Its own guard
 condition computes `base + 16136 * index`, and `sub_8219F698` (the documented
@@ -277,49 +248,12 @@ fields at `a1+68/72` can be tied to a known battle-unit struct layout, and
 whether `sub_821C9FE0`'s tick-table slot is reached specifically for units
 with an active tutorial/dialogue `.e` script loaded.
 
-**Loader-side confirmation, still incomplete.** `sub_8219F698` (the AI script
-loader) is called from `sub_821ACBF8` itself — the tutorial per-unit tick
-state machine — at `0x821acff0`, inside a loop over every unit in the current
+**Loader side.** `sub_8219F698` (the AI script loader) is called from
+`sub_821ACBF8` at `0x821acff0`, inside a loop over every unit in the current
 party (bound = byte at `[unit_array+0x2A1]`, stride `0x7EC8` = 32,456 bytes
-per unit) that fires once per unit at battle/tutorial start. So the tutorial
-tick function is what kicks off each unit's AI-script load. What was **not**
-found in this pass: where the resulting FSM object's `a1+4` (state) and
-`a1[0]` (vtable, presumably pointing at the `sub_821C9FE0`/`sub_821C0300`
-family) get initialized once that async read completes — that almost
-certainly happens in whatever callback `sub_821BBED8`'s async read job invokes
-on completion, which hasn't been traced. That callback is the single most
-direct way to settle every open question in this section: it would show the
-exact object layout, which FSM function gets attached for which script kind,
-and the state number the FSM starts in.
-
-### Suggested attack (predates §2.1; revisit its premise before following it)
-
-1. Raw-`disasm` each case body; record opcode → operand widths → effect.
-2. Cross-check against real streams in `extracted/e/btldata/script/ai/*.e` —
-   the AI scripts are smallest (`default.e` is 11,984 bytes decoded) and are
-   almost pure image with no bulk. Start there, not with 4 MB tutorial files.
-3. Build a disassembler in `scripts/` that walks the image from `+0x18` and
-   flags anything it cannot handle.
-
-**Validation:** a correct disassembler consumes every one of the 678 files
-end-to-end with no unknown opcode and no desync. That is a far stronger signal
-than eyeballing one file. Additionally, every relocation offset must land
-exactly one byte past one of `0x07 0x0a 0x0b 0x0c 0x0e 0x7a 0x89` — free
-ground truth for seven operand widths.
-
-Start of `extracted/e/btldata/script/ai/default.e` at `+0x18`, `|` marking a
-relocated pointer:
-
-```
-7a |00000523| 0001 0081 0101 81 180c 81 1808 81
-7a |00000e98| 8810783d 03 00000000 81 03 00000000 81 …
-```
-
-`0x81` recurs as a statement/expression terminator; other bytes seen are
-`0x03 0x07 0x0c 0x18 0x24 0x3d 0x86 0x88`. A tempting split — bytes `< 0x80` are
-commands (fits the `<= 0x43` range check), `>= 0x80` are expression tokens —
-does **not** hold cleanly, since `0x7a` takes a pointer and is both `< 0x80` and
-`> 0x43`.
+per unit) that fires once per unit at battle/tutorial start. The narration
+FSM objects are not created from that read: §5.2/§5.3 found their constructor
+and showed the pool is keyed off party composition, not loaded `.e` bytes.
 
 ---
 
@@ -419,9 +353,9 @@ machine with its own 23-case computed-goto at `0x82082730`, base `0x821ACEDC`)
 - **Hex-Rays fails on every computed-goto in this binary** (`sub_821ACBF8`,
   `sub_821C9FE0`, `sub_821D50A8`), emitting a stub ending in `__asm { bctr }`.
   Use raw `disasm` at the specific case address.
-- `disasm` with `offset: 0` on large functions can return only 10 lines
-  regardless of `max_instructions`. Use `offset: 1` — instruction 0 is
-  `mflr r12` and never interesting.
+- `disasm` with `offset: 0` on large functions has returned only 10 lines
+  regardless of `max_instructions` in some sessions (not reproduced on
+  2026-09-19). If it happens, use `offset: 1`.
 - Prefer fresh IDA output over prose from earlier notes. Two separate rounds
   produced contradictory characterisations of `sub_8210CBB8` before a dedicated
   pass resolved it. Always state which call site and arguments you mean, since
@@ -628,19 +562,10 @@ raw byte from the stream**, 0x00..0x89 — matching the §3.3 statistics
 
 ### Context layout
 
-The VM context is at `owner + 48`, so `a1[n]` below is `ctx + 4n`:
-
-| field | meaning |
-|---|---|
-| `ctx+0`  | script/module handle |
-| `ctx+4`  | slot id in the `unk_8241006C` 512-entry handle table |
-| `ctx+8`  | run state: 0 = finished, 1 = running, 2 = sleeping (`ctx+12` = countdown), 3 = done |
-| `ctx+12` | sleep counter, decremented per call while state 2 |
-| `ctx+24` | operand/eval stack pointer |
-| `ctx+32` | **instruction pointer** |
-| `ctx+40` | stack base |
-
-`sub_820FFCA0` (the init) sets the IP:
+The VM context is at `owner + 48`. Full field list in §8; the ones the loop
+above uses: `ctx+8` run state (0 finished, 1 running, 2 sleeping with the
+countdown at `ctx+12`, 3 done), `ctx+0x20` ip. `sub_820FFCA0` (the init) sets
+the ip:
 
 ```c
 *(_DWORD *)(a1 + 32) = *(_DWORD *)(sub_820FEED0(*(_DWORD *)a1) + 8) + 24;
@@ -659,32 +584,16 @@ sub_821ACBF8   tutorial FSM
     sub_821014E8   sub_820FFCA0 (init IP/stack) then sub_820FFE28 (run)
 ```
 
-### Opcode table (hand-decoded)
+Map scripts (`cfdata/*.e`) run the same VM; their tasks are spawned from
+inside the script through builtin 7 (§8).
 
-`word_82081F40` is a 138-entry `u16` table; `handler = 0x820FFEDC + table[op]`.
-This gives **138 opcodes `0x00..0x89`, 136 unique handlers**, spanning
-`0x820FFEDC..0x8210129C`. Two aliases share handlers: `0x03`/`0x07`
-→ `0x820FFF24`, and `0x38`/`0x39` → `0x8210070C`.
+### Dispatch
 
-The seven opcodes §3.3 identified as taking a 4-byte relocatable pointer
-operand land at:
-
-```
-0x07 -> 0x820FFF24    0x0C -> 0x82100134    0x89 -> 0x8210129C
-0x0A -> 0x8210009C    0x0E -> 0x821001D0
-0x0B -> 0x821000E8    0x7A -> 0x82100F64
-```
-
-Regenerate the full map with:
-
-```python
-# get_bytes(0x82081F40, 276) -> 138 BE u16s
-handler = 0x820FFEDC + table[opcode]
-```
-
-### VM dispatch
-
-The IP is at `ctx+32`. The fetch/decode/dispatch sequence:
+`word_82081F40` is a 138-entry `u16` table; `handler = 0x820FFEDC + table[op]`,
+giving opcodes `0x00..0x89` with 136 unique handlers (`0x03`/`0x07` and
+`0x38`/`0x39` are aliases). The handlers are inline blocks of `sub_820FFE28`,
+so Hex-Rays emits `__asm { bctr }`; read them with `disasm` on the whole
+function. The decoded table is in §8.
 
 ```asm
 0x820FFE9C  lwz  r11, 0x20(r31)     ; ip = ctx+32
@@ -695,15 +604,6 @@ The IP is at `ctx+32`. The fetch/decode/dispatch sequence:
 0x820FFEC0  lhzx r0, word_82081F40, op*2
 0x820FFED8  bctr                    ; handler = 0x820FFEDC + table[op]
 ```
-
-### Next step for the opcode table
-
-The dispatch is `bctr` through a jump table, so Hex-Rays emits `__asm { bctr }`
-(§5's caveat). Read the table's raw dwords with `get_bytes` — 0x8A entries —
-then decompile handlers individually. That plus §3.3's relocation-adjacency
-statistics should settle operand widths quickly. This supersedes the
-"revisit its premise" note in §2.1: the premise was wrong, there *is* a fetch
-step, and it was just in a different neighbourhood.
 
 ### Root cause: why growing a `.e` crashed (now fixed)
 
@@ -738,3 +638,109 @@ lldb -b -s cmds.lldb -- ./eternalsonata.exe --game_data_root assets --gpu_plugin
 #   register read ...
 #   quit
 ```
+
+## 8. The VM decoded: accumulator machine, natives, and the bel01 ice push (2026-09-19)
+
+Found while chasing a 60 fps bug: walking on the ice in `bel01` was much
+slower than at 30 fps. The whole opcode set fell out of that;
+`scripts/e_disasm.py` disassembles any range of a decoded `.e`.
+
+### Execution model
+
+`sub_820FFE28` is a single-accumulator machine. Context fields (`ctx = a1`):
+
+| field | meaning |
+|---|---|
+| `ctx+0` | script/module handle; `ctx+4` slot id in the `unk_8241006C` handle table |
+| `ctx+8` | run state: 0 finished, 1 running, 2 sleeping (`ctx+0xC` = frames left), 3 done |
+| `ctx+0x18` | **acc**, 8 bytes: u32/int/f32 in the low word, f64 as a whole |
+| `ctx+0x20` | ip |
+| `ctx+0x24` | sp (grows down; `81` pushes 4 bytes, `82` 8) |
+| `ctx+0x28` | fp; locals are `fp + s8/s32`, arguments sit at `fp+8, fp+12, ...` |
+
+A call (`7a ptr`) pushes the return ip and the old fp and sets `fp = sp`;
+`7c` returns. Native calls (`7d ptr`) pass **r3 = sp**, so the native sees
+its arguments as `a1[0], a1[1], ...` in *reverse push order* (last pushed is
+`a1[0]`), and the return value lands in acc. `7e` sleeps acc frames
+(`ctx+8 = 2`, `ctx+0xC = acc`): a script that does `... 01 01 7e` yields
+every frame, which is how per-frame loops are written.
+
+`dword_824405FC` holds the ctx of the VM currently running (saved/restored
+around `sub_820FFE28`), so a native can find its caller's ip.
+
+### Opcode table
+
+Operand widths in bytes; `L[x]` = `*(fp + x)`, `ptr` = 4-byte relocated
+image pointer (listed in §3.3), `pop` = value popped from the stack.
+
+```
+00 halt                       01 acc=u8        02 acc=u16        03/07 acc=u32 (07 = pointer)
+04 acc=f64                    05 acc=-u8       06 acc=-u16
+08 acc=&L[s32]                09 acc=&L[s8]
+0a..0f acc=*ptr as u8,u16,u32,f64,s8,s16
+10..15 acc=L[s32] as u8,u16,u32,f64,s8,s16
+16..1b acc=L[s8]  as u8,u16,u32,f64,s8,s16
+1c..21 acc=*acc   as u8,u16,u32,f64,s8,s16
+22..25 *pop=acc   as u8,u16,u32,f64       26 memcpy(pop,acc,u32)   27 memcpy(pop,acc,u8)
+28..2f conversions int->f32,int->f64,uint->f32,uint->f64,f32->int,f32->f64,f64->int,f64->f32
+30 acc=!acc      31 acc=(f64acc==0)
+32/33/34 acc=pop+acc  (int/f32/f64)       35/36/37 pop-acc      38,39/3a/3b pop*acc
+3c udiv  3d sdiv  3e f32 div  3f f64 div  40 umod  41 smod
+42 srl   43 sra   44 shl   45 and   46 xor   47 or   48 neg   49 fneg   4a dneg   4b not
+4c *u8acc&=/|=imm   4d..54 *acc += imm (u8,u16,u32,f32,f64,s8,s16; 54 = u32 += s32), acc = new
+55..5c same, acc = old value
+5d/5e/5f ==   60/61/62 !=   63/64/65 <   66/67/68 <=   6b/6c/6d >   6e/6f/70 >=  (int/f32/f64)
+69 u<  6a u<=  71 u>  72 u>=  73 acc=(acc==0)
+74 jmp s32   75 jz s32   76 jnz s32   77 jmp s8   78 jz s8   79 jnz s8   (relative to operand start)
+7a call ptr  7b call table[u32]  7c ret  7d native ptr  7e sleep acc frames
+7f frame u32 (sp -= n, zeroed)  80 frame u8   81 push acc   82 push f64 acc
+83 push struct u32 from *acc    84 push struct u8   85 pop4  86 pop8  87 pop u32  88 pop u8
+89 switch ptr -> {count, {value, target}[count]}
+```
+
+### Native binding
+
+`7d` operands are patched at load by `sub_820FF748` from block2 table 1
+(`{native_id, patch_offset}`, §3.2). Ids resolve against the tables
+registered with `sub_820FF028(table, count, base_id)`:
+
+| table | ids | registered by | contents |
+|---|---|---|---|
+| `off_8240C628` | 1..30 | `sub_821030C8` | VM builtins: 7 = spawn task (fn, args, prio...), 9 = kill task, 24 = array push |
+| `off_8240C6A0` | 100..115 | `sub_821030C8` | |
+| `off_8240C6E0` | 500..548 | `sub_820F91A8` | |
+| `off_8240C828` | 1000..1151 | `sub_820F91A8` | field/object natives (`sub_820E8710`..`sub_820ED4F8`) |
+| `off_8240C7B8` | 2000..2027 | `sub_820F91A8` | |
+| `off_8240CA88` | 5000..5025 | `sub_820F91A8` | party lookups (5019 = `sub_820E7DE8`) |
+
+Useful 1000-series natives: 1039 `sub_820E91D0` (object.pos += vector),
+1059 `sub_820EA758` (wait ms, converted through `300/fps`), 1108
+`sub_820EC6B8` / 1109 `sub_820EC630` (object command list into
+`sub_820F29F8`), 1122 `sub_820ECA18` (copy pad state out). Block2 table 2
+ids (`4..169`, `20000+`) are script-side symbols (functions and globals).
+
+Two things this settles about field movement, because they were dead ends:
+the leader's stick walk never goes through the object command dispatcher
+`sub_820F29F8` (only NPC states do), and `bel01.e` imports no pad or wait
+native at all. Player walking is engine code; scripts only nudge.
+
+### The bel01 ice slopes
+
+`bel01.e` image `0x186f`:
+
+```
+slide(x, y, z):                 ; called with (0.015, 0, 0.1) or (0.04, 0, 0.05)
+  loop:
+    native1039(obj 1, &vec)     ; leader.pos += vec
+    sleep 1                     ; 86 01 01 7e
+```
+
+Spawned as a task by `0x1899` (array-push the three floats, builtin 7 with
+the function pointer, handle stored at `img+0x3568`, killed via builtin 9 at
+`0x18ef`). The push is a constant *per frame*; the player's walk is per
+`300/fps` tick. At 60 fps the slope pushes twice as hard per second, so
+walking against it drops from 3.48 to 1.56 units/s (measured by logging
+`sub_820F0178`). The fix is the `sub_820E91D0` hook in
+`src/engine/overworld_system.cpp`: when the caller's ip points at
+`86 01 01 7e` the vector is scaled by `30 / byte_82465F90`. One-shot
+placements through the same native are left alone.

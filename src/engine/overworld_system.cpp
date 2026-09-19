@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -512,6 +513,42 @@ REX_HOOK_RAW(sub_820EF020) {
   REX_STORE_U32(object + 304, state);
   REX_STORE_U32(object + 300, timer);
   REX_STORE_U32(object + 12, flags);
+}
+
+REX_EXTERN(__imp__sub_820E91D0);
+
+// sub_820E91D0 is script native 1039: object.pos += vector. Map scripts use
+// it for scripted pushes such as the ice slopes in bel01, as a task that loops
+// "native1039(leader, &vec); sleep 1" with a constant vector, so the push is
+// per frame while the player's own walk step is per 300/fps tick. At 60 fps
+// the slope pushes twice as hard and walking against it crawls. Scale the
+// vector to 30 fps when the call is followed by a one-frame sleep (bytes
+// 86 01 01 7e: pop8, acc=1, sleep), which is what marks a per-frame loop.
+// dword_824405FC is the VM context being run; ctx+0x20 is its ip, already
+// past this call's operand.
+constexpr uint32_t kRunningScriptVm = 0x824405FCu;
+constexpr uint32_t kStockFieldFps = 30u;
+
+REX_HOOK_RAW(sub_820E91D0) {
+  const uint32_t args = ctx.r3.u32;
+  const uint32_t fps = REX_LOAD_U8(0x82465F90);
+  const uint32_t vm = REX_LOAD_U32(kRunningScriptVm);
+  const uint32_t ip = vm ? REX_LOAD_U32(vm + 0x20) : 0;
+  const uint32_t scratch = PositionScratch();
+  if (fps == kStockFieldFps || fps == 0 || !ip || !scratch ||
+      REX_LOAD_U32(ip) != 0x8601017Eu) {
+    __imp__sub_820E91D0(ctx, base);
+    return;
+  }
+  const uint32_t vec = REX_LOAD_U32(args + 4);
+  const float scale = static_cast<float>(kStockFieldFps) / static_cast<float>(fps);
+  for (uint32_t off = 0; off < 12; off += 4) {
+    const float v = std::bit_cast<float>(REX_LOAD_U32(vec + off)) * scale;
+    REX_STORE_U32(scratch + off, std::bit_cast<uint32_t>(v));
+  }
+  REX_STORE_U32(args + 4, scratch);
+  __imp__sub_820E91D0(ctx, base);
+  REX_STORE_U32(args + 4, vec);
 }
 
 REX_EXTERN(__imp__sub_8217DE48);
