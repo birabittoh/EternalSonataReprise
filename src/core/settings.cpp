@@ -206,6 +206,11 @@ constexpr std::array kGameDefaults = {
     // resolves out of the wrong surface as zeros, which is the black cross-fade
     // source on camera transitions and the black half of the save screenshot.
     DefaultValue{"no_edram_wrap_claim", "true"},
+    // Static mirror of the mod catalog, attached to every release of the mods
+    // repo; used when the Firestore backend is rate limited or down.
+    DefaultValue{"mod_catalog_fallback_url",
+                 "https://github.com/birabittoh/EternalSonataReprise-Mods/releases/latest/"
+                 "download/catalog.json"},
     // Tearing off by default, on both renderers. The old default was false,
     // because the SDK's vblank pump ties the presentation-interval wait to
     // vsync and a real presentation interval then made the frame-clocked sim
