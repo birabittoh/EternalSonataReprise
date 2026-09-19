@@ -755,9 +755,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // than the SDK's mod manager overlay (F1) since a player who never touches
   // mods should still be told about an available update
   void DrawUpdateSection() {
-    // Android has no ApplyAndRestart (its install is a store/APK affair), so
-    // there is nothing to offer; without this the check would match the
-    // linux-arm64 release asset and stage a build that can never be applied.
     if (!rex::system::AutoUpdater::SupportsSelfUpdate()) {
       return;
     }
@@ -776,11 +773,14 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       ImGui::TextWrapped("An update has been downloaded.");
       ImGui::PopStyleColor();
       ImGui::SameLine();
+#if REX_PLATFORM_ANDROID
+      // The system installer takes it from here and replaces the app itself;
+      // closing the game would only dismiss the installer prompt.
+      if (ImGui::SmallButton("Install Update##autoupdate")) {
+        rex::system::AutoUpdater::ApplyAndRestart(rex::system::AutoUpdater::InstallRoot(), {});
+      }
+#else
       if (ImGui::SmallButton("Restart & Apply##autoupdate")) {
-        // Guarded because the SDK builds no ApplyAndRestart on Android (see
-        // src/system/CMakeLists.txt); SupportsSelfUpdate() already gated this
-        // block off at runtime, but the reference alone breaks the link.
-#if !REX_PLATFORM_ANDROID
         // This install root contains the running executable itself,
         // which stays locked for this process's whole lifetime (see
         // AutoUpdater::ApplyAndRestart's contract). The spawned helper
@@ -794,8 +794,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
           rex::ui::Window* window = window_;
           window->app_context().CallInUIThread([window] { window->RequestClose(); });
         }
-#endif
       }
+#endif
       ImGui::Separator();
       return;
     }

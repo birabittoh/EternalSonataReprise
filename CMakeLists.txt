@@ -347,6 +347,22 @@ rexglue_setup_target(eternalsonata GPU_PLUGINS xenos)
 
 target_link_libraries(eternalsonata PRIVATE plume)
 
+# Release version the self-updater compares GitHub tags against: the CI tag
+# (ES_VERSION_NAME, also what the Android Gradle build stamps), else the
+# newest reachable v* tag, else empty, which leaves the updater off.
+set(ETERNALSONATA_VERSION "$ENV{ES_VERSION_NAME}" CACHE STRING "Version embedded for the self-updater (vX.Y.Z or X.Y.Z)")
+if(ETERNALSONATA_VERSION STREQUAL "")
+    execute_process(
+        COMMAND git describe --tags --abbrev=0 --match "v*"
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE ETERNALSONATA_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+string(REGEX REPLACE "^v" "" ETERNALSONATA_VERSION "${ETERNALSONATA_VERSION}")
+target_compile_definitions(eternalsonata PRIVATE ETERNALSONATA_VERSION="${ETERNALSONATA_VERSION}")
+
 # src/ is split into core/engine/gpu/platform/assets/api subdirectories, but
 # translation units still #include each other's headers by flat filename
 # (e.g. "settings.h") rather than a path relative to their own subdirectory.

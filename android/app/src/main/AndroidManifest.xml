@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Mod catalog, mod downloads and release updates -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Self-update hands the downloaded APK to the system installer -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- Game assets live on shared storage until we have a proper asset-import flow -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
                      android:maxSdkVersion="32" />
@@ -9,7 +14,7 @@
     <uses-feature android:name="android.hardware.vulkan.level" android:version="0" android:required="true" />
     <uses-feature android:name="android.hardware.vulkan.version" android:version="0x00401000" android:required="true" />
 
-    <!-- Landscape-only: the game renders at a fixed 16:9 -->
+    <!-- Any rotation the device normally offers (sensor skips reverse portrait on phones) -->
     <uses-feature android:name="android.hardware.screen.landscape" android:required="false" />
 
     <!-- Touch screen is not strictly required (gamepad works) -->
@@ -45,7 +50,7 @@
             android:name="com.birabittoh.eternalsonata.EternalSonataActivity"
             android:label="Eternal Sonata: Reprise"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="sensor"
             android:exported="true"
             android:theme="@style/Theme.EternalSonata">
 
@@ -57,6 +62,18 @@
             <!-- SDL3 metadata: tells the SDL Android glue which library has SDL_main -->
             <meta-data android:name="SDL_MAIN_ENTRY_FUNCTION" android:value="SDL_main" />
         </activity>
+
+        <!-- Serves the staged update APK to the package installer (the SDK's
+             AutoUpdater looks this authority up by name). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 

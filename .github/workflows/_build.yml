@@ -181,6 +181,10 @@ jobs:
       - name: Build (desktop)
         if: matrix.platform != 'android-arm64'
         shell: bash
+        env:
+          # Version the self-updater compares releases against; empty for CI
+          # artifact builds, where CMake falls back to the newest reachable tag.
+          ES_VERSION_NAME: ${{ inputs.tag }}
         run: python scripts/build.py --release --sdk-dir sdk/${{ matrix.sdk_dir || matrix.platform }}
 
       # Android: codegen runs on the host SDK, then cross-compile with NDK
@@ -195,6 +199,8 @@ jobs:
       - name: CMake configure (Android)
         if: matrix.platform == 'android-arm64'
         shell: bash
+        env:
+          ES_VERSION_NAME: ${{ inputs.tag }}
         run: |
           cmake --preset android-arm64-release \
             -DCMAKE_ANDROID_NDK="$ANDROID_NDK_HOME" \

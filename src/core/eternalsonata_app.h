@@ -221,6 +221,8 @@ class EternalsonataApp : public rex::ReXApp {
     // is what the CI matrix publishes.
     config.update_asset_format = "eternalsonata-{tag}-{platform}";
     config.update_repo = "birabittoh/EternalSonataReprise";
+    // Empty (updater off) unless CMake found a version; see CMakeLists.txt.
+    config.game_version = ETERNALSONATA_VERSION;
 
     // One-shot toast shown top-left as the game starts. Android has no
     // keyboard, so it names the touch overlay's Guide button instead.
