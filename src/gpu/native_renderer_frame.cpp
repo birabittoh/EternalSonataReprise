@@ -1795,6 +1795,8 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
 // mistaken for the one still in the set.
 void PresentBlitForgetTexture();
 
+bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite);
+
 void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& dest_fetch,
                   int32_t src_x1, int32_t src_y1, int32_t src_x2, int32_t src_y2, int32_t dest_x,
                   int32_t dest_y) {
@@ -2082,6 +2084,15 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   if (commands == nullptr) {
     ++g_resolves_dropped;
     return;
+  }
+
+  // A frame can cross the marker and resolve the screen without drawing into
+  // the UI half. On the console that resolve reads the world just drawn into
+  // the same EDRAM; here the composite image would still hold the last frame
+  // the UI was drawn in, so bring the world across as the first UI draw would.
+  if (!is_depth && target->layer == GuestLayer::kComposite &&
+      target->composited_frame != g_frame) {
+    CompositeWorldIntoLayer(commands, target);
   }
 
   // Where the copy lands, carrying over however far the source origin had to be
