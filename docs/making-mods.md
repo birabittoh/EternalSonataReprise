@@ -141,6 +141,17 @@ btldata/script/tutorial/t0001.e,0,4,"Premi A per attaccare."
 single-byte encoding, not UTF-8 (see [Text encoding](#text-encoding) below);
 The planned `es_asset.py` validator will check these tables before shipping.
 
+`scripts/new_text_mod.py` scaffolds this whole layout with the table already
+filled in: every string of one language from every container and from
+`default.xex`, in the shipped text, so the mod changes nothing until a row is
+edited. `--patch ITA` rewrites Italian in place; `--new PT --label Portugues
+--from ITA` seeds a new language from the Italian text and writes the
+`[[language]]` block described under [Adding a new language](#adding-a-new-language).
+`--reference USA` writes the English string as a comment above each row, to
+keep the original in view while editing. Before shipping, `--prune mods/<id>`
+deletes every row still equal to the vanilla text, so the mod only carries what
+it changed.
+
 ### Size rules
 
 By default a patch must fit the space the original occupies, and the remainder
