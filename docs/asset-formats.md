@@ -208,7 +208,8 @@ listB:  0x07 ×38871   0x89 ×485
 So opcodes `0x07 0x0a 0x0b 0x0c 0x0e 0x7a 0x89` each take a 4-byte relocatable
 pointer operand. `0x81` recurs as a statement/expression terminator.
 
-The opcode set is **not fully decoded**. See §7.
+The full opcode table, calling convention and native binding are in
+`docs/script-vm-notes.md` §8; `scripts/e_disasm.py` disassembles an image.
 
 ### 3.4 Text blocks — the `BTX ` section
 
@@ -553,21 +554,10 @@ record, but this has not been tested in-game.
 
 ## 7. Next steps
 
-**Script VM opcodes.** The interpreter is **`sub_820FFE28`** — found 2026-07-29
-from an lldb backtrace, not by static search; it is in the `.e` loader cluster,
-not near the battle FSMs where seven earlier rounds looked. It fetches a raw
-**byte** from the stream, advances the IP, and dispatches through a jump table
-for opcodes `0x00..0x89`. `sub_820FFCA0` initialises the IP to
-`image_base + 0x18`, confirming the VM executes the `.e` image from `+0x18`
-exactly as §3.3 assumed. (`sub_821C9FE0` was never the interpreter — it is a
-hardcoded FSM; see `docs/script-vm-notes.md` §1.5 and §7.)
-
-What remains is the opcode table itself: read the 0x8A-entry jump table's raw
-dwords with `get_bytes`, decompile handlers individually, and cross-check
-operand widths against §3.3's relocation-adjacency statistics. Then build a
-disassembler that walks the image from `+0x18` and run it over all 678 files;
-consuming every file with no unknown opcode and no desync is a much stronger
-signal than eyeballing one file.
+~~**Script VM opcodes.**~~ Solved. The interpreter is `sub_820FFE28`, an
+accumulator machine executing the image from `+0x18`; opcodes, calling
+convention and native tables are in `docs/script-vm-notes.md` §8 and
+`scripts/e_disasm.py` disassembles any decoded `.e`.
 
 **Markup control-code consumer.** Where codes 1/2/13 are acted on is unknown. A
 scan of `0x821cc000..0x821e8000` for a compare against 13 found nothing, so the
@@ -608,6 +598,6 @@ zeroing any symbol that occurs.
 
 ## Related documents
 
-- `docs/script-vm-notes.md` — function inventory, opcode dispatch tables,
-  ruled-out leads, IDA tooling caveats
+- `docs/script-vm-notes.md` — function inventory, the decoded script VM and
+  its natives, ruled-out leads, IDA tooling caveats
 - `docs/debug-hooks.md` — devkit gate and debug console hooks
