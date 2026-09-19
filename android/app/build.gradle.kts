@@ -167,3 +167,9 @@ android {
         jniLibs.useLegacyPackaging = true
     }
 }
+
+dependencies {
+    // FileProvider only; the SDK's AutoUpdater resolves it through the
+    // activity's class loader (see auto_updater_android.cpp).
+    implementation("androidx.core:core:1.13.1")
+}
