@@ -559,12 +559,6 @@ accumulator machine executing the image from `+0x18`; opcodes, calling
 convention and native tables are in `docs/script-vm-notes.md` §8 and
 `scripts/e_disasm.py` disassembles any decoded `.e`.
 
-**Markup control-code consumer.** Where codes 1/2/13 are acted on is unknown. A
-scan of `0x821cc000..0x821e8000` for a compare against 13 found nothing, so the
-message state machine probably dispatches through its own jump table. Finding
-it would allow a proper hold-to-fast-forward instead of the control-code
-rewrite currently in `src/engine/eternalsonata_hooks.cpp`.
-
 **Character encoding.** Confirm the JP blocks are plain Shift-JIS (spot checks
 say yes) and determine whether the western blocks are true Latin-1 or a custom
 glyph table, by decoding `p1.fnt` / `p1_g.fnt` and comparing glyph order against

@@ -285,10 +285,25 @@ The `w` case at `0x821D5804`: `0x821D5810` tests for `>` (bare `<w>` → code 2)
 (`<wNNNN>` → code 1). All three advance the arg index by exactly 1, and the
 bare `<w>` path never reads its argument slot.
 
-**Applied:** `src/engine/eternalsonata_hooks.cpp` wraps this function and rewrites
-control code 13 → 2 in the output, making `<wv>` messages player-skippable
-without touching assets. Flags at the top of that hook also allow 1 → 2. Not
-yet verified in-game.
+### Control-code consumer: `sub_821D5CC0`
+
+The layout pass `sub_821D5CC0(mgr, record)` acts on the control codes through
+the 25-entry jump table `word_82082230` (base `loc_821D600C`, index =
+code − 1): code 1 at `0x821D6370`, code 2 at `0x821D63C4`, code 13 at
+`0x821D69AC`. Per-code state is at `record + 0x20C + 8*argidx` (reached) and
+`+0x20D` (released); the record's state dword at `+4` is 6 during a `<w>` wait
+and 8 during a `<wv>` wait.
+
+* `<w>` releases on `byte_8255D125` (`mgr+31381`), the advance-button edge
+  that `sub_821D49A0` latches from the pad word `dword_824BB5C4[116*slot]`
+  before calling the layout pass.
+* `<wv>` polls `sub_821431C0(dword_8243D89C, *(mgr+31372))` ("is this voice
+  handle still playing") and advances when it returns 0. The game's own
+  stop-the-clip call is `sub_82142EE8(sndmgr, handle, fade)` (used by
+  `sub_821D96F8`).
+
+`src/engine/eternalsonata_hooks.cpp` uses these to let the advance button cut
+a `<wv>` wait short.
 
 ---
 

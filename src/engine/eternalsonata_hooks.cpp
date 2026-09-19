@@ -214,85 +214,64 @@ REX_HOOK_RAW(sub_82108878) {
 // be built host-side.
 
 // ---------------------------------------------------------------------------
-// Skippable message waits
+// Skippable voice waits
 // ---------------------------------------------------------------------------
 
-// sub_821D50A8 is the text manager's markup preprocessor, shared by every
-// string the game draws.  It is not a "message started" signal: the render tick
-// (sub_821D4750) calls it lazily for any record whose formatted flag at +518 is
-// clear, and sub_821D4598/sub_821D4630 call it just to measure a string.  Use
-// SetText (sub_821D3890) for that.
+// A message ending in `<wv>` (control code 13, emitted by the markup
+// preprocessor sub_821D50A8) waits for its voice clip and offers no way to cut
+// it short. The consumer is the code-13 case of the layout pass sub_821D5CC0
+// (jump table word_82082230, case at 0x821D69AC): on first arrival it parks the
+// record in state 8 (a2+4) while sub_821431C0(dword_8243D89C, handle) says the
+// clip at mgr+31372 is still playing, and advances once that returns 0.
 //
-// It walks a raw text entry
-// out of a .e file, expands the `<...>` tags into single-byte control codes in
-// a scratch buffer at a1+19104, stores each tag's numeric argument into the
-// parallel slot array at a2 + 8*(argidx+65) (argidx counter at a2+840), and
-// finally copies the scratch buffer to a2+8 (or a1+35122) + *(u16*)(a2+420).
+// The advance button is already decoded for the `<w>` case: sub_821D49A0
+// latches it into byte_8255D125 (mgr+31381) right before calling the layout
+// pass. So when the record is parked on a voice and that flag is set, stop the
+// clip the way the game's own skip path in sub_821D96F8 does
+// (sub_82142EE8(mgr, handle, fade 0)) and answer "not playing" for that handle
+// during this pass. A line the player does not touch still ends on its own.
 //
-// The three "end of message" tags and the control codes they emit
-// (jump table word_820821B8, base loc_821D5740, chars 'n'..'z'; the `w` case
-// is at 0x821D5804):
-//
-//   <w>        -> 2    wait for player input, no timeout   (29473 uses)
-//   <wNNNN>    -> 1    auto-advance after NNNN ms, arg=NNNN (26829 uses)
-//   <wv>       -> 13   wait for the voice clip to finish    (568 uses)
-//
-// `<wv>` has no player-skip path at all, so a long voice line (e.g. the battle
-// tutorial narration in btldata/script/tutorial/t0001.e) blocks for the full
-// clip.  Rewriting the emitted code to 2 puts those messages on the ordinary,
-// well-travelled "press a button to advance" path without touching the assets.
-//
-// This is safe with respect to the argument array: the <w> and <wv> paths both
-// advance the arg index by exactly 1, and <w> never reads its slot, so no
-// re-indexing is needed - only the control byte changes.
+// Only the captured handle is answered, so a `<vN>` later in the same pass
+// starts a new clip that is waited on normally.
+namespace {
+constexpr u32 kTextManager = 0x82555690;
+constexpr u32 kVoiceHandleOffset = 31372;
+constexpr u32 kAdvancePressedOffset = 31381;
+constexpr u32 kSoundManagerPtr = 0x8243D89C;
+constexpr u32 kStateWaitingForVoice = 8;
+u32 g_skipped_voice_handle = 0;
+}  // namespace
 
-// Make <wv> (wait-for-voice) player-skippable.  This is the one that motivated
-// the hook.
-//
-// Fallback if the code-2 path turns out not to draw an advance prompt during
-// battle-tutorial narration: rewrite 13 -> 1 (kWaitTimed) instead.  The <wv>
-// handler at 0x821D5858 already stores 0 into that message's argument slot, so
-// a timed wait of 0 ms advances immediately rather than waiting for input.
-static constexpr bool kSkippableVoiceWaits = true;
+REX_EXTERN(__imp__sub_821D5CC0);
+REX_EXTERN(__imp__sub_82142EE8);
+REX_HOOK_RAW(sub_821D5CC0) {
+    const u32 mgr = ctx.r3.u32;
+    const u32 record = ctx.r4.u32;
+    g_skipped_voice_handle = 0;
+    if (mgr == kTextManager && record && REX_LOAD_U32(record + 4) == kStateWaitingForVoice &&
+        REX_LOAD_U8(mgr + kAdvancePressedOffset)) {
+        const u32 handle = REX_LOAD_U32(mgr + kVoiceHandleOffset);
+        if (handle) {
+            ctx.r3.u32 = REX_LOAD_U32(kSoundManagerPtr);
+            ctx.r4.u32 = handle;
+            ctx.f1.f64 = 0.0;
+            __imp__sub_82142EE8(ctx, base);
+            ctx.r3.u32 = mgr;
+            ctx.r4.u32 = record;
+            g_skipped_voice_handle = handle;
+        }
+    }
+    __imp__sub_821D5CC0(ctx, base);
+    g_skipped_voice_handle = 0;
+}
 
-// Also convert <wNNNN> (timed auto-advance) into a player wait.  Off by
-// default: it would make ~26k normally self-advancing messages - including
-// non-dialogue things like title cards - demand a button press.
-static constexpr bool kSkippableTimedWaits = false;
-
-static constexpr u8 kWaitForInput = 2;
-static constexpr u8 kWaitTimed = 1;
-static constexpr u8 kWaitForVoice = 13;
-
-// Guard against a missing terminator in a malformed entry.
-static constexpr u32 kMaxMessageBytes = 8192;
-
-REX_EXTERN(__imp__sub_821D50A8);
-REX_HOOK_RAW(sub_821D50A8) {
-    // The original clobbers r3/r4, so capture the arguments up front.
-    const u32 a1 = ctx.r3.u32;
-    const u32 a2 = ctx.r4.u32;
-
-    __imp__sub_821D50A8(ctx, base);
-
-    if (!a2 || (!kSkippableVoiceWaits && !kSkippableTimedWaits)) {
+REX_EXTERN(__imp__sub_821431C0);
+REX_HOOK_RAW(sub_821431C0) {
+    if (g_skipped_voice_handle && ctx.r4.u32 == g_skipped_voice_handle) {
+        ctx.r3.u32 = 0;
         return;
     }
-
-    // Recompute the destination exactly as the tail of sub_821D50A8 does.
-    const u32 dest = (REX_LOAD_U32(a2) == REX_LOAD_U32(a1 + 36148)) ? (a1 + 35122) : (a2 + 8);
-    const u32 start = dest + REX_LOAD_U16(a2 + 420);
-
-    for (u32 p = start; p < start + kMaxMessageBytes; ++p) {
-        const u8 c = REX_LOAD_U8(p);
-        if (!c) {
-            break;
-        }
-        if ((kSkippableVoiceWaits && c == kWaitForVoice) ||
-            (kSkippableTimedWaits && c == kWaitTimed)) {
-            REX_STORE_U8(p, kWaitForInput);
-        }
-    }
+    __imp__sub_821431C0(ctx, base);
 }
 
 // ---------------------------------------------------------------------------
