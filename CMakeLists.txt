@@ -264,6 +264,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/party_system.cpp
     src/engine/battle_system.cpp
     src/engine/overworld_system.cpp
+    src/engine/cutscene_system.cpp
     src/engine/enemy_system.cpp
     src/engine/save_system.cpp
     src/engine/achievement_translation.cpp

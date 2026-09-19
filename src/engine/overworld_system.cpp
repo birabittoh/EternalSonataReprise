@@ -18,6 +18,7 @@
 #include <rex/system/mod_registry.h>
 
 #include "area_names.generated.h"
+#include "cutscene_system.h"
 #include "eternalsonata_overworld_api.h"
 #include "field_player_model_override.h"
 #include "force_load_area.h"
@@ -42,12 +43,15 @@ uint32_t g_live_object = 0;
 bool g_live_valid = false;
 EternalSonataFieldFacing g_live_facing{};
 EternalSonataFieldCamera g_live_camera{};
-uint32_t g_live_camera_object = 0;
 bool g_live_camera_valid = false;
+// Two independent requesters drive the same active camera slot: the field
+// API, and the cutscene API whose request only counts while an event runs.
 std::atomic<bool> g_camera_control_requested{false};
+std::atomic<bool> g_cutscene_camera_control{false};
 std::atomic<bool> g_collision_disabled{false};
+// Kept across active camera changes on purpose: a cutscene swaps camera
+// objects on every shot, and a mod that took the camera wants it to stay put.
 EternalSonataFieldCamera g_camera_target{};
-uint32_t g_camera_target_object = 0;
 bool g_camera_target_valid = false;
 uint32_t g_controlled_camera_object = 0;
 uint32_t g_controlled_camera_scene = 0;
@@ -92,9 +96,22 @@ uint32_t FieldLeader() {
   return ptr ? rex::memory::load_and_swap<uint32_t>(ptr) : 0;
 }
 
+// Field play, or a cutscene: the presence latch that tracks field loads can
+// drop through a cutscene while the map, its leader and camera stay live.
+bool FieldOrCutsceneActive() {
+  return g_runtime && !GetRoomPresence().IsBattleActive() &&
+         (GetRoomPresence().IsFieldActive() || IsCutsceneActive());
+}
+
+bool CameraControlRequested() {
+  if (g_cutscene_camera_control.load() && !IsCutsceneActive()) {
+    g_cutscene_camera_control.store(false);
+  }
+  return g_camera_control_requested.load() || g_cutscene_camera_control.load();
+}
+
 uint8_t* FieldLeaderHost(uint32_t* object_out = nullptr) {
-  if (!g_runtime || !GetRoomPresence().IsFieldActive() ||
-      GetRoomPresence().IsBattleActive()) {
+  if (!FieldOrCutsceneActive()) {
     return nullptr;
   }
   const uint32_t object = FieldLeader();
@@ -112,8 +129,7 @@ uint8_t* FieldLeaderHost(uint32_t* object_out = nullptr) {
 }
 
 uint8_t* FieldCameraHost(uint32_t* object_out = nullptr) {
-  if (!g_runtime || !GetRoomPresence().IsFieldActive() ||
-      GetRoomPresence().IsBattleActive()) {
+  if (!FieldOrCutsceneActive()) {
     return nullptr;
   }
   auto* kernel = rex::system::kernel_state();
@@ -133,7 +149,9 @@ uint8_t* FieldCameraHost(uint32_t* object_out = nullptr) {
     return nullptr;
   }
   auto* host = memory->TranslateVirtual<uint8_t*>(object);
-  if (!host || host[20] != 4) {
+  // A cutscene points the active slot at its own camera node, which is not
+  // a type 4 field camera but drives the view through the same scene handle.
+  if (!host || (host[20] != 4 && !IsCutsceneActive())) {
     return nullptr;
   }
   if (object_out) {
@@ -173,11 +191,11 @@ void RestoreCameraMode() {
 void UpdateCameraControl() {
   uint32_t object = 0;
   auto* host = FieldCameraHost(&object);
-  if (!host || !g_camera_control_requested.load()) {
+  if (!host || !CameraControlRequested()) {
     RestoreCameraMode();
     std::lock_guard<std::mutex> lock(g_position_mutex);
     g_camera_target_valid = false;
-    if (!GetRoomPresence().IsFieldActive()) {
+    if (!FieldOrCutsceneActive()) {
       g_camera_control_requested.store(false);
     }
     return;
@@ -209,8 +227,7 @@ void UpdateCameraControl() {
 
 void RefreshFieldCamera() {
   UpdateCameraControl();
-  uint32_t object = 0;
-  auto* host = FieldCameraHost(&object);
+  auto* host = FieldCameraHost();
   const uint32_t scratch = host ? PositionScratch() : 0;
   const uint32_t scene = host ? rex::memory::load_and_swap<uint32_t>(host + 4) : 0;
   if (!scratch || !scene || scene == 0xFFFFFFFFu) {
@@ -226,12 +243,9 @@ void RefreshFieldCamera() {
   camera.rotation = ReadVector(vec);
   std::lock_guard<std::mutex> lock(g_position_mutex);
   g_live_camera = camera;
-  g_live_camera_object = object;
   g_live_camera_valid = true;
-  if (g_camera_control_requested.load() &&
-      (!g_camera_target_valid || g_camera_target_object != object)) {
+  if (CameraControlRequested() && !g_camera_target_valid) {
     g_camera_target = camera;
-    g_camera_target_object = object;
     g_camera_target_valid = true;
   }
 }
@@ -319,13 +333,12 @@ void ApplyFieldFacing(EternalSonataFieldPosition rotation, std::string area_id) 
 }
 
 void ApplyFieldCamera(EternalSonataFieldCamera camera, std::string area_id) {
-  if (!g_camera_control_requested.load() ||
+  if (!CameraControlRequested() ||
       GetRoomPresence().CurrentArea().id != area_id) {
     return;
   }
   UpdateCameraControl();
-  uint32_t object = 0;
-  auto* host = FieldCameraHost(&object);
+  auto* host = FieldCameraHost();
   if (!host) {
     return;
   }
@@ -341,15 +354,13 @@ void ApplyFieldCamera(EternalSonataFieldCamera camera, std::string area_id) {
   g_set_scene_rotation(kSceneManager, scene, scratch, 0, 0, 0xFFFFFFFFu);
   std::lock_guard<std::mutex> lock(g_position_mutex);
   g_live_camera = camera;
-  g_live_camera_object = object;
   g_live_camera_valid = true;
   g_camera_target = camera;
-  g_camera_target_object = object;
   g_camera_target_valid = true;
 }
 
 bool PrepareCameraUpdate(uint32_t object) {
-  if (!g_camera_control_requested.load()) {
+  if (!CameraControlRequested()) {
     return false;
   }
   uint32_t active_object = 0;
@@ -360,7 +371,7 @@ bool PrepareCameraUpdate(uint32_t object) {
   EternalSonataFieldCamera target{};
   {
     std::lock_guard<std::mutex> lock(g_position_mutex);
-    if (!g_camera_target_valid || g_camera_target_object != object) {
+    if (!g_camera_target_valid) {
       return false;
     }
     target = g_camera_target;
@@ -473,6 +484,71 @@ void NotifyOverworldBattleStarted(uint32_t encounter, uint32_t music,
   Publish(ETERNALSONATA_OVERWORLD_EVENT_BATTLE_STARTED, event, encounter);
 }
 
+int ReadActiveCamera(EternalSonataFieldCamera* out) {
+  if (!out) {
+    return ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT;
+  }
+  if (GetRoomPresence().IsBattleActive()) {
+    return ETERNALSONATA_OVERWORLD_ERR_IN_BATTLE;
+  }
+  if (!FieldCameraHost()) {
+    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
+  }
+  // The sample may be one frame behind a shot change; that beats a spurious
+  // failure the caller would read as control having ended.
+  std::lock_guard<std::mutex> lock(g_position_mutex);
+  if (!g_live_camera_valid) {
+    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
+  }
+  *out = g_live_camera;
+  return ETERNALSONATA_OVERWORLD_OK;
+}
+
+int RequestActiveCameraControl(std::atomic<bool>& requester, int enabled) {
+  if (enabled != 0 && enabled != 1) {
+    return ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT;
+  }
+  if (enabled && GetRoomPresence().IsBattleActive()) {
+    return ETERNALSONATA_OVERWORLD_ERR_IN_BATTLE;
+  }
+  if (enabled && !FieldCameraHost()) {
+    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
+  }
+  requester.store(enabled != 0);
+  PostToGuestMainThread([] { UpdateCameraControl(); });
+  return ETERNALSONATA_OVERWORLD_QUEUED;
+}
+
+int QueueActiveCamera(const EternalSonataFieldCamera* camera) {
+  if (!camera || !std::isfinite(camera->position.x) ||
+      !std::isfinite(camera->position.y) || !std::isfinite(camera->position.z) ||
+      !std::isfinite(camera->rotation.x) || !std::isfinite(camera->rotation.y) ||
+      !std::isfinite(camera->rotation.z)) {
+    return ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT;
+  }
+  if (GetRoomPresence().IsBattleActive()) {
+    return ETERNALSONATA_OVERWORLD_ERR_IN_BATTLE;
+  }
+  if (!CameraControlRequested() || !FieldCameraHost()) {
+    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
+  }
+  const auto copy = *camera;
+  const auto area_id = GetRoomPresence().CurrentArea().id;
+  PostToGuestMainThread([copy, area_id] { ApplyFieldCamera(copy, area_id); });
+  return ETERNALSONATA_OVERWORLD_QUEUED;
+}
+
+int RequestCutsceneCameraControl(int enabled) {
+  if (enabled && !IsCutsceneActive()) {
+    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
+  }
+  return RequestActiveCameraControl(g_cutscene_camera_control, enabled);
+}
+
+bool IsCutsceneCameraControlled() {
+  return g_cutscene_camera_control.load() && IsCutsceneActive();
+}
+
 }  // namespace eternalsonata
 
 // Public C ABI (see eternalsonata_overworld_api.h). AreaNameTable() is an
@@ -513,6 +589,20 @@ REX_HOOK_RAW(sub_820EF020) {
   REX_STORE_U32(object + 304, state);
   REX_STORE_U32(object + 300, timer);
   REX_STORE_U32(object + 12, flags);
+}
+
+REX_EXTERN(__imp__sub_820EDC38);
+
+// sub_820EDC38 is the field's draw step: it recomputes world transforms and
+// renders. A cutscene camera is moved by scripts and camera motions during
+// the update step, none of which pass through sub_820EF020, so the target is
+// written again here, after all of them and before the view is built.
+REX_HOOK_RAW(sub_820EDC38) {
+  uint32_t object = 0;
+  if (FieldCameraHost(&object)) {
+    PrepareCameraUpdate(object);
+  }
+  __imp__sub_820EDC38(ctx, base);
 }
 
 REX_EXTERN(__imp__sub_820E91D0);
@@ -671,57 +761,16 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsFieldCollisionEnabled(void) 
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetFieldCamera(
     EternalSonataFieldCamera* out) {
-  if (!out) {
-    return ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT;
-  }
-  if (GetRoomPresence().IsBattleActive()) {
-    return ETERNALSONATA_OVERWORLD_ERR_IN_BATTLE;
-  }
-  uint32_t object = 0;
-  if (!FieldCameraHost(&object)) {
-    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
-  }
-  std::lock_guard<std::mutex> lock(g_position_mutex);
-  if (!g_live_camera_valid || g_live_camera_object != object) {
-    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
-  }
-  *out = g_live_camera;
-  return ETERNALSONATA_OVERWORLD_OK;
+  return ReadActiveCamera(out);
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetFieldCameraControl(int enabled) {
-  if (enabled != 0 && enabled != 1) {
-    return ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT;
-  }
-  if (enabled && GetRoomPresence().IsBattleActive()) {
-    return ETERNALSONATA_OVERWORLD_ERR_IN_BATTLE;
-  }
-  if (enabled && !FieldCameraHost()) {
-    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
-  }
-  g_camera_control_requested.store(enabled != 0);
-  PostToGuestMainThread([] { UpdateCameraControl(); });
-  return ETERNALSONATA_OVERWORLD_QUEUED;
+  return RequestActiveCameraControl(g_camera_control_requested, enabled);
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetFieldCamera(
     const EternalSonataFieldCamera* camera) {
-  if (!camera || !std::isfinite(camera->position.x) ||
-      !std::isfinite(camera->position.y) || !std::isfinite(camera->position.z) ||
-      !std::isfinite(camera->rotation.x) || !std::isfinite(camera->rotation.y) ||
-      !std::isfinite(camera->rotation.z)) {
-    return ETERNALSONATA_OVERWORLD_ERR_INVALID_ARGUMENT;
-  }
-  if (GetRoomPresence().IsBattleActive()) {
-    return ETERNALSONATA_OVERWORLD_ERR_IN_BATTLE;
-  }
-  if (!g_camera_control_requested.load() || !FieldCameraHost()) {
-    return ETERNALSONATA_OVERWORLD_ERR_UNAVAILABLE;
-  }
-  const auto copy = *camera;
-  const auto area_id = GetRoomPresence().CurrentArea().id;
-  PostToGuestMainThread([copy, area_id] { ApplyFieldCamera(copy, area_id); });
-  return ETERNALSONATA_OVERWORLD_QUEUED;
+  return QueueActiveCamera(camera);
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsAreaLoadingAvailable(void) {

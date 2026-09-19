@@ -713,6 +713,25 @@ registered with `sub_820FF028(table, count, base_id)`:
 | `off_8240C7B8` | 2000..2027 | `sub_820F91A8` | |
 | `off_8240CA88` | 5000..5025 | `sub_820F91A8` | party lookups (5019 = `sub_820E7DE8`) |
 
+The 500-series table is not functions: `off_8240C6E0` holds pointers into
+the map/event state block at `dword_8243C230`, so `acc=ptr symN` in a script
+is a direct guest global (502 `dword_8243C230`, 505 `dword_8243C23C` map
+script, 506 `dword_8243C240` running event task, 537 `byte_8243C345` skip
+requested, 540 `dword_8243C34C` skip handler, 541 `dword_8243C350` skip task).
+
+Event (cutscene) natives: 1010 `sub_820E8D10` (set active camera object
+`dword_8244BEA8` via `sub_820FD7B8(blend_time, blend_param, map, object)`;
+a nonzero blend time parks the target in `dword_8244BEAC` and interpolates the
+old render camera towards it with `sub_82108D28`; the gate `byte_8244BA93` /
+`dword_8244BAA4` is map+1507 / map+1524, i.e. "field camera only", and
+map+1524 is the field camera object itself, so it is not a spare lock slot;
+the native always returns 0, so scripts never wait on a cut), 1011 `sub_820E8968` (start event: `dword_8243C240 = handle`), 1012
+`sub_820E8A10` (end event via `sub_820FC9F8`), 1013 `sub_820E8A48` (set
+skip mode `byte_82440579`; lib.e `0x4749` pairs it with the skip handler in
+540), 1014 `sub_820E8A60` (get skip mode). The player's skip is in the field
+tick `sub_820FE7F8` and the pause state machine `sub_820FA2F8`; see
+`src/engine/cutscene_system.cpp`.
+
 Useful 1000-series natives: 1039 `sub_820E91D0` (object.pos += vector),
 1059 `sub_820EA758` (wait ms, converted through `300/fps`), 1108
 `sub_820EC6B8` / 1109 `sub_820EC630` (object command list into

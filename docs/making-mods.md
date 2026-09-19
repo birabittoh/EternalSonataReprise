@@ -1320,7 +1320,8 @@ motion, then queue `EternalSonataSetFieldCamera` with an absolute transform.
 The host switches the active field camera from follow mode to direct transform
 mode while control is enabled. Call
 `EternalSonataSetFieldCameraControl(0)` when control ends so the game's camera
-mode and motion resume.
+mode and motion resume. During a cutscene use the cutscene API's camera calls
+instead (see Cutscenes); they drive the same slot but follow the scene's cuts.
 
 The overworld surface reports four edges on the shared event bus. Copy
 `src/api/eternalsonata_overworld_api.h` into a mod for the event names, enums, and
@@ -1380,6 +1381,43 @@ the same dialogue path as an NPC conversation.
 The byte span is valid only during the callback. These events run on the guest
 thread, so callbacks must be thread-safe and must not touch ImGui. Copy the
 payload before passing it to another thread.
+
+## Cutscenes
+
+A cutscene is an "event" script (`E%04d.e`) a map script starts while the
+field stays loaded. Copy `src/api/eternalsonata_cutscene_api.h` into a mod.
+`EternalSonataGetCutsceneInfo` fills an `EternalSonataCutsceneInfo`: whether
+one is running, its `skip_mode` (none, pause then A, or any button, exactly as
+the script declared it), whether a skip is already in progress, whether the
+game is paused, the event file id (best effort, e.g. `e1010`) and the area.
+`EternalSonataIsCutsceneActive` is the cheap yes/no.
+
+`EternalSonataSkipCutscene` skips the running cutscene on the next guest frame
+by doing what the game does when the player pauses and presses A: it spawns
+the script's own skip handler, suspends the event's tasks and stops the music
+and voice, so the party lands wherever the game would have put it. It works
+paused or not. It returns `QUEUED` when accepted, `ERR_NOT_ACTIVE` with no
+cutscene, `ERR_NOT_SKIPPABLE` when the script declared no skip handler (those
+scenes cannot be skipped by the player either) and `ERR_ALREADY_SKIPPING`
+while one is in progress.
+
+Two edges are published on the shared bus, `eternalsonata.cutscene.started`
+and `eternalsonata.cutscene.ended`, both with an `EternalSonataCutsceneEvent`
+in `payload.bytes` (`handle`, `skip_mode`, `script_id`, `area_id`, and on
+`ended` whether it was `skipped`, by the player or by a mod). They run on the
+guest main thread, so callbacks must be thread-safe and must not touch ImGui.
+Calling `EternalSonataSkipCutscene` from a `started` handler is how an
+auto-skip mod is written; the skip is applied on the following frame.
+
+The script animates its own camera for the whole scene.
+`EternalSonataSetCutsceneCameraControl(1)` parks it every frame at the
+transform last given to `EternalSonataSetCutsceneCamera` (an
+`EternalSonataFieldCamera` from the overworld header, so copy that too),
+initially wherever the camera was when control began, over the script's
+motion. `EternalSonataGetCutsceneCamera` reads the live transform and
+`EternalSonataCutsceneInfo.camera_controlled` says whether control is held.
+Control ends with the cutscene or on `(0)`. Both calls return `QUEUED`, or
+`ERR_NOT_ACTIVE` outside a cutscene.
 
 ## Rebalancing enemies
 
