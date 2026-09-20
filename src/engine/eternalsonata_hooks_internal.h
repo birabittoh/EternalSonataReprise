@@ -28,4 +28,14 @@ void OptionsTick();
 // function can only be hooked once.
 u32 ConsoleTextOverrideFor(u8* base, u32 text_address);
 
+// Defined in eternalsonata_framerate.cpp: the wall-clock stepping behind the
+// "unlocked" frame rate. FrameDeltaScale is applied by the sub_82181728 hook
+// in eternalsonata_lipsync.cpp (the delta getter can only be hooked once);
+// the two fixups run at the top of the profiler's zone hooks on sub_820C8378
+// and sub_820C9550 for the same reason.
+bool WallClockActive();
+double FrameDeltaScale();
+void AnimEntryFixup(PPCContext& ctx, u8* base);
+void AnimPartFixup(PPCContext& ctx, u8* base);
+
 }  // namespace eternalsonata_hooks
