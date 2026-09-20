@@ -21,6 +21,8 @@
 #include <imgui.h>
 #include <rex/cvar.h>
 
+#include "eternalsonata_hooks_internal.h"
+
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
@@ -957,12 +959,27 @@ ETERNALSONATA_WAIT_HOOK(sub_822A7F10, eternalsonata::kWaitKeMultiple)
   }
 
 ETERNALSONATA_ZONE_HOOK(sub_82125378, eternalsonata::kZoneRenderTask)
-ETERNALSONATA_ZONE_HOOK(sub_82124C40, eternalsonata::kZoneRenderOuter)
 ETERNALSONATA_ZONE_HOOK(sub_82123508, eternalsonata::kZoneAuxTask)
 ETERNALSONATA_ZONE_HOOK(sub_82123470, eternalsonata::kZoneAuxNode)
+
+ETERNALSONATA_ZONE_HOOK(sub_82124C40, eternalsonata::kZoneRenderOuter)
 ETERNALSONATA_ZONE_HOOK(sub_820C7538, eternalsonata::kZoneAnimUpdate)
-ETERNALSONATA_ZONE_HOOK(sub_820C8378, eternalsonata::kZoneAnimEntry)
-ETERNALSONATA_ZONE_HOOK(sub_820C9550, eternalsonata::kZoneAnimPart)
+
+// These two also carry the wall-clock frame stepping's argument fixups, since
+// a guest function can only be hooked once; see eternalsonata_hooks_internal.h.
+REX_EXTERN(__imp__sub_820C8378);
+REX_HOOK_RAW(sub_820C8378) {
+  eternalsonata::ZoneScope scope(eternalsonata::kZoneAnimEntry);
+  eternalsonata_hooks::AnimEntryFixup(ctx, base);
+  __imp__sub_820C8378(ctx, base);
+}
+
+REX_EXTERN(__imp__sub_820C9550);
+REX_HOOK_RAW(sub_820C9550) {
+  eternalsonata::ZoneScope scope(eternalsonata::kZoneAnimPart);
+  eternalsonata_hooks::AnimPartFixup(ctx, base);
+  __imp__sub_820C9550(ctx, base);
+}
 ETERNALSONATA_ZONE_HOOK(sub_8212CDE0, eternalsonata::kZoneConstFlush)
 
 #undef ETERNALSONATA_ZONE_HOOK

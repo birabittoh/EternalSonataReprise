@@ -5,6 +5,8 @@
 
 #include <rex/hook.h>
 
+#include "eternalsonata_hooks_internal.h"
+
 namespace {
 
 using LipClock = std::chrono::steady_clock;
@@ -59,6 +61,9 @@ REX_HOOK_RAW(sub_82181728) {
   __imp__sub_82181728(ctx, base);
 
   if (!g_has_lip_elapsed) {
+    // Wall-clock frame stepping; see FrameDeltaScale. The lip path below is
+    // already wall based, so it takes precedence.
+    ctx.f1.f64 *= eternalsonata_hooks::FrameDeltaScale();
     return;
   }
 

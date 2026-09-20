@@ -34,38 +34,22 @@
 #include <rex/ui/vulkan/provider.h>
 #endif
 
-// In-game frame-rate cap (see DrawFrameRateRow). The value is the target fps
-// the host limiter in eternalsonata_framerate.cpp holds the guest to, and which it
-// declares to the sim via byte_82465F90.
+// In-game frame rate (see DrawFrameRateRow). The engine is frame clocked: the
+// sim advances `300 / byte_82465F90` units per present and nothing reads the
+// wall clock, so a fixed rate is only exact when the step is an integer and
+// the host actually holds the rate. 30 and 60 are the two the content was
+// paced for; the host limiter in eternalsonata_framerate.cpp pins them.
 //
-// 60 is the highest rate this engine can express, and there is no preset above
-// it because none can exist. A rate has to satisfy three constraints at once:
-//
-//   - Fit in a byte. byte_82465F90 is a u8, so 300 truncates to 44.
-//   - Divide 300, or `300 / rate` truncates and game speed is wrong. 120 gives
-//     2.5 -> 2 (~20% slow motion, confirmed in-game); 180 gives 1.67 -> 1,
-//     which is 0.6x speed even on a PC that renders 180 perfectly.
-//   - Divide 60, to stay on the authored grid. `300 / rate` is the step added
-//     per frame and the content is written around the stock 30 (step 10) and
-//     60 (step 5), so the step has to stay a multiple of 5. 75 -> 4, 100 -> 3
-//     and 150 -> 2 all come off that grid, and the character models visibly
-//     twitch even though game speed is arithmetically exact.
-//
-// 75/100/150 fail the third, 180 fails the second, 300 fails the first. A 150
-// preset was tried and removed for exactly this reason. Players who want to get
-// through content faster hold the fast-forward key instead (see TurboHeld in
-// eternalsonata_framerate.cpp).
-//
-// "unlocked" disables the limiter and runs fast in proportion — a frame-clocked
-// engine has no speed-correct uncapped mode.
+// "unlocked" runs without a limiter at correct speed: the byte is re-chosen
+// every frame from the measured frame time (an integer step that keeps the
+// sim on the wall clock on average) and the float delta getter is corrected
+// to the exact value. See the wall-clock section of eternalsonata_framerate.cpp
+// for what that patches and why a single byte above 60 can't do it.
 //
 // "adaptive" frame-skips (see AdaptiveFrameRate): it targets 60, and if the
-// host can't sustain it the declared rate drops to 30 — a divisor of 60, so
-// on-grid — and the game skips frames at correct speed rather than running the
-// sim in slow motion, then climbs back once there is headroom. The rungs are
-// fixed rather than derived from the player's refresh rate on purpose: the
-// authored cadence is a property of the content, so the game should behave the
-// same on every monitor.
+// host can't sustain it the declared rate drops to 30 and the game skips
+// frames at correct speed rather than running the sim in slow motion, then
+// climbs back once there is headroom.
 //
 // "60" is the same target pinned: it never steps down, so a host that can't
 // keep up runs the sim in slow motion instead. Worth keeping as its own value
@@ -80,7 +64,8 @@
 REXCVAR_DEFINE_STRING(frame_rate, "30", "Eternal Sonata",
                       "In-game scene/sim advance rate: 30 (as the game asks - 30 for gameplay, 60 "
                       "on the title and the save menu), 60, adaptive, or unlocked. adaptive is 60 "
-                      "with frame skipping if the PC can't sustain it, to avoid slow motion.")
+                      "with frame skipping if the PC can't sustain it, to avoid slow motion; "
+                      "unlocked has no cap and steps the game by measured frame time.")
     .allowed({"stock", "30", "60", "adaptive", "unlocked"});
 
 // Per-second frame pacing summary, off by default. Answers, in one line: what
@@ -1127,9 +1112,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       ImGui::SetTooltip(
           "How often the in-game scene and simulation advance. The original "
           "game is capped at 30 FPS; Unlocked runs as fast as the CPU and GPU "
-          "allow. Adaptive targets 60 but drops to 30 and then 20 rather than "
-          "running the game in slow motion, returning to 60 once there is "
-          "headroom again.");
+          "allow, at normal game speed. Adaptive targets 60 but drops to 30 "
+          "rather than running the game in slow motion, returning to 60 once "
+          "there is headroom again.");
     }
     ImGui::SameLine(180.0f);
     // Match the combo boxes in this menu (Language, Input Backend, ...).

@@ -702,7 +702,7 @@ u32 BarsForRow(const OptionRow& row, int lang) {
 // The Frame Rate row draws settings.cpp's own preset list (see
 // FrameRateOptionLabel) rather than a copy of it, so this row and the overlay's
 // slider are the same four states by construction: 30, 60 pinned, 60 with the
-// adaptive ladder, and uncapped.
+// adaptive ladder, and uncapped (wall-clock stepped).
 int FrameRateGetIndex();
 void FrameRateSetIndex(u8* base, int idx);
 int RenderScaleGet();
