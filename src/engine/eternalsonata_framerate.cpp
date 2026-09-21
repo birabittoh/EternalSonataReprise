@@ -29,7 +29,8 @@ REXCVAR_DECLARE(bool, frame_debug);
 // Bisection switches for the wall-clock mode, each bit disables one of its
 // parts: 1 exact float delta, 2 per-frame byte (stays 60, so the game runs
 // fast), 4 animation fixups, 8 physics and script timer frame time, 16
-// script wait, 32 the NMTN key grid sampling, 1024 root velocity.
+// script wait, 32 the NMTN key grid sampling, 1024 root velocity,
+// 2048 cloth spread timing.
 REXCVAR_DEFINE_INT32(frame_wall_debug, 0, "Eternal Sonata",
                      "Bitmask disabling parts of the unlocked wall-clock stepping (debug)");
 
@@ -792,6 +793,23 @@ REX_HOOK_RAW(sub_8213D0C0) {
     std::memcpy(&bits, &velocity, sizeof velocity);
     REX_STORE_U32(chain + 300 + 4 * axis, bits);
   }
+}
+
+// The angle limit clears velocity, so spread must follow gravity's squared time step.
+REX_EXTERN(__imp__sub_8213F870);
+REX_HOOK_RAW(sub_8213F870) {
+  if (g_wall_active && !(REXCVAR_GET(frame_wall_debug) & (8 | 2048))) {
+    double passes = 1.0;
+    const u32 obj = ctx.r3.u32;
+    const u32 chain = obj + 4560 * ctx.r4.u32;
+    if (REX_LOAD_U8(obj + 584044) && REX_LOAD_U8(chain + 144)) {
+      const u8 fps = REX_LOAD_U8(0x82465F90);
+      passes = fps ? std::max(1, 60 / fps) : 1;
+    }
+    const double step = g_wall_units / (5.0 * passes);
+    ctx.f1.f64 *= step * step;
+  }
+  __imp__sub_8213F870(ctx, base);
 }
 
 // Script timer native: slot[16] = (int)(seconds * byte). Recompute from the
