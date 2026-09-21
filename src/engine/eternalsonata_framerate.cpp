@@ -29,7 +29,7 @@ REXCVAR_DECLARE(bool, frame_debug);
 // Bisection switches for the wall-clock mode, each bit disables one of its
 // parts: 1 exact float delta, 2 per-frame byte (stays 60, so the game runs
 // fast), 4 animation fixups, 8 physics and script timer frame time, 16
-// script wait, 32 the NMTN key grid sampling.
+// script wait, 32 the NMTN key grid sampling, 1024 root velocity.
 REXCVAR_DEFINE_INT32(frame_wall_debug, 0, "Eternal Sonata",
                      "Bitmask disabling parts of the unlocked wall-clock stepping (debug)");
 
@@ -768,6 +768,30 @@ REX_HOOK_RAW(sub_8213E420) {
     REX_STORE_U32(ctx.r3.u32 + 584004, 0);  // differs from any byte: re-init
   }
   __imp__sub_8213E420(ctx, base);
+}
+
+// Root velocity must use the same clock as integration or the anchor overshoots.
+REX_EXTERN(__imp__sub_8213D0C0);
+REX_HOOK_RAW(sub_8213D0C0) {
+  const u32 chain = ctx.r3.u32 + 4560 * ctx.r4.u32;
+  __imp__sub_8213D0C0(ctx, base);
+  if (!g_wall_active || (REXCVAR_GET(frame_wall_debug) & (8 | 1024))) {
+    return;
+  }
+  const u32 targets = REX_LOAD_U32(chain + 4664);
+  const u32 particles = REX_LOAD_U32(chain + 4676);
+  const double rate = kUnitsPerSecond / g_wall_units;
+  for (u32 axis = 0; axis < 3; ++axis) {
+    u32 bits = REX_LOAD_U32(targets + 4 * axis);
+    float target;
+    std::memcpy(&target, &bits, sizeof target);
+    bits = REX_LOAD_U32(particles + 48 + 4 * axis);
+    float position;
+    std::memcpy(&position, &bits, sizeof position);
+    const float velocity = static_cast<float>((target - position) * rate);
+    std::memcpy(&bits, &velocity, sizeof velocity);
+    REX_STORE_U32(chain + 300 + 4 * axis, bits);
+  }
 }
 
 // Script timer native: slot[16] = (int)(seconds * byte). Recompute from the
