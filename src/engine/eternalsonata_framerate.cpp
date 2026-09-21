@@ -29,8 +29,9 @@ REXCVAR_DECLARE(bool, frame_debug);
 // Bisection switches for the wall-clock mode, each bit disables one of its
 // parts: 1 exact float delta, 2 per-frame byte (stays 60, so the game runs
 // fast), 4 animation fixups, 8 physics and script timer frame time, 16
-// script wait, 32 the NMTN key grid sampling, 1024 root velocity,
-// 2048 cloth spread timing.
+// script wait, 32 the NMTN key grid sampling, 64 the physics substep rescale,
+// 128, 256 and 512 the three physics collision passes, 1024 root velocity,
+// 2048 cloth spread timing, 4096 long chain length correction at every frame rate.
 REXCVAR_DEFINE_INT32(frame_wall_debug, 0, "Eternal Sonata",
                      "Bitmask disabling parts of the unlocked wall-clock stepping (debug)");
 
@@ -53,7 +54,7 @@ REXCVAR_DEFINE_INT32(frame_wall_debug, 0, "Eternal Sonata",
 // D3DPRESENT_INTERVAL_ONE/TWO/FOUR, 0x80000000 is IMMEDIATE. byte_82465F90 is
 // the game's own "current fps" value, used by the frame-time accumulator in the
 // present path (sub_8210AAD8 does `obj[280] += 300 / byte_82465F90`), i.e. the
-// game's clock is expressed in 1/300 s units and *is* frame-rate aware — which
+// game's clock is expressed in 1/300 s units and *is* frame-rate aware, which
 // is why changing the interval scales fps rather than game speed.
 //
 // Every caller (sub_820EDEF8, sub_82133130, sub_821BA630, sub_821E51B0,
@@ -87,7 +88,7 @@ REX_IMPORT(__imp__sub_8225A9F0, g_sub_8225A9F0, void(u32, u32));
 // old rate into byte_8243F232 to restore later) ask for 60, most of the game
 // asks for 30. Screens that ask for 60 have logic written for 60 presents per
 // second, so pinning them to 30 halves the ticks that logic gets while anything
-// driven by the wall clock is unaffected — that is what made the save slots
+// driven by the wall clock is unaffected; that is what made the save slots
 // finish their slide-in while the player was still choosing.
 u8 g_guest_rate = 30;
 
@@ -118,15 +119,12 @@ u8 RequestedFrameRate(u8 stock) {
 //
 // There is no way to skip *rendering* a frame from here: the guest draws and
 // then presents, and by the time the present hook runs the work is already
-// done. The only lever is byte_82465F90, the rate declared to the sim — and it
-// turns out to be a sufficient one. Verified in IDA: ~100 call sites read that
-// byte and each computes `300 / byte_82465F90` as "clock units this frame is
-// worth" (sub_820EA758, sub_8212D350, and the present path itself). Declaring
-// a lower rate therefore makes every frame count for proportionally more sim
+// done. The only lever is byte_82465F90, the rate declared to the sim.
+// Declaring a lower rate makes every frame count for proportionally more sim
 // time, which is exactly frame skipping: fewer frames drawn, same game speed.
 //
-// (Note the per-frame accumulator at dword_82465F98 — obj+280, the field the
-// present path bumps — has no readers anywhere in the image. Topping it up to
+// (Note the per-frame accumulator at dword_82465F98 (obj+280, the field the
+// present path bumps) has no readers anywhere in the image. Topping it up to
 // compensate for a slow frame does nothing; the declared rate is the whole
 // mechanism.)
 //
@@ -140,7 +138,7 @@ u8 RequestedFrameRate(u8 stock) {
 //     frame, and the game's content is authored around the stock cadence of 30
 //     (step 10) and 60 (step 5). Rates that divide 60 keep the step a multiple
 //     of 5 and stay on that grid: 20 -> 15, 15 -> 20. Rates that don't come off
-//     it — 50 -> 6, 75 -> 4, 100 -> 3 — and the models visibly twitch even
+//     it (50 -> 6, 75 -> 4, 100 -> 3) and the models visibly twitch even
 //     though game speed is arithmetically exact.
 //
 // The first attempt used a fixed ladder containing 100/75/50 and parked on 50.
@@ -148,14 +146,14 @@ u8 RequestedFrameRate(u8 stock) {
 // gives 150 -> 75 -> 50 and parks on 50 again. A third derived them from the
 // display refresh rate; that happens to give the right answer on a 60 Hz panel
 // (60/30/20 divide 60) but makes the game's behaviour depend on the user's
-// monitor, which is wrong — the authored cadence is a property of the content,
+// monitor, which is wrong; the authored cadence is a property of the content,
 // not of the screen.
 //
 // So the ladders are fixed. The selected target is always the first rung even
 // when it is off-grid (the user asked for it, and it is the ceiling we try
 // first), but every fallback beneath it divides 60.
 //
-// LimitFrame measures the per-frame work time — guest logic plus present, with
+// LimitFrame measures the per-frame work time; guest logic plus present, with
 // our own pacing wait excluded. Sustained work over the current rung's budget
 // steps down; sustained headroom against the *next higher* rung's (tighter)
 // budget steps back up. Comparing headroom against the current rung's budget
@@ -189,7 +187,7 @@ bool BuildLadder(u8 target) {
 // that can nearly hold the target is far better off holding it than dropping
 // to half. An earlier tuning used a 95%-of-budget "late" test with gain 2 /
 // trip 40, which fires on a machine hovering at 15-17 ms against a 16.67 ms
-// budget — i.e. on a machine that can actually sustain 60. And with an ahead
+// budget, i.e. on a machine that can actually sustain 60. And with an ahead
 // decay of 3 against a trip of 600, any run where a quarter of the frames miss
 // the headroom bar can never accumulate, so the ladder could not climb back at
 // all. Keep decay <= gain on the way up, or the ladder is one-way.
@@ -228,7 +226,7 @@ int g_up_block = 0;
 int g_up_block_len = kUpBlockBase;
 
 // Frames since the last step up, saturating at kClimbHoldFrames. Distinguishes
-// a climb that held from one that collapsed immediately — measured logs showed
+// a climb that held from one that collapsed immediately; measured logs showed
 // failed climbs falling back within 0.35-0.52 s while genuine ones lasted
 // 3-11 s, so the two are cleanly separable. Starts saturated so the first step
 // down of a session isn't blamed on a climb that never happened.
@@ -338,7 +336,7 @@ u8 AdaptiveFrameRate(u8 requested, u8 stock, bool measure) {
       // Only a climb that *held* clears the anti-flap penalty. Resetting it on
       // every step up (which an earlier version did) means a climb that
       // collapses in half a second still wipes the penalty, so the doubling
-      // never accumulates and the ladder flaps indefinitely — measured at 20
+      // never accumulates and the ladder flaps indefinitely; measured at 20
       // transitions in two minutes. Charging the doubling to failed climbs
       // only makes a flapping sequence back off geometrically and die out,
       // while a rung that genuinely became sustainable still starts fresh.
@@ -366,7 +364,7 @@ namespace {
 // than free running at 1000 Hz; see the interval choice in ApplyFrameRate.
 // Neither renderer registers `vsync` in the executable (the Xenos plugin owns
 // the name on one path, RegisterNativeRendererCvars on the other), so an
-// unregistered read is empty and reads as "free running" — which is also the
+// unregistered read is empty and reads as "free running", which is also the
 // state a build with no owner is in.
 bool PumpIsVsynced() { return rex::cvar::GetFlagByName("vsync") == "true"; }
 
@@ -375,7 +373,7 @@ bool PumpIsVsynced() { return rex::cvar::GetFlagByName("vsync") == "true"; }
 //
 // The call to sub_8225A9F0 goes through a rex::CallFrame, NOT the caller's ctx.
 // sub_8225A9F0 itself is a one-line field store (`device[13444] = interval`) and
-// cannot fault — but calling it with the caller's context leaves r3 holding its
+// cannot fault, but calling it with the caller's context leaves r3 holding its
 // return value (the device pointer). When this ran from the sub_8210AAD8 hook
 // below, that clobbered sub_8210AAD8's own r3 argument, and the original then
 // ran against the device pointer as if it were its object, faulting deep in
@@ -398,7 +396,7 @@ void ApplyFrameRate(PPCContext& ctx, u8* base, u8 fps) {
     //   if (v17 == vblank_count) flip now; else queue in the pending-flip ring;
     //
     // With IMMEDIATE the interval term is 0, so every flip takes the "flip now"
-    // branch and the pending-flip ring goes unused — a different front-buffer
+    // branch and the pending-flip ring goes unused; a different front-buffer
     // publication pattern than stock, which matters because the title runs two
     // front buffers (dword_82466100 / dword_82466104). That is the only reason
     // to want a real interval here, and it is worth having *only* while the
@@ -408,7 +406,7 @@ void ApplyFrameRate(PPCContext& ctx, u8* base, u8 fps) {
     // quantises: a frame whose work overruns a vblank cannot flip until the
     // next one, so the achieved rate snaps to 60/30/20 (interval 1) or
     // 30/20/15 (interval 2) with nothing in between. This engine is
-    // frame-clocked — the sim advances a fixed 300/declared units per present —
+    // frame-clocked (the sim advances a fixed 300/declared units per present)
     // so game speed is actual fps / declared fps, and a quantised present rate
     // is not choppiness but literal slow motion. It showed up as the game
     // dropping to half speed during battle attacks, i.e. exactly where a frame
@@ -484,7 +482,7 @@ bool TurboHeld() {
   if (!(GetAsyncKeyState(kTurboKey) & 0x8000)) {
     return false;
   }
-  // GetAsyncKeyState is global, so check we own the foreground window —
+  // GetAsyncKeyState is global, so check we own the foreground window,
   // otherwise Alt-Tabbing away and using Tab in another app fast-forwards the
   // game in the background.
   DWORD pid = 0;
@@ -516,7 +514,7 @@ void LimitFrame(double fps) {
   // Per-frame work time for the ladder above: everything since the previous
   // frame's wait finished, i.e. guest logic plus the present, with our own
   // pacing wait excluded. Deriving it as `period - slack` instead (the obvious
-  // shortcut, and what the first version did) is wrong — it is expressed in
+  // shortcut, and what the first version did) is wrong. It is expressed in
   // terms of a deadline that the debt-free rule below keeps moving, so it reads
   // short after any overshoot and under-reports exactly the slow frames the
   // ladder exists to notice.
@@ -562,8 +560,8 @@ void LimitFrame(double fps) {
   // Never accumulate debt. If the wait overshot (coarse timer, a slow frame,
   // anything), schedule the next deadline from now rather than from the missed
   // one. Catching up would fire a burst of zero-wait presents, and because the
-  // game advances its sim clock by a fixed 300/rate units per present — not by
-  // elapsed time — such a burst runs the game's animation clock forward in a
+  // game advances its sim clock by a fixed 300/rate units per present, not by
+  // elapsed time, such a burst runs the game's animation clock forward in a
   // few milliseconds of wall time. That is what made save-slot slide-ins finish
   // while the player was still choosing. Running a hair slow is harmless; a
   // burst is not.
@@ -810,6 +808,86 @@ REX_HOOK_RAW(sub_8213F870) {
     ctx.f1.f64 *= step * step;
   }
   __imp__sub_8213F870(ctx, base);
+}
+
+float ClothFloat(u8* base, u32 address) {
+  const u32 bits = REX_LOAD_U32(address);
+  float value;
+  std::memcpy(&value, &bits, sizeof value);
+  return value;
+}
+
+void RestoreLongChainLengths(u8* base, u32 chain) {
+  const u32 count = REX_LOAD_U32(chain + 148);
+  const u32 targets = REX_LOAD_U32(chain + 4664);
+  if (count < 6 || count > 17 || !targets) {
+    return;
+  }
+  const u32 solver = chain + 336;
+  float positions[17][3];
+  float velocities[17][3];
+  for (u32 i = 0; i < count; ++i) {
+    for (u32 axis = 0; axis < 3; ++axis) {
+      positions[i][axis] = ClothFloat(base, solver + 1324 + 40 * i + 4 * axis);
+      velocities[i][axis] = ClothFloat(base, solver + 1336 + 40 * i + 4 * axis);
+    }
+  }
+  float shift[3]{};
+  for (u32 i = 1; i < count; ++i) {
+    float direction[3];
+    float length_squared = 0.0f;
+    float target_squared = 0.0f;
+    for (u32 axis = 0; axis < 3; ++axis) {
+      direction[axis] = positions[i][axis] - (positions[i - 1][axis] - shift[axis]);
+      length_squared += direction[axis] * direction[axis];
+      const float target = ClothFloat(base, targets + 12 * i + 4 * axis) -
+                           ClothFloat(base, targets + 12 * (i - 1) + 4 * axis);
+      target_squared += target * target;
+    }
+    if (!(length_squared > 1.0e-12f) || !(target_squared > 1.0e-12f) ||
+        !std::isfinite(length_squared) || !std::isfinite(target_squared)) {
+      return;
+    }
+    const float length = std::sqrt(length_squared);
+    const float target_length = std::sqrt(target_squared);
+    float axial_velocity = 0.0f;
+    for (u32 axis = 0; axis < 3; ++axis) {
+      direction[axis] /= length;
+      axial_velocity += direction[axis] * (velocities[i][axis] - velocities[i - 1][axis]);
+    }
+    for (u32 axis = 0; axis < 3; ++axis) {
+      const float position = positions[i - 1][axis] + direction[axis] * target_length;
+      shift[axis] = position - positions[i][axis];
+      positions[i][axis] = position;
+      velocities[i][axis] -= direction[axis] * axial_velocity;
+    }
+  }
+  for (u32 i = 1; i < count; ++i) {
+    for (u32 axis = 0; axis < 3; ++axis) {
+      u32 bits;
+      std::memcpy(&bits, &positions[i][axis], sizeof bits);
+      REX_STORE_U32(solver + 1324 + 40 * i + 4 * axis, bits);
+      std::memcpy(&bits, &velocities[i][axis], sizeof bits);
+      REX_STORE_U32(solver + 1336 + 40 * i + 4 * axis, bits);
+    }
+  }
+}
+
+REX_EXTERN(__imp__sub_82135F88);
+REX_HOOK_RAW(sub_82135F88) {
+  const u32 obj = ctx.r3.u32;
+  const u32 index = ctx.r4.u32;
+  if (!(REXCVAR_GET(frame_wall_debug) & 4096)) {
+    const u32 chain = obj + 4560 * index;
+    if (REX_LOAD_U32(chain + 148) >= 6) {
+      // Integration drift must not become the next frame's rest length.
+      RestoreLongChainLengths(base, chain);
+      auto solver_ctx = ctx;
+      solver_ctx.r3.u64 = chain + 336;
+      sub_8215EA40(solver_ctx, base);
+    }
+  }
+  __imp__sub_82135F88(ctx, base);
 }
 
 // Script timer native: slot[16] = (int)(seconds * byte). Recompute from the
