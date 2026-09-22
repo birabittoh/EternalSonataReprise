@@ -10,6 +10,7 @@ includes = [
   "config/vtable_destructors.toml",
   "config/d3d9.toml",
   "config/crt.toml",
+  "config/framerate_fixes.toml",
 ]
 
 # The game's image loader (sub_82279EC8) probes formats using setjmp/longjmp:

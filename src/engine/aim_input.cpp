@@ -25,6 +25,7 @@
 REXCVAR_DECLARE(bool, aim_invert_x);
 REXCVAR_DECLARE(bool, aim_invert_y);
 REXCVAR_DECLARE(bool, mnk_mouse);
+REXCVAR_DECLARE(bool, frame_debug);
 
 namespace {
 
@@ -35,6 +36,17 @@ constexpr u32 kSignBit = 0x80000000u;
 
 bool g_aiming = false;
 bool g_forced_mouse = false;
+
+// Set only while the original sub_821C55A8 runs, so the sub_82179D80 probe
+// below reports the reticle node and not every other 2D element.
+thread_local bool g_in_reticle = false;
+thread_local bool g_in_sight = false;  // scopes the sub_82108660 probe
+thread_local u32 g_reticle_obj = 0;   // sub_821C55A8's arg0
+thread_local u32 g_reticle_args = 0;  // its arg1, the bounds block
+
+float LoadF32(u8* base, u32 addr) {
+  return std::bit_cast<float>(REX_LOAD_U32(addr));
+}
 
 float Magnitude2(u32 x, u32 y) {
   const float fx = std::bit_cast<float>(x);
@@ -100,8 +112,26 @@ REX_HOOK_RAW(sub_821C55A8) {
   REX_STORE_U32(x_addr, aim_x);
   REX_STORE_U32(y_addr, aim_y);
 
+  g_reticle_obj = ctx.r3.u32;
+  g_reticle_args = ctx.r4.u32;
+  g_in_reticle = true;
   __imp__sub_821C55A8(ctx, base);
+  g_in_reticle = false;
 
   REX_STORE_U32(x_addr, x);
   REX_STORE_U32(y_addr, y);
+}
+
+// Viola's bow sight arms only when the weapon animation frame equals 30.0
+// exactly (sub_821CE4B8 case 5), which wall clock stepping steps over. Turn
+// that into a crossing test so the sight still arms once per animation.
+extern "C++" bool EternalSonataBowSightArm(PPCRegister& f31);
+
+bool EternalSonataBowSightArm(PPCRegister& f31) {
+  constexpr double kArmFrame = 30.0;
+  static double previous = 0.0;
+  const double frame = f31.f64;
+  const bool crossed = previous < kArmFrame && frame >= kArmFrame;
+  previous = frame;
+  return crossed;
 }
