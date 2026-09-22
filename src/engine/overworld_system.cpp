@@ -19,6 +19,7 @@
 
 #include "area_names.generated.h"
 #include "cutscene_system.h"
+#include "eternalsonata_hooks_internal.h"
 #include "eternalsonata_overworld_api.h"
 #include "field_player_model_override.h"
 #include "force_load_area.h"
@@ -615,7 +616,8 @@ REX_EXTERN(__imp__sub_820E91D0);
 // vector to 30 fps when the call is followed by a one-frame sleep (bytes
 // 86 01 01 7e: pop8, acc=1, sleep), which is what marks a per-frame loop.
 // dword_824405FC is the VM context being run; ctx+0x20 is its ip, already
-// past this call's operand.
+// past this call's operand. In unlocked mode the byte encodes an integer
+// step (300 / byte; step 1 is byte 255), corrected to the measured delta.
 constexpr uint32_t kRunningScriptVm = 0x824405FCu;
 constexpr uint32_t kStockFieldFps = 30u;
 
@@ -631,7 +633,8 @@ REX_HOOK_RAW(sub_820E91D0) {
     return;
   }
   const uint32_t vec = REX_LOAD_U32(args + 4);
-  const float scale = static_cast<float>(kStockFieldFps) / static_cast<float>(fps);
+  const float scale = static_cast<float>(
+      kStockFieldFps * (300 / fps) / 300.0 * eternalsonata_hooks::FrameDeltaScale());
   for (uint32_t off = 0; off < 12; off += 4) {
     const float v = std::bit_cast<float>(REX_LOAD_U32(vec + off)) * scale;
     REX_STORE_U32(scratch + off, std::bit_cast<uint32_t>(v));

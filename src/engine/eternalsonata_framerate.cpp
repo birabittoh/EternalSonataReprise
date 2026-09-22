@@ -1,11 +1,15 @@
 #include "generated/eternalsonata_init.h"
 
 #include <algorithm>
+#include <atomic>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -627,6 +631,7 @@ bool g_wall_active = false;
 std::chrono::steady_clock::time_point g_wall_last{};
 double g_wall_acc = 0.0;        // units owed to the integer clock
 double g_wall_units = 5.0;      // this frame's exact delta, in units
+double g_wall_prev_units = 5.0; // last frame's, for measurements made with it
 double g_wall_avg_units = 5.0;  // smoothed, for setup-time conversions
 int g_wall_step = 5;            // the integer step the byte currently encodes
 u8 g_wall_rate = 60;            // smoothed fps with hysteresis
@@ -654,6 +659,7 @@ void WallClockTick(u8* base) {
   // The frame about to run is stepped by the previous frame's duration; frame
   // times are steady enough that the one-frame lag is invisible, and the
   // accumulator makes the integer clock track the wall clock regardless.
+  g_wall_prev_units = g_wall_units;
   g_wall_units = units;
   g_wall_avg_units += (units - g_wall_avg_units) * 0.05;
   // Only move the stable rate when the average has clearly left it, so a
@@ -676,6 +682,7 @@ void WallClockTick(u8* base) {
 
 void WallClockStop() {
   g_wall_active = false;
+  g_wall_units = g_wall_prev_units = 5.0;
   REXLOG_INFO("[fps-cap] wall-clock stepping off");
 }
 
@@ -915,7 +922,9 @@ REX_HOOK_RAW(sub_820F7910) {
 // the key value. Any other step samples between keys once per flip and the
 // body snaps for a frame, and since a clock's off-grid phase survives a return
 // to 60, so does the snap. Sample on the key grid like stock does: the keys
-// carry no motion between frames anyway.
+// carry no motion between frames anyway. Floor, like stock: key k covers
+// t in [unit * (k - 1), unit * k), and sub_820C5A50 loops before the last key
+// is shown. The epsilon covers a float-accumulated t just under a key.
 REX_EXTERN(__imp__sub_8211CCC8);
 REX_HOOK_RAW(sub_8211CCC8) {
   if (!(REXCVAR_GET(frame_wall_debug) & 32)) {
@@ -923,13 +932,72 @@ REX_HOOK_RAW(sub_8211CCC8) {
     float unit;
     std::memcpy(&unit, &bits, 4);
     if (unit > 0.0f) {
-      ctx.f1.f64 = std::round(ctx.f1.f64 / unit) * unit;
+      ctx.f1.f64 = std::floor(ctx.f1.f64 / unit + 1e-3) * unit;
     }
   }
   __imp__sub_8211CCC8(ctx, base);
 }
 
 }  // namespace
+
+// sub_8216AB20 picks idle/walk/run from last frame's displacement (obj+364)
+// against thresholds scaled by this frame's delta, and any pick change
+// restarts the animation. Rescale the displacement to this frame's delta and
+// hold a new pick for a stock 60 fps frame, since collision and scripted
+// pushes make single-frame dips below the walk threshold at high frame rates.
+struct PickState {
+  bool init = false;
+  u32 applied = 0;
+  u32 pending = 0;
+  double pending_units = 0.0;
+};
+std::mutex g_pick_mutex;  // the field updates run on the render task's workers
+std::unordered_map<u32, PickState> g_pick_state;
+constexpr double kPickHoldUnits = 5.0;
+
+REX_EXTERN(__imp__sub_8216AB20);
+REX_HOOK_RAW(sub_8216AB20) {
+  const u32 obj = ctx.r3.u32;
+  const u32 saved = REX_LOAD_U32(obj + 364);
+  if (!g_wall_active) {
+    __imp__sub_8216AB20(ctx, base);
+    return;
+  }
+  if (g_wall_prev_units > 0.0) {
+    float d;
+    std::memcpy(&d, &saved, 4);
+    d = static_cast<float>(d * (g_wall_units / g_wall_prev_units));
+    u32 bits;
+    std::memcpy(&bits, &d, 4);
+    REX_STORE_U32(obj + 364, bits);
+  }
+  __imp__sub_8216AB20(ctx, base);
+  REX_STORE_U32(obj + 364, saved);
+
+  const u32 pick = ctx.r3.u32;
+  u32 out = pick;
+  {
+    std::lock_guard<std::mutex> lock(g_pick_mutex);
+    PickState& st = g_pick_state[obj];
+    if (!st.init || pick == st.applied) {
+      st.init = true;
+      st.applied = pick;
+      st.pending_units = 0.0;
+    } else {
+      if (pick != st.pending) {
+        st.pending = pick;
+        st.pending_units = 0.0;
+      }
+      st.pending_units += g_wall_units;
+      if (st.pending_units >= kPickHoldUnits) {
+        st.applied = pick;
+        st.pending_units = 0.0;
+      }
+      out = st.applied;
+    }
+  }
+  ctx.r3.u64 = out;
+}
 
 REX_EXTERN(__imp__sub_820EA758);
 
