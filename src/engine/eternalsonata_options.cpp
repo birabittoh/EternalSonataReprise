@@ -32,6 +32,11 @@
 // Cvars read below. Defined (and persisted) in settings.cpp. The rows' own
 // values go through the settings.cpp accessors rather than the cvars directly.
 REXCVAR_DECLARE(bool, menu_scan);
+// The two aiming rows have no settings.cpp accessor of their own: they are
+// plain bools with no derived state, so the row writes the cvar and asks for
+// the same save the accessors would have done.
+REXCVAR_DECLARE(bool, aim_invert_x);
+REXCVAR_DECLARE(bool, aim_invert_y);
 
 // ---------------------------------------------------------------------------
 // Native option rows in the Options screen
@@ -480,6 +485,13 @@ constexpr LocalizedLabel kLabelFieldOfView = {
      "Campo visivo"}};
 constexpr LocalizedLabel kLabelFrameRate = {
     {"Frame Rate", "Bildrate", "Fr\xE9quence", "Fotogramas", "Framerate"}};
+// Long range aiming, one row per axis. Same length budget as kLabelText.
+constexpr LocalizedLabel kLabelAimInvertX = {
+    {"Invert Aim X", "Ziel X invers", "Vis\xE9" "e X inv.", "Mira X inv.",
+     "Inverti mira X"}};
+constexpr LocalizedLabel kLabelAimInvertY = {
+    {"Invert Aim Y", "Ziel Y invers", "Vis\xE9" "e Y inv.", "Mira Y inv.",
+     "Inverti mira Y"}};
 // Kept short on purpose: a label shares its row with the value column at
 // x=440, so it has roughly 320px - about 13 characters - before the two would
 // touch. The stock labels ("Sottotitoli", "Aufl\xF6sung") sit inside the same
@@ -526,6 +538,10 @@ constexpr LocalizedLabel kLabelRestartMarker = {
 // appears; until then only a row with five values makes it visible at all,
 // which is why every other row keeps both terms at 0. A formula applied to all
 // rows was tried and measured to be wrong.
+// The two aiming rows: their values are much shorter than the row width, so
+// the bar's left edge lands left of where "ON"/"OFF" read best.
+constexpr int32_t kBooleanBarNudge = 8;
+
 constexpr int32_t kTextBarNudge = 10;
 constexpr int32_t kTextBarNudgeStep = -3;
 
@@ -723,6 +739,18 @@ void OverworldModelSetIndex(u8* base, int idx);
 // row.
 constexpr const char* kOverworldModelValues[2] = {"Default", "Leader"};
 
+// The Battle Camera row's own value strings, read out of the Options list at
+// 0x8202F388: its two type-200 records at record y 25 carry text ids 130 and
+// 131, which the xex BTX blob resolves to "ON" and "OFF". Riding them keeps a
+// boolean row localised for free, and identical to the stock row beside it.
+constexpr u32 kSidOn = 130u;
+constexpr u32 kSidOff = 131u;
+
+int AimInvertXGetIndex();
+void AimInvertXSetIndex(u8* base, int idx);
+int AimInvertYGetIndex();
+void AimInvertYSetIndex(u8* base, int idx);
+
 // Narrows one value's bar to fit that value alone, instead of the row-wide
 // width its longest sibling asks for. Only worth doing where the gap between
 // the two is wide enough to see: "4K" next to "1080p", "30 FPS" next to
@@ -751,6 +779,19 @@ void MakeLiteralRow(OptionRow& row, const LocalizedLabel& label,
     value.literal[0] = values[i];
     row.values.push_back(std::move(value));
   }
+}
+
+// An ON/OFF row: no literals at all, so both values fall through to the stock
+// strings the Battle Camera row draws. Index 0 is ON, which is the order that
+// row places its own bar in (base + 200 * (1 - byte)).
+void MakeBooleanRow(OptionRow& row, const LocalizedLabel& label) {
+  MakeLiteralRow(row, label, nullptr, 0);
+  OptionValue on;
+  on.btx_id = kSidOn;
+  OptionValue off;
+  off.btx_id = kSidOff;
+  row.values.push_back(std::move(on));
+  row.values.push_back(std::move(off));
 }
 
 // Fills in a built-in row's label for every language a mod published a
@@ -799,7 +840,7 @@ std::vector<OptionRow>& Rows() {
     // while the guest thread is walking the registry safe: appends only ever
     // touch the tail, and references the guest side already holds stay valid.
     initial.reserve(kMaxOptionRows * kPageCount);
-    initial.resize(5);
+    initial.resize(7);
 
     // Page 2, the graphics page, in the order they are drawn.
     //
@@ -863,6 +904,19 @@ std::vector<OptionRow>& Rows() {
     initial[4].set_index = &OverworldModelSetIndex;
     initial[4].page = kPageOptions;
 
+    // Back on page 2, below Frame Rate: rows are drawn in registry order
+    // within a page, so appending here puts them at the bottom of it.
+    MakeBooleanRow(initial[5], kLabelAimInvertX);
+    initial[5].bar_nudge_x = kBooleanBarNudge;
+    initial[5].get_index = &AimInvertXGetIndex;
+    initial[5].set_index = &AimInvertXSetIndex;
+    initial[5].page = kPageButtons;
+    MakeBooleanRow(initial[6], kLabelAimInvertY);
+    initial[6].bar_nudge_x = kBooleanBarNudge;
+    initial[6].get_index = &AimInvertYGetIndex;
+    initial[6].set_index = &AimInvertYSetIndex;
+    initial[6].page = kPageButtons;
+
     // Mod-published translations for the labels above, in every language
     // including the ones mods added. The Text row's own *values* stay as they
     // are: they are two-letter language codes, which are not translated.
@@ -871,6 +925,8 @@ std::vector<OptionRow>& Rows() {
     TranslateBuiltinLabel(initial[2], "framerate_label");
     TranslateBuiltinLabel(initial[3], "text_label");
     TranslateBuiltinLabel(initial[4], "overworld_model_label");
+    TranslateBuiltinLabel(initial[5], "aim_invert_x_label");
+    TranslateBuiltinLabel(initial[6], "aim_invert_y_label");
     return initial;
   }();
   return rows;
@@ -1248,6 +1304,11 @@ constexpr int32_t kValueGapMin = 10;
 // short words like "Si"/"NO", so assume a small width rather than skipping
 // them and under-counting the row.
 constexpr int32_t kValueBtxWidthPx = 2 * kValueCharPx;
+// The drawn width of a bar over one of those words. Not derived from a
+// character count like every other bar: the per-character estimate only lands
+// on 86, 138 or 164 px here, and the first is visibly short of "OFF" while the
+// other two overhang it.
+constexpr int32_t kBtxBarWidthPx = 118;
 
 bool IsNarrowGlyph(char c) {
   return c == ' ' || c == 'i' || c == 'l' || c == 'j' || c == 'I' ||
@@ -1493,6 +1554,10 @@ int32_t BarWidthPx(const OptionRow& row, int index) {
     return 0;
   }
   const std::string& text = ValueText(row.values[index], lang);
+  // A value that rides a stock BTX string has no literal to measure.
+  if (text.empty()) {
+    return kBtxBarWidthPx;
+  }
   return TextWidth(text) + kBarTextPad +
          kBarCharExtra * static_cast<int32_t>(text.size());
 }
@@ -1924,6 +1989,23 @@ void OverworldModelSetIndex(u8* base, int idx) {
       idx == 0 ? eternalsonata::FieldPlayerModelOverride::kSelectionDefault
                : eternalsonata::FieldPlayerModelOverride::kSelectionFollowParty);
   REXLOG_INFO("[options] field_leader_model -> {}", kOverworldModelValues[idx]);
+}
+
+// Value 0 is ON, so the cvar and the index are inverses of each other.
+int AimInvertXGetIndex() { return REXCVAR_GET(aim_invert_x) ? 0 : 1; }
+
+void AimInvertXSetIndex(u8* base, int idx) {
+  REXCVAR_SET(aim_invert_x, idx == 0);
+  eternalsonata::SaveUserSettings();
+  REXLOG_INFO("[options] aim_invert_x -> {}", idx == 0);
+}
+
+int AimInvertYGetIndex() { return REXCVAR_GET(aim_invert_y) ? 0 : 1; }
+
+void AimInvertYSetIndex(u8* base, int idx) {
+  REXCVAR_SET(aim_invert_y, idx == 0);
+  eternalsonata::SaveUserSettings();
+  REXLOG_INFO("[options] aim_invert_y -> {}", idx == 0);
 }
 
 void WriteGuestString(u8* base, u32 at, const char* s) {
