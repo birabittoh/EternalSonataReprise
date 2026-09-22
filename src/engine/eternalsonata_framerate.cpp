@@ -18,6 +18,7 @@
 #include <imgui.h>
 #include <rex/cvar.h>
 
+#include "aim_input.h"
 #include "enemy_system.h"
 #include "eternalsonata_hooks_internal.h"
 #include "guest_main_thread.h"
@@ -1144,6 +1145,8 @@ REX_HOOK_RAW(sub_8210AAD8) {
   // Reasserts the enemy rebalance overrides; see src/enemy_system.h for why it
   // has to happen every frame rather than once when a battle starts.
   eternalsonata::EnemySystemTick();
+  // Releases the mouse-look override the aim hook takes; see aim_input.h.
+  eternalsonata::AimInputTick();
   // These live in eternalsonata_options.cpp (the value-highlight memory
   // differ), polled here so the F9-F12 hotkeys work from anywhere.
   eternalsonata_hooks::ScanPollKeys(base);

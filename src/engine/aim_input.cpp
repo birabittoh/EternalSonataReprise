@@ -1,5 +1,5 @@
 // eternalsonata - Optional axis inversion while aiming a long range attack,
-// plus right stick aiming.
+// plus right stick aiming and mouse look.
 //
 // sub_821C55A8 is the aim reticle update, shared by Beat's camera
 // (sub_82193B48) and Viola's bow (sub_821CEB78). It reads the left stick out
@@ -15,6 +15,8 @@
 
 #include "generated/eternalsonata_init.h"
 
+#include "aim_input.h"
+
 #include <bit>
 
 #include <rex/cvar.h>
@@ -22,6 +24,7 @@
 
 REXCVAR_DECLARE(bool, aim_invert_x);
 REXCVAR_DECLARE(bool, aim_invert_y);
+REXCVAR_DECLARE(bool, mnk_mouse);
 
 namespace {
 
@@ -29,6 +32,9 @@ constexpr u32 kPadStickX = 0x824BB5D0u;
 constexpr u32 kPadStride = 464u;
 constexpr u32 kPadIndexOffset = 81697u;
 constexpr u32 kSignBit = 0x80000000u;
+
+bool g_aiming = false;
+bool g_forced_mouse = false;
 
 float Magnitude2(u32 x, u32 y) {
   const float fx = std::bit_cast<float>(x);
@@ -38,9 +44,27 @@ float Magnitude2(u32 x, u32 y) {
 
 } // namespace
 
+namespace eternalsonata {
+
+void AimInputTick() {
+  if (!g_aiming && g_forced_mouse) {
+    REXCVAR_SET(mnk_mouse, false);
+    g_forced_mouse = false;
+  }
+  g_aiming = false;
+}
+
+}  // namespace eternalsonata
+
 REX_EXTERN(__imp__sub_821C55A8);
 
 REX_HOOK_RAW(sub_821C55A8) {
+  g_aiming = true;
+  if (!REXCVAR_GET(mnk_mouse)) {
+    REXCVAR_SET(mnk_mouse, true);
+    g_forced_mouse = true;
+  }
+
   const bool flip_x = REXCVAR_GET(aim_invert_x);
   const bool flip_y = !REXCVAR_GET(aim_invert_y);
 
