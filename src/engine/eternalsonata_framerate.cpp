@@ -729,6 +729,30 @@ void AnimPartFixup(PPCContext& ctx, u8* base) {
   REX_STORE_U32(ctx.r3.u32 + 31168, bits);
 }
 
+// sub_820C7C18(model, entry, f1, f2) integrates one particle: f1 is the
+// integer-division frame count as in sub_820C8378, f2 = anim_fps / byte the
+// per-frame velocity step. In wall mode the byte is the integer step, so f2
+// alternates with it and emitters stutter; derive both from the measured delta.
+extern "C" REX_FUNC(sub_82181728);
+REX_EXTERN(__imp__sub_820C7C18);
+REX_HOOK_RAW(sub_820C7C18) {
+  if (g_wall_active && !(REXCVAR_GET(frame_wall_debug) & 4)) {
+    const u32 model = ctx.r3.u32;
+    const auto anim_fps = static_cast<int32_t>(REX_LOAD_U32(model + 31116));
+    if (anim_fps > 0) {
+      PPCContext saved = ctx;
+      ctx.r3.u32 = 0x824D0130u;
+      ctx.r4.u32 = REX_LOAD_U8(model + 31532);
+      sub_82181728(ctx, base);
+      const double dt = ctx.f1.f64;
+      ctx = saved;
+      ctx.f1.f64 = dt * anim_fps / kUnitsPerSecond;
+      ctx.f2.f64 = g_wall_units * anim_fps / kUnitsPerSecond;
+    }
+  }
+  __imp__sub_820C7C18(ctx, base);
+}
+
 }  // namespace eternalsonata_hooks
 
 namespace {
