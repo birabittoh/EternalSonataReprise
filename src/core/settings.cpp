@@ -217,8 +217,8 @@ constexpr std::array kGameDefaults = {
     // frame over 16.7 ms lands on 30 rather than somewhere between.
     DefaultValue{"vsync", "true"},
     DefaultValue{"swap_post_effect", "fxaa"},
-    DefaultValue{"mnk_capture_mouse", "false"},
     DefaultValue{"mnk_mode", "true"},
+    DefaultValue{"gyro_aim", "true"},
     DefaultValue{"keybind_a", "LMB"},
     DefaultValue{"keybind_b", "RMB"},
     DefaultValue{"keybind_x", "MMB"},
@@ -266,12 +266,13 @@ constexpr std::array kGameDefaults = {
 // render_scale is listed for the same no-op reason as vsync: only the native
 // renderer registers it, and resolution_scale stays beside it so a settings.toml
 // still round-trips through Xenos.
-constexpr std::array<const char*, 20> kBasicCvarNames = {
+constexpr std::array<const char*, 25> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
-    "camera_fov_scale", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y"};
+    "camera_fov_scale", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
+    "gyro_aim", "gyro_left_stick", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -478,12 +479,11 @@ constexpr std::array kTimerResolutionOptions = {
 // SDK, so DrawCvarWidget already renders it as a combo; it's listed last so
 // it lands directly above the custom gpu_plugin row (see DrawGpuPluginRow,
 // called right after this list's loop in OnDraw).
-constexpr std::array<const char*, 8> kAdvancedCvarNames = {
+constexpr std::array<const char*, 7> kAdvancedCvarNames = {
     "shader_dump_enabled",
     "texture_dump_enabled",
     "texture_dump_format",
     "texture_dump_skip_sizes",
-    "mnk_capture_mouse",
     "mnk_mode",
     "swap_post_effect",
     "readback_resolve",
