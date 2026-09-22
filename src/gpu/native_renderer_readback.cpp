@@ -118,6 +118,12 @@ REXCVAR_DEFINE_STRING(native_readback_resolve, "auto", "Eternal Sonata",
                       "memory for the game's own CPU to read (auto, eager, off)")
     .allowed({"auto", "eager", "off"});
 
+// Off by default: the per-fill content report also writes the raw BGRA of each
+// small destination into logs/, which piles up fast during normal play.
+REXCVAR_DEFINE_BOOL(native_readback_debug, false, "Eternal Sonata",
+                    "Native renderer: log readback content stats and dump the raw pixels of small "
+                    "readback destinations to logs/");
+
 namespace eternalsonata {
 namespace {
 
@@ -609,9 +615,9 @@ bool Fill(Destination& destination) {
   // This is the fork the counters cannot show. A black save preview is either
   // the GPU having read back a black image -- in which case nothing below this
   // line is at fault and the resolve or its source is -- or a good image laid
-  // out wrongly on the way into guest memory. Reported per fill, capped, and
-  // only for the small destinations the thumbnails use.
-  if (fetch.width <= 512 && g_content_reported < 16) {
+  // out wrongly on the way into guest memory. Behind native_readback_debug,
+  // capped, and only for the small destinations the thumbnails use.
+  if (REXCVAR_GET(native_readback_debug) && fetch.width <= 512 && g_content_reported < 16) {
     ++g_content_reported;
     const uint32_t sample_rows = fetch.height < destination.pixel_rows ? fetch.height
                                                                        : destination.pixel_rows;
