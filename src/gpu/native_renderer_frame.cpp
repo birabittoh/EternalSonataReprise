@@ -3010,6 +3010,7 @@ void ApplyPendingExtent() {
 
 bool FramePreparePresent(RenderCommandList* commands) {
   ++g_frame;
+  ReadbackSettle(g_frame);
   ResolvedTexture* source = g_present_texture;
   PollCaptureKey();
   RippleProbeFlush();
