@@ -257,6 +257,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/eternalsonata_hooks.cpp
     src/engine/eternalsonata_framerate.cpp
     src/engine/eternalsonata_lipsync.cpp
+    src/engine/aim_input.cpp
     src/engine/eternalsonata_voice.cpp
     src/engine/eternalsonata_options.cpp
     src/engine/eternalsonata_presence.cpp

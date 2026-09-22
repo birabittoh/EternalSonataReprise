@@ -139,6 +139,15 @@ REXCVAR_DEFINE_STRING(field_leader_model, "default", "Eternal Sonata",
 REXCVAR_DEFINE_BOOL(field_action_default_model, true, "Eternal Sonata",
                     "Use the story character model for field interaction animations");
 
+// Applied by the sub_821C55A8 hook in aim_input.cpp, which is the only place
+// either reaches: ordinary movement and camera control keep the real stick.
+// The defaults are what retail does, which differs per axis.
+REXCVAR_DEFINE_BOOL(aim_invert_x, false, "Eternal Sonata",
+                    "Invert horizontal aiming with long range attacks");
+
+REXCVAR_DEFINE_BOOL(aim_invert_y, true, "Eternal Sonata",
+                    "Invert vertical aiming with long range attacks");
+
 // Which voice bank suffix the game loads. The two the game ships with are
 // selected by its own byte at 0x8243FC06, which this cvar mirrors rather than
 // replaces: while it names "jpn" or "usa" the path hook stands down entirely
@@ -257,12 +266,12 @@ constexpr std::array kGameDefaults = {
 // render_scale is listed for the same no-op reason as vsync: only the native
 // renderer registers it, and resolution_scale stays beside it so a settings.toml
 // still round-trips through Xenos.
-constexpr std::array<const char*, 18> kBasicCvarNames = {
+constexpr std::array<const char*, 20> kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
-    "camera_fov_scale", "render_pixelated_scaling"};
+    "camera_fov_scale", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y"};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
