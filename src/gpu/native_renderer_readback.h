@@ -106,6 +106,12 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
 // scrambled texture. A disagreement is reported rather than reconciled.
 bool ReadbackFillForRead(const TextureFetch& bound);
 
+// Once a frame, from the thread that records it. Writes back every destination
+// whose copy has retired since the last call and disarms any arming that has
+// outlived its resolve, so guest memory the game has since reused is never
+// filled on the strength of a read fault. See kArmLifetimeFrames in the .cpp.
+void ReadbackSettle(uint64_t frame);
+
 // The buffer behind `address` is going away. Disarms its pages, so guest memory
 // is left as accessible as it was found.
 void ReadbackForget(uint32_t address);

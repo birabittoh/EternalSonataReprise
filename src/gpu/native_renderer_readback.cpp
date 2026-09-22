@@ -243,6 +243,10 @@ struct Destination {
   // Set when a flush has forced that copy through inside its own frame.
   bool flushed = false;
 
+  // A copy was recorded by the last publish and has not been written back yet.
+  // ReadbackSettle fills it as soon as the copy retires; see kArmLifetimeFrames.
+  bool copy_pending = false;
+
   // The guest has written these pages itself since the last resolve, so it owns
   // what is in them now. Filling over that is a texture corrupting itself: guest
   // memory does not stay a render target, and a freed buffer gets an ordinary
@@ -306,6 +310,15 @@ constexpr uint64_t kMaxArmedExtentBytes = 1024 * 1024;
 // How many times a destination is resolved, with nothing ever reading it, before
 // its per resolve copy is dropped. See ReadbackPlanCopy.
 constexpr uint64_t kDemandProbePublishes = 16;
+
+// How long an arming may outlive the resolve that made it, in frames.
+//
+// An arming that lasts until the next resolve into the same address never ends
+// for a one shot thumbnail, and by the time the guest has freed and reused the
+// buffer a read of the new owner fills it with a stale image. Copied
+// destinations are written back by ReadbackSettle as soon as the copy retires,
+// so the trap only has to cover a same frame read; this bounds the rest.
+constexpr uint64_t kArmLifetimeFrames = 16;
 
 // Does this publish describe the same destination, in the same place, as the
 // one that armed it?
@@ -982,6 +995,25 @@ bool HandleReadbackFault(uint8_t* address, bool is_write) {
       return true;
     }
   }
+
+  // A page another thread disarmed while this fault was in flight is accessible
+  // again, so the access is retried rather than forwarded.
+  for (const Destination& destination : g_destinations) {
+    if (destination.guest == nullptr)
+      continue;
+    const uint32_t offset = GuestOffset(destination.fetch);
+    for (uint32_t aperture : kApertures) {
+      const uint8_t* start = destination.memory_base + (aperture | offset);
+      if (address < start || address >= start + destination.extent)
+        continue;
+      size_t region_bytes = 0;
+      rex::memory::PageAccess access = rex::memory::PageAccess::kNoAccess;
+      if (rex::memory::QueryProtect(address, region_bytes, access) &&
+          access != rex::memory::PageAccess::kNoAccess) {
+        return true;
+      }
+    }
+  }
   return false;
 }
 #endif
@@ -1244,6 +1276,7 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   // coming and then read it anyway.
   if (copy_recorded) {
     destination->copy_frame = frame;
+    destination->copy_pending = true;
   // Cleared, not carried: a *new* copy has just been recorded and has not run,
   // so a read later in this frame still has to make the GPU catch up. Leaving it
   // set once any flush had ever happened is what made the first save after a load
@@ -1343,6 +1376,7 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
     // appears. `auto` does not hit it because its first resolve arms rather than
     // fills. Eager is the instrument you reach for when the trap is the suspect,
     // so it has to boot.
+    destination->copy_pending = false;
     Fill(*destination);
     return;
   }
@@ -1438,6 +1472,31 @@ bool ReadbackFillForRead(const TextureFetch& bound) {
   // released the lock, and the reference does not survive that.
   destination = Find(address);
   return destination != nullptr && Fill(*destination);
+}
+
+void ReadbackSettle(uint64_t frame) {
+  if (CurrentMode() != Mode::kAuto)
+    return;
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (frame > g_now)
+    g_now = frame;
+  for (Destination& destination : g_destinations) {
+    if (destination.copy_pending && DataReady(destination)) {
+      destination.copy_pending = false;
+      Disarm(destination);
+      // Large destinations keep the mirror pull's layout check as their only
+      // route into guest memory; see kMaxArmedExtentBytes.
+      if (destination.extent <= kMaxArmedExtentBytes && Fresh(destination) &&
+          !destination.filled_since_publish) {
+        Fill(destination);
+      }
+      continue;
+    }
+    if (destination.range_count != 0 &&
+        frame > destination.last_publish_frame + kArmLifetimeFrames) {
+      Disarm(destination);
+    }
+  }
 }
 
 void ReadbackForget(uint32_t address) {
