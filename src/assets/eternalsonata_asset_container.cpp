@@ -384,9 +384,7 @@ bool BuildSubBlock(const BtxLang& lang, const std::map<uint32_t, std::string>& e
   return true;
 }
 
-// Whole blob, packed with no slack: what a resizing edit needs. Byte-exact
-// against the shipped blobs when no edit is applied (scripts/btx_edit.py's
-// build_btx, verified over all 758).
+// Preserve the alignment of GPU resources following a resized text blob.
 std::string BuildBlob(const BtxBlob& blob,
                       const std::vector<std::map<uint32_t, std::string>>& entries) {
   std::vector<std::string> blocks;
@@ -411,6 +409,13 @@ std::string BuildBlob(const BtxBlob& blob,
     block += data;
     blocks.push_back(std::move(block));
   }
+
+  size_t packed_size = 0x10;
+  for (const auto& block : blocks)
+    packed_size += block.size();
+  // Vertex addresses need four byte alignment; texture payloads need 4 KB.
+  const size_t padding = (size_t(blob.size) - packed_size) & 0xFFFu;
+  blocks.back().append(padding, '\0');
 
   std::string out("BTX ");
   AppendBE32(out, 0x10);
