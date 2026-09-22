@@ -893,7 +893,7 @@ uint64_t HashUpdate(uint64_t h, std::string_view s) {
 // the decode once per install rather than once per launch.
 uint64_t CacheKey(rex::Runtime* runtime) {
   uint64_t h = 0xCBF29CE484222325ull;
-  h = HashUpdate(h, "v2");
+  h = HashUpdate(h, "v3");
   for (const auto& mod : runtime->EnabledModsInfo()) {
     h = HashUpdate(h, mod.folder_name);
     h = HashUpdate(h, mod.version);
