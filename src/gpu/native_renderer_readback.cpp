@@ -348,7 +348,9 @@ uint64_t g_layout_disagreements = 0;
 uint64_t g_flushes = 0;
 uint64_t g_refused_stale = 0;
 uint64_t g_refused_large = 0;
-uint64_t g_disowned_faults = 0;
+// Faults on a page another thread disarmed between the fault and the handler.
+// See RetryAfterDisarm.
+uint64_t g_retried_faults = 0;
 // `unanswered` splits two ways that need opposite fixes: a fault on a thread
 // that cannot flush (the recording belongs to another thread), and a flush that
 // was attempted and failed. Counted apart so the summary says which.
@@ -855,8 +857,77 @@ bool EnsureData(Destination& destination, std::unique_lock<std::mutex>& lock) {
 // watch permanently: the watch never fires again, whatever cache it feeds never
 // learns the guest rewrote the memory, and the stale contents are drawn for the
 // rest of the run. That is what "textures corrupt as I play" looked like.
+#ifdef ETERNALSONATA_READBACK_PAGE_TRAP
+// Pages this disarmed recently, and what the protection was put back to.
+//
+// A fault can be raised on an armed page and reach the handler after another
+// thread has disarmed it, by which point nothing in g_destinations says the
+// address was ever ours. Forwarding it crashes on memory that is fine; that was
+// the readback resolve crash. The ring answers "was this ours a moment ago, and
+// does the protection it has now let the access through" without a syscall.
+struct RecentDisarm {
+  uint8_t* page_base = nullptr;
+  size_t page_bytes = 0;
+  rex::memory::PageAccess restored = rex::memory::PageAccess::kNoAccess;
+  uint32_t retries = 0;
+};
+
+constexpr size_t kRecentDisarms = 32;
+// A retry only succeeds if the restored protection permits the access, so this
+// cannot loop. The budget is what covers being wrong about that: after it, the
+// fault is forwarded and a genuine violation still surfaces as one.
+constexpr uint32_t kMaxRetriesPerPage = 4;
+
+RecentDisarm g_recent[kRecentDisarms];
+size_t g_recent_next = 0;
+
+// Called with g_mutex held, just before Disarm restores these pages.
+void RememberDisarm(const Destination& destination) {
+  for (uint32_t i = 0; i < destination.range_count; ++i) {
+    const ArmedRange& range = destination.ranges[i];
+    if (!range.armed)
+      continue;
+    RecentDisarm& slot = g_recent[g_recent_next];
+    g_recent_next = (g_recent_next + 1) % kRecentDisarms;
+    slot.page_base = range.page_base;
+    slot.page_bytes = range.page_bytes;
+    slot.restored = range.old_access;
+    slot.retries = 0;
+  }
+}
+
+bool PermitsAccess(rex::memory::PageAccess access, bool is_write) {
+  switch (access) {
+    case rex::memory::PageAccess::kReadWrite:
+    case rex::memory::PageAccess::kExecuteReadWrite:
+      return true;
+    case rex::memory::PageAccess::kReadOnly:
+    case rex::memory::PageAccess::kExecuteReadOnly:
+      return !is_write;
+    default:
+      return false;
+  }
+}
+
+bool RetryAfterDisarm(const uint8_t* address, bool is_write) {
+  for (RecentDisarm& slot : g_recent) {
+    if (slot.page_base == nullptr || address < slot.page_base ||
+        address >= slot.page_base + slot.page_bytes) {
+      continue;
+    }
+    if (!PermitsAccess(slot.restored, is_write) || slot.retries >= kMaxRetriesPerPage)
+      return false;
+    ++slot.retries;
+    ++g_retried_faults;
+    return true;
+  }
+  return false;
+}
+#endif
+
 void Disarm(Destination& destination) {
 #ifdef ETERNALSONATA_READBACK_PAGE_TRAP
+  RememberDisarm(destination);
   for (uint32_t i = 0; i < destination.range_count; ++i) {
     ArmedRange& range = destination.ranges[i];
     if (!range.armed)
@@ -933,22 +1004,14 @@ bool HandleReadbackFault(uint8_t* address, bool is_write) {
         continue;
       }
 
-      // Armed by us once, but is the page still inaccessible *because* of that?
-      // If the guest has freed the buffer since, this is a real access violation
-      // on memory that merely used to be ours, and swallowing it would turn a
-      // clean crash into a silent one. The arming is dropped either way so the
-      // question is not asked twice.
-      size_t region_bytes = 0;
-      rex::memory::PageAccess access = rex::memory::PageAccess::kReadWrite;
-      const bool ours = rex::memory::QueryProtect(address, region_bytes, access) &&
-                        access == rex::memory::PageAccess::kNoAccess;
-      if (!ours) {
-        ++g_disowned_faults;
-        Disarm(destination);
-        return false;
-      }
-
-      // Ours. Whatever happens next, the guest's access has to be allowed
+      // `range.armed` is the whole test of whether this fault is ours. Asking
+      // the OS whether the page is still kNoAccess looks more careful and is not
+      // affordable: posix QueryProtect reads and parses all of /proc/self/maps,
+      // which arming itself fragments a page at a time, and it would run with
+      // g_mutex held on the guest thread. A buffer the guest frees is disarmed
+      // by ReadbackForget and kArmLifetimeFrames bounds the rest; a fault that
+      // outlives the disarm below is caught by the retry budget instead.
+      // Whatever happens next, the guest's access has to be allowed
       // through, so every path here disarms first.
       const bool inside = address >= range.start && address < range.start + range.bytes;
       Disarm(destination);
@@ -996,25 +1059,15 @@ bool HandleReadbackFault(uint8_t* address, bool is_write) {
     }
   }
 
-  // A page another thread disarmed while this fault was in flight is accessible
-  // again, so the access is retried rather than forwarded.
-  for (const Destination& destination : g_destinations) {
-    if (destination.guest == nullptr)
-      continue;
-    const uint32_t offset = GuestOffset(destination.fetch);
-    for (uint32_t aperture : kApertures) {
-      const uint8_t* start = destination.memory_base + (aperture | offset);
-      if (address < start || address >= start + destination.extent)
-        continue;
-      size_t region_bytes = 0;
-      rex::memory::PageAccess access = rex::memory::PageAccess::kNoAccess;
-      if (rex::memory::QueryProtect(address, region_bytes, access) &&
-          access != rex::memory::PageAccess::kNoAccess) {
-        return true;
-      }
-    }
-  }
-  return false;
+  // A page another thread disarmed while this fault was in flight: retrying is
+  // what lets the access through. Only when the protection we put back actually
+  // permits *this* access, though. The guest pages a resolve lands in are the
+  // same ones the memory system watches for writes by marking them kReadOnly,
+  // so claiming every fault that lands in a destination's extent swallows those
+  // watch faults, and since returning retries the instruction it then faults
+  // forever, spinning on g_mutex and starving the render and audio threads. That
+  // is the menu-after-battle freeze, not a crash.
+  return RetryAfterDisarm(address, is_write);
 }
 #endif
 
@@ -1521,13 +1574,13 @@ void LogReadbackSummary() {
   std::lock_guard<std::mutex> lock(g_mutex);
   REXLOG_DEBUG(
       "native_renderer: readback destinations={} arms={} | faults read={} write={} outside={} "
-      "disowned={} | mirror pulls={} | fills={} ({} MiB) | flushes={} waited={} "
+      "retried={} | mirror pulls={} | fills={} ({} MiB) | flushes={} waited={} "
       "unanswered={} (thread {}, flush {}) | "
       "refused format={} "
       "extent={} unmapped={} stale={} untrapped={} | re-baselined={} | copies skipped large={} "
       "idle={} | layout disagreements={}",
       g_destinations.size(), g_arms, g_read_faults, g_write_faults, g_outside_faults,
-      g_disowned_faults, g_pulls,
+      g_retried_faults, g_pulls,
       g_fills, g_fill_bytes >> 20, g_flushes, g_waited_copies, g_unanswered, g_unanswered_thread,
       g_unanswered_flush, g_refused_format, g_refused_extent,
       g_refused_unmapped, g_refused_stale, g_refused_large, g_rebaselined,
