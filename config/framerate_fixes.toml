@@ -1,0 +1,9 @@
+# Guest logic that only works when the frame step is a whole animation frame.
+
+# Arms Viola's bow sight, which retail gates on an exact equality against
+# animation frame 30.0; without it the aim crosshair is never positioned.
+[[midasm_hook]]
+address = 0x821CE6D8
+name = "EternalSonataBowSightArm"
+registers = ["f31"]
+jump_address_on_true = 0x821CE6E0
