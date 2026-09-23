@@ -50,4 +50,9 @@ void BindAssetSystem(rex::Runtime* runtime);
 // Call after the image is loaded and before the guest runs (OnPreLaunchModule).
 void ApplyXexTextPatches(rex::Runtime* runtime);
 
+// Whether a mod changed string `id` in the `lang` block ("USA " and so on) of
+// the image blob at guest address `blob`. Filled by ApplyXexTextPatches; a patch
+// that leaves the text as shipped does not count.
+bool XexTextModded(uint32_t blob, const char* lang, uint32_t id);
+
 }  // namespace eternalsonata
