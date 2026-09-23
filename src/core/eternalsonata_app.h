@@ -10,7 +10,9 @@
 #include <cstring>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
+#include <optional>
 
 #include <imgui.h>
 #include <rex/cvar.h>
@@ -164,17 +166,56 @@ class EternalsonataApp : public rex::ReXApp {
     // rate is at that moment. See host_timer_resolution.h.
     eternalsonata::ApplyHostTimerResolution();
 
+    return true;
+  }
+
+  // Game data is resolved here rather than in SetupEnvironment because the
+  // window exists by now, so extraction can report progress through the same
+  // loading screen the mod asset build uses.
+  std::optional<rex::PathConfig> OnFinalizePaths(
+      const rex::PathConfig& defaults, std::function<void(rex::PathConfig)> resume) override {
+    (void)defaults;
+    (void)resume;
+    // The overlays record into the host frame, so the renderer needs the drawer
+    // that produces them; both are live once presentation is set up.
+    eternalsonata::PlumeSetOverlayDrawer(imgui_drawer());
+    eternalsonata::InitNativeRenderer(window());
+    eternalsonata::BindLoadingScreen(imgui_drawer(), &app_context());
+
     rex::system::GameDataSelectorSettings settings;
     settings.default_xex_sha256 = "91184E7765172A358ECAA6E5CA1784DB1AE796C60F25051A45C5206F8949501E";
     settings.config_path = config_path();
-
-    // Match the overlay's palette instead of the SDK's neutral dark default,
-    // and show the game's icon above the bar.
+    // Only used where the loading screen cannot draw (no native renderer).
     settings.progress_theme = eternalsonata::ProgressTheme();
     settings.progress_icon_data = eternalsonata::kIconPNG;
     settings.progress_icon_size = eternalsonata::kIconPNGSize;
+    if (eternalsonata::PlumeBackendReady()) {
+      settings.progress_callback = [](const std::string& title, float fraction,
+                                      const std::string& detail) {
+        eternalsonata::UpdateLoadingScreen(title, fraction, detail);
+      };
+    }
 
-    return rex::system::GameDataSelector::EnsureGameData(settings);
+    extracting_ = true;
+    const bool ready = rex::system::GameDataSelector::EnsureGameData(settings);
+    extracting_ = false;
+    eternalsonata::HideLoadingScreen();
+    if (!ready) {
+      app_context().QuitFromUIThread();
+      return std::nullopt;
+    }
+    RefreshPathDefaultsIfCvarsChanged();
+    return resolved_path_defaults();
+  }
+
+  // An interrupted extraction leaves a game directory that can still pass the
+  // default.xex check, so closing waits for it to finish.
+  bool OnWindowCloseRequested() override {
+    if (extracting_) {
+      REXLOG_INFO("Close requested while extracting game files; ignoring until it finishes");
+      return false;
+    }
+    return true;
   }
 
   void OnConfigureFonts(ImFontAtlas* atlas) override {
@@ -296,17 +337,6 @@ class EternalsonataApp : public rex::ReXApp {
   }
 
   void OnPostSetup() override {
-    // The overlays record into the host frame, so the renderer needs the drawer
-    // that produces them. Done here because imgui_drawer() is only live once
-    // presentation has been set up.
-    eternalsonata::PlumeSetOverlayDrawer(imgui_drawer());
-
-    // Up here rather than at module launch so the loading screen can draw while
-    // BindAssetSystem builds mod assets below. Still before the guest runs, so
-    // no D3D call can arrive ahead of it.
-    eternalsonata::InitNativeRenderer(window());
-    eternalsonata::BindLoadingScreen(imgui_drawer(), &app_context());
-
     // Languages a mod declared in its assets.toml rather than in C++. This has
     // to land before InitSettingsCaches, which latches the boot language: a
     // language registered after the latch would not be selectable this run.
@@ -587,6 +617,7 @@ class EternalsonataApp : public rex::ReXApp {
 
   // Guest frame present count, bumped by the per-swap callback (any thread).
   std::atomic<uint64_t> guest_swap_count_{0};
+  bool extracting_ = false;
   // Trailing window of (wall time, swap count) samples for the F3 "Guest" FPS
   // line, keeping only samples within kStatsWindowSec (ImGui thread only).
   static constexpr double kStatsWindowSec = 1.0;
