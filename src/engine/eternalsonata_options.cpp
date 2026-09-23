@@ -569,13 +569,10 @@ struct OptionValue {
   u32 btx_id = 0;
 };
 
-// The language everything we draw onto these screens is written in: the one the
-// process *started* in, not whatever user_language holds now. See the label
-// comment in EnsurePageRows - the guest read its own language once at boot and
-// every stock string on screen is still in it.
+// The language everything we draw onto these screens is written in. The guest
+// follows user_language live (see SetUserLanguageSetting), so this does too.
 int DrawLanguage() {
-  return std::clamp(eternalsonata::BootUserLanguageIndex(), 0,
-                    kLanguageCount - 1);
+  return std::clamp(eternalsonata::UserLanguageIndex(), 0, kLanguageCount - 1);
 }
 
 // A value's text in the language being drawn, falling back to slot 0. Empty
@@ -894,10 +891,6 @@ std::vector<OptionRow>& Rows() {
     initial[3].get_index = &TextGetIndex;
     initial[3].set_index = &TextSetIndex;
     initial[3].page = kPageOptions;
-    // The guest reads its language once at boot, so user_language is
-    // kRequiresRestart (see SetUserLanguageSetting) - and this is the row where
-    // the marker matters most, since nothing else on screen changes when it moves.
-    initial[3].restart_cvar = "user_language";
     MakeLiteralRow(initial[4], kLabelOverworldModel, kOverworldModelValues,
                    static_cast<int>(std::size(kOverworldModelValues)));
     initial[4].get_index = &OverworldModelGetIndex;
@@ -1958,9 +1951,7 @@ void CameraFovSet(u8* base, int index) {
               eternalsonata::CameraFovOptionPercent(index));
 }
 
-// Text language. The guest reads its language once at boot, so this only
-// changes what the menus say after a restart - the same as the overlay's own
-// Language row, and the reason SetUserLanguageSetting marks a pending restart.
+// Text language. Applies live; the screen itself switches on its next entry.
 int TextGetIndex() { return eternalsonata::UserLanguageIndex(); }
 
 void TextSetIndex(u8* base, int idx) {
@@ -2267,14 +2258,8 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   // string - and matching how the values below are already rebuilt every entry
   // to stay in step with their cvars.
   //
-  // The language they are written in is the one the *process started with*
-  // (BootUserLanguageIndex), not whatever user_language holds right now.
-  // user_language requires a restart to apply: the guest read its own language
-  // once at boot and every stock string on this screen is still in it, so
-  // following the live cvar would translate our labels a whole restart before
-  // the rest of the screen follows - most visibly on the Text row itself,
-  // where changing the value would rewrite the labels around it on the next
-  // entry while nothing else on screen moved.
+  // Rewriting them every entry is also what moves them to a newly selected
+  // language, in step with the stock strings, which are rebuilt on entry too.
   const int label_lang = DrawLanguage();
   auto row_label = [&](u32 r) -> const std::string& {
     // Slot 0 is the fallback for any language a row did not translate, so a
@@ -2294,9 +2279,7 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     }
   }
 
-  // The restart marker follows the same language as the labels for the same
-  // reason: it sits next to them, and user_language only reaches the rest of
-  // the screen on the next launch.
+  // The restart marker sits next to the labels, so it follows their language.
   const std::string marker = kLabelRestartMarker.text[label_lang]
                                  ? kLabelRestartMarker.text[label_lang]
                                  : kLabelRestartMarker.text[0];

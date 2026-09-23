@@ -42,6 +42,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -70,6 +71,12 @@ constexpr uint32_t kVolumeMusic = 0x8243FBFEu;   // and +1, +2: SFX, Voice
 constexpr uint32_t kAttackButton = 0x8243FC01u;
 constexpr uint32_t kSubtitles = 0x8243FC05u;     // BYTE1(dword_8243FC04)
 constexpr uint32_t kVoiceLanguage = 0x8243FC06u; // BYTE2, 0 = Japanese
+
+// dword_8243D370, outside the block: the BTX block every text lookup reads,
+// indexed in this order.
+constexpr uint32_t kTextLanguage = 0x8243D370u;
+constexpr const char* kTextLanguageSlots[] = {"JPN ", "USA ", "GBR ", "FRA ",
+                                              "ITA ", "DEU ", "ESP "};
 
 // The whole block, for the readability probe.
 constexpr uint32_t kBlockStart = kControllerP1;
@@ -203,6 +210,25 @@ void WriteLanguageSetting(int setting, int value) {
   }
   RequestVoiceBankReload();
 }
+
+}  // namespace
+
+void WriteGuestTextLanguage(const char* btx_slot) {
+  if (!btx_slot)
+    return;
+  for (uint32_t i = 0; i < std::size(kTextLanguageSlots); ++i) {
+    if (std::string_view(kTextLanguageSlots[i]) != btx_slot)
+      continue;
+    std::lock_guard<std::mutex> lock(g_mutex);
+    auto* memory = Mem();
+    auto* host = memory ? memory->TranslateVirtual<uint8_t*>(kTextLanguage) : nullptr;
+    if (host)
+      rex::memory::store_and_swap<uint32_t>(host, i);
+    return;
+  }
+}
+
+namespace {
 
 int SettingMin(int setting) { return LanguageSetting(setting) ? 0 : kSettings[setting].min; }
 

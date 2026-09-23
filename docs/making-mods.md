@@ -364,9 +364,10 @@ one registration, and every text patch above can then target it.
 
 The catch the game imposes: BTX has a **fixed table of seven language blocks**
 (`JPN USA GBR FRA ITA DEU ESP `) and the guest picks its block by an index
-latched at boot, not by name. There is no eighth block to add. So a new language
+(`dword_8243D370`), not by name. There is no eighth block to add. So a new language
 **piggybacks on an existing one**: it claims a `slot`, the host boots the guest
-into that slot's language so it reads the block your mod patched, and both menus
+into that slot's language (or moves it there live) so it reads the block your
+mod patched, and both menus
 show your label in place of the donor's. `ESP ` and `DEU ` are the conventional
 donors. While your mod is enabled the donor language is not selectable, and two
 translation mods claiming the same slot conflict (first in `mods.toml` wins, the
@@ -431,8 +432,10 @@ Three limits worth knowing before you start:
   anything at length.
 * **Keep labels ASCII.** They are drawn by the guest, under the same one-byte
   rule.
-* **Language changes need a restart.** `user_language` is read once at guest
-  boot, so both menus mark the row accordingly.
+* **Language changes apply live.** Every text lookup reads the guest's language
+  index, so the host just moves it; a screen already open switches the next
+  time it is entered. Achievement names are the exception and stay in the boot
+  language until a restart.
 
 The list holds nine languages in total, five built in and four added, which is
 where the Options screen's Text row runs out of width for its two-letter codes.
@@ -487,11 +490,10 @@ Five things to know:
 * **The suffix has at most seven letters.** An `index.vmtoc` path record is 32
   bytes, and `btldata\voice\bosfga` + suffix + `.csf` has to fit. A longer one is
   refused at registration with a warning naming your mod.
-* **Voice changes need a restart**, for a sharper reason than text does: the
-  guest caches loaded banks keyed on its own selector byte, which a mod voice
-  language leaves at the donor's value. Two mod voice languages are
-  indistinguishable to that cache, so a live switch would replay the bank
-  already in it.
+* **Voice changes apply live.** The guest caches loaded banks keyed on its own
+  selector byte, which a mod voice language leaves at the donor's value, so
+  while one is active the host swaps a key of its own into that byte around
+  the cache calls and asks the guest to reload its banks.
 
 Not every bank has an English twin (27 of the 45 are Japanese-only), so
 `donor = "usa"` falls back to the bare name for those, exactly as the game's own

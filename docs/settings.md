@@ -200,6 +200,6 @@ Three consequences:
   in `eternalsonata_options.cpp`; otherwise the cvar and the guest would
   disagree and the donor would keep playing.
 * **Neither is in the save**, so a load does not replace them and a new game
-  does not reset them. They persist in the host's config instead. Both need a
-  restart to take effect, since the guest latches its language at boot and
-  caches voice banks keyed on that selector byte.
+  does not reset them. They persist in the host's config instead. Both apply
+  live: text by moving the guest's language index, voice by reloading the
+  banks under a per language cache key.
