@@ -221,13 +221,14 @@ class EternalsonataApp : public rex::ReXApp {
   void OnConfigureFonts(ImFontAtlas* atlas) override {
     atlas->AddFontDefault();
 
+    // Sans serif, like the controller's own button letters.
     static const ImWchar face_button_glyphs[] = {'A', 'B', 'X', 'Y', 0};
     ImFontConfig face_button_cfg;
     face_button_cfg.FontDataOwnedByAtlas = false;
     face_button_cfg.OversampleH = face_button_cfg.OversampleV = 2;
     std::strncpy(face_button_cfg.Name, "Touch controls", sizeof(face_button_cfg.Name));
-    atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kPTSerifRegularTTF),
-                                static_cast<int>(eternalsonata::kPTSerifRegularTTFSize), 96.0f,
+    atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kRobotoMediumTTF),
+                                static_cast<int>(eternalsonata::kRobotoMediumTTFSize), 96.0f,
                                 &face_button_cfg, face_button_glyphs);
 
     // Large enough to stay sharp when the loading screen scales it down; the
