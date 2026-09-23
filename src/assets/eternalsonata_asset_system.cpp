@@ -18,7 +18,9 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <rex/filesystem/devices/host_path_device.h>
@@ -2051,6 +2053,10 @@ namespace {
 constexpr uint32_t kImageBase = 0x82000000u;
 constexpr uint32_t kImageScanLimit = 0x83000000u;
 
+// (blob guest address, language fourcc, string id) of every string a mod
+// actually changed. Written once before the guest runs, only read after.
+std::set<std::tuple<uint32_t, std::string, uint32_t>> g_xex_modded_text;
+
 // The contiguous committed run starting at the image base, copied out so the
 // container code can scan it as an ordinary buffer.
 bool ReadGuestImage(rex::Runtime* runtime, std::vector<uint8_t>* out, uint32_t* base) {
@@ -2115,11 +2121,28 @@ void ApplyXexTextPatches(rex::Runtime* runtime) {
   std::vector<assets::InPlaceWrite> writes;
   assets::ApplyTextEditsInPlace(image, edits, &writes);
 
+  // Compared against the shipped text so that host rewrites of the same
+  // strings (the console wording) still apply under a mod that copies them.
+  const auto blobs = assets::FindBtxBlobs(image);
+  auto record_modded = [&](const assets::TextEdit& edit) {
+    if (edit.blob >= blobs.size())
+      return;
+    const auto& blob = blobs[edit.blob];
+    for (const auto& lang : blob.langs) {
+      if (!edit.lang.empty() && lang.fourcc != edit.lang)
+        continue;
+      const auto stock = lang.entries.find(edit.id);
+      if (stock != lang.entries.end() && stock->second != edit.value)
+        g_xex_modded_text.emplace(base + uint32_t(blob.offset), lang.fourcc, edit.id);
+    }
+  };
+
   size_t applied = 0;
   for (size_t i = 0; i < edits.size(); ++i) {
     switch (edits[i].status) {
       case EditStatus::kOk:
         ++applied;
+        record_modded(edits[i]);
         break;
       case EditStatus::kNotFound:
         REXLOG_WARN("assets: mod '{}' patches {}#text:{}/{}/{}, which the image does not have",
@@ -2168,6 +2191,10 @@ void ApplyXexTextPatches(rex::Runtime* runtime) {
   }
   REXLOG_INFO("assets: patched {} strings across {} language blocks in {}", applied, written,
               kXexContainer);
+}
+
+bool XexTextModded(uint32_t blob, const char* lang, uint32_t id) {
+  return g_xex_modded_text.count({blob, lang, id}) != 0;
 }
 
 }  // namespace eternalsonata

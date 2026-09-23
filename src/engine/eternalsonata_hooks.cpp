@@ -11,6 +11,7 @@
 #include <rex/cvar.h>
 #include <rex/system/kernel_state.h>
 
+#include "eternalsonata_asset_system.h"
 #include "eternalsonata_hooks_internal.h"
 #include "native_renderer_frame.h"
 #include "overworld_system.h"
@@ -19,9 +20,11 @@
 // Console references in the shipped text
 // ---------------------------------------------------------------------------
 //
-// The BTX blobs baked into the image (0x8202B8A8, 0x822FDD00 and friends) warn
-// the player not to switch off the Xbox 360, which the save screens still show.
-// Each language gets its own rewrite so the sentence stays grammatical.
+// The save, New Game and Unlock Key screens talk about storage devices, gamer
+// profiles, signing in and switching off the Xbox 360, none of which exist in
+// the port. Each affected string gets a rewrite per language.
+//
+// A string a mod changed keeps the mod's text.
 //
 // The blobs sit in read-only guest pages, so the strings cannot be edited in
 // place; the fixed copies live on the guest heap and the BTX lookup hands them
@@ -30,51 +33,214 @@
 namespace eternalsonata_hooks {
 namespace {
 
+// BTX blobs baked into the image that hold console text.
+constexpr u32 kUnlockKeyText = 0x8202B8A8;
+constexpr u32 kSystemText = 0x82031A00;
+constexpr u32 kSaveText = 0x822F94F0;
+constexpr u32 kNewGameText = 0x822FDD00;
+
+// Written as UTF-8 with real line breaks for readability; converted to the
+// blobs' Latin-1 and "\n" markup when installed. English covers USA and GBR,
+// and a null keeps the stock text.
 struct ConsoleTextFix {
-    const char* warning;  // where the console warning starts, per language
-    const char* to;       // what to say instead, to the end of the string
+    u32 blob;
+    u32 string_id;
+    const char* en;
+    const char* fr;
+    const char* it;
+    const char* de;
+    const char* es;
 };
 
-// Neither half of the warning survives the port: there is no storage device to
-// remove and no console to switch off, only the game to keep open. So the whole
-// sentence is replaced, from the word each language opens it with, and whatever
-// comes before it (the "Checking save files..." line) is kept.
-//
-// Latin-1, the encoding the blobs use. Each opener is unique to its language,
-// and none of them appears in the line above the warning, so the first rule that
-// matches is the right one.
 constexpr ConsoleTextFix kConsoleTextFixes[] = {
-    {"Please do not remove", "Please do not close the game."},
-    {"Ne pas ", "Ne pas fermer le jeu."},
-    {"Non rimuovere", "Non chiudere il gioco."},
-    {"No retires", "No cierres el juego."},
-    {"Bitte das ", "Bitte das Spiel nicht beenden."},
+    {kUnlockKeyText, 4,
+     "The save data can no longer\nbe accessed.",
+     "Les données de sauvegarde ne sont\nplus accessibles.",
+     "I dati di salvataggio non sono\npiù accessibili.",
+     "Auf die Speicherdaten kann nicht\nmehr zugegriffen werden.",
+     "Ya no se puede acceder a los\ndatos guardados."},
+    {kUnlockKeyText, 6,
+     "Unable to check the Unlock Key.",
+     "Impossible de vérifier la clé de déblocage.",
+     "Impossibile verificare la chiave di attivazione.",
+     "Freischalt-Code kann nicht überprüft werden.",
+     "No se pudo comprobar la clave de desbloqueo."},
+    {kUnlockKeyText, 7,
+     "Checking Unlock Key.\nPlease do not close the game.\n",
+     "Vérification de clé de déblocage.\nNe pas fermer le jeu.\n",
+     "Verifica chiave di attivazione.\nNon chiudere il gioco.\n",
+     "Freischalt-Code wird überprüft.\nBitte das Spiel nicht beenden.\n",
+     "Comprobando clave de desbloqueo.\nNo cierres el juego.\n"},
+
+    {kSystemText, 182,
+     "An error has occurred.\nReturning to Title Screen",
+     "Une erreur est survenue.\nRetour à l'écran de titre.",
+     "Si è verificato un errore.\nTorna alla schermata del titolo.",
+     "Ein Fehler ist aufgetreten.\nZurück zum Titelbildschirm.",
+     "Se ha producido un error.\nRegresarás a la pantalla de inicio."},
+
+    {kSaveText, 0,
+     "Checking save files...\nPlease do not close the game.\n",
+     "Vérification des fichiers de sauvegarde en cours.\nNe pas fermer le jeu.\n",
+     "Verifica del salvataggio in corso...\nNon chiudere il gioco.",
+     "Gespeicherte Spielstände werden geprüft ...\nBitte das Spiel nicht beenden.\n",
+     "Comprobando los archivos de guardado...\nNo cierres el juego.\n"},
+    {kSaveText, 3,
+     "Saving...\nPlease do not close the game.\n",
+     "Sauvegarde en cours.\nNe pas fermer le jeu.\n",
+     "Salvataggio in corso...\nNon chiudere il gioco.",
+     "Speichern ...\nBitte das Spiel nicht beenden.\n",
+     "Guardando...\nNo cierres el juego.\n"},
+    {kSaveText, 7,
+     "Loading...\nPlease do not close the game.\n",
+     "Chargement en cours.\nNe pas fermer le jeu.\n",
+     "Caricamento in corso...\nNon chiudere il gioco.",
+     "Laden ...\nBitte das Spiel nicht beenden.\n",
+     "Cargando...\nNo cierres el juego.\n"},
+    {kSaveText, 12,
+     "Insufficient disk space.",
+     "Espace disque insuffisant.",
+     "Spazio su disco insufficiente.",
+     "Unzureichender Speicherplatz.",
+     "No hay espacio suficiente en el disco."},
+    {kSaveText, 17,
+     "There was an error checking the save file.\n",
+     "Erreur lors de la vérification du fichier de sauvegarde.\n",
+     "Si è verificato un errore durante il controllo del salvataggio.\n",
+     "Beim Prüfen der Speicherdatei ist ein Fehler aufgetreten.\n",
+     "Se produjo un error al comprobar el archivo de guardado.\n"},
+    {kSaveText, 18,
+     "An unexpected error has occurred.\nThe save data cannot be accessed.\n",
+     "Une erreur est survenue.\nAccès aux données de sauvegarde impossible.\n",
+     "Si è verificato un errore inatteso.\nImpossibile accedere ai dati di salvataggio.\n",
+     "Ein unerwarteter Fehler ist aufgetreten.\nAuf die Speicherdaten kann nicht zugegriffen werden.\n",
+     "Se ha producido un error inesperado.\nNo se puede acceder a los datos guardados.\n"},
+    {kSaveText, 22,
+     "An unexpected error has occurred.\nThe save data cannot be accessed.\n",
+     "Une erreur est survenue.\nAccès aux données de sauvegarde impossible.\n",
+     "Si è verificato un errore inatteso.\nImpossibile accedere ai dati di salvataggio.\n",
+     "Ein unerwarteter Fehler ist aufgetreten.\nAuf die Speicherdaten kann nicht zugegriffen werden.\n",
+     "Se ha producido un error inesperado.\nNo se puede acceder a los datos guardados.\n"},
+    {kSaveText, 24,
+     "Saving is not available.\n",
+     "La sauvegarde n'est pas disponible.\n",
+     "Il salvataggio non è disponibile.",
+     "Speichern ist nicht verfügbar.\n",
+     "No es posible guardar.\n"},
+    {kSaveText, 25,
+     "The save data can no longer be accessed.\n",
+     "Les données de sauvegarde ne sont plus accessibles.\n",
+     "I dati di salvataggio non sono\npiù accessibili.",
+     "Auf die Speicherdaten kann nicht\nmehr zugegriffen werden.\n",
+     "Ya no se puede acceder a los\ndatos guardados.\n"},
+    {kSaveText, 26,
+     "There is no Eternal Sonata save data.\n",
+     "Aucune sauvegarde d'Eternal Sonata n'a été détectée.\n",
+     "Nessun salvataggio di Eternal Sonata trovato.\n",
+     "Es wurden keine Spieldaten von Eternal Sonata gefunden.\n",
+     "No hay datos guardados de Eternal Sonata.\n"},
+    {kSaveText, 29,
+     "Loading is not available.\n",
+     "Le chargement n'est pas disponible.\n",
+     "Il caricamento non è disponibile.",
+     "Laden ist nicht verfügbar.\n",
+     "No es posible cargar.\n"},
+    {kSaveText, 37,
+     "The save data may have become\ninaccessible during game play.\n",
+     "Les données de sauvegarde sont peut-être devenues\ninaccessibles en cours de partie.\n",
+     "I dati di salvataggio potrebbero essere diventati\ninaccessibili durante il gioco.\n",
+     "Auf die Speicherdaten konnte während\ndes Spiels eventuell nicht zugegriffen werden.\n",
+     "Es posible que no se haya podido acceder a los\ndatos guardados durante la partida.\n"},
+    {kSaveText, 40,
+     "Insufficient disk space.\nGame data has not been saved.\n\nContinue without saving?",
+     "Espace disque insuffisant.\n\nLes données de jeu n'ont pas été sauvegardées. \nContinuer sans sauvegarder ?",
+     "Spazio su disco insufficiente. \nI dati di gioco non sono stati salvati.\nContinuare senza salvare?",
+     "Unzureichender Speicherplatz. \nDer Spielstand wurde nicht gespeichert.\nOhne zu speichern fortfahren?",
+     "No hay espacio suficiente en el disco.\n\nNo se han guardado los datos del juego. ¿Salir de todos modos?"},
+
+    {kNewGameText, 1,
+     "Preparing save data.\n",
+     "Préparation des données de sauvegarde.\n",
+     "Preparazione dei dati di salvataggio.",
+     "Speicherdaten werden vorbereitet.\n",
+     "Preparando los datos guardados.\n"},
+    {kNewGameText, 2,
+     "Checking disk space...\nPlease do not close the game.\n",
+     "Vérification de l'espace libre sur le disque...\nNe pas fermer le jeu.\n",
+     "Controllo spazio su disco...\nNon chiudere il gioco.",
+     "Speicherplatz wird geprüft...\nBitte das Spiel nicht beenden.\n",
+     "Comprobando el espacio en disco...\nNo cierres el juego.\n"},
+    {kNewGameText, 3,
+     nullptr,
+     "Espace disque suffisant. \nLancement de la partie en cours.\n",
+     nullptr,
+     nullptr,
+     "Hay suficiente espacio en el disco.\nIniciando el juego."},
+    {kNewGameText, 4,
+     "Insufficient disk space.\nGame data will not be saved.\nStart game anyway?\n",
+     "L'espace disque est insuffisant.\nLes données de jeu ne seront pas sauvegardées.\n\nLancer quand même la partie ?\n",
+     "Spazio su disco insufficiente.\nI dati di gioco non saranno salvati.\n\nAvviare il gioco comunque?\n",
+     "Es ist nicht genügend Speicherplatz\nverfügbar.\nSpieldaten werden nicht gespeichert.\n\nSpiel trotzdem starten?\n",
+     "No hay espacio suficiente en el disco.\nNo se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n"},
+    {kNewGameText, 6,
+     "No save location is available.\nGame data will not be saved.\nStart game anyway?\n",
+     "Aucun emplacement de sauvegarde n'est\ndisponible. Les données de jeu\nne seront pas sauvegardées.\nLancer quand même la partie ?\n",
+     "Nessuna posizione di salvataggio\ndisponibile. I dati di gioco\nnon saranno salvati.\nAvviare il gioco comunque?",
+     "Es ist kein Speicherort verfügbar.\nSpieldaten werden nicht gespeichert.\nSpiel trotzdem starten?\n",
+     "No hay ninguna ubicación de guardado\ndisponible. No se guardarán\nlos datos del juego.\n¿Deseas iniciar el juego de todos modos?\n"},
+    {kNewGameText, 8,
+     "Game data will not be saved.\nStart game anyway?\n",
+     "Les données de jeu ne seront pas sauvegardées.\n\nLancer quand même la partie ?\n",
+     "I dati di gioco non saranno salvati.\n\nAvviare il gioco comunque?",
+     "Spieldaten werden nicht gespeichert.\nSpiel trotzdem starten?\n",
+     "No se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n"},
+    {kNewGameText, 9,
+     "The save data could not be accessed.\nGame data will not be saved.\nStart game anyway?\n",
+     "Impossible d'accéder aux données de sauvegarde.\nLes données de jeu ne seront pas sauvegardées.\n\nLancer quand même la partie ?\n",
+     "Impossibile accedere ai dati di salvataggio. \nI dati di gioco non saranno salvati.\nAvviare il gioco comunque?",
+     "Zugriff auf die Speicherdaten nicht möglich. \nSpieldaten werden nicht gespeichert.\nSpiel trotzdem starten?\n",
+     "No se pudo acceder a los datos guardados. \nNo se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n"},
 };
 
-// Longest blob string we are willing to copy.
-constexpr size_t kMaxBlobString = 1024;
+// The rewrite for the language block tagged `lang`. JPN is not selectable.
+const char* TextFor(const ConsoleTextFix& fix, u32 lang) {
+    switch (lang) {
+    case 0x55534120:  // "USA "
+    case 0x47425220:  // "GBR "
+        return fix.en;
+    case 0x46524120:  // "FRA "
+        return fix.fr;
+    case 0x49544120:  // "ITA "
+        return fix.it;
+    case 0x44455520:  // "DEU "
+        return fix.de;
+    case 0x45535020:  // "ESP "
+        return fix.es;
+    default:
+        return nullptr;
+    }
+}
 
-std::mutex g_console_text_mutex;
-// Looked-up string -> our copy, or 0 for "nothing to do". Keyed by address so
-// each string is examined once; the blobs are static, so the answer never
-// changes.
-std::unordered_map<u32, u32> g_console_text;
-
-// Our copy of `text`, on the guest heap, or 0 if it needs no fixing.
-u32 FixedCopyOf(u8* base, std::string text) {
-    bool fixed = false;
-    for (const ConsoleTextFix& fix : kConsoleTextFixes) {
-        const size_t pos = text.find(fix.warning);
-        if (pos != std::string::npos) {
-            text.replace(pos, std::string::npos, fix.to);
-            fixed = true;
-            break;
+// UTF-8 to the blobs' Latin-1, with line breaks as their "\n" markup.
+std::string ToBlobText(const char* utf8) {
+    std::string out;
+    for (const char* p = utf8; *p;) {
+        const u8 c = static_cast<u8>(*p);
+        if (c == '\n') {
+            out += "\\n";
+            ++p;
+        } else if ((c & 0xE0) == 0xC0 && p[1]) {
+            out.push_back(static_cast<char>(((c & 0x1F) << 6) | (p[1] & 0x3F)));
+            p += 2;
+        } else {
+            out.push_back(static_cast<char>(c));
+            ++p;
         }
     }
-    if (!fixed) {
-        REXLOG_WARN("[text] no rule for the Xbox 360 string \"{}\"", text);
-        return 0;
-    }
+    return out;
+}
+
+u32 CopyToGuest(u8* base, const std::string& text) {
     auto* mem = rex::system::kernel_memory();
     const u32 copy = mem ? mem->SystemHeapAlloc(text.size() + 1, 0x20) : 0;
     if (!copy) {
@@ -84,33 +250,51 @@ u32 FixedCopyOf(u8* base, std::string text) {
     for (size_t i = 0; i <= text.size(); ++i) {
         REX_STORE_U8(copy + i, static_cast<u8>(text[i]));
     }
-    REXLOG_INFO("[text] rewrote \"{}\"", text);
     return copy;
+}
+
+std::once_flag g_console_text_once;
+// Stock string address -> our copy. The lookup returns addresses straight out
+// of the language blocks, and the blobs are static, so this is built once.
+std::unordered_map<u32, u32> g_console_text;
+
+// Walks each blob's language blocks the way sub_8223B780 does (layout in
+// scripts/btx.py) to find where every string to fix lives.
+void BuildConsoleText(u8* base) {
+    for (const ConsoleTextFix& fix : kConsoleTextFixes) {
+        const u32 languages = REX_LOAD_U32(fix.blob + 0x0C);
+        u32 block = fix.blob + REX_LOAD_U32(fix.blob + 0x04);
+        for (u32 l = 0; l < languages; ++l) {
+            const u32 lang = REX_LOAD_U32(block);
+            const char fourcc[5] = {char(lang >> 24), char(lang >> 16), char(lang >> 8),
+                                    char(lang), 0};
+            const char* const text = eternalsonata::XexTextModded(fix.blob, fourcc, fix.string_id)
+                                         ? nullptr
+                                         : TextFor(fix, lang);
+            const u32 table = block + REX_LOAD_U32(block + 0x04);
+            const u32 count = REX_LOAD_U32(block + 0x10);
+            for (u32 i = 0; text && i < count; ++i) {
+                if (REX_LOAD_U32(table + 8 * i) != fix.string_id) {
+                    continue;
+                }
+                const u32 stock = block + REX_LOAD_U32(table + 8 * i + 4);
+                if (const u32 copy = CopyToGuest(base, ToBlobText(text))) {
+                    g_console_text[stock] = copy;
+                }
+                break;
+            }
+            block += REX_LOAD_U32(block + 0x08);
+        }
+    }
+    REXLOG_INFO("[text] {} console strings rewritten", g_console_text.size());
 }
 
 }  // namespace
 
 u32 ConsoleTextOverrideFor(u8* base, u32 text_address) {
-    if (!text_address) {
-        return 0;
-    }
-    std::lock_guard<std::mutex> lock(g_console_text_mutex);
+    std::call_once(g_console_text_once, BuildConsoleText, base);
     const auto it = g_console_text.find(text_address);
-    if (it != g_console_text.end()) {
-        return it->second;
-    }
-
-    // Matching on the text rather than on the address: a blob string's start is
-    // only known from its block's offset table, and the first string of a block
-    // has no terminator in front of it to find it by.
-    const char* const s = reinterpret_cast<const char*>(base + text_address);
-    const size_t len = strnlen(s, kMaxBlobString);
-    u32 copy = 0;
-    if (len < kMaxBlobString && std::strstr(s, "Xbox 360")) {
-        copy = FixedCopyOf(base, std::string(s, len));
-    }
-    g_console_text[text_address] = copy;
-    return copy;
+    return it != g_console_text.end() ? it->second : 0;
 }
 
 }  // namespace eternalsonata_hooks
