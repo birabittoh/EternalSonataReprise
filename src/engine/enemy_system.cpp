@@ -38,6 +38,15 @@
 // than a rebalance, so an HP override is applied once, when the record is
 // first seen, and describes the health the enemy enters the battle with.
 //
+// ---------------------------------------------------------------------------
+// Player multipliers
+//
+// The enemy_*_multiplier cvars scale EXP, gold and max HP for every enemy. They
+// are a separate layer on top of the mod overrides rather than an ANY override,
+// because a type's own rule replaces the ANY one: a player's "x2 EXP" would
+// vanish on any enemy a mod touched. Current HP follows the max through the
+// ratio preserving write, so it needs no multiplier of its own.
+//
 // Threading: the exported entry points are called from mods, i.e. usually from
 // the ImGui draw thread. Every one of them is a plain guest-memory access or a
 // host-side table edit, so none of them queues; the per-frame reapplication
@@ -53,6 +62,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <rex/cvar.h>
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
 #include <rex/system/mod_plugin.h>
@@ -62,6 +72,21 @@
 #include "enemy_system.h"
 #include "eternalsonata_enemy_api.h"
 #include "room_presence.h"
+
+REXCVAR_DEFINE_DOUBLE(enemy_exp_multiplier, 1.0, "Eternal Sonata",
+                      "Multiplier on the EXP every enemy is worth, applied on top of any mod "
+                      "rebalance")
+    .range(0.0, 10.0);
+
+REXCVAR_DEFINE_DOUBLE(enemy_gold_multiplier, 1.0, "Eternal Sonata",
+                      "Multiplier on the gold every enemy drops, applied on top of any mod "
+                      "rebalance")
+    .range(0.0, 10.0);
+
+// Floored above zero: an enemy with no max HP reads as already dead.
+REXCVAR_DEFINE_DOUBLE(enemy_hp_multiplier, 1.0, "Eternal Sonata",
+                      "Multiplier on every enemy's max HP, applied on top of any mod rebalance")
+    .range(0.1, 10.0);
 
 namespace eternalsonata {
 namespace {
@@ -315,6 +340,40 @@ struct Snapshot {
 // Keyed by slot * part count + part.
 std::unordered_map<uint32_t, Snapshot> g_snapshots;
 
+// The player multipliers as of the last tick. Cached rather than read from the
+// cvars on every apply so that a change is noticed, and the stat restored,
+// when a multiplier goes back to 1.
+struct GlobalMultipliers {
+  float exp = 1.0f;
+  float gold = 1.0f;
+  float hp_max = 1.0f;
+
+  bool operator==(const GlobalMultipliers&) const = default;
+};
+
+GlobalMultipliers g_globals;
+
+GlobalMultipliers ReadGlobalCvars() {
+  GlobalMultipliers globals;
+  globals.exp = static_cast<float>(std::clamp(REXCVAR_GET(enemy_exp_multiplier), 0.0, 10.0));
+  globals.gold = static_cast<float>(std::clamp(REXCVAR_GET(enemy_gold_multiplier), 0.0, 10.0));
+  globals.hp_max = static_cast<float>(std::clamp(REXCVAR_GET(enemy_hp_multiplier), 0.1, 10.0));
+  return globals;
+}
+
+float GlobalFor(const GlobalMultipliers& globals, int stat) {
+  switch (stat) {
+    case ETERNALSONATA_ENEMY_STAT_EXP:
+      return globals.exp;
+    case ETERNALSONATA_ENEMY_STAT_GOLD:
+      return globals.gold;
+    case ETERNALSONATA_ENEMY_STAT_HP_MAX:
+      return globals.hp_max;
+    default:
+      return 1.0f;
+  }
+}
+
 const Override* FindOverrideLocked(int name_id, int stat) {
   // A type's own rule beats the catch-all, so a mod can say "everything x1.5,
   // except this boss" without ordering games.
@@ -347,10 +406,13 @@ void ApplyToPartLocked(uint32_t record, uint32_t part, const Snapshot& snapshot,
       continue;
     }
     const Override* rule = FindOverrideLocked(snapshot.name_id, stat);
-    if (!rule) {
+    const float global = GlobalFor(g_globals, stat);
+    if (!rule && global == 1.0f) {
       continue;
     }
-    WriteStat(record, part, stat, ValueFor(*rule, info, snapshot.stats[stat]));
+    const int32_t value = rule ? ValueFor(*rule, info, snapshot.stats[stat]) : snapshot.stats[stat];
+    WriteStat(record, part, stat,
+              ClampToField(info, std::llround(static_cast<double>(value) * global)));
   }
 }
 
@@ -485,15 +547,23 @@ void BindEnemySystem(rex::Runtime* runtime) {
 }
 
 void EnemySystemTick() {
+  const GlobalMultipliers globals = ReadGlobalCvars();
   std::lock_guard<std::mutex> lock(g_mutex);
+  const bool globals_changed = globals != g_globals;
+  g_globals = globals;
   if (!Available()) {
     // Between battles the records are stale; start clean for the next one so
     // nothing is measured against a previous encounter's numbers.
     g_snapshots.clear();
     return;
   }
-  if (g_overrides.empty() && g_snapshots.empty()) {
+  if (g_overrides.empty() && g_snapshots.empty() && globals == GlobalMultipliers{}) {
     return;
+  }
+  if (globals_changed) {
+    // A multiplier going back to 1 stops writing its stat, so put the originals
+    // back before reapplying what is left.
+    ApplyAllLocked(true);
   }
   ApplyAllLocked(false);
 }
@@ -782,4 +852,17 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetEnemyOverrides(
     row.multiplier = entry.second.multiplier;
   }
   return written;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetEnemyGlobalMultiplier(int stat, float* out) {
+  if (!out) {
+    return ETERNALSONATA_ENEMY_ERR_INVALID_ARGUMENT;
+  }
+  if (!ValidStat(stat)) {
+    return ETERNALSONATA_ENEMY_ERR_INVALID_STAT;
+  }
+  // From the cvars rather than the tick's copy, so a mod reading this at load
+  // sees the player's setting before the first frame.
+  *out = GlobalFor(ReadGlobalCvars(), stat);
+  return ETERNALSONATA_ENEMY_OK;
 }
