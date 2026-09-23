@@ -272,9 +272,63 @@ bool ForcedRespawnIsSafe() {
 }
 
 // The game's own field-leader respawn. a3 != 0 forces it to run even when the
-// party slot is unchanged. Importing the plain symbol routes back through this
+// party slot is unchanged. Calling the plain symbol routes back through this
 // file's sub_820EE7D8 hook, so the model substitution applies to it.
-REX_IMPORT(sub_820FCF80, RespawnFieldLeader, void(uint32_t, uint32_t, uint32_t));
+REX_EXTERN(sub_820FCF80);
+
+// sub_820F6068(object, kind, attach): attaches the object to (or, with attach
+// 0, detaches it from) the kind 3 map object it walks on.
+REX_IMPORT(__imp__sub_820F6068, SetObjectRide, uint32_t(uint32_t, uint32_t, uint32_t));
+
+constexpr uint32_t kObjectFlagsOffset = 12u;
+constexpr uint32_t kObjectRideOffset = 84u;
+constexpr uint32_t kRideKindMap = 3u;
+// The ground bits a scripted move (command 29) changes to lift the leader off
+// the floor, e.g. to step down a trapdoor ladder.
+constexpr uint32_t kGroundFlagsMask = 0xC0000u;
+// The scene object's light colour: the current RGB at +0x5E0 and the one it
+// blends towards at +0x5F0, set as the leader moves in and out of shade.
+constexpr uint32_t kSceneLightOffset = 0x5E0u;
+constexpr uint32_t kSceneLightWords = 8u;
+
+// Forced sub_820FCF80 on the hook's own context. Through an isolated import the
+// hooks it runs into (sub_820EFE38, sub_820EE7D8) would make guest calls from
+// the thread's stale stack pointer and overwrite its frames.
+//
+// A respawn starts from a grounded spawn, so a leader a script had lifted off
+// the floor is put back into that state.
+void RespawnFieldLeaderLive(PPCContext& ctx, uint8_t* base) {
+  const uint32_t leader = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
+  const bool live = leader != 0 && leader != 0xFFFFFFFFu;
+  const uint32_t flags = live ? REX_LOAD_U32(leader + kObjectFlagsOffset) : 0;
+  const uint32_t ride = live ? REX_LOAD_U32(leader + kObjectRideOffset) : 0;
+  // The new scene object starts fully lit; carry over the shade colour the
+  // area had blended the leader to.
+  const uint32_t scene = live ? SceneObjectFor(base, leader) : 0;
+  uint32_t light[kSceneLightWords] = {};
+  for (uint32_t i = 0; scene && i < kSceneLightWords; ++i) {
+    light[i] = REX_LOAD_U32(scene + kSceneLightOffset + i * 4);
+  }
+  PPCContext saved = ctx;
+  ctx.r3.u32 = kMapManager;
+  ctx.r4.u32 = REX_LOAD_U32(kCurrentPartySlot);
+  ctx.r5.u32 = 1;
+  sub_820FCF80(ctx, base);
+  ctx = saved;
+  const uint32_t respawned = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
+  if (live && respawned == leader) {
+    REX_STORE_U32(leader + kObjectFlagsOffset,
+                  (REX_LOAD_U32(leader + kObjectFlagsOffset) & ~kGroundFlagsMask) |
+                      (flags & kGroundFlagsMask));
+    if (ride == 0 && REX_LOAD_U32(leader + kObjectRideOffset) != 0) {
+      SetObjectRide(leader, kRideKindMap, 0);
+    }
+    const uint32_t respawned_scene = scene ? SceneObjectFor(base, leader) : 0;
+    for (uint32_t i = 0; respawned_scene && i < kSceneLightWords; ++i) {
+      REX_STORE_U32(respawned_scene + kSceneLightOffset + i * 4, light[i]);
+    }
+  }
+}
 
 // Persisted value, one token per combo entry and in the same order. Defined
 // (with the matching .allowed list) in settings.cpp alongside the other
@@ -459,7 +513,7 @@ REX_HOOK_RAW(sub_820F9EC8) {
   // retries, so the model still lands as soon as the scene is settled.
   if (character != g_applied_character && object != 0 && object != 0xFFFFFFFFu &&
       REX_LOAD_U8(kMapResetFlag) == 0 && ForcedRespawnIsSafe()) {
-    RespawnFieldLeader(kMapManager, REX_LOAD_U32(kCurrentPartySlot), 1u);
+    RespawnFieldLeaderLive(ctx, base);
   }
   __imp__sub_820F9EC8(ctx, base);
 }
@@ -539,7 +593,7 @@ REX_HOOK_RAW(sub_820F1490) {
         (resumes_normal && g_default_model_for_action)) {
       g_default_model_for_action = starts_action;
       g_action_model_respawn = true;
-      RespawnFieldLeader(kMapManager, REX_LOAD_U32(kCurrentPartySlot), 1u);
+      RespawnFieldLeaderLive(ctx, base);
       g_action_model_respawn = false;
       ctx.r3.u32 = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
     }
