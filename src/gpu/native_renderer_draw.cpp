@@ -2529,12 +2529,15 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     }
   }
 
-  // Indices.
+  // Indices. A fan always goes through here, indexed or not, because the index
+  // buffer is where it becomes a triangle list; see MapTopology.
+  const bool fan = call.primitive_type == 5;
+  const bool indexed = call.indexed || fan;
   RenderIndexBufferView index_view;
   uint32_t index_count = call.count;
-  if (call.indexed) {
+  if (indexed) {
     ProfileZone index_zone(kPhaseIndexUpload);
-    if (call.indices == nullptr) {
+    if (call.indexed && call.indices == nullptr) {
       Drop(kDropIndicesMissing, "SetIndices was never called, or its buffer decodes as null");
       return false;
     }
@@ -2543,8 +2546,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     // quad becomes six indices in the same (0,1,2)(0,2,3) order the
     // non-indexed expansion uses, and the vertex buffer is left alone.
     const uint32_t quads = quad_list ? call.count / 4 : 0;
-    index_count = quad_list ? quads * 6 : call.count;
-    const uint32_t index_stride = call.index_32bit ? 4u : 2u;
+    const uint32_t fan_triangles = fan && call.count >= 3 ? call.count - 2 : 0;
+    index_count = quad_list ? quads * 6 : fan ? fan_triangles * 3 : call.count;
+    if (index_count == 0)
+      return true;
+    const bool index_32bit = call.indexed ? call.index_32bit : call.count > 0x10000;
+    const uint32_t index_stride = index_32bit ? 4u : 2u;
     const uint32_t index_bytes = index_count * index_stride;
     const Allocation allocation = ArenaAllocate(device, index_bytes);
     if (!allocation) {
@@ -2553,15 +2560,28 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     }
 
     // Where output index i reads from in the guest's buffer. Identity for
-    // everything except a quad list.
+    // everything except a quad list or a fan.
     const auto source_index = [&](uint32_t i) -> uint32_t {
+      if (fan) {
+        const uint32_t corner = i % 3;
+        return corner == 0 ? 0 : i / 3 + corner;
+      }
       if (!quad_list)
         return i;
       static constexpr uint32_t kQuadOrder[6] = {0, 1, 2, 0, 2, 3};
       return (i / 6) * 4 + kQuadOrder[i % 6];
     };
 
-    if (call.index_32bit) {
+    if (!call.indexed) {
+      // A non-indexed fan: the indices are the vertex numbers themselves.
+      for (uint32_t i = 0; i < index_count; ++i) {
+        const uint32_t value = source_index(i);
+        if (index_32bit)
+          std::memcpy(allocation.cpu + 4 * i, &value, 4);
+        else
+          reinterpret_cast<uint16_t*>(allocation.cpu)[i] = uint16_t(value);
+      }
+    } else if (call.index_32bit) {
       for (uint32_t i = 0; i < index_count; ++i) {
         uint32_t value;
         std::memcpy(&value, call.indices + 4 * source_index(i), 4);
@@ -2578,8 +2598,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     }
     g_index_bytes += index_bytes;
     index_view = RenderIndexBufferView(allocation.ref, index_bytes,
-                                       call.index_32bit ? RenderFormat::R32_UINT
-                                                        : RenderFormat::R16_UINT);
+                                       index_32bit ? RenderFormat::R32_UINT
+                                                   : RenderFormat::R16_UINT);
   }
 
   // The constant banks. Four root descriptors in the order the layout declares
@@ -2972,9 +2992,9 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     commands->setGraphicsDescriptorSet(sampler_set, kSamplerDescriptorSet);
     commands->setVertexBuffers(0, views, slot_count, slots);
 
-    if (call.indexed) {
+    if (indexed) {
       commands->setIndexBuffer(&index_view);
-      commands->drawIndexedInstanced(index_count, 1, 0, call.base_vertex, 0);
+      commands->drawIndexedInstanced(index_count, 1, 0, call.indexed ? call.base_vertex : 0, 0);
     } else {
       commands->drawInstanced(draw_count, 1, 0, 0);
     }

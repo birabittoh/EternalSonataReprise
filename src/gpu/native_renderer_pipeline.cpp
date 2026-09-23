@@ -337,8 +337,11 @@ RenderPrimitiveTopology MapTopology(uint32_t primitive_type) {
       return RenderPrimitiveTopology::LINE_STRIP;
     case 4:
       return RenderPrimitiveTopology::TRIANGLE_LIST;
+    // D3D12 without the Agility SDK and Metal have no fan topology; Plume
+    // silently hands D3D12 an undefined one. The draw path expands fans into
+    // (0, i, i+1) triangles through the index buffer instead.
     case 5:
-      return RenderPrimitiveTopology::TRIANGLE_FAN;
+      return RenderPrimitiveTopology::TRIANGLE_LIST;
     case 6:
       return RenderPrimitiveTopology::TRIANGLE_STRIP;
 
