@@ -236,6 +236,10 @@ struct ResolvedTexture {
   // screen, and it draws after the marker while the screen it samples was
   // resolved before it. See FrameResolveTextureByAddress.
   uint64_t resolved_frame = 0;
+  // Which resolve wrote it last, across every destination. The frame cannot
+  // order two copies written in the same frame, and the later one is the one
+  // guest memory holds.
+  uint64_t resolved_serial = 0;
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
 
@@ -542,6 +546,7 @@ uint64_t g_clears_dropped = 0;
 // FrameClear is dead code; it is not zero here.
 uint64_t g_clears_aliased = 0;
 uint64_t g_resolves_copied = 0;
+uint64_t g_resolve_serial = 0;
 uint64_t g_resolves_dropped = 0;
 
 // Resolves taken through the old band-relative reading, i.e. against a host
@@ -2212,6 +2217,7 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   ++g_resolves_copied;
   ++g_layer_resolves[size_t(target->layer)];
   destination->resolved_frame = g_frame;
+  destination->resolved_serial = ++g_resolve_serial;
   // The box's right edge, so a copy that stops at the content rather than at the
   // margin is visible as a number rather than as a black bar.
   LayerTrace("resolve", target, uint32_t(host_x2));
@@ -2232,8 +2238,9 @@ void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t he
   // exists, which a menu frame creates, the preference returns it every frame
   // and the world stops updating on screen while everything else keeps running.
   //
-  // The drawing layer is still the tie break, so a copy both layers wrote this
-  // frame keeps the resolution of the layer asking for it.
+  // Freshest by resolve order, not by frame: the main menu resolves the screen
+  // into one address from the world layer and then, faded, from the UI layer in
+  // the same frame, and the Options screen that follows has to see the second.
   ResolvedTexture* best = nullptr;
   bool mismatched = false;
   for (auto& candidate : g_resolved) {
@@ -2243,8 +2250,7 @@ void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t he
       mismatched = true;
       continue;
     }
-    if (best == nullptr || candidate->resolved_frame > best->resolved_frame ||
-        (candidate->resolved_frame == best->resolved_frame && candidate->layer == g_layer)) {
+    if (best == nullptr || candidate->resolved_serial > best->resolved_serial) {
       best = candidate.get();
     }
   }
@@ -2272,8 +2278,7 @@ bool FrameResolveTextureIsScaled(uint32_t address, uint32_t width, uint32_t heig
       continue;
     if (candidate->width != width || candidate->height != height)
       continue;
-    if (best == nullptr || candidate->resolved_frame > best->resolved_frame ||
-        (candidate->resolved_frame == best->resolved_frame && candidate->layer == g_layer)) {
+    if (best == nullptr || candidate->resolved_serial > best->resolved_serial) {
       best = candidate.get();
     }
   }
