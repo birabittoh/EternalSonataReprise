@@ -82,8 +82,9 @@ void RegisterNativeRendererCvars();
 // NativeRendererEnabled().
 void SetGuestFrameCallback(std::function<void()> callback);
 
-// Brings up the rendering backend. Call from OnPreLaunchModule, before the
-// guest starts executing and so before any guest D3D call can arrive.
+// Brings up the rendering backend. Call once the window exists and before the
+// guest starts executing, so no guest D3D call can arrive ahead of it. Later
+// calls do nothing.
 // No-op unless NativeRendererEnabled(); there is no backend behind it yet.
 void InitNativeRenderer(rex::ui::Window* window);
 

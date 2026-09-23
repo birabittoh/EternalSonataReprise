@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -32,6 +33,7 @@
 #include "eternalsonata_asset_container.h"
 #include "eternalsonata_asset_mesh.h"
 #include "eternalsonata_asset_texture.h"
+#include "loading_screen.h"
 #include "settings.h"
 
 namespace eternalsonata {
@@ -1682,7 +1684,7 @@ bool WriteWholeFile(const std::filesystem::path& path, const std::vector<uint8_t
 // one cache generation. The TOC is written in the same pass as the containers:
 // a half-updated cache directory is exactly the state the vmtoc invariant
 // exists to prevent.
-bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir) {
+bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir, bool show_progress) {
   assets::Toc toc;
   bool have_toc = false;
   for (const auto& root : runtime->ModOverlayRoots("game")) {
@@ -1698,13 +1700,43 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir) {
   std::filesystem::remove_all(dir, ec);
   std::filesystem::create_directories(dir, ec);
 
+  size_t total = 0;
+  for (const auto& entry : state().containers)
+    total += !IsXexContainer(entry.first);
+  // A large text mod takes over a minute here, on the UI thread, before the
+  // game has drawn anything. Only shown once the build proves slow, so a small
+  // mod does not flash it, and only at boot: pumping events from here would
+  // steal them from the running game.
+  const auto start = std::chrono::steady_clock::now();
+  bool shown = false;
+  struct HideOnExit {
+    bool& shown;
+    ~HideOnExit() {
+      if (shown)
+        HideLoadingScreen();
+    }
+  } hide_on_exit{shown};
+  auto report = [&](size_t done, const std::string& what, bool force) {
+    UpdateLoadingScreen("Applying mods...", float(done) / float(total),
+                        std::to_string(done * 100 / total) + "%   " + std::to_string(done) +
+                            " / " + std::to_string(total) + "   " + what,
+                        force);
+  };
+
   size_t built = 0;
+  size_t visited = 0;
   for (auto& [guest_path, container] : state().containers) {
     // The executable's blobs are patched in guest memory at launch, not served
     // from the cache directory: there is no file here to write and no TOC
     // record to keep in sync with one.
     if (IsXexContainer(guest_path))
       continue;
+    if (show_progress &&
+        (shown || std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(250))) {
+      shown = true;
+      report(visited, guest_path, false);
+    }
+    ++visited;
     // Last chance for a lazy provider to register patches for this container.
     for (auto& entry : state().providers)
       entry.second.first(guest_path.c_str(), entry.second.second);
@@ -1752,6 +1784,8 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir) {
     }
   }
 
+  if (shown)
+    report(total, "", true);
   if (!built) {
     std::filesystem::remove_all(dir, ec);
     return false;
@@ -1808,7 +1842,7 @@ bool Remount(rex::Runtime* runtime, const std::filesystem::path& cache_dir) {
 }
 
 // Collect, build and serve. Also the body of EternalSonataInvalidateAsset.
-void RebuildAndServe() {
+void RebuildAndServe(bool show_progress = false) {
   State& s = state();
   if (!s.runtime)
     return;
@@ -1820,7 +1854,7 @@ void RebuildAndServe() {
   const auto dir = root / name;
   std::error_code ec;
   const bool cached = std::filesystem::is_regular_file(dir / "index.vmtoc", ec);
-  if (!cached && !BuildCache(s.runtime, dir))
+  if (!cached && !BuildCache(s.runtime, dir, show_progress))
     return;
   if (cached)
     REXLOG_INFO("assets: reusing the patched containers in {}", dir.string());
@@ -2002,7 +2036,7 @@ void BindAssetSystem(rex::Runtime* runtime) {
   s.bound = true;
   if (s.containers.empty())
     return;
-  RebuildAndServe();
+  RebuildAndServe(true);
 }
 
 // ---------------------------------------------------------------------------

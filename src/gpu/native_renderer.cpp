@@ -248,8 +248,10 @@ SurfaceListener g_surface_listener;
 #endif  // __ANDROID__
 
 void InitNativeRenderer(rex::ui::Window* window) {
-  if (!NativeRendererEnabled())
+  static bool initialized = false;
+  if (!NativeRendererEnabled() || initialized)
     return;
+  initialized = true;
 
   // The window is already created and is ours to render into however we like;
   // the SDK is not presenting the guest in this mode, and will not draw its own
@@ -293,7 +295,7 @@ void InitNativeRenderer(rex::ui::Window* window) {
   // Plume's RenderWindow is a {NSWindow*, CAMetalLayer*} pair here, and the
   // layer is what vkCreateMetalSurfaceEXT needs. SDL's window has no layer of
   // its own, so attach one. Both SDL calls are main-thread only, which
-  // OnPreLaunchModule is.
+  // OnPostSetup is.
   //
   // Not routed through PLUME_SDL_VULKAN_ENABLED even though this is still
   // Vulkan: Plume checks that macro before __APPLE__ in the same #elif chain,

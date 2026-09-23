@@ -40,6 +40,7 @@
 #include "item_system.h"
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
+#include "loading_screen.h"
 #include "progress_theme.h"
 #include "music_system.h"
 #include "native_renderer.h"
@@ -188,6 +189,17 @@ class EternalsonataApp : public rex::ReXApp {
                                 static_cast<int>(eternalsonata::kPTSerifRegularTTFSize), 96.0f,
                                 &face_button_cfg, face_button_glyphs);
 
+    // Large enough to stay sharp when the loading screen scales it down; the
+    // atlas is static, so scaling up would blur. Added before the last font,
+    // which the SDK makes the overlays' default.
+    static const ImWchar latin_glyphs[] = {0x0020, 0x00FF, 0};
+    ImFontConfig loading_cfg;
+    loading_cfg.FontDataOwnedByAtlas = false;
+    std::strncpy(loading_cfg.Name, eternalsonata::kLoadingScreenFontName, sizeof(loading_cfg.Name));
+    atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kPTSerifRegularTTF),
+                                static_cast<int>(eternalsonata::kPTSerifRegularTTFSize), 64.0f,
+                                &loading_cfg, latin_glyphs);
+
     ImFontConfig cfg;
     cfg.FontDataOwnedByAtlas = false;
     atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kPTSerifRegularTTF),
@@ -268,8 +280,6 @@ class EternalsonataApp : public rex::ReXApp {
   }
 
   void OnPreLaunchModule() override {
-    eternalsonata::InitNativeRenderer(window());
-
     // The game's own UI chrome is 23 BTX blobs inside the executable image, not
     // an asset the VFS can overlay, so those text patches are written into
     // guest memory instead of served from the cache. Here rather than in
@@ -290,6 +300,12 @@ class EternalsonataApp : public rex::ReXApp {
     // that produces them. Done here because imgui_drawer() is only live once
     // presentation has been set up.
     eternalsonata::PlumeSetOverlayDrawer(imgui_drawer());
+
+    // Up here rather than at module launch so the loading screen can draw while
+    // BindAssetSystem builds mod assets below. Still before the guest runs, so
+    // no D3D call can arrive ahead of it.
+    eternalsonata::InitNativeRenderer(window());
+    eternalsonata::BindLoadingScreen(imgui_drawer(), &app_context());
 
     // Languages a mod declared in its assets.toml rather than in C++. This has
     // to land before InitSettingsCaches, which latches the boot language: a
