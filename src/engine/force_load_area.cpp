@@ -105,7 +105,7 @@ void ForceLoadArea::Tick() {
   // The game reads: HIWORD gets letter1|letter2, BYTE2 gets letter2, LOBYTE gets number
   uint32_t encoded_dword = (letter1 << 24) | (letter2 << 16) | (letter3 << 8) | number;
 
-  // Queue the warp to be applied on next field resume (via hook)
+  // Applied by the field tick, or by the next resume if the field is suspended.
   {
     std::lock_guard<std::mutex> lock(g_warp_mutex);
     g_warp_encoded_dword = encoded_dword;
