@@ -1,39 +1,13 @@
-// eternalsonata - Discord Rich Presence: show the area the player is
-// currently in, translated from the game's own current-area id.
+// eternalsonata: Discord Rich Presence.
 //
-// Two guest/host sources feed the current-area id, chosen in this order:
-//   * if a field map is loaded (the host-side capture below has fired and has
-//     not been torn down since), that capture is authoritative. Field play and
-//     in-field cutscenes both keep the map loaded; the loaders never write
-//     byte_8244B500.
-//   * otherwise byte_8244B500 (written by the generic cfdata loader
-//     sub_820FCC80, i.e. the menu/event path: "E%04d.e" etc.), read straight
-//     out of live guest memory. Non-empty means title/menu/event screens.
-//   * if neither is set, the game is mid-transition (previous map torn down,
-//     next not loaded yet); fall back to the host-side capture so the last
-//     known field area stays up instead of "Title Screen".
-// The host-side capture itself comes from the field-area loaders
-// sub_820FAFB0 / sub_820FB420 (the map loaders that receive "cfdata\XXyy.e"
-// filenames; see eternalsonata_presence.cpp "Field area tracking"). Those
-// loaders also fire for speculative gate preloads as the player approaches a
-// transition, so the hook filters on the loaders' r5 flags word and forwards
-// only real transitions -- see eternalsonata_presence.cpp for details.
+// The details row names the current area. While a field is loaded its id
+// comes from the field loader hooks (eternalsonata_presence.cpp); otherwise
+// from the menu/event id at byte_8244B500. Ids are translated through the
+// table generated from the cfdata BTX files.
 //
-// Ids are normalized (lowercase, ".e" stripped) and translated through the
-// static table generated from the cfdata BTX files. Event/scene ids ("e%04d")
-// map to "In Main Menu", and nothing loaded yet to "Loading...". Changes are
-// pushed to rex::discord_rpc's SetDetails so the SDK's own worker thread does
-// the actual Discord IPC.
-//
-// The presence's second row (state) qualifies the first: a battle is
-// "Fighting...", a loaded field is "Exploring...", and outside a field it is
-// left empty, because the first row already says everything there is to say
-// ("Loading..." / "In Main Menu") and repeating it just prints the same text
-// twice. While a state row is shown it is suffixed with the current party
-// level read from dword_8243F3EC (" Party Lv. N"). Battle is tracked
-// separately because the field stays loaded underneath one, so "is a field
-// loaded" cannot tell the two apart. See room_presence.cpp for why the game's
-// scene-mode register drives only the *end* of a battle and nothing else.
+// The state row is "Fighting...", "Watching a cutscene..." or "Exploring..."
+// followed by the party level, and is empty otherwise, where the details row
+// ("Loading..." / "In Main Menu") already says it all.
 #pragma once
 
 #include <cstdint>
@@ -58,37 +32,22 @@ class RoomPresence {
  public:
   RoomPresence() = default;
 
-  // Starts Discord RPC (rex::discord_rpc::Start) and registers a per-guest-
-  // frame tick that keeps the presence's details line in sync with the
-  // player's current area. Call once KernelState and the runtime are both
-  // live (OnPostSetup).
+  // Starts Discord RPC and registers the per-frame Tick(). Call from
+  // OnPostSetup.
   void Bind(rex::system::KernelState* kernel_state, rex::Runtime* runtime);
 
-  // Re-reads the current area id and, if it changed, updates the Discord
-  // presence. Registered as a guest-frame tick by Bind(); safe to call before
-  // Bind() (no-op until bound).
+  // Pushes the presence to Discord when it changed. No-op until bound.
   void Tick();
 
-  // Called from the guest-thread field-loader hook (sub_820FAFB0, see
-  // eternalsonata_presence.cpp) with the area id ("ktm01.e"-style filename, or
-  // empty) each time the game loads a field area. Records it for the next
-  // Tick(). Thread-safe: the hook runs on a guest thread while Tick may run
-  // on another.
+  // Called from the field loader hooks with the area id ("ktm01.e").
+  // Thread-safe.
   void NotifyAreaLoad(const char* area_id);
 
-  // Called from the guest-thread map-dispatcher hook (sub_820FD998 with a null
-  // name, see eternalsonata_presence.cpp) when the game tears the field map down.
-  // Clears the "a field is loaded" flag that NotifyAreaLoad sets, so the state
-  // row can leave "Exploring..." when the player returns to a menu screen.
+  // Called when the field map is torn down (sub_820FD998 with a null name).
   void NotifyFieldTeardown();
 
-  // Whether a battle is running, read live from the battle FSM's state field
-  // (see FsmStateIsInBattle in battle_layout.h). Holds no state of its own, so
-  // there is nothing to keep in step and no lock to take: any two callers on
-  // any two threads see the same answer, and it is correct for every battle in
-  // a session rather than just the first. Exported to mods as
-  // EternalSonataIsBattleActive so they need not re-derive it; deriving it
-  // wrongly, from the scene mode, is what the mods did before it existed.
+  // Read live from the battle FSM (FsmStateIsInBattle), so it is stateless
+  // and safe from any thread. Exported to mods as EternalSonataIsBattleActive.
   bool IsBattleActive();
 
   // Canonical id and display name shared by presence and overworld events.
@@ -102,15 +61,12 @@ class RoomPresence {
  private:
   rex::system::KernelState* kernel_state_ = nullptr;
 
-  // Last field-area id captured by NotifyAreaLoad, guarded by area_mutex_.
   std::mutex area_mutex_;
   std::string field_area_id_;
-  // Whether a field map is currently loaded: set by NotifyAreaLoad, cleared by
-  // NotifyFieldTeardown. Used in place of the game's own map-region buffer,
-  // which is not reliably populated -- see room_presence.cpp.
+  // Guarded by area_mutex_.
   bool field_active_ = false;
 
-  std::string last_area_id_;
+  std::string last_details_;
   std::string last_state_;
   bool has_read_area_once_ = false;
 };
