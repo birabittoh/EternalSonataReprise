@@ -4,6 +4,11 @@
 #include "settings.h"
 
 #include "eternalsonata_options_api.h"
+#include "eternalsonata_settings_api.h"
+
+// Exported by game_settings.cpp for mods; the overlay uses the same entry points.
+extern "C" int EternalSonataGetSetting(int setting);
+extern "C" int EternalSonataSetSetting(int setting, int value);
 #include "field_player_model_override.h"
 #include "host_timer_resolution.h"
 #include "native_renderer.h"
@@ -13,6 +18,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <map>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -23,7 +30,6 @@
 #include <rex/platform.h>
 #include <rex/platform/process.h>
 #include <rex/system/auto_updater.h>
-#include <rex/system/gpu_plugin.h>
 #include <rex/system/mod_registry.h>
 #include <rex/ui/imgui_widgets.h>
 #include <rex/ui/overlay/settings_overlay.h>
@@ -113,6 +119,12 @@ REXCVAR_DEFINE_INT32(native_texture_budget_mb, 384, "Eternal Sonata",
                    "Over budget it drops the textures bound least recently. 0 removes the "
                    "limit, which lets the mirror grow for as long as the session lasts.")
     .range(0, 4096);
+
+// Applied through ImGui's style (see UiScaleApplier), so it reaches every overlay
+// window without each one knowing about it.
+REXCVAR_DEFINE_DOUBLE(ui_scale, 1.0, "Eternal Sonata",
+                      "Scale of the overlay windows and their text")
+    .range(0.5, 3.0);
 
 // A multiplier rather than an angle, because the guest picks its own vertical
 // field of view per camera and cutscenes set theirs deliberately. Applied in
@@ -246,7 +258,7 @@ constexpr std::array kGameDefaults = {
 // DrawCvarWidget path, but is still listed here so the generic Reset-All /
 // restart-tracking loops cover it; GetFlagInfo/ResetToDefault etc. no-op
 // harmlessly for it on a build without Vulkan. gpu_backend no longer has a row
-// at all (it is set from the config file or the Advanced section), but stays
+// at all (it is set from the config file or the All Settings browser), but stays
 // listed so an existing saved value survives a Reset-All round trip.
 // host_timer_resolution_ms is likewise listed unconditionally even though the
 // cvar only exists on Windows, for the same reason vulkan_device is: the
@@ -266,13 +278,21 @@ constexpr std::array kGameDefaults = {
 // render_scale is listed for the same no-op reason as vsync: only the native
 // renderer registers it, and resolution_scale stays beside it so a settings.toml
 // still round-trips through Xenos.
-constexpr std::array<const char*, 25> kBasicCvarNames = {
+constexpr std::array kBasicCvarNames = {
     "fullscreen",  "resolution",   "resolution_scale", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
     "camera_fov_scale", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
-    "gyro_aim", "gyro_left_stick", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y"};
+    "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y",
+    "enemy_exp_multiplier", "enemy_gold_multiplier", "enemy_hp_multiplier", "ui_scale"};
+
+// Steps for the Game tab's multiplier rows. HP stops short of zero, the
+// same floor enemy_hp_multiplier has.
+constexpr std::array kRewardMultiplierSteps = {0.0, 0.25, 0.5, 0.75, 1.0, 1.5,
+                                               2.0, 3.0,  4.0, 5.0,  10.0};
+constexpr std::array kUiScaleSteps = {0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0};
+constexpr std::array kHpMultiplierSteps = {0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -464,31 +484,6 @@ constexpr std::array kTimerResolutionOptions = {
 };
 #endif  // _WIN32
 
-// cvars rendered generically in the collapsed Advanced section, persisted to
-// the app's normal cvar config (eternalsonata.toml).
-//
-// Deliberately absent: gpu_allow_invalid_fetch_constants and no_edram_wrap_claim.
-// Those are not preferences, they are the workarounds this game needs to
-// render correctly (no_edram_wrap_claim in particular is the fix for the
-// black cross-fades and the black half of the save screenshot; see
-// kGameDefaults). They keep their defaults from kGameDefaults and can still
-// be set from eternalsonata.toml for debugging; they just are not offered as
-// something to switch off by hand.
-//
-// readback_resolve declares .allowed({"none", "fast", "some", "full"}) in the
-// SDK, so DrawCvarWidget already renders it as a combo; it's listed last so
-// it lands directly above the custom gpu_plugin row (see DrawGpuPluginRow,
-// called right after this list's loop in OnDraw).
-constexpr std::array<const char*, 7> kAdvancedCvarNames = {
-    "shader_dump_enabled",
-    "texture_dump_enabled",
-    "texture_dump_format",
-    "texture_dump_skip_sizes",
-    "mnk_mode",
-    "swap_post_effect",
-    "readback_resolve",
-};
-
 // True once `name`'s cvar has actually been changed at runtime this session
 // and needs a relaunch to take effect. GetPendingRestartFlags() only tracks
 // cvars changed at runtime (settings UI, console, mods), not values applied
@@ -513,13 +508,7 @@ bool AnyKnownPendingRestart() {
     if (is_tracked(name))
       return true;
   }
-  for (const char* name : kAdvancedCvarNames) {
-    if (is_tracked(name))
-      return true;
-  }
-  // Not in either list above since it gets a custom row (dynamic dropdown),
-  // not the generic DrawCvarWidget path.
-  return is_tracked("gpu_plugin");
+  return false;
 }
 
 // resolution_scale value that renders at "100%" (native) for a given display
@@ -608,12 +597,49 @@ void SaveBasicCvars(const std::filesystem::path& path) {
 }
 
 // Populated once by InitSettingsCaches() at startup; CuratedSettingsDialog
-// reads from these instead of re-enumerating GPU plugins/Vulkan devices
-// every time the F4 overlay is opened.
-std::vector<std::string> g_gpu_plugin_names_cache;
+// reads from these instead of re-enumerating Vulkan devices every time the
+// F4 overlay is opened.
 #if REX_HAS_VULKAN
 std::vector<rex::ui::vulkan::DeviceInfo> g_vulkan_devices_cache;
 #endif
+
+// The restart banner and the per-row restart asterisk.
+constexpr ImVec4 kRestartColor(1.0f, 0.85f, 0.2f, 1.0f);
+
+// Fixed pixel sizes in the settings overlay, which ScaleAllSizes cannot reach.
+float Px(float pixels) { return pixels * UiScale(); }
+
+// Draws nothing; it is a dialog only to get a per frame call inside the ImGui
+// frame. A change lands in full on the next frame, since the font size is
+// fixed at NewFrame. Sizes are rescaled from the unscaled style captured on
+// the first call, because ScaleAllSizes compounds; colors are left alone, so
+// a theme change made at runtime survives.
+class UiScaleApplier : public rex::ui::ImGuiDialog {
+ public:
+  explicit UiScaleApplier(rex::ui::ImGuiDrawer* drawer) : rex::ui::ImGuiDialog(drawer) {}
+
+ protected:
+  void OnDraw(ImGuiIO& /*io*/) override {
+    ImGuiStyle& style = ImGui::GetStyle();
+    if (!base_) {
+      base_ = style;
+    }
+    const float scale = UiScale();
+    if (scale == applied_) {
+      return;
+    }
+    ImGuiStyle scaled = *base_;
+    scaled.ScaleAllSizes(scale);
+    scaled.FontScaleMain = base_->FontScaleMain * scale;
+    std::copy(std::begin(style.Colors), std::end(style.Colors), std::begin(scaled.Colors));
+    style = scaled;
+    applied_ = scale;
+  }
+
+ private:
+  std::optional<ImGuiStyle> base_;
+  float applied_ = 1.0f;
+};
 
 class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
  public:
@@ -626,7 +652,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         user_settings_path_(std::move(user_settings_path)),
         app_config_path_(std::move(app_config_path)),
         input_system_(input_system) {
-    gpu_plugin_names_ = g_gpu_plugin_names_cache;
 #if REX_HAS_VULKAN
     vulkan_devices_ = g_vulkan_devices_cache;
 #endif
@@ -634,7 +659,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
  protected:
   void OnDraw(ImGuiIO& /*io*/) override {
-    ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowBgAlpha(0.9f);
     if (!ImGui::Begin("Settings##rex", nullptr,
                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
@@ -643,7 +667,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     }
 
     if (AnyPendingRestart()) {
-      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.2f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_Text, kRestartColor);
       ImGui::TextWrapped("Some changes require a restart to take effect.");
       ImGui::PopStyleColor();
       ImGui::SameLine();
@@ -656,38 +680,71 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         // RestartNow() marshals the close back to the UI thread.
         RestartNow();
       }
-      ImGui::Separator();
     }
 
     DrawUpdateSection();
 
-    DrawFullscreenRow();
-    DrawRenderScaleRow();
-    DrawRenderFilterRow();
-    DrawFieldOfViewRow();
-    DrawFrameRateRow();
-    DrawVsyncRow();
-    DrawAudioMuteRow();
-    DrawAudioVolumeRow();
-#if defined(_WIN32)
-    DrawTimerResolutionRow();
-#endif
-    DrawLanguageRow();
-    DrawFieldLeaderModelRow();
-    DrawFieldActionModelRow();
-    DrawInputBackendRow();
+    if (ImGui::BeginTabBar("##settings_tabs")) {
+      if (ImGui::BeginTabItem("Graphics")) {
+        DrawCvarRow("Fullscreen", "fullscreen");
+        DrawUiScaleRow();
+        DrawRenderScaleRow();
+        DrawFieldOfViewRow();
+        DrawFrameRateRow();
+        DrawRenderFilterRow();
+        // Takes effect immediately on both renderers: the Xenos plugin reads
+        // the cvar per vblank, the native renderer on the next present.
+        DrawCvarRow("VSync", "vsync");
 #if REX_HAS_VULKAN
-    if (rex::cvar::GetFlagByName("gpu_backend") == "vulkan") {
-      DrawVulkanDeviceRow();
-    }
+        if (rex::cvar::GetFlagByName("gpu_backend") == "vulkan") {
+          DrawVulkanDeviceRow();
+        }
 #endif
-
-    ImGui::Separator();
-    if (ImGui::CollapsingHeader("Advanced")) {
-      for (const char* name : kAdvancedCvarNames) {
-        DrawAdvancedRow(name);
+        ImGui::EndTabItem();
       }
-      DrawGpuPluginRow();
+      if (ImGui::BeginTabItem("Audio")) {
+        DrawCvarRow("Mute Audio", "audio_mute");
+        DrawAudioVolumeRow();
+        DrawGameVolumeRow("Music Volume", ETERNALSONATA_SETTING_VOLUME_MUSIC, 0);
+        DrawGameVolumeRow("Sound Effects Volume", ETERNALSONATA_SETTING_VOLUME_SFX, 1);
+        DrawGameVolumeRow("Voice Volume", ETERNALSONATA_SETTING_VOLUME_VOICE, 2);
+#if defined(_WIN32)
+        DrawTimerResolutionRow();
+#endif
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Input")) {
+        DrawCvarRow("Input Backend", "input_backend");
+        DrawCvarRow("Invert Aim X", "aim_invert_x");
+        DrawCvarRow("Invert Aim Y", "aim_invert_y");
+        ImGui::Separator();
+        DrawCvarRow("Gyro Aiming", "gyro_aim");
+        if (rex::cvar::GetFlagByName("gyro_aim") == "true") {
+          DrawSensitivityRow("Gyro Sensitivity", "gyro_sensitivity");
+          DrawCvarRow("Invert Gyro X", "gyro_invert_x");
+          DrawCvarRow("Invert Gyro Y", "gyro_invert_y");
+        }
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem("Game")) {
+        DrawLanguageRow();
+        DrawVoiceLanguageRow();
+        ImGui::Separator();
+        DrawMultiplierRow("EXP", "enemy_exp_multiplier", kRewardMultiplierSteps,
+                          "Multiplies the EXP every enemy is worth. Stacks with mods that "
+                          "rebalance enemies, and with EXP bonus equipment.");
+        DrawMultiplierRow("Gold", "enemy_gold_multiplier", kRewardMultiplierSteps,
+                          "Multiplies the gold every enemy drops. Stacks with mods that "
+                          "rebalance enemies.");
+        DrawMultiplierRow("Enemy HP", "enemy_hp_multiplier", kHpMultiplierSteps,
+                          "Multiplies every enemy's max HP, for longer or shorter fights. "
+                          "Stacks with mods that rebalance enemies.");
+        ImGui::Separator();
+        DrawFieldLeaderModelRow();
+        DrawFieldActionModelRow();
+        ImGui::EndTabItem();
+      }
+      ImGui::EndTabBar();
     }
 
     ImGui::Separator();
@@ -695,14 +752,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       for (const char* name : kBasicCvarNames) {
         rex::cvar::ResetToDefault(name);
       }
-      for (const char* name : kAdvancedCvarNames) {
-        rex::cvar::ResetToDefault(name);
-      }
-      // Not in either list above since it gets a custom row (dynamic
-      // dropdown), not the generic DrawCvarWidget path.
-      rex::cvar::ResetToDefault("gpu_plugin");
       SaveBasic();
-      SaveAdvanced();
     }
     ImGui::SameLine();
     // Opens the SDK's own full cvar browser (the same one bind_settings/F4
@@ -740,16 +790,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   bool AnyPendingRestart() { return AnyKnownPendingRestart(); }
 
   void SaveBasic() { SaveBasicCvars(user_settings_path_); }
-  // Advanced/gpu_plugin rows used to persist to app_config_path_ (<game>.toml).
-  // That file is now read-only from the game's own UI (the "All Settings..."
-  // browser saves to settings.toml too, see above); <game>.toml can still be
-  // hand-edited for dev-only setup, but nothing here writes to it anymore.
-  void SaveAdvanced() {
-    std::vector<std::string> names(kAdvancedCvarNames.begin(), kAdvancedCvarNames.end());
-    names.push_back("gpu_plugin");
-    rex::cvar::SaveConfigSubset(user_settings_path_, names);
-  }
-
   // Game self-update (see rex::system::AutoUpdater), surfaced here rather
   // than the SDK's mod manager overlay (F1) since a player who never touches
   // mods should still be told about an available update
@@ -795,7 +835,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         }
       }
 #endif
-      ImGui::Separator();
       return;
     }
 
@@ -808,14 +847,12 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       } else {
         ImGui::TextDisabled("Downloading update...");
       }
-      ImGui::Separator();
       return;
     }
     if (install.done && !install.ok) {
       ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
       ImGui::TextWrapped("%s", install.message.c_str());
       ImGui::PopStyleColor();
-      ImGui::Separator();
       return;
     }
 
@@ -833,47 +870,143 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     if (ImGui::SmallButton("Download Update")) {
       auto_updater_.InstallAsync(*info, rex::system::AutoUpdater::InstallRoot());
     }
-    ImGui::Separator();
   }
 
-  void DrawFullscreenRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("fullscreen");
+  // A row's label, with a yellow asterisk when `cvar` only takes effect after a
+  // restart, and in yellow itself once it has been changed and is waiting for
+  // one. Returns whether the label was hovered, for the row's own tooltip.
+  bool DrawRowLabel(const char* label, const char* cvar) {
+    const bool pending = cvar && CvarPendingRestart(cvar);
+    if (pending) {
+      ImGui::TextColored(kRestartColor, "%s", label);
+    } else {
+      ImGui::TextUnformatted(label);
+    }
+    bool hovered = ImGui::IsItemHovered();
+    const auto* entry = cvar ? rex::cvar::GetFlagInfo(cvar) : nullptr;
+    if (entry && entry->lifecycle == rex::cvar::Lifecycle::kRequiresRestart) {
+      ImGui::SameLine(0.0f, Px(2.0f));
+      ImGui::TextColored(kRestartColor, "*");
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Requires a restart.");
+      }
+    }
+    return hovered;
+  }
+
+  // A plain cvar row: label, the SDK's generic widget, and the cvar's own
+  // description as a tooltip unless the row has a better one.
+  void DrawCvarRow(const char* label, const char* name, const char* tooltip = nullptr) {
+    const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
-    ImGui::TextUnformatted("Fullscreen");
-    ImGui::SameLine(180.0f);
-    ImGui::PushID("fullscreen");
-    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
+    if (DrawRowLabel(label, name)) {
+      if (tooltip) {
+        ImGui::SetTooltip("%s", tooltip);
+      } else if (!entry->description.empty()) {
+        ImGui::SetTooltip("%s", entry->description.c_str());
+      }
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::PushID(name);
+    if (rex::ui::DrawCvarWidget(*entry, Px(160.0f), /*persist=*/true)) {
       SaveBasic();
     }
     ImGui::PopID();
   }
 
-  // Takes effect immediately on both renderers: the Xenos plugin reads the
-  // cvar per vblank, and the native renderer applies it to the swap chain on
-  // the next present. Absent from the UI entirely if whatever is rendering
-  // never registered it.
-  void DrawVsyncRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("vsync");
+  // Discrete steps, so the shipped balance is always exactly one notch. The
+  // label shows the cvar's real value, which a hand edited config may have
+  // put between two steps.
+  void DrawMultiplierRow(const char* label, const char* name, std::span<const double> steps,
+                         const char* tooltip) {
+    const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
-    ImGui::TextUnformatted("VSync");
-    ImGui::SameLine(180.0f);
-    ImGui::PushID("vsync");
-    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
+    const double value = std::atof(entry->getter().c_str());
+    int idx = 0;
+    for (int i = 1; i < static_cast<int>(steps.size()); ++i) {
+      if (std::abs(steps[i] - value) < std::abs(steps[idx] - value))
+        idx = i;
+    }
+    char text[16];
+    std::snprintf(text, sizeof(text), "%gx", value);
+
+    if (DrawRowLabel(label, name)) {
+      ImGui::SetTooltip("%s", tooltip);
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID(name);
+    if (ImGui::SliderInt("##v", &idx, 0, static_cast<int>(steps.size()) - 1, text,
+                         ImGuiSliderFlags_NoInput)) {
+      char step[16];
+      std::snprintf(step, sizeof(step), "%g", steps[idx]);
+      rex::cvar::SetFlagByName(name, step, /*persist=*/true);
       SaveBasic();
     }
     ImGui::PopID();
   }
 
-  void DrawAudioMuteRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("audio_mute");
+  // Committed on release: applied live, the slider would rescale under the
+  // cursor mid drag and jump between steps.
+  void DrawUiScaleRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("ui_scale");
     if (!entry)
       return;
-    ImGui::TextUnformatted("Mute Audio");
-    ImGui::SameLine(180.0f);
-    ImGui::PushID("audio_mute");
-    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
+    const double value = std::atof(entry->getter().c_str());
+    int idx = ui_scale_drag_idx_;
+    if (idx < 0) {
+      idx = 0;
+      for (int i = 1; i < static_cast<int>(kUiScaleSteps.size()); ++i) {
+        if (std::abs(kUiScaleSteps[i] - value) < std::abs(kUiScaleSteps[idx] - value))
+          idx = i;
+      }
+    }
+    char text[16];
+    std::snprintf(text, sizeof(text), "%d%%%%",
+                  static_cast<int>(std::lround(
+                      (ui_scale_drag_idx_ < 0 ? value : kUiScaleSteps[idx]) * 100.0)));
+
+    if (DrawRowLabel("UI Scale", "ui_scale")) {
+      ImGui::SetTooltip("Size of these overlay windows and their text.");
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("ui_scale");
+    if (ImGui::SliderInt("##v", &idx, 0, static_cast<int>(kUiScaleSteps.size()) - 1, text,
+                         ImGuiSliderFlags_NoInput)) {
+      ui_scale_drag_idx_ = idx;
+    }
+    if (ImGui::IsItemDeactivated() && ui_scale_drag_idx_ >= 0) {
+      char step[16];
+      std::snprintf(step, sizeof(step), "%g", kUiScaleSteps[ui_scale_drag_idx_]);
+      rex::cvar::SetFlagByName("ui_scale", step, /*persist=*/true);
+      SaveBasic();
+      ui_scale_drag_idx_ = -1;
+    }
+    ImGui::PopID();
+  }
+
+  // The generic Double widget is a bare input box; a slider reads better, and
+  // the file is written once the drag ends rather than on every frame of it.
+  void DrawSensitivityRow(const char* label, const char* name) {
+    const auto* entry = rex::cvar::GetFlagInfo(name);
+    if (!entry)
+      return;
+    float value = static_cast<float>(std::atof(entry->getter().c_str()));
+    if (DrawRowLabel(label, name) && !entry->description.empty()) {
+      ImGui::SetTooltip("%s", entry->description.c_str());
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID(name);
+    if (ImGui::SliderFloat("##v", &value, 0.1f, 5.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+      char text[16];
+      std::snprintf(text, sizeof(text), "%.2f", value);
+      rex::cvar::SetFlagByName(name, text, /*persist=*/true);
+    }
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
       SaveBasic();
     }
     ImGui::PopID();
@@ -889,21 +1022,53 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     const auto* entry = rex::cvar::GetFlagInfo("audio_volume");
     if (!entry)
       return;
-    const auto* mute_entry = rex::cvar::GetFlagInfo("audio_mute");
-    if (mute_entry && mute_entry->getter() == "true")
-      return;
 
     int percent = VolumePercentFromAmplitude(std::atof(entry->getter().c_str()));
 
-    ImGui::TextUnformatted("Volume");
-    ImGui::SameLine(180.0f);
-    ImGui::SetNextItemWidth(160.0f);
+    DrawRowLabel("Master Volume", "audio_volume");
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("audio_volume");
     bool changed = ImGui::SliderInt("##v", &percent, 0, 100, "%d%%");
     if (changed) {
       rex::cvar::SetFlagByName("audio_volume", std::to_string(VolumeAmplitudeFromPercent(percent)),
                                /*persist=*/true);
       SaveBasic();
+    }
+    ImGui::PopID();
+  }
+
+  // The game's own three volume sliders, through the settings API so they go
+  // through its mixer and land in the save exactly as the Options screen's do.
+  // From this thread a write is queued to the next guest frame, so the value
+  // being dragged is held here until then rather than snapping back.
+  void DrawGameVolumeRow(const char* label, int setting, int slot) {
+    const int current = EternalSonataGetSetting(setting);
+    int& pending = volume_drag_[slot];
+    int percent = pending >= 0 ? pending : current;
+
+    if (DrawRowLabel(label, nullptr)) {
+      ImGui::SetTooltip("The game's own %s, as in its Options screen. Saved with "
+                        "your game data rather than the host settings.",
+                        label);
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID(setting);
+    const bool available = current >= 0;
+    if (!available) {
+      percent = 0;
+      ImGui::BeginDisabled();
+    }
+    if (ImGui::SliderInt("##v", &percent, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+      pending = percent;
+      EternalSonataSetSetting(setting, percent);
+    }
+    if (!ImGui::IsItemActive() && pending == current) {
+      pending = -1;
+    }
+    if (!available) {
+      ImGui::EndDisabled();
     }
     ImGui::PopID();
   }
@@ -931,8 +1096,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       }
     }
 
-    ImGui::TextUnformatted("Audio Timing");
-    if (ImGui::IsItemHovered()) {
+    if (DrawRowLabel("Audio Timing", "host_timer_resolution_ms")) {
       ImGui::SetTooltip(
           "How precisely the game's audio clock is allowed to run.\n\n"
           "\"Host\" leaves your system's own timer alone, which is too coarse "
@@ -946,9 +1110,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
           "line as soon as the current one finishes, trimming those pauses. "
           "Down to taste; it draws more power and can spin fans up.");
     }
-    ImGui::SameLine(180.0f);
+    ImGui::SameLine(Px(180.0f));
     // Match the combo boxes in this menu (Language, Input Backend, ...).
-    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("host_timer_resolution_ms");
     // Discrete 0..N-1 slider; format shows the label of the current option
     // (re-evaluated per frame). NoInput keeps it snapping between presets.
@@ -976,9 +1140,11 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     std::snprintf(label, sizeof(label), "%d%%%%", RenderScaleOptionPercent(idx));
 
     ImGui::PushID("render_scale");
-    ImGui::TextUnformatted("Render Resolution");
-    ImGui::SameLine(180.0f);
-    ImGui::SetNextItemWidth(160.0f);
+    // Whichever cvar SetRenderScalePercent writes: only the fallback restarts.
+    DrawRowLabel("Render Resolution", rex::cvar::GetFlagInfo("render_scale") ? "render_scale"
+                                                                              : "resolution_scale");
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
     // Discrete 0..N-1 slider; the format string carries the percentage.
     if (ImGui::SliderInt("##v", &idx, 0, RenderScaleOptionCount() - 1, label,
                          ImGuiSliderFlags_NoInput)) {
@@ -989,21 +1155,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
   // The sampler every upscale of the world image uses, so it takes effect on the
   // very next frame.
-  void DrawRenderFilterRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("render_pixelated_scaling");
-    if (!entry)
-      return;
-    // At 100% nothing is magnified, so the filter has nothing to choose between.
-    if (RenderScalePercent() >= 100)
-      return;
-    ImGui::TextUnformatted("Pixelated Scaling");
-    ImGui::SameLine(180.0f);
-    ImGui::PushID("render_pixelated_scaling");
-    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
-      SaveBasic();
-    }
-    ImGui::PopID();
-  }
+  void DrawRenderFilterRow() { DrawCvarRow("Pixelated Scaling", "render_pixelated_scaling"); }
 
   // Applies to the next camera setup rather than instantly: the guest calls
   // sub_82108180 when a camera changes, so the view widens on the next cut or
@@ -1017,9 +1169,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     std::snprintf(label, sizeof(label), "%d%%%%", CameraFovOptionPercent(idx));
 
     ImGui::PushID("camera_fov_scale");
-    ImGui::TextUnformatted("Field of View");
-    ImGui::SameLine(180.0f);
-    ImGui::SetNextItemWidth(160.0f);
+    DrawRowLabel("Field of View", "camera_fov_scale");
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
     // Discrete 0..N-1 slider on the same steps the native Options gauge moves
     // through, so the two rows cannot land on values the other cannot show.
     if (ImGui::SliderInt("##v", &idx, 0, CameraFovOptionCount() - 1, label,
@@ -1038,9 +1190,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     const std::vector<LanguageOption> options = GetLanguageOptions();
     const int cur_idx = UserLanguageIndex();
 
-    ImGui::TextUnformatted("Language");
-    ImGui::SameLine(180.0f);
-    ImGui::SetNextItemWidth(160.0f);
+    DrawRowLabel("Language", "user_language");
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("user_language");
     if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
       for (int i = 0; i < static_cast<int>(options.size()); ++i) {
@@ -1059,6 +1211,32 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
+  // Needs a restart: the voice banks are opened by path at boot. The setter
+  // marks the restart and persists on its own.
+  void DrawVoiceLanguageRow() {
+    const int count = VoiceLanguageCount();
+    if (count <= 0)
+      return;
+    const int cur_idx = VoiceLanguageIndex();
+
+    DrawRowLabel("Voice Language", "voice_language");
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("voice_language");
+    if (ImGui::BeginCombo("##v", VoiceLanguageLabel(cur_idx))) {
+      for (int i = 0; i < count; ++i) {
+        bool selected = (i == cur_idx);
+        if (ImGui::Selectable(VoiceLanguageLabel(i), selected)) {
+          SetVoiceLanguageSetting(i);
+        }
+        if (selected)
+          ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::PopID();
+  }
+
   // Which character model the overworld leader wears. The game always spawns
   // Allegretto there regardless of party order; the spawn hook in
   // field_player_model_override.cpp substitutes a different cached model
@@ -1068,8 +1246,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   void DrawFieldLeaderModelRow() {
     int selection = eternalsonata::FieldPlayerModelOverride::Selection();
 
-    ImGui::TextUnformatted("Overworld Model");
-    if (ImGui::IsItemHovered()) {
+    if (DrawRowLabel("Overworld Model", "field_leader_model")) {
       ImGui::SetTooltip(
           "Which character is shown walking around the overworld.\n\n"
           "\"Party Leader\" uses whoever is first in the party, which you reorder "
@@ -1078,8 +1255,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
           "effect the next time you close a menu or move between areas. "
           "Characters whose model has not been loaded yet fall back to the default.");
     }
-    ImGui::SameLine(180.0f);
-    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("field_leader_model");
     if (ImGui::Combo("##v", &selection,
                      eternalsonata::FieldPlayerModelOverride::SelectionNames(),
@@ -1091,22 +1268,14 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   }
 
   void DrawFieldActionModelRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("field_action_default_model");
-    if (!entry)
+    // Only matters when the leader wears a model other than the game's own.
+    if (eternalsonata::FieldPlayerModelOverride::Selection() ==
+        eternalsonata::FieldPlayerModelOverride::kSelectionDefault)
       return;
-    ImGui::TextUnformatted("Compatible Actions");
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip(
-          "Temporarily use the story character model for chest, door, climbing, "
-          "and other field animations. Disable this to keep the selected model, "
-          "which may contort because those animations use an incompatible rig.");
-    }
-    ImGui::SameLine(180.0f);
-    ImGui::PushID("field_action_default_model");
-    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
-      SaveBasic();
-    }
-    ImGui::PopID();
+    DrawCvarRow("Compatible Actions", "field_action_default_model",
+                "Temporarily use the story character model for chest, door, climbing, "
+                "and other field animations. Disable this to keep the selected model, "
+                "which may contort because those animations use an incompatible rig.");
   }
 
   // Controls the frame rate the game runs at. The hooks in
@@ -1116,8 +1285,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   void DrawFrameRateRow() {
     const int cur_idx = FrameRateOptionIndex();
 
-    ImGui::TextUnformatted("Frame Rate");
-    if (ImGui::IsItemHovered()) {
+    if (DrawRowLabel("Frame Rate", "frame_rate")) {
       ImGui::SetTooltip(
           "How often the in-game scene and simulation advance. The original "
           "game is capped at 30 FPS; Unlocked runs as fast as the CPU and GPU "
@@ -1125,9 +1293,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
           "rather than running the game in slow motion, returning to 60 once "
           "there is headroom again.");
     }
-    ImGui::SameLine(180.0f);
+    ImGui::SameLine(Px(180.0f));
     // Match the combo boxes in this menu (Language, Input Backend, ...).
-    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("frame_rate");
     int sel = cur_idx;
     // Discrete 0..N-1 slider; format shows the label of the current option
@@ -1138,62 +1306,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
                          ImGuiSliderFlags_NoInput)) {
       // Sets both cvars, and persists them itself - hence no SaveBasic here.
       SetFrameRateOption(sel);
-    }
-    ImGui::PopID();
-  }
-
-  void DrawInputBackendRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("input_backend");
-    if (!entry)
-      return;
-    ImGui::TextUnformatted("Input Backend");
-    ImGui::SameLine(180.0f);
-    ImGui::PushID("input_backend");
-    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
-      SaveBasic();
-    }
-    ImGui::PopID();
-  }
-
-  // gpu_plugin names a rexgpu-<name>[postfix].dll staged next to the
-  // executable; unlike gpu_backend it has no fixed `.allowed(...)` list
-  // since the valid set depends on what's actually staged there, so this
-  // combo is populated from rex::system::EnumerateGpuPlugins() instead of
-  // going through the generic DrawCvarWidget (which would fall back to a
-  // plain text field for an unconstrained string cvar). The one entry that is
-  // not a staged DLL is "plume", appended in InitSettingsCaches().
-  void DrawGpuPluginRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("gpu_plugin");
-    if (!entry || gpu_plugin_names_.empty())
-      return;
-
-    std::string current = entry->getter();
-    int cur_idx = 0;
-    for (int i = 0; i < static_cast<int>(gpu_plugin_names_.size()); ++i) {
-      if (current == gpu_plugin_names_[i]) {
-        cur_idx = i;
-        break;
-      }
-    }
-
-    ImGui::TextUnformatted("gpu_plugin");
-    if (!entry->description.empty() && ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("%s", entry->description.c_str());
-    }
-    ImGui::SameLine(240.0f);
-    ImGui::SetNextItemWidth(160.0f);
-    ImGui::PushID("gpu_plugin");
-    if (ImGui::BeginCombo("##v", gpu_plugin_names_[cur_idx].c_str())) {
-      for (int i = 0; i < static_cast<int>(gpu_plugin_names_.size()); ++i) {
-        bool selected = (i == cur_idx);
-        if (ImGui::Selectable(gpu_plugin_names_[i].c_str(), selected)) {
-          rex::cvar::SetFlagByName("gpu_plugin", gpu_plugin_names_[i], /*persist=*/true);
-          SaveAdvanced();
-        }
-        if (selected)
-          ImGui::SetItemDefaultFocus();
-      }
-      ImGui::EndCombo();
     }
     ImGui::PopID();
   }
@@ -1217,12 +1329,11 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       return real_idx < 0 ? kAuto : vulkan_devices_[real_idx].name;
     };
 
-    ImGui::TextUnformatted("Vulkan Device");
-    if (!entry->description.empty() && ImGui::IsItemHovered()) {
+    if (DrawRowLabel("Vulkan Device", "vulkan_device") && !entry->description.empty()) {
       ImGui::SetTooltip("%s", entry->description.c_str());
     }
-    ImGui::SameLine(180.0f);
-    ImGui::SetNextItemWidth(160.0f);
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("vulkan_device");
     if (ImGui::BeginCombo("##v", label_for(current).c_str())) {
       {
@@ -1255,38 +1366,18 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   }
 #endif
 
-  void DrawAdvancedRow(const char* name) {
-    const auto* entry = rex::cvar::GetFlagInfo(name);
-    if (!entry)
-      return;
-
-    bool read_only = (entry->lifecycle == rex::cvar::Lifecycle::kInitOnly);
-    ImGui::PushID(name);
-    if (read_only)
-      ImGui::BeginDisabled();
-
-    ImGui::TextUnformatted(name);
-    if (!entry->description.empty() && ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("%s", entry->description.c_str());
-    }
-    ImGui::SameLine(240.0f);
-    if (rex::ui::DrawCvarWidget(*entry, 160.0f, /*persist=*/true)) {
-      SaveAdvanced();
-    }
-
-    if (read_only)
-      ImGui::EndDisabled();
-    ImGui::PopID();
-  }
-
   rex::ui::Window* window_;
   std::filesystem::path user_settings_path_;
   std::filesystem::path app_config_path_;
-  std::vector<std::string> gpu_plugin_names_;
 #if REX_HAS_VULKAN
   std::vector<rex::ui::vulkan::DeviceInfo> vulkan_devices_;
 #endif
   rex::input::InputSystem* input_system_;
+  // The UI Scale step being dragged to, or -1 when not dragging.
+  int ui_scale_drag_idx_ = -1;
+  // Game volumes set but not yet applied by the guest, or -1; see
+  // DrawGameVolumeRow.
+  int volume_drag_[3] = {-1, -1, -1};
   std::unique_ptr<rex::ui::SettingsDialog> dev_settings_overlay_;
 
   rex::system::AutoUpdater auto_updater_;
@@ -1478,11 +1569,6 @@ void InitSettingsCaches() {
   // reads it from the guest thread, so it must not be latched there.
   BootUserLanguageIndex();
   BootVoiceLanguageIndex();
-  g_gpu_plugin_names_cache = rex::system::EnumerateGpuPlugins();
-  // Not a staged DLL, so EnumerateGpuPlugins() never reports it: it selects
-  // this project's own renderer instead of any plugin. Offer it anyway, or the
-  // combo below has no way to reach it. See native_renderer.h.
-  g_gpu_plugin_names_cache.emplace_back(eternalsonata::kNativeRendererPluginName);
 #if REX_HAS_VULKAN
   g_vulkan_devices_cache = rex::ui::vulkan::EnumerateDevices();
 #endif
@@ -2130,6 +2216,12 @@ void SetResolutionSetting(const char* value) {
                              /*persist=*/true);
   }
   SaveUserSettings();
+}
+
+float UiScale() { return static_cast<float>(std::clamp(REXCVAR_GET(ui_scale), 0.5, 3.0)); }
+
+std::unique_ptr<rex::ui::ImGuiDialog> CreateUiScaleApplier(rex::ui::ImGuiDrawer* drawer) {
+  return std::make_unique<UiScaleApplier>(drawer);
 }
 
 std::unique_ptr<rex::ui::ImGuiDialog> CreateSettingsDialog(

@@ -343,10 +343,17 @@ int BootUserLanguageIndex();
 // the game's Options screen.
 void SetResolutionSetting(const char* value);
 
+// Scales every ImGui overlay except the SDK's touch controls, whose layout is in
+// window pixels. Constructing it registers it with the drawer, and it applies
+// ui_scale once per frame from then on, so keep it alive for the whole session.
+std::unique_ptr<rex::ui::ImGuiDialog> CreateUiScaleApplier(rex::ui::ImGuiDrawer* drawer);
+
+// The ui_scale cvar, clamped, for overlays that size things in fixed pixels.
+float UiScale();
+
 // Creates the curated settings overlay. `user_settings_path` is where the
 // friendly settings (Fullscreen, Resolution) are persisted;
-// `app_config_path` is where everything else (the Advanced section) is
-// persisted, matching the SDK's normal cvar config file. `window` is used
+// `app_config_path` is the SDK's normal cvar config file, loaded at boot. `window` is used
 // by the "Restart Now" button on the pending-restart banner: it relaunches
 // the process (rex::platform::process::Relaunch) then requests `window`
 // close so the new instance picks up the just-changed cvars. `input_system`
