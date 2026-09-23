@@ -1748,11 +1748,6 @@ constexpr int kVoiceStockValues = 2;
 // the two ranges cannot collide however many rows are registered.
 constexpr u32 kVoiceSidBase = kRowSidBase + kRowSidStride * kMaxOptionRows;
 
-// The selected value, or -1 until the first Options build resolves it. Held
-// here rather than read from the cvar every frame because for values 0 and 1
-// the authority is the guest's byte, not the cvar: those two are the game's own
-// and the game's own handler moves them.
-int g_voice_index = -1;
 // One guest string per extra value, allocated on the first build that needs it.
 std::vector<u32> g_voice_addr;
 
@@ -1774,13 +1769,11 @@ int VoiceGuestIndex(u8* base) {
 }
 
 // The row's current value. While it is one of the stock two the guest's byte is
-// the authority, so this follows it rather than caching: the player can move
-// that row through the game's own code path at any time.
+// the authority, since the game's own handler moves it; a mod value can only
+// come from the cvar.
 int VoiceIndex(u8* base) {
-  if (g_voice_index >= kVoiceStockValues) {
-    return g_voice_index;
-  }
-  return VoiceGuestIndex(base);
+  const int active = eternalsonata::ActiveVoiceLanguageIndex();
+  return active >= kVoiceStockValues ? active : VoiceGuestIndex(base);
 }
 
 // Runtime x of the row's bar for value `index`. The stock two sit on the plain
@@ -2391,12 +2384,6 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     WriteTextRecord(base, at, kVoiceSidBase + v,
                     st.value_base_x + kBarColumnStride * index, kVoiceRecordY);
     at += kTextRecordBytes;
-  }
-
-  // Resolve the row's selection once, on the first build: past that the player
-  // owns it, and for the stock two values the guest's byte does.
-  if (g_voice_index < 0) {
-    g_voice_index = eternalsonata::BootVoiceLanguageIndex();
   }
 
   // Bars last. Both handlers index their screen's id array **positionally** -
@@ -3686,8 +3673,7 @@ REX_HOOK_RAW(sub_82201620) {
     // "correcting" it just because the cursor passed over the row would
     // rewrite settings.toml for nothing.
     if (fresh & (kLeftMask | kRightMask)) {
-      g_voice_index = VoiceGuestIndex(base);
-      VoiceSetIndex(g_voice_index);
+      VoiceSetIndex(VoiceGuestIndex(base));
     }
     return;
   }
@@ -3695,7 +3681,6 @@ REX_HOOK_RAW(sub_82201620) {
   if (next == cur) {
     return;
   }
-  g_voice_index = next;
   if (next < kVoiceStockValues) {
     // Back onto one of the game's own values. The byte has to be written here:
     // while an extra value was selected it was left at the donor's, which is
@@ -3709,6 +3694,8 @@ REX_HOOK_RAW(sub_82201620) {
   }
   PlaceVoiceBar(base, kPageOptions, next, /*move=*/true);
   VoiceSetIndex(next);
+  // The stock handler reloads the banks itself; this move bypassed it.
+  eternalsonata::RequestVoiceBankReload();
   PlayMenuSfx(base, kPages[kPageOptions].change_sfx);
 }
 

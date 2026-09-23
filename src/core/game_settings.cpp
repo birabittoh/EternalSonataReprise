@@ -195,13 +195,13 @@ void WriteLanguageSetting(int setting, int value) {
   // Returning to one of the game's own two also moves its selector byte, as the
   // native Voice row does; a mod language has no byte and skips this.
   const int guest_byte = VoiceLanguageGuestByte(value);
-  if (guest_byte < 0) {
-    return;
+  if (guest_byte >= 0) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (BlockReadable()) {
+      WriteGuestByte(kVoiceLanguage, static_cast<uint8_t>(guest_byte));
+    }
   }
-  std::lock_guard<std::mutex> lock(g_mutex);
-  if (BlockReadable()) {
-    WriteGuestByte(kVoiceLanguage, static_cast<uint8_t>(guest_byte));
-  }
+  RequestVoiceBankReload();
 }
 
 int SettingMin(int setting) { return LanguageSetting(setting) ? 0 : kSettings[setting].min; }
