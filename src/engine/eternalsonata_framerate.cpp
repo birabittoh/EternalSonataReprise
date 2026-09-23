@@ -1169,21 +1169,15 @@ constexpr double kPickHoldUnits = 5.0;
 REX_EXTERN(__imp__sub_8216AB20);
 REX_HOOK_RAW(sub_8216AB20) {
   const u32 obj = ctx.r3.u32;
-  const u32 saved = REX_LOAD_U32(obj + 364);
   if (!g_wall_active) {
     __imp__sub_8216AB20(ctx, base);
     return;
   }
+  // The caller has already loaded obj+364 into f1, so rescale the argument.
   if (g_wall_prev_units > 0.0) {
-    float d;
-    std::memcpy(&d, &saved, 4);
-    d = static_cast<float>(d * (g_wall_units / g_wall_prev_units));
-    u32 bits;
-    std::memcpy(&bits, &d, 4);
-    REX_STORE_U32(obj + 364, bits);
+    ctx.f1.f64 = static_cast<float>(ctx.f1.f64 * (g_wall_units / g_wall_prev_units));
   }
   __imp__sub_8216AB20(ctx, base);
-  REX_STORE_U32(obj + 364, saved);
 
   const u32 pick = ctx.r3.u32;
   u32 out = pick;
