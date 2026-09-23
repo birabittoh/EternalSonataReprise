@@ -482,6 +482,9 @@ class EternalsonataApp : public rex::ReXApp {
     // turns it on. See src/guest_profiler.h.
     guest_profiler_overlay_ = eternalsonata::CreateGuestProfilerOverlay(imgui_drawer());
 
+    // Applies the ui_scale cvar to every overlay, so it lives as long as they do.
+    ui_scale_applier_ = eternalsonata::CreateUiScaleApplier(imgui_drawer());
+
     // Constructed unconditionally, same reasoning as the profiler overlay
     // above: the constructor is what registers the back/gamepad-Back binds.
     host_menu_ = std::make_unique<eternalsonata::HostMenu>(window(), runtime()->user_data_root(),
@@ -567,6 +570,7 @@ class EternalsonataApp : public rex::ReXApp {
 
   // F8 device list, backed by the SDK's generic input snapshot API.
   std::unique_ptr<rex::ui::ImGuiDialog> input_overlay_;
+  std::unique_ptr<rex::ui::ImGuiDialog> ui_scale_applier_;
 
   // Back-button entry point into the F-key overlays on touch-only devices.
   // See host_menu.h.
