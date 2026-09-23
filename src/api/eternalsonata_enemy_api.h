@@ -103,7 +103,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_ENEMY_ABI_VERSION 1u
+#define ETERNALSONATA_ENEMY_ABI_VERSION 2u
 
 // Event names on the mod registry bus. See the note at the top.
 #define ETERNALSONATA_ENEMY_EVENT_OVERRIDE_SET "eternalsonata.enemy.override.set"
@@ -355,6 +355,27 @@ typedef int (*EternalSonataGetEnemyTypeOverrideFn)(int type, int stat,
 // across changes.
 typedef int (*EternalSonataGetEnemyOverrideCountFn)(void);
 typedef int (*EternalSonataGetEnemyOverridesFn)(EternalSonataEnemyOverride* out, int max);
+
+// ---------------------------------------------------------------------------
+// Player multipliers (version 2)
+// ---------------------------------------------------------------------------
+//
+// The player can scale EXP, gold and max HP for every enemy through the
+// enemy_exp_multiplier, enemy_gold_multiplier and enemy_hp_multiplier cvars.
+// They are applied after the overrides above, whichever of a type's own rule
+// or an ANY rule wins, and to absolute values too, so a mod's rebalance and the
+// player's setting always stack: final = override(original) * multiplier.
+// Current HP follows max HP, keeping the fraction, and so is scaled with it.
+//
+// A mod that needs an exact number regardless divides by this value. While a
+// multiplier is not 1, a per-instance write to its stat is overwritten on the
+// next frame, the same as with an override.
+//
+// Mods can read the multipliers but not set them: they are the player's.
+
+// Writes the multiplier on `stat` to `out`: 1.0 for every stat the player
+// cannot scale. Returns ETERNALSONATA_ENEMY_OK or a negative error.
+typedef int (*EternalSonataGetEnemyGlobalMultiplierFn)(int stat, float* out);
 
 #ifdef __cplusplus
 }  // extern "C"

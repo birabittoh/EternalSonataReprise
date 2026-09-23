@@ -188,3 +188,10 @@ percentages (100 = as shipped) so one integer ABI covers everything.
   health the enemy enters battle with.
 * **Setting maximum HP rescales current HP** to hold the ratio, so ×2 HP is a
   fight twice as long rather than one that starts half over.
+* **Player multipliers stack on top.** The `enemy_exp_multiplier`,
+  `enemy_gold_multiplier` and `enemy_hp_multiplier` cvars scale every enemy's
+  EXP, gold and max HP after mod overrides resolve, so a mod rebalance and the
+  player's setting compound instead of one replacing the other. They are a
+  separate layer rather than an `ANY` override because a type's own rule would
+  otherwise hide them. Mods read them with `EternalSonataGetEnemyGlobalMultiplier`.
+  EXP-bonus equipment still applies after this.
