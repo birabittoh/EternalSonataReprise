@@ -403,11 +403,34 @@ REX_HOOK_RAW(sub_820F9EC8) {
   __imp__sub_820F9EC8(ctx, base);
 }
 
+// sub_820FA210 suspends the field and clears mm+36; sub_820F9EC8 sets it again.
+// A pending warp is applied through that pair, the way the pause menu does it.
+REX_EXTERN(sub_820FA210);
+REX_EXTERN(sub_820F9EC8);
+
+constexpr uint32_t kFieldActiveOffset = 36u;
+
+bool WarpPending() {
+  std::lock_guard<std::mutex> lock(eternalsonata::GetWarpMutex());
+  return eternalsonata::GetWarpPending();
+}
+
 // sub_820FE7F8: the map manager's per frame tick. Cutscenes script the leader,
 // so the swap waits for them to end.
 REX_EXTERN(__imp__sub_820FE7F8);
 
 REX_HOOK_RAW(sub_820FE7F8) {
+  if (WarpPending() && REX_LOAD_U8(kMapManager + kFieldActiveOffset) == 1) {
+    // The reset tears the field down, so this frame's tick is skipped.
+    PPCContext saved = ctx;
+    ctx.r3.u32 = kMapManager;
+    sub_820FA210(ctx, base);
+    ctx = saved;
+    ctx.r3.u32 = kMapManager;
+    sub_820F9EC8(ctx, base);
+    ctx = saved;
+    return;
+  }
   if (!eternalsonata::IsCutsceneActive()) {
     ApplySelectedModel(ctx, base);
   }
