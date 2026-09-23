@@ -1,3 +1,4 @@
+
 # eternalsonata - ReXGlue Recompiled Project
 #
 # This file is yours to edit. 'rexglue migrate' will NOT overwrite it.
@@ -131,6 +132,7 @@ add_custom_command(
     DEPENDS
         ${CMAKE_SOURCE_DIR}/scripts/gen-fonts.py
         ${CMAKE_SOURCE_DIR}/src/fonts/PTSerif-Regular.ttf
+        ${CMAKE_SOURCE_DIR}/src/fonts/Roboto-Medium.ttf
     COMMENT "Generating src/fonts.generated.h"
     VERBATIM
 )
