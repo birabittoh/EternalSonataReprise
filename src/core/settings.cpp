@@ -162,6 +162,15 @@ REXCVAR_DEFINE_BOOL(aim_invert_x, false, "Eternal Sonata",
 REXCVAR_DEFINE_BOOL(aim_invert_y, true, "Eternal Sonata",
                     "Invert vertical aiming with long range attacks");
 
+// Read every frame by TurboHeld in eternalsonata_framerate.cpp, the pad
+// counterpart of holding Tab.
+REXCVAR_DEFINE_STRING(fast_forward_button, "rs", "Eternal Sonata",
+                      "Controller button that fast forwards while held: off, a, b, x, y, lb, "
+                      "rb, lt, rt, ls, rs, back, start, dpad_up, dpad_down, dpad_left, "
+                      "dpad_right")
+    .allowed({"off", "a", "b", "x", "y", "lb", "rb", "lt", "rt", "ls", "rs", "back", "start",
+              "dpad_up", "dpad_down", "dpad_left", "dpad_right"});
+
 // Which voice bank suffix the game loads. The two the game ships with are
 // selected by its own byte at 0x8243FC06, which this cvar mirrors rather than
 // replaces: while it names "jpn" or "usa" the path hook stands down entirely
@@ -284,7 +293,7 @@ constexpr std::array kBasicCvarNames = {
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
     "camera_fov_scale", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
-    "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y",
+    "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button",
     "enemy_exp_multiplier", "enemy_gold_multiplier", "enemy_hp_multiplier", "ui_scale"};
 
 // Steps for the Game tab's multiplier rows. HP stops short of zero, the
@@ -717,6 +726,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawCvarRow("Input Backend", "input_backend");
         DrawCvarRow("Invert Aim X", "aim_invert_x");
         DrawCvarRow("Invert Aim Y", "aim_invert_y");
+        DrawCvarRow("Fast Forward", "fast_forward_button",
+                    "Controller button that fast forwards the game while held, like Tab "
+                    "on the keyboard.");
         ImGui::Separator();
         DrawCvarRow("Gyro Aiming", "gyro_aim");
         if (rex::cvar::GetFlagByName("gyro_aim") == "true") {

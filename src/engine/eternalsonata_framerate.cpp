@@ -20,6 +20,9 @@
 
 #include <imgui.h>
 #include <rex/cvar.h>
+#include <rex/input/input_system.h>
+#include <rex/runtime.h>
+#include <rex/system/kernel_state.h>
 
 #include "aim_input.h"
 #include "enemy_system.h"
@@ -32,6 +35,7 @@
 // persisted) in settings.cpp; declared here so the frame-driver hook can read it
 // cheaply.
 REXCVAR_DECLARE(std::string, frame_rate);
+REXCVAR_DECLARE(std::string, fast_forward_button);
 REXCVAR_DECLARE(bool, frame_debug);
 
 // Bisection switches for the wall-clock mode, each bit disables one of its
@@ -486,7 +490,71 @@ void PreciseSleep(std::chrono::steady_clock::duration d) {
 constexpr int kTurboKey = VK_TAB;
 #endif
 
+// The pad counterpart of Tab, set by the fast_forward_button cvar. The drivers
+// are already gated on window focus, and a suppressed guest means an overlay
+// owns the pad.
+bool TurboPadHeld() {
+  using namespace rex::input;
+  struct Binding {
+    const char* name;
+    uint16_t mask;  // 0 for the analog triggers
+  };
+  static constexpr Binding kBindings[] = {
+      {"a", X_INPUT_GAMEPAD_A},
+      {"b", X_INPUT_GAMEPAD_B},
+      {"x", X_INPUT_GAMEPAD_X},
+      {"y", X_INPUT_GAMEPAD_Y},
+      {"lb", X_INPUT_GAMEPAD_LEFT_SHOULDER},
+      {"rb", X_INPUT_GAMEPAD_RIGHT_SHOULDER},
+      {"lt", 0},
+      {"rt", 0},
+      {"ls", X_INPUT_GAMEPAD_LEFT_THUMB},
+      {"rs", X_INPUT_GAMEPAD_RIGHT_THUMB},
+      {"back", X_INPUT_GAMEPAD_BACK},
+      {"start", X_INPUT_GAMEPAD_START},
+      {"dpad_up", X_INPUT_GAMEPAD_DPAD_UP},
+      {"dpad_down", X_INPUT_GAMEPAD_DPAD_DOWN},
+      {"dpad_left", X_INPUT_GAMEPAD_DPAD_LEFT},
+      {"dpad_right", X_INPUT_GAMEPAD_DPAD_RIGHT},
+  };
+  const std::string& choice = REXCVAR_GET(fast_forward_button);
+  const Binding* binding = nullptr;
+  for (const auto& b : kBindings) {
+    if (choice == b.name) {
+      binding = &b;
+      break;
+    }
+  }
+  if (!binding) {
+    return false;
+  }
+
+  auto* kernel = rex::system::kernel_state();
+  auto* runtime = kernel ? kernel->emulator() : nullptr;
+  auto* input = runtime ? static_cast<InputSystem*>(runtime->input_system()) : nullptr;
+  if (!input || input->IsGuestInputSuppressed()) {
+    return false;
+  }
+  for (uint32_t user = 0; user < 4; ++user) {
+    X_INPUT_STATE state{};
+    if (input->GetState(user, &state) != 0) {
+      continue;
+    }
+    const auto& pad = state.gamepad;
+    const bool held = binding->mask ? (pad.buttons & binding->mask) != 0
+                      : choice == "lt" ? pad.left_trigger >= 128
+                                       : pad.right_trigger >= 128;
+    if (held) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool TurboHeld() {
+  if (TurboPadHeld()) {
+    return true;
+  }
 #ifdef _WIN32
   if (!(GetAsyncKeyState(kTurboKey) & 0x8000)) {
     return false;
