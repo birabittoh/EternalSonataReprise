@@ -212,6 +212,11 @@ const char* VoiceLanguageLabel(int index);
 int VoiceLanguageIndex();
 void SetVoiceLanguageSetting(int index);
 
+// Has the guest reload its voice banks for the current selection, on its main
+// thread and outside battle. The stock Options handler does this itself when
+// it moves the byte; every other way of changing the language needs this.
+void RequestVoiceBankReload();
+
 // The two directions between a list index and the guest's own selector byte.
 // They are NOT the same number: the list is ordered the way the Options screen
 // draws the row (English, then Japanese) while the byte counts the other way,
@@ -222,22 +227,20 @@ void SetVoiceLanguageSetting(int index);
 int VoiceLanguageGuestByte(int index);
 int VoiceLanguageIndexForGuestByte(int guest_byte);
 
-// The voice language the process *started* in, latched exactly like
-// BootUserLanguageIndex and for the same reason: the guest caches voice banks
-// keyed on its own selector byte, which a mod voice language leaves at the
-// donor's value, so switching between two mod voice languages mid-run would
-// silently reuse a stale bank.
-int BootVoiceLanguageIndex();
+// VoiceLanguageIndex as last set, safe to read from the guest thread.
+int ActiveVoiceLanguageIndex();
 
-// True when the selected voice language differs from the boot one and either
-// is a mod language. Switching between the shipped two applies live.
-bool VoiceRestartPending();
-bool ModVoiceLanguagesPresent();
+// The guest keys its voice bank caches on its selector byte, which a mod
+// language leaves at its donor's value. While one is active the voice hooks
+// put this key in the byte instead, one per mod language, so switching between
+// them invalidates the caches. -1 for the shipped two. Any nonzero byte makes
+// the path builders try `_usa` first, which the path hook then rewrites.
+constexpr int kModVoiceKeyBase = 0x80;
+int ActiveVoiceKey();
 
-// The filename suffix the path hook appends, or nullptr when the process booted
-// into one of the two voice languages the game ships, in which case the guest's
-// own selector byte decides and the hook must not touch anything.
-const char* BootVoiceSuffix();
+// The filename suffix the path hook appends, or nullptr for the two voice
+// languages the game ships, whose own selector byte decides.
+const char* ActiveVoiceSuffix();
 
 // Subscribes to the four mod-registry events a translation mod publishes.
 // Must run after Runtime exists but before any mod's OnCreateDialogs, i.e. from

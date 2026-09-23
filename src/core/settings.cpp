@@ -14,6 +14,7 @@ extern "C" int EternalSonataSetSetting(int setting, int value);
 #include "native_renderer.h"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -166,12 +167,9 @@ REXCVAR_DEFINE_BOOL(aim_invert_y, true, "Eternal Sonata",
 // and the guest's byte is the only authority. A mod-added id is what turns the
 // hook on and points it at that mod's `_<suffix>` banks.
 //
-// Hot reload because switching between the shipped two only moves the guest's
-// byte, which the game honours live. A switch that involves a mod voice
-// language still needs a restart: the guest caches loaded banks keyed on that
-// byte (sub_821BD1C0 at a1+324/+328, sub_821BD778 at +1956/+1960), which a mod
-// language leaves at its donor's value, so a live switch would replay the bank
-// already in it. VoiceRestartPending tracks that case by hand.
+// Hot reload: the guest's bank caches are keyed on its byte, and while a mod
+// language is active the voice hooks swap in a key of its own (see
+// ActiveVoiceKey), so every switch invalidates them like a stock one does.
 //
 // Not `.allowed(...)`: the valid set is not known until the mods have
 // registered, and an id left behind by a mod that was since disabled has to
@@ -411,9 +409,9 @@ struct ModVoiceLanguage {
 };
 std::vector<ModVoiceLanguage> g_mod_voice_languages;
 
-// What voice_language said at boot, latched once. See BootVoiceLanguageIndex.
-std::string g_boot_voice_id;
-bool g_boot_voice_latched = false;
+// VoiceLanguageIndex, cached for the guest thread: the path hook reads it on
+// every file probe in the game.
+std::atomic<int> g_active_voice{0};
 
 // Normalises a bank filename suffix to the one form the path hook and the TOC
 // writer both use: lowercase, exactly one leading underscore. Empty in, empty
@@ -492,8 +490,6 @@ constexpr std::array kTimerResolutionOptions = {
 // differs from the SDK's factory default doesn't trip it on a fresh launch.
 // See SetFlagByNameImpl's mark_restart parameter in the SDK's cvar.cpp.
 bool CvarPendingRestart(const char* name) {
-  if (std::string_view(name) == "voice_language")
-    return VoiceRestartPending();
   auto pending = rex::cvar::GetPendingRestartFlags();
   return std::find(pending.begin(), pending.end(), name) != pending.end();
 }
@@ -511,7 +507,7 @@ bool AnyKnownPendingRestart() {
     if (is_tracked(name))
       return true;
   }
-  return VoiceRestartPending();
+  return false;
 }
 
 // resolution_scale value that renders at "100%" (native) for a given display
@@ -887,10 +883,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     }
     bool hovered = ImGui::IsItemHovered();
     const auto* entry = cvar ? rex::cvar::GetFlagInfo(cvar) : nullptr;
-    const bool restart =
-        (entry && entry->lifecycle == rex::cvar::Lifecycle::kRequiresRestart) ||
-        (cvar && std::string_view(cvar) == "voice_language" && ModVoiceLanguagesPresent());
-    if (restart) {
+    if (entry && entry->lifecycle == rex::cvar::Lifecycle::kRequiresRestart) {
       ImGui::SameLine(0.0f, Px(2.0f));
       ImGui::TextColored(kRestartColor, "*");
       if (ImGui::IsItemHovered()) {
@@ -1217,8 +1210,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
-  // Live between the shipped two; a mod voice language needs a restart (see
-  // VoiceRestartPending). The setter persists on its own.
+  // Applies live; the setter persists on its own.
   void DrawVoiceLanguageRow() {
     const int count = VoiceLanguageCount();
     if (count <= 0)
@@ -1572,10 +1564,10 @@ void ApplySettingDefaults() {
 
 void InitSettingsCaches() {
   // Latch the boot language before anything can change it (see
-  // BootUserLanguageIndex), and the boot voice language with it: the path hook
-  // reads it from the guest thread, so it must not be latched there.
+  // BootUserLanguageIndex). The voice selection is resolved here too, now that
+  // mods have registered their voice languages.
   BootUserLanguageIndex();
-  BootVoiceLanguageIndex();
+  g_active_voice.store(VoiceLanguageIndex());
 #if REX_HAS_VULKAN
   g_vulkan_devices_cache = rex::ui::vulkan::EnumerateDevices();
 #endif
@@ -1901,43 +1893,25 @@ void SetVoiceLanguageSetting(int index) {
   const auto options = GetVoiceLanguageOptions();
   if (index < 0 || index >= static_cast<int>(options.size()))
     return;
-  BootVoiceLanguageIndex();  // Latch before the write moves the cvar.
   rex::cvar::SetFlagByName("voice_language", options[index].id, /*persist=*/true);
+  g_active_voice.store(index);
   SaveUserSettings();
 }
 
-int BootVoiceLanguageIndex() {
-  // Id latched once, index resolved fresh, exactly as BootUserLanguageIndex
-  // does it and for the same reason: a mod's voice language only joins the list
-  // once that mod has registered.
-  if (!g_boot_voice_latched) {
-    g_boot_voice_latched = true;
-    const auto* entry = rex::cvar::GetFlagInfo("voice_language");
-    g_boot_voice_id = entry ? entry->getter() : std::string();
-  }
-  const auto options = GetVoiceLanguageOptions();
-  for (int i = 0; i < static_cast<int>(options.size()); ++i) {
-    if (g_boot_voice_id == options[i].id)
-      return i;
-  }
-  return 0;
-}
+int ActiveVoiceLanguageIndex() { return g_active_voice.load(); }
 
-bool ModVoiceLanguagesPresent() { return !g_mod_voice_languages.empty(); }
-
-bool VoiceRestartPending() {
-  const int boot = BootVoiceLanguageIndex();
-  const int now = VoiceLanguageIndex();
+int ActiveVoiceKey() {
   const int builtin = static_cast<int>(kBuiltinVoiceLanguages.size());
-  return boot != now && (boot >= builtin || now >= builtin);
+  const int index = g_active_voice.load();
+  return index < builtin ? -1 : kModVoiceKeyBase + (index - builtin);
 }
 
-const char* BootVoiceSuffix() {
-  const auto options = GetVoiceLanguageOptions();
-  const int index = BootVoiceLanguageIndex();
+const char* ActiveVoiceSuffix() {
+  const int index = g_active_voice.load();
   if (index < static_cast<int>(kBuiltinVoiceLanguages.size()))
     return nullptr;  // The guest's own byte decides; the hook stands down.
-  return options[index].suffix;
+  const auto options = GetVoiceLanguageOptions();
+  return index < static_cast<int>(options.size()) ? options[index].suffix : nullptr;
 }
 
 void RegisterLanguageListeners(rex::system::ModRegistry* registry) {

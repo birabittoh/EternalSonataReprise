@@ -6,6 +6,8 @@
 
 #include <rex/hook.h>
 
+#include "guest_main_thread.h"
+#include "room_presence.h"
 #include "settings.h"
 
 // ---------------------------------------------------------------------------
@@ -81,6 +83,35 @@ void WriteGuestPath(u8* base, u32 at, const std::string& path) {
   REX_STORE_U8(at + static_cast<u32>(path.size()), 0);
 }
 
+constexpr u32 kVoiceByte = 0x8243FC06u;  // BYTE2(dword_8243FC04)
+
+// Puts the active mod language's cache key in the guest's byte for the length
+// of a bank cache call, then restores the donor's value so nothing else in the
+// game (the Options row, the save) ever sees it. Nests, since the reload
+// routine calls the other two.
+class VoiceKeyScope {
+ public:
+  explicit VoiceKeyScope(u8* base) : base_(base) {
+    const int key = eternalsonata::ActiveVoiceKey();
+    if (key < 0)
+      return;
+    active_ = true;
+    saved_ = REX_LOAD_U8(kVoiceByte);
+    REX_STORE_U8(kVoiceByte, static_cast<u8>(key));
+  }
+  ~VoiceKeyScope() {
+    if (active_) {
+      u8* base = base_;
+      REX_STORE_U8(kVoiceByte, saved_);
+    }
+  }
+
+ private:
+  u8* base_;
+  bool active_ = false;
+  u8 saved_ = 0;
+};
+
 bool IsVoiceBankPath(const std::string& path) {
   if (path.size() <= kVoiceDirLen + 4)
     return false;
@@ -112,13 +143,10 @@ std::string WithSuffix(const std::string& path, const char* suffix) {
 REX_EXTERN(__imp__sub_8210D380);
 
 REX_HOOK_RAW(sub_8210D380) {
-  // BootVoiceSuffix is null for both shipped voice languages, which is the
-  // overwhelmingly common case and the whole of the "stands down" condition:
-  // the guest's own byte then decides and nothing here runs. It reads a value
-  // latched on the host thread at startup (see BootVoiceLanguageIndex), so this
-  // is a plain load rather than a trip through the cvar registry on every
-  // file-existence check in the game.
-  const char* suffix = eternalsonata::BootVoiceSuffix();
+  // Null for both shipped voice languages, which is the overwhelmingly common
+  // case and the whole of the "stands down" condition: the guest's own byte
+  // then decides and nothing here runs.
+  const char* suffix = eternalsonata::ActiveVoiceSuffix();
   const u32 buffer = ctx.r3.u32;
   if (!suffix || !buffer) {
     __imp__sub_8210D380(ctx, base);
@@ -152,3 +180,54 @@ REX_HOOK_RAW(sub_8210D380) {
   ctx.r3.u32 = buffer;
   __imp__sub_8210D380(ctx, base);
 }
+
+// Every reader that compares the byte against a cache key: party banks
+// (sub_821BD1C0), enemy banks (sub_821BD778), the reload routine the Options
+// row calls (sub_821E6580) and battle setup's enemy bank history (sub_821A0628).
+REX_EXTERN(__imp__sub_821BD1C0);
+REX_EXTERN(__imp__sub_821BD778);
+REX_EXTERN(__imp__sub_821E6580);
+REX_EXTERN(__imp__sub_821A0628);
+
+REX_HOOK_RAW(sub_821BD1C0) {
+  VoiceKeyScope scope(base);
+  __imp__sub_821BD1C0(ctx, base);
+}
+
+REX_HOOK_RAW(sub_821BD778) {
+  VoiceKeyScope scope(base);
+  __imp__sub_821BD778(ctx, base);
+}
+
+REX_HOOK_RAW(sub_821E6580) {
+  VoiceKeyScope scope(base);
+  __imp__sub_821E6580(ctx, base);
+}
+
+REX_HOOK_RAW(sub_821A0628) {
+  VoiceKeyScope scope(base);
+  __imp__sub_821A0628(ctx, base);
+}
+
+namespace {
+
+// Through the hook above, so the reload sees the active key.
+REX_IMPORT(sub_821E6580, g_reload_voice_banks, void());
+
+}  // namespace
+
+namespace eternalsonata {
+
+// Deferred past battle: the reload frees banks a playing clip may still use,
+// and the game itself only ever calls it from the Options screen.
+void RequestVoiceBankReload() {
+  PostToGuestMainThread([] {
+    if (GetRoomPresence().IsBattleActive()) {
+      RequestVoiceBankReload();
+      return;
+    }
+    g_reload_voice_banks();
+  });
+}
+
+}  // namespace eternalsonata
