@@ -60,6 +60,12 @@ void PlumeSetOverlayDrawer(rex::ui::UIDrawer* drawer);
 // anything to decouple.
 void PlumePresentFrame();
 
+// Present a frame holding only the overlays, for the loading screen shown while
+// the UI thread is busy before the guest runs. Waits for its own GPU work, so it
+// never occupies a frame slot the guest's first frames expect to find free.
+// Must not be called once the guest is presenting.
+void PlumePresentOverlayOnly();
+
 // Submit whatever the frame has recorded so far and wait for it, without
 // presenting. The frame carries on recording into a fresh command list
 // afterwards.

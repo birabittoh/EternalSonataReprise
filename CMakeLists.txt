@@ -1,4 +1,3 @@
-
 # eternalsonata - ReXGlue Recompiled Project
 #
 # This file is yours to edit. 'rexglue migrate' will NOT overwrite it.
@@ -282,6 +281,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/item_system.cpp
     src/engine/equipment_system.cpp
     src/core/game_settings.cpp
+    src/core/loading_screen.cpp
     src/engine/flag_system.cpp
     src/core/guest_main_thread.cpp
     src/core/guest_profiler.cpp
