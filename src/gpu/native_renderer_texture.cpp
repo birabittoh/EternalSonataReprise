@@ -435,6 +435,11 @@ uint64_t g_frame = 0;
 // always exactly at the limit and the cache never hit once.
 constexpr uint64_t kApertureRevalidateFrames = 512;
 
+// Textures loaded together would otherwise all revalidate in the same frame.
+constexpr uint32_t kMaxApertureRevalidationsPerFrame = 8;
+uint64_t g_revalidation_frame = ~0ull;
+uint32_t g_revalidations = 0;
+
 // Walks behind the cache, so the saving is visible rather than assumed.
 uint64_t g_aperture_walks = 0;
 uint64_t g_aperture_reuses = 0;
@@ -1404,8 +1409,15 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
 // aperture at most once every kApertureRevalidateFrames. See the fields on
 // MirroredTexture for why this is cached at all.
 const uint8_t* EntrySourcePointer(TextureSourceRange& source, uint8_t* memory_base) {
-  const bool stale = source.pointer == nullptr || source.pointer_frame == ~0ull ||
-                     g_frame - source.pointer_frame >= kApertureRevalidateFrames;
+  const bool unresolved = source.pointer == nullptr || source.pointer_frame == ~0ull;
+  bool stale = unresolved || g_frame - source.pointer_frame >= kApertureRevalidateFrames;
+  if (stale && !unresolved) {
+    if (g_revalidation_frame != g_frame) {
+      g_revalidation_frame = g_frame;
+      g_revalidations = 0;
+    }
+    stale = g_revalidations++ < kMaxApertureRevalidationsPerFrame;
+  }
   if (stale) {
     ++g_aperture_walks;
     source.pointer = GuestPhysicalPointer(memory_base, source.raw_address, source.bytes);
