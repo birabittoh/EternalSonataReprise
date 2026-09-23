@@ -1,15 +1,18 @@
 #include "generated/eternalsonata_init.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -36,7 +39,8 @@ REXCVAR_DECLARE(bool, frame_debug);
 // fast), 4 animation fixups, 8 physics and script timer frame time, 16
 // script wait, 32 the NMTN key grid sampling, 64 the physics substep rescale,
 // 128, 256 and 512 the three physics collision passes, 1024 root velocity,
-// 2048 cloth spread timing, 4096 long chain length correction at every frame rate.
+// 2048 cloth spread timing, 4096 long chain length correction at every frame
+// rate, 16384 the 60 Hz cloth clock.
 REXCVAR_DEFINE_INT32(frame_wall_debug, 0, "Eternal Sonata",
                      "Bitmask disabling parts of the unlocked wall-clock stepping (debug)");
 
@@ -636,6 +640,7 @@ double g_wall_prev_units = 5.0; // last frame's, for measurements made with it
 double g_wall_avg_units = 5.0;  // smoothed, for setup-time conversions
 int g_wall_step = 5;            // the integer step the byte currently encodes
 u8 g_wall_rate = 60;            // smoothed fps with hysteresis
+u64 g_wall_frame = 0;           // advances once per wall-clock frame
 
 // The byte whose `300 / byte` is `step`. 300 itself doesn't fit, so step 1
 // uses 255 (300 / 255 == 1); every other value is exact.
@@ -662,6 +667,7 @@ void WallClockTick(u8* base) {
   // accumulator makes the integer clock track the wall clock regardless.
   g_wall_prev_units = g_wall_units;
   g_wall_units = units;
+  ++g_wall_frame;
   g_wall_avg_units += (units - g_wall_avg_units) * 0.05;
   // Only move the stable rate when the average has clearly left it, so a
   // frame rate hovering around a boundary doesn't flap it every few frames.
@@ -771,6 +777,44 @@ REX_IMPORT(__imp__sub_8217B4A0, g_task_wait_alt, u32(u32, u32, u32, u32, u32, u3
 
 namespace {
 
+constexpr double kStockFrameUnits = 5.0;
+
+// Fixed chains solved once per rendered frame fall into a two frame limit
+// cycle above 60 fps, so the solver runs on its own 60 Hz clock instead. Frames
+// between ticks replay the last solved pose, which is local to the chain
+// transform and so still follows the body.
+struct ClothPoseHistory {
+  u32 index, particles, matrices, count;
+  std::array<u8, 64> transform;
+  std::vector<u8> pose;
+};
+
+struct ClothSimulationClock {
+  std::mutex mutex;
+  u64 frame = 0;
+  u32 object = 0, owner = 0, event = 0, steps = 0;
+  double carry = 0.0;
+  std::vector<ClothPoseHistory> chains;
+  std::unordered_map<u64, std::array<u8, 64>> colliders, next_colliders;
+};
+
+std::mutex g_cloth_simulations_mutex;
+std::unordered_map<u32, std::shared_ptr<ClothSimulationClock>> g_cloth_simulations;
+std::atomic<bool> g_cloth_simulations_used = false;
+thread_local ClothSimulationClock* g_cloth_simulation = nullptr;
+
+float ClothFloat(u8* base, u32 address);
+
+void StoreClothFloat(u8* base, u32 address, float value) {
+  u32 bits;
+  std::memcpy(&bits, &value, sizeof bits);
+  REX_STORE_U32(address, bits);
+}
+
+bool ClothSimulationEnabled() {
+  return g_wall_active && !(REXCVAR_GET(frame_wall_debug) & (8 | 16384));
+}
+
 // Physics re-init that follows a byte change (sub_8213E420): dt = scale / fps
 // or a fixed scale / 60 per iteration, `60 / fps` iterations per frame. Above
 // 60 fps that is one 1/60 step per frame, so hair and cloth would run fast in
@@ -780,6 +824,12 @@ REX_EXTERN(__imp__sub_8213FAA8);
 REX_HOOK_RAW(sub_8213FAA8) {
   const u32 obj = ctx.r3.u32;
   const u32 chain = obj + 4560 * ctx.r4.u32;
+  if (g_cloth_simulation && g_cloth_simulation->object == obj) {
+    // sub_8213E420 reads this back as its fps: 60 / fps passes of scale / 60.
+    StoreClothFloat(base, obj + 584004, 60.0f / g_cloth_simulation->steps);
+    __imp__sub_8213FAA8(ctx, base);
+    return;
+  }
   __imp__sub_8213FAA8(ctx, base);
   if (!g_wall_active || (REXCVAR_GET(frame_wall_debug) & 8)) {
     return;
@@ -794,11 +844,145 @@ REX_HOOK_RAW(sub_8213FAA8) {
 }
 
 REX_EXTERN(__imp__sub_8213E420);
+
+void RunClothSimulation(PPCContext& ctx, u8* base) {
+  const u32 obj = ctx.r3.u32;
+  if (!ClothSimulationEnabled()) {
+    if (g_cloth_simulations_used.load(std::memory_order_relaxed)) {
+      std::lock_guard<std::mutex> lock(g_cloth_simulations_mutex);
+      g_cloth_simulations.erase(obj);
+    }
+    __imp__sub_8213E420(ctx, base);
+    return;
+  }
+  std::shared_ptr<ClothSimulationClock> state;
+  {
+    std::lock_guard<std::mutex> lock(g_cloth_simulations_mutex);
+    auto& saved = g_cloth_simulations[obj];
+    if (!saved) {
+      saved = std::make_shared<ClothSimulationClock>();
+    }
+    state = saved;
+    g_cloth_simulations_used.store(true, std::memory_order_relaxed);
+  }
+  std::lock_guard<std::mutex> lock(state->mutex);
+  const u32 owner = REX_LOAD_U32(obj + 584036);
+  const u32 event = REX_LOAD_U32(0x8243C240);
+  const bool reset = state->chains.empty() || state->owner != owner ||
+      state->event != event || g_wall_frame < state->frame ||
+      g_wall_frame > state->frame + 1;
+  state->object = obj;
+  state->owner = owner;
+  state->event = event;
+  if (reset) {
+    state->carry = 0.0;
+    state->steps = 1;
+    state->chains.clear();
+    state->colliders.clear();
+  } else if (state->frame != g_wall_frame) {
+    // A stall owes at most a few stock frames, or catching up costs more than
+    // it buys back.
+    state->carry = std::min(state->carry + g_wall_units, 4.0 * kStockFrameUnits);
+    state->steps = static_cast<u32>(state->carry / kStockFrameUnits);
+    state->carry -= state->steps * kStockFrameUnits;
+  } else {
+    state->steps = 0;
+  }
+  state->frame = g_wall_frame;
+  const u32 chain_count = std::min(REX_LOAD_U32(obj + 112), 128u);
+  for (const auto& saved : state->chains) {
+    if (saved.index >= chain_count) {
+      continue;
+    }
+    const u32 chain = obj + 4560 * saved.index;
+    if (REX_LOAD_U32(chain + 4676) != saved.particles ||
+        REX_LOAD_U32(chain + 4672) != saved.matrices ||
+        REX_LOAD_U32(chain + 148) != saved.count) {
+      continue;
+    }
+    std::memcpy(REX_RAW_ADDR(saved.matrices), saved.pose.data(), saved.pose.size());
+    if (state->steps) {
+      // The previous transform is the one at the last solve, not last frame.
+      std::memcpy(REX_RAW_ADDR(chain + 224), saved.transform.data(), 64);
+    }
+  }
+  if (!state->steps) {
+    return;
+  }
+  for (u32 index = 0; index < chain_count; ++index) {
+    const u32 chain = obj + 4560 * index;
+    if (!REX_LOAD_U8(chain + 140) || !REX_LOAD_U8(chain + 141) ||
+        static_cast<int32_t>(REX_LOAD_U32(chain + 132)) >= 0) {
+      continue;
+    }
+    const u32 targets = REX_LOAD_U32(chain + 4664);
+    const u32 particles = REX_LOAD_U32(chain + 4676);
+    if (!targets || !particles) {
+      continue;
+    }
+    // Anchor travel spans the simulation interval, including skipped renders.
+    for (u32 axis = 0; axis < 3; ++axis) {
+      const float travel = ClothFloat(base, targets + 4 * axis) -
+          ClothFloat(base, particles + 48 + 4 * axis);
+      StoreClothFloat(base, chain + 300 + 4 * axis, travel * 60.0f / state->steps);
+    }
+  }
+  auto* previous = g_cloth_simulation;
+  g_cloth_simulation = state.get();
+  state->next_colliders.clear();
+  REX_STORE_U32(obj + 584004, 0);  // differs from any byte: re-init
+  __imp__sub_8213E420(ctx, base);
+  g_cloth_simulation = previous;
+  state->colliders.swap(state->next_colliders);
+  state->chains.clear();
+  for (u32 index = 0; index < chain_count; ++index) {
+    const u32 chain = obj + 4560 * index;
+    const u32 particles = REX_LOAD_U32(chain + 4676);
+    const u32 matrices = REX_LOAD_U32(chain + 4672);
+    const u32 count = REX_LOAD_U32(chain + 148);
+    if (!particles || !matrices || count == 0 || count > 17 ||
+        !REX_LOAD_U8(chain + 140) || !REX_LOAD_U8(chain + 141)) {
+      continue;
+    }
+    ClothPoseHistory saved{index, particles, matrices, count, {}, {}};
+    std::memcpy(saved.transform.data(), REX_RAW_ADDR(chain + 160), 64);
+    saved.pose.resize(64 * count);
+    std::memcpy(saved.pose.data(), REX_RAW_ADDR(matrices), saved.pose.size());
+    state->chains.push_back(std::move(saved));
+  }
+}
+
+// Collider motion must span the simulation interval too, so the previous
+// collider matrix is the one seen at the last solve.
+REX_EXTERN(__imp__sub_82134920);
+REX_HOOK_RAW(sub_82134920) {
+  const u64 key = (u64(ctx.r4.u32) << 32) | ctx.r5.u32;
+  const u32 output = ctx.r6.u32;
+  __imp__sub_82134920(ctx, base);
+  if (g_cloth_simulation && ctx.r3.u32) {
+    const auto found = g_cloth_simulation->colliders.find(key);
+    if (found != g_cloth_simulation->colliders.end()) {
+      std::memcpy(REX_RAW_ADDR(output), found->second.data(), 64);
+    }
+  }
+}
+
+REX_EXTERN(__imp__sub_821349A0);
+REX_HOOK_RAW(sub_821349A0) {
+  const u64 key = (u64(ctx.r4.u32) << 32) | ctx.r5.u32;
+  const u32 output = ctx.r6.u32;
+  __imp__sub_821349A0(ctx, base);
+  if (g_cloth_simulation && ctx.r3.u32) {
+    auto& matrix = g_cloth_simulation->next_colliders[key];
+    std::memcpy(matrix.data(), REX_RAW_ADDR(output), 64);
+  }
+}
+
 REX_HOOK_RAW(sub_8213E420) {
   if (g_wall_active && !(REXCVAR_GET(frame_wall_debug) & 8)) {
     REX_STORE_U32(ctx.r3.u32 + 584004, 0);  // differs from any byte: re-init
   }
-  __imp__sub_8213E420(ctx, base);
+  RunClothSimulation(ctx, base);
 }
 
 // Root velocity must use the same clock as integration or the anchor overshoots.
@@ -806,7 +990,8 @@ REX_EXTERN(__imp__sub_8213D0C0);
 REX_HOOK_RAW(sub_8213D0C0) {
   const u32 chain = ctx.r3.u32 + 4560 * ctx.r4.u32;
   __imp__sub_8213D0C0(ctx, base);
-  if (!g_wall_active || (REXCVAR_GET(frame_wall_debug) & (8 | 1024))) {
+  if (g_cloth_simulation || !g_wall_active ||
+      (REXCVAR_GET(frame_wall_debug) & (8 | 1024))) {
     return;
   }
   const u32 targets = REX_LOAD_U32(chain + 4664);
@@ -828,7 +1013,8 @@ REX_HOOK_RAW(sub_8213D0C0) {
 // The angle limit clears velocity, so spread must follow gravity's squared time step.
 REX_EXTERN(__imp__sub_8213F870);
 REX_HOOK_RAW(sub_8213F870) {
-  if (g_wall_active && !(REXCVAR_GET(frame_wall_debug) & (8 | 2048))) {
+  if (!g_cloth_simulation && g_wall_active &&
+      !(REXCVAR_GET(frame_wall_debug) & (8 | 2048))) {
     double passes = 1.0;
     const u32 obj = ctx.r3.u32;
     const u32 chain = obj + 4560 * ctx.r4.u32;
