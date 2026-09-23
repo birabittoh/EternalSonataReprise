@@ -306,24 +306,22 @@ const char* FindNativeString(uint32_t language_id, std::string_view key);
 // UserLanguageIndex the entry currently selected (0 if unrecognised: a mod that
 // added a language and was then disabled leaves its id behind in the config,
 // and that has to read as the first entry rather than clamp to the last).
-// SetUserLanguageSetting writes and persists it; the guest only reads
-// its language at boot, so the change needs a restart to show, and it is
-// recorded as a pending restart accordingly.
+// SetUserLanguageSetting writes and persists it, and moves the guest's own
+// language with it, so it applies live.
 int UserLanguageCount();
 const char* UserLanguageCode(int index);
 const char* UserLanguageLabel(int index);
 int UserLanguageIndex();
 void SetUserLanguageSetting(int index);
 
-// The XLanguage id of the entry BootUserLanguageIndex names. This is the id a
-// translation mod's "settings.native_string" payloads have to carry for the
-// labels this project draws into the game's own screens to come out translated.
-uint32_t BootUserLanguageId();
+// The XLanguage id of the selected entry. This is the id a translation mod's
+// "settings.native_string" payloads have to carry for the labels this project
+// draws into the game's own screens to come out translated.
+uint32_t UserLanguageId();
 
-// The BTX language block the process booted into, as a fourcc with its trailing
-// space ("ESP "), or nullptr if the boot language claimed none. Text patches
-// addressed to a mod-added language route here.
-const char* BootBtxSlot();
+// The same for the entry BootUserLanguageIndex names. Achievements stay on it:
+// the SDK reads their XDBF strings once, in the boot language.
+uint32_t BootUserLanguageId();
 
 // Points the guest at the donor BTX block when the boot language is one a mod
 // added. The guest resolves its language straight out of the user_language cvar
@@ -338,11 +336,9 @@ const char* BootBtxSlot();
 void ApplyBootLanguageDonorSlot();
 
 // The user_language entry the process *started* with, latched once (at
-// InitSettingsCaches time) and stable for the rest of the run. This is the
-// language every label we draw into the game's own screens has to use: changing
-// user_language only takes effect on the next launch, so following the live
-// cvar would leave our labels speaking a language the rest of the screen does
-// not. Same index space as UserLanguageIndex.
+// InitSettingsCaches time) and stable for the rest of the run. The guest boots
+// in it, so the donor override and the achievement catalogue follow it. Same
+// index space as UserLanguageIndex.
 int BootUserLanguageIndex();
 
 // Applies a named resolution end to end: updates the resolution cvar and the

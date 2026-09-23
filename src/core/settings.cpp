@@ -10,6 +10,7 @@
 extern "C" int EternalSonataGetSetting(int setting);
 extern "C" int EternalSonataSetSetting(int setting, int value);
 #include "field_player_model_override.h"
+#include "game_settings.h"
 #include "host_timer_resolution.h"
 #include "native_renderer.h"
 
@@ -1189,7 +1190,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     const std::vector<LanguageOption> options = GetLanguageOptions();
     const int cur_idx = UserLanguageIndex();
 
-    DrawRowLabel("Language", "user_language");
+    DrawRowLabel("Language", nullptr);  // Applies live, whatever the SDK declares.
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("user_language");
@@ -1564,7 +1565,7 @@ void ApplySettingDefaults() {
 
 void InitSettingsCaches() {
   // Latch the boot language before anything can change it (see
-  // BootUserLanguageIndex). The voice selection is resolved here too, now that
+  // ApplyBootLanguageDonorSlot). The voice selection is resolved here too, now that
   // mods have registered their voice languages.
   BootUserLanguageIndex();
   g_active_voice.store(VoiceLanguageIndex());
@@ -2074,22 +2075,20 @@ int UserLanguageIndex() {
   return 0;
 }
 
+uint32_t UserLanguageId() {
+  const auto options = GetLanguageOptions();
+  const int index = UserLanguageIndex();
+  if (index < 0 || index >= static_cast<int>(options.size()))
+    return 0;
+  return uint32_t(std::strtoul(options[index].id, nullptr, 10));
+}
+
 uint32_t BootUserLanguageId() {
   const auto options = GetLanguageOptions();
   const int index = BootUserLanguageIndex();
   if (index < 0 || index >= static_cast<int>(options.size()))
     return 0;
   return uint32_t(std::strtoul(options[index].id, nullptr, 10));
-}
-
-const char* BootBtxSlot() {
-  const auto options = GetLanguageOptions();
-  const int index = BootUserLanguageIndex();
-  if (index < 0 || index >= static_cast<int>(options.size()))
-    return nullptr;
-  // options[] holds pointers into kBuiltinLanguages or into g_mod_languages,
-  // both of which outlive this call, so returning one is safe.
-  return options[index].btx_slot;
 }
 
 void ApplyBootLanguageDonorSlot() {
@@ -2141,13 +2140,9 @@ int BootUserLanguageIndex() {
   // The *id* is captured on the first call and never again; the index is worked
   // out fresh each time, since a mod-added language only joins the list once
   // that mod has registered and an index latched before then would be stale.
-  // user_language is kRequiresRestart: the guest reads its language once at
-  // boot, so everything already on screen (and every label we draw next to it)
-  // has to keep speaking the language the process started in, not the one the
-  // player has queued up for the next launch. InitSettingsCaches calls this at
-  // startup so the latch happens before the overlay (or the native Text row)
-  // can move the cvar; the lazy form here is only a safety net for callers that
-  // run earlier.
+  // InitSettingsCaches calls this at startup so the latch happens before the
+  // overlay (or the native Text row) can move the cvar; the lazy form here is
+  // only a safety net for callers that run earlier.
   if (!g_boot_language_latched) {
     g_boot_language_latched = true;
     const auto* entry = rex::cvar::GetFlagInfo("user_language");
@@ -2168,17 +2163,15 @@ void SetUserLanguageSetting(int index) {
     return;
   }
   // From here on the live cvar is what the player picked, donor override or
-  // not: the guest booted long ago and nothing it reads changes again.
+  // not.
   g_language_selection_changed = true;
-  // user_language is kRequiresRestart: the guest reads its language once at
-  // boot (it ends up in dword_8243D370, which is what picks the display list
-  // for every screen), so nothing on screen changes until the game is
-  // restarted. Going through SetFlagByName rather than entry->setter is what
-  // records that with MarkPendingRestart, so the overlay's "restart to apply"
-  // banner notices a change made from the native Options row too.
-  rex::cvar::SetFlagByName("user_language", options[index].id,
-                           /*persist=*/true);
+  // entry->setter, not SetFlagByName: the SDK declares user_language
+  // kRequiresRestart, but here it applies live, so it must not be marked
+  // pending. A mod language writes its donor's block.
+  if (auto* entry = rex::cvar::GetFlagInfo("user_language"); entry && entry->setter)
+    entry->setter(options[index].id);
   SaveUserSettings();
+  WriteGuestTextLanguage(options[index].btx_slot);
 }
 
 void SetResolutionSetting(const char* value) {

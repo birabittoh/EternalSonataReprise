@@ -21,4 +21,8 @@ void BindGameSettings(rex::Runtime* runtime);
 // here; a guest routine can only be hooked once.
 void NotifyGameSettingsSaveLoaded();
 
+// Points the guest's text language, dword_8243D370, at a BTX block. Every
+// text lookup reads it, so screens built afterwards speak the new language.
+void WriteGuestTextLanguage(const char* btx_slot);
+
 }  // namespace eternalsonata

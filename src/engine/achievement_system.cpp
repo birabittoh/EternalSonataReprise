@@ -66,8 +66,8 @@ void Fill(EternalSonataAchievement* out, const rex::system::AchievementInfo& inf
 }
 
 // The translation for the language the process booted in, or null. Picked once,
-// at registration: user_language is restart-required, so it cannot change under
-// a running process.
+// at registration, to match the stock catalogue, which the SDK reads out of the
+// XDBF in the boot language only.
 const EternalSonataAchievementTranslation* BootTranslation(
     const EternalSonataCustomAchievementData* data) {
   if (!data->translations || data->translation_count <= 0) {
