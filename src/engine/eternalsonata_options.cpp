@@ -178,6 +178,11 @@ constexpr u32 kSepYOffset = 0x08u;  // y within the record
 // record left behind.
 constexpr u32 kBarRecordOffset = 0x6B8u;  // {2101,2100,1} + bar + {2}
 constexpr u32 kBarRecordBytes = 0x2Cu;
+// The 1 in {2100, 1} picks which of the screen's parent objects the bar hangs
+// from, and the close animation slides those parents, not the bars. The
+// interpreter skips a 2100 past the screen's parent count, so page 2, which
+// has only parent 0, got parentless bars that stayed put while it closed.
+constexpr u32 kBarBlockParentOffset = 0x08u;
 
 // The volume gauge, as page 1 draws its three: a **type-1200** record,
 // {1200, x, y, max}, 0x10 bytes, immediately followed by the **type-300**
@@ -389,16 +394,17 @@ struct PageLayout {
   // remapping, which is a different interaction. Kept per page so a row can go
   // back to matching its screen if that ever reads better.
   u32 change_sfx;
+  u32 bar_parent;  // parent object the page's own bars hang from
 };
 
 constexpr PageLayout kPages[kPageCount] = {
     // Page 1: rows appended below Voce (record y 285, 335).
     {kOptionsListByLang, kOptionsListBytes, kInsertOffset, kIconRecordBytes, 2,
-     2, 480, 385, 5},
+     2, 480, 385, 5, 1},
     // Page 2: rows appended below the three button rows (record y 25/75/125,
     // selectable items at 165/215/265).
     {kButtonsListByLang, kButtonsListBytes, kButtonsInsertOffset, 0, 1, 3, 265,
-     175, 5},
+     175, 5, 0},
 };
 
 u32 PageMaxRows(int page) {
@@ -1682,15 +1688,9 @@ void RefreshSlider(u8* base, int page, u32 row) {
   AppendReadoutSuffix(base, text_obj, '%');
 }
 
-// Parks every one of `page`'s bars off-screen instantly. Called the moment
-// the cursor hook notices the page is no longer active: without this, a bar
-// stays wherever the last per-frame update left it while the screen's own
-// close animation scrolls the background away underneath it, so it hangs in
-// place and only vanishes once the game destroys the screen's objects - well
-// after the background has already scrolled past. Page 1's bars don't show
-// this because kStateOptionRows/kStateOptionSlider stay active for the whole
-// close animation, so MoveOptionBar keeps tracking them until the screen is
-// actually gone; page 2's kStateButtons drops out before the scroll finishes.
+// Parks every one of `page`'s bars off-screen instantly, once the cursor hook
+// notices the page is no longer active. The close slide itself is carried by
+// the bars' parent object (see kBarBlockParentOffset), not by this.
 void HideAllPageBars(u8* base, int page) {
   PageState& st = g_page[page];
   if (!g_bar_vec) {
@@ -2017,10 +2017,11 @@ void WriteTextRecord(u8* base, u32 at, u32 id, int32_t x, int32_t y) {
 // Clone the stock Subtitles bar record verbatim and move it to our row's y.
 // Cloning rather than hand-writing keeps every field we have not identified
 // (notably the width at +0xC) at whatever the game already uses.
-void WriteBarRecord(u8* base, u32 at, u32 src_list, int32_t x, int32_t y,
-                    int32_t width) {
+void WriteBarRecord(u8* base, u32 at, u32 src_list, u32 parent, int32_t x,
+                    int32_t y, int32_t width) {
   std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + kBarRecordOffset),
               kBarRecordBytes);
+  REX_STORE_U32(at + kBarBlockParentOffset, parent);
   // The x the stock record carries is the value column of value 0 (490 in the
   // Italian list, the same number the Subtitles value text record holds), so
   // it answers the same question ValueColumnOffset does. Writing the row's
@@ -2402,7 +2403,8 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
       // value: each sits on its own value, and MoveOptionBar parks all but the
       // selected one on the first per-frame pass.
       const int at_value = bars == 1 ? value_index : static_cast<int>(b);
-      WriteBarRecord(base, at, tpl_list, BarX(page, row, at_value), bar_y,
+      WriteBarRecord(base, at, tpl_list, pl.bar_parent,
+                     BarX(page, row, at_value), bar_y,
                      BarWidthFor(row, at_value, label_lang));
       at += kBarRecordBytes;
     }
