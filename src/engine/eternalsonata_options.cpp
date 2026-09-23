@@ -1876,8 +1876,8 @@ void PlaceVoiceBar(u8* base, int page, int index, bool move) {
 }
 
 // Writes the voice_language cvar to match `index`, through the accessor rather
-// than the cvar directly so the kRequiresRestart bookkeeping (and the persist)
-// happen exactly as they do from the F4 overlay. A no-op when it already says
+// than the cvar directly so the persist happens exactly as it does from the F4
+// overlay. A no-op when it already says
 // so: this is reached from a per-press path, and rewriting settings.toml for a
 // value that did not change would be a file write per keypress.
 void VoiceSetIndex(int index) {
@@ -3683,9 +3683,8 @@ REX_HOOK_RAW(sub_82201620) {
     // Only on an actual press. A config naming one stock voice language while
     // the guest's saved byte names the other is a harmless disagreement (both
     // mean "no mod voice", and the path hook stands down either way), but
-    // "correcting" it just because the cursor passed over the row would mark
-    // voice_language pending, and anything pending relaunches the process on
-    // leaving the main-menu Options screen (see OnLeaveMainMenuOptions).
+    // "correcting" it just because the cursor passed over the row would
+    // rewrite settings.toml for nothing.
     if (fresh & (kLeftMask | kRightMask)) {
       g_voice_index = VoiceGuestIndex(base);
       VoiceSetIndex(g_voice_index);

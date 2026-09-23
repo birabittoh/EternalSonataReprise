@@ -226,8 +226,13 @@ int VoiceLanguageIndexForGuestByte(int guest_byte);
 // BootUserLanguageIndex and for the same reason: the guest caches voice banks
 // keyed on its own selector byte, which a mod voice language leaves at the
 // donor's value, so switching between two mod voice languages mid-run would
-// silently reuse a stale bank. voice_language is kRequiresRestart accordingly.
+// silently reuse a stale bank.
 int BootVoiceLanguageIndex();
+
+// True when the selected voice language differs from the boot one and either
+// is a mod language. Switching between the shipped two applies live.
+bool VoiceRestartPending();
+bool ModVoiceLanguagesPresent();
 
 // The filename suffix the path hook appends, or nullptr when the process booted
 // into one of the two voice languages the game ships, in which case the guest's

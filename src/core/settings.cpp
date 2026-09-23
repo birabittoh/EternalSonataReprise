@@ -166,18 +166,19 @@ REXCVAR_DEFINE_BOOL(aim_invert_y, true, "Eternal Sonata",
 // and the guest's byte is the only authority. A mod-added id is what turns the
 // hook on and points it at that mod's `_<suffix>` banks.
 //
-// kRequiresRestart because the guest caches loaded banks keyed on its own byte
-// (sub_821BD1C0 at a1+324/+328, sub_821BD778 at +1956/+1960), and a mod voice
-// language leaves that byte at its donor's value, so two mod voice languages
-// are indistinguishable to that cache and a live switch would replay the bank
-// already in it. See BootVoiceLanguageIndex.
+// Hot reload because switching between the shipped two only moves the guest's
+// byte, which the game honours live. A switch that involves a mod voice
+// language still needs a restart: the guest caches loaded banks keyed on that
+// byte (sub_821BD1C0 at a1+324/+328, sub_821BD778 at +1956/+1960), which a mod
+// language leaves at its donor's value, so a live switch would replay the bank
+// already in it. VoiceRestartPending tracks that case by hand.
 //
 // Not `.allowed(...)`: the valid set is not known until the mods have
 // registered, and an id left behind by a mod that was since disabled has to
 // read back as entry 0 rather than be rejected at parse time.
 REXCVAR_DEFINE_STRING(voice_language, "usa", "Eternal Sonata",
                       "Spoken language: jpn, usa, or the id a mod's [[voice_language]] declared")
-    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
 namespace eternalsonata {
 
@@ -491,6 +492,8 @@ constexpr std::array kTimerResolutionOptions = {
 // differs from the SDK's factory default doesn't trip it on a fresh launch.
 // See SetFlagByNameImpl's mark_restart parameter in the SDK's cvar.cpp.
 bool CvarPendingRestart(const char* name) {
+  if (std::string_view(name) == "voice_language")
+    return VoiceRestartPending();
   auto pending = rex::cvar::GetPendingRestartFlags();
   return std::find(pending.begin(), pending.end(), name) != pending.end();
 }
@@ -508,7 +511,7 @@ bool AnyKnownPendingRestart() {
     if (is_tracked(name))
       return true;
   }
-  return false;
+  return VoiceRestartPending();
 }
 
 // resolution_scale value that renders at "100%" (native) for a given display
@@ -884,7 +887,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     }
     bool hovered = ImGui::IsItemHovered();
     const auto* entry = cvar ? rex::cvar::GetFlagInfo(cvar) : nullptr;
-    if (entry && entry->lifecycle == rex::cvar::Lifecycle::kRequiresRestart) {
+    const bool restart =
+        (entry && entry->lifecycle == rex::cvar::Lifecycle::kRequiresRestart) ||
+        (cvar && std::string_view(cvar) == "voice_language" && ModVoiceLanguagesPresent());
+    if (restart) {
       ImGui::SameLine(0.0f, Px(2.0f));
       ImGui::TextColored(kRestartColor, "*");
       if (ImGui::IsItemHovered()) {
@@ -1211,8 +1217,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
-  // Needs a restart: the voice banks are opened by path at boot. The setter
-  // marks the restart and persists on its own.
+  // Live between the shipped two; a mod voice language needs a restart (see
+  // VoiceRestartPending). The setter persists on its own.
   void DrawVoiceLanguageRow() {
     const int count = VoiceLanguageCount();
     if (count <= 0)
@@ -1227,7 +1233,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       for (int i = 0; i < count; ++i) {
         bool selected = (i == cur_idx);
         if (ImGui::Selectable(VoiceLanguageLabel(i), selected)) {
-          SetVoiceLanguageSetting(i);
+          // Also moves the guest's byte, which is what applies it live.
+          EternalSonataSetSetting(ETERNALSONATA_SETTING_VOICE_LANGUAGE, i);
         }
         if (selected)
           ImGui::SetItemDefaultFocus();
@@ -1895,10 +1902,6 @@ void SetVoiceLanguageSetting(int index) {
   if (index < 0 || index >= static_cast<int>(options.size()))
     return;
   BootVoiceLanguageIndex();  // Latch before the write moves the cvar.
-  // SetFlagByName, not entry->setter: this *is* a change the player made, and
-  // voice_language is kRequiresRestart, so MarkPendingRestart is what puts the
-  // overlay's "restart to apply" banner (and the native row's own marker) into
-  // the right state. Contrast ApplyBootLanguageDonorSlot, which must not.
   rex::cvar::SetFlagByName("voice_language", options[index].id, /*persist=*/true);
   SaveUserSettings();
 }
@@ -1918,6 +1921,15 @@ int BootVoiceLanguageIndex() {
       return i;
   }
   return 0;
+}
+
+bool ModVoiceLanguagesPresent() { return !g_mod_voice_languages.empty(); }
+
+bool VoiceRestartPending() {
+  const int boot = BootVoiceLanguageIndex();
+  const int now = VoiceLanguageIndex();
+  const int builtin = static_cast<int>(kBuiltinVoiceLanguages.size());
+  return boot != now && (boot >= builtin || now >= builtin);
 }
 
 const char* BootVoiceSuffix() {
