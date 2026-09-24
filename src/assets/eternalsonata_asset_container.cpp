@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 
 #include <rex/logging.h>
 
@@ -770,16 +771,74 @@ bool NextCodepoint(std::string_view s, size_t& i, uint32_t* out) {
   return true;
 }
 
+struct ShiftJisPair {
+  uint16_t cp;
+  uint16_t sjis;
+};
+
+constexpr ShiftJisPair kShiftJis[] = {
+#include "shift_jis_table.inc"
+};
+
+bool ValidUtf8(std::string_view s) {
+  for (size_t i = 0; i < s.size();) {
+    uint32_t cp;
+    if (!NextCodepoint(s, i, &cp))
+      return false;
+  }
+  return true;
+}
+
 }  // namespace
+
+bool EncodeShiftJis(std::string_view utf8, std::string& out, std::string* error) {
+  out.clear();
+  for (size_t i = 0; i < utf8.size();) {
+    uint32_t cp = 0;
+    const size_t at = i;
+    if (!NextCodepoint(utf8, i, &cp)) {
+      if (error)
+        *error = "malformed UTF-8 at byte " + std::to_string(at);
+      return false;
+    }
+    if (cp == '\r')
+      continue;
+    if (cp == '\n') {
+      out += "\\n";
+      continue;
+    }
+    if (cp < 0x80) {
+      out.push_back(char(cp));
+      continue;
+    }
+    const auto* end = std::end(kShiftJis);
+    const auto* it = std::lower_bound(std::begin(kShiftJis), end, cp,
+                                      [](const ShiftJisPair& p, uint32_t v) { return p.cp < v; });
+    if (it == end || it->cp != cp) {
+      if (error) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "U+%04X has no Shift-JIS mapping", cp);
+        *error = buf;
+      }
+      return false;
+    }
+    if (it->sjis > 0xFF)
+      out.push_back(char(it->sjis >> 8));
+    out.push_back(char(it->sjis & 0xFF));
+  }
+  return true;
+}
 
 bool TranscodeToGameEncoding(std::string_view utf8, std::string_view lang, std::string& out,
                              std::string* error) {
   out.clear();
-  // JPN is Shift-JIS. Nothing here knows how to produce it, so the bytes are
-  // passed through and the mod is responsible for shipping them already encoded.
+  // JPN is Shift-JIS. Text that is not UTF-8 is taken to be Shift-JIS already.
   if (lang.rfind("JPN", 0) == 0) {
-    out.assign(utf8);
-    return true;
+    if (!ValidUtf8(utf8)) {
+      out.assign(utf8);
+      return true;
+    }
+    return EncodeShiftJis(utf8, out, error);
   }
 
   for (size_t i = 0; i < utf8.size();) {

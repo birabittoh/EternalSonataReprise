@@ -10,6 +10,7 @@
 #include <cstring>
 #include <cstdint>
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -19,6 +20,7 @@
 #include <rex/discord_rpc.h>
 #include <rex/input/input_system.h>
 #include <rex/rex_app.h>
+#include <rex/system/flags.h>
 #include <rex/system/game_data_selector.h>
 #include <rex/system/kernel_state.h>
 #include <rex/ui/imgui_theme.h>
@@ -248,6 +250,32 @@ class EternalsonataApp : public rex::ReXApp {
     cfg.FontDataOwnedByAtlas = false;
     atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kPTSerifRegularTTF),
                                 static_cast<int>(eternalsonata::kPTSerifRegularTTFSize), 16.0f, &cfg);
+    MergeJapaneseFont(atlas);
+  }
+
+  // The overlays and the unlock toast draw achievement names, which are
+  // Japanese when the game boots in Japanese. Only then, since the kana and
+  // kanji ranges grow the atlas considerably. Uses whatever the system ships.
+  static void MergeJapaneseFont(ImFontAtlas* atlas) {
+    if (REXCVAR_GET(user_language) != 2)
+      return;
+    static constexpr const char* kCandidates[] = {
+        "C:\\Windows\\Fonts\\YuGothM.ttc",
+        "C:\\Windows\\Fonts\\meiryo.ttc",
+        "C:\\Windows\\Fonts\\msgothic.ttc",
+        "/system/fonts/NotoSansCJK-Regular.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    };
+    for (const char* path : kCandidates) {
+      std::error_code ec;
+      if (!std::filesystem::exists(path, ec))
+        continue;
+      ImFontConfig merge;
+      merge.MergeMode = true;
+      atlas->AddFontFromFileTTF(path, 16.0f, &merge, atlas->GetGlyphRangesJapanese());
+      return;
+    }
+    REXLOG_WARN("No Japanese system font found; the overlays will draw Japanese as boxes");
   }
 
   // The overlay's whole color palette is mathematically derived (see

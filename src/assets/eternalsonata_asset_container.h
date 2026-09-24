@@ -152,8 +152,13 @@ bool ReplaceContainerRange(std::vector<uint8_t>& data, size_t offset, size_t old
 // ---------------------------------------------------------------------------
 // The game draws one glyph per byte. Mod-authored text arrives as UTF-8, so it
 // is transcoded at this boundary and characters with no mapping fail loudly
-// rather than becoming '?'. JPN is Shift-JIS and is passed through untouched.
+// rather than becoming '?'. JPN is Shift-JIS; input that is not valid UTF-8
+// is taken to be Shift-JIS already and passed through.
 bool TranscodeToGameEncoding(std::string_view utf8, std::string_view lang, std::string& out,
                              std::string* error);
+
+// UTF-8 to the JPN blocks' Shift-JIS (cp932), with newlines as the game's
+// backslash n markup. Fails on a character cp932 cannot encode.
+bool EncodeShiftJis(std::string_view utf8, std::string& out, std::string* error = nullptr);
 
 }  // namespace eternalsonata::assets

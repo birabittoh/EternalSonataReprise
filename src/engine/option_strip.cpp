@@ -56,11 +56,13 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <string>
 
 #include <rex/hook.h>
 #include <rex/memory/utils.h>
 #include <rex/system/kernel_state.h>
 
+#include "eternalsonata_asset_container.h"
 #include "option_strip.h"
 
 namespace option_strip {
@@ -286,6 +288,15 @@ bool StripEdited() {
 
 const char* AchievementsLabel(const std::uint8_t* base) {
   const std::uint32_t language = ReadU32(base, kLanguageIndexAddress);
+  if (language == 0u) {
+    // The Xbox's own Japanese word for achievements.
+    static const std::string japanese = [] {
+      std::string out;
+      eternalsonata::assets::EncodeShiftJis("実績", out);
+      return out;
+    }();
+    return japanese.c_str();
+  }
   return kAchievementsLabel[language < 7u ? language : 1u];
 }
 

@@ -47,6 +47,7 @@
 
 #include "achievements_menu.h"
 #include "eternalsonata_asset_api.h"
+#include "eternalsonata_asset_container.h"
 #include "images.generated.h"
 #include "option_strip.h"
 
@@ -178,8 +179,8 @@ constexpr std::uint32_t kLanguageIndexAddr = 0x8243D370u;
 // achievements: 1..14 follow the story, 15..22 are everything else. An id
 // outside that range came from a mod, so it lands in the third tab, which is
 // hidden entirely when no mod added any. Latin-1, for the same reason
-// option_strip's strip label is: the text records are single byte. JPN borrows
-// the English words.
+// option_strip's strip label is: the text records are single byte. JPN is
+// UTF-8 here and goes through LocalText, which encodes it to Shift-JIS.
 constexpr std::uint32_t kLastProgressionId = 14u;
 constexpr std::uint32_t kLastStockId = 22u;
 
@@ -189,14 +190,14 @@ constexpr std::uint32_t kRevealPromptShift = 60u;
 
 // The Y prompt, which on the Music gallery reads "Stop".
 constexpr const char* kRevealLabel[7] = {
-    "Reveal", "Reveal", "Reveal", "R\xE9v\xE9ler", "Rivela", "Zeigen",
+    "表示", "Reveal", "Reveal", "R\xE9v\xE9ler", "Rivela", "Zeigen",
     "Revelar"};
 
 constexpr const char* kTabLabel[kTabCount][7] = {
-    {"Progression", "Progression", "Progression", "Progression", "Progressione",
+    {"ストーリー", "Progression", "Progression", "Progression", "Progressione",
      "Fortschritt", "Progresi\xF3n"},
-    {"Other", "Other", "Other", "Autres", "Altri", "Sonstige", "Otros"},
-    {"Custom", "Custom", "Custom", "Personnalis\xE9", "Personalizzati",
+    {"その他", "Other", "Other", "Autres", "Altri", "Sonstige", "Otros"},
+    {"カスタム", "Custom", "Custom", "Personnalis\xE9", "Personalizzati",
      "Eigene", "Personalizados"},
 };
 
@@ -303,15 +304,48 @@ std::string ToLatin1(const std::string& utf8) {
   return out;
 }
 
-// Builds the row tables once, from the host catalogue, in id order. Which tab a
-// row lands in follows its id, so a mod's achievements stay together in Custom
-// however many the title itself has.
-void EnsureRows() {
+// Row text for the text block `language` reads: Shift-JIS for JPN, where a
+// character cp932 lacks falls back to '?', Latin-1 otherwise.
+std::string ToGameText(const std::string& utf8, std::uint32_t language) {
+  if (language != 0u) {
+    return ToLatin1(utf8);
+  }
+  std::string out;
+  if (eternalsonata::assets::EncodeShiftJis(utf8, out)) {
+    return out;
+  }
+  out = ToLatin1(utf8);
+  for (char& c : out) {
+    if (static_cast<unsigned char>(c) >= 0x80u) {
+      c = '?';
+    }
+  }
+  return out;
+}
+
+// One of the seven-language tables above; JPN's entry is UTF-8.
+std::string LocalText(const char* const (&table)[7], std::uint32_t language) {
+  const char* text = table[language < 7u ? language : 1u];
+  if (language != 0u) {
+    return text;
+  }
+  std::string out;
+  eternalsonata::assets::EncodeShiftJis(text, out);
+  return out;
+}
+
+std::uint32_t g_built_language = 0;
+
+// Builds the row tables from the host catalogue, in id order, again whenever
+// the text language changes. Which tab a row lands in follows its id, so a
+// mod's achievements stay together in Custom however many the title itself has.
+void EnsureRows(std::uint32_t language) {
   std::lock_guard<std::mutex> lock(g_mutex);
-  if (g_built) {
+  if (g_built && g_built_language == language) {
     return;
   }
   g_built = true;
+  g_built_language = language;
   for (auto& tab : g_tabs) {
     tab.clear();
   }
@@ -337,9 +371,10 @@ void EnsureRows() {
     const bool secret =
         !(info.flags & rex::system::kAchievementFlagShowUnachieved);
     g_tabs[tab].push_back(
-        Row{info.id, ToLatin1(info.label),
-            ToLatin1(!unlocked && !info.unachieved_description.empty()
-                         ? info.unachieved_description : info.description),
+        Row{info.id, ToGameText(info.label, language),
+            ToGameText(!unlocked && !info.unachieved_description.empty()
+                           ? info.unachieved_description : info.description,
+                       language),
             std::to_string(info.gamerscore) + "G",
             unlocked, secret, g_revealed.count(info.id) != 0});
   }
@@ -437,8 +472,7 @@ std::string TabLabel(const std::uint8_t* base, std::uint32_t sid) {
       (tab == 2u && !CustomTabVisible())) {
     return std::string();
   }
-  const std::uint32_t language = ReadU32(base, kLanguageIndexAddr);
-  return kTabLabel[tab][language < 7u ? language : 1u];
+  return LocalText(kTabLabel[tab], ReadU32(base, kLanguageIndexAddr));
 }
 
 // Paints the third tab's frame out. sub_82227CB0 builds the strip from three
@@ -754,9 +788,8 @@ std::uint32_t RowTitleOverride(std::uint8_t* base, std::uint32_t blob,
         return 0;
       }
     }
-    const std::uint32_t language = ReadU32(base, kLanguageIndexAddr);
     WriteGuestString(base, g_prompt_string,
-                     kRevealLabel[language < 7u ? language : 1u]);
+                     LocalText(kRevealLabel, ReadU32(base, kLanguageIndexAddr)).c_str());
     return g_prompt_string;
   }
   if (!t_building_row) {
@@ -956,7 +989,7 @@ REX_HOOK_RAW(sub_82236CD0) {
     return;
   }
 
-  EnsureRows();
+  EnsureRows(ReadU32(base, kLanguageIndexAddr));
   g_active = true;
 
   // loc_82236F08 with r9 = 0xA, the Music arm: remember where we came from,

@@ -465,9 +465,27 @@ constexpr int kLanguageCount = ETERNALSONATA_LANG_COUNT;
 static_assert(kGuestListCount == ETERNALSONATA_LANG_BUILTIN_COUNT,
               "the built-in language slots are the game's own display lists");
 
+// Slot kJapanese is written in UTF-8 and encoded to Shift-JIS when a row is
+// built (JapaneseText); the western slots are the blocks' Latin-1 already.
 struct LocalizedLabel {
   const char* text[kLanguageCount];
 };
+
+constexpr int kJapanese = ETERNALSONATA_LANG_JA;
+
+std::string JapaneseText(const char* utf8) {
+  std::string out, error;
+  if (!eternalsonata::assets::EncodeShiftJis(utf8, out, &error))
+    REXLOG_WARN("[options] cannot encode \"{}\": {}", utf8, error);
+  return out;
+}
+
+std::string LabelText(const LocalizedLabel& label, int lang) {
+  const char* text = label.text[lang];
+  if (!text)
+    return "";
+  return lang == kJapanese ? JapaneseText(text) : std::string(text);
+}
 
 // Which language is active is derived from *which of the 6 known list
 // addresses matched* (see kOptionsListByLang), not from dword_8243D370's own
@@ -494,25 +512,27 @@ bool ClassifyList(u32 list_addr, int* page, int* lang_idx) {
 }
 
 constexpr LocalizedLabel kLabelResolution = {
-    {"Resolution", "Aufl\xF6sung", "R\xE9solution", "Resoluci\xF3n", "Risoluzione"}};
+    {"Resolution", "Aufl\xF6sung", "R\xE9solution", "Resoluci\xF3n", "Risoluzione",
+     "解像度"}};
 constexpr LocalizedLabel kLabelFieldOfView = {
     {"Field of View", "Sichtfeld", "Champ de vue", "Campo visi\xF3n",
-     "Campo visivo"}};
+     "Campo visivo", "視野角"}};
 constexpr LocalizedLabel kLabelFrameRate = {
-    {"Frame Rate", "Bildrate", "Fr\xE9quence", "Fotogramas", "Framerate"}};
+    {"Frame Rate", "Bildrate", "Fr\xE9quence", "Fotogramas", "Framerate",
+     "フレームレート"}};
 // Long range aiming, one row per axis. Same length budget as kLabelText.
 constexpr LocalizedLabel kLabelAimInvertX = {
     {"Invert Aim X", "Ziel X invers", "Vis\xE9" "e X inv.", "Mira X inv.",
-     "Inverti mira X"}};
+     "Inverti mira X", "照準の左右反転"}};
 constexpr LocalizedLabel kLabelAimInvertY = {
     {"Invert Aim Y", "Ziel Y invers", "Vis\xE9" "e Y inv.", "Mira Y inv.",
-     "Inverti mira Y"}};
+     "Inverti mira Y", "照準の上下反転"}};
 // Kept short on purpose: a label shares its row with the value column at
 // x=440, so it has roughly 320px - about 13 characters - before the two would
 // touch. The stock labels ("Sottotitoli", "Aufl\xF6sung") sit inside the same
 // budget.
 constexpr LocalizedLabel kLabelText = {
-    {"Text", "Text", "Texte", "Texto", "Testo"}};
+    {"Text", "Text", "Texte", "Texto", "Testo", "テキスト"}};
 // Which model walks the overworld: the game's own (always Allegretto) or
 // whoever leads the active party. Same budget note as kLabelText - the English
 // form is the longest of the five and is right at the edge of the label
@@ -520,7 +540,7 @@ constexpr LocalizedLabel kLabelText = {
 // shorten first.
 constexpr LocalizedLabel kLabelOverworldModel = {
     {"Overworld Model", "Weltmodell", "Mod\xE8le monde", "Modelo mapa",
-     "Modello mappa"}};
+     "Modello mappa", "フィールドモデル"}};
 
 // Drawn to the right of a row whose setting only takes effect on the next
 // launch and has actually been changed this session - the same state the F4
@@ -534,7 +554,8 @@ constexpr LocalizedLabel kLabelOverworldModel = {
 // value column, and a longer word simply would not fit on the shorter rows
 // (see MarkerRecordX, which drops the marker rather than overlapping a value).
 constexpr LocalizedLabel kLabelRestartMarker = {
-    {"(restart)", "(neustart)", "(red\xE9m.)", "(reinic.)", "(riavvia)"}};
+    {"(restart)", "(neustart)", "(red\xE9m.)", "(reinic.)", "(riavvia)",
+     "(要再起動)"}};
 
 // The Text row is the one row whose highlight does not land on its value on
 // its own. Two corrections, both settled by eye (see OptionRow::bar_nudge_x):
@@ -750,6 +771,7 @@ void OverworldModelSetIndex(u8* base, int idx);
 // and only collapses the pin to follow-party if the player actually moves the
 // row.
 constexpr const char* kOverworldModelValues[2] = {"Default", "Leader"};
+constexpr const char* kOverworldModelValuesJa[2] = {"標準", "リーダー"};
 
 // The Battle Camera row's own value strings, read out of the Options list at
 // 0x8202F388: its two type-200 records at record y 25 carry text ids 130 and
@@ -783,7 +805,7 @@ void FitBarToValue(OptionRow& row, const char* text) {
 void MakeLiteralRow(OptionRow& row, const LocalizedLabel& label,
                     const char* const* values, int value_count) {
   for (int i = 0; i < kLanguageCount; ++i) {
-    row.label[i] = label.text[i] ? label.text[i] : "";
+    row.label[i] = LabelText(label, i);
   }
   row.values.clear();
   for (int i = 0; i < value_count; ++i) {
@@ -908,6 +930,8 @@ std::vector<OptionRow>& Rows() {
     initial[3].page = kPageOptions;
     MakeLiteralRow(initial[4], kLabelOverworldModel, kOverworldModelValues,
                    static_cast<int>(std::size(kOverworldModelValues)));
+    for (size_t i = 0; i < std::size(kOverworldModelValuesJa); ++i)
+      initial[4].values[i].literal[kJapanese] = JapaneseText(kOverworldModelValuesJa[i]);
     initial[4].get_index = &OverworldModelGetIndex;
     initial[4].set_index = &OverworldModelSetIndex;
     initial[4].page = kPageOptions;
@@ -2303,9 +2327,8 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   }
 
   // The restart marker sits next to the labels, so it follows their language.
-  const std::string marker = kLabelRestartMarker.text[label_lang]
-                                 ? kLabelRestartMarker.text[label_lang]
-                                 : kLabelRestartMarker.text[0];
+  const std::string marker =
+      LabelText(kLabelRestartMarker, kLabelRestartMarker.text[label_lang] ? label_lang : 0);
   if (!g_marker_addr) {
     g_marker_addr = mem->SystemHeapAlloc(64, 0x20);
   }
