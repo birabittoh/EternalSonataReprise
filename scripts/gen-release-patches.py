@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Build the bundle of patches that lets a USA copy of the game run.
+"""Build the bundle of patches that lets the USA and JP copies of the game run.
 
 The recompiled code is the PAL release's, so it only runs on PAL's xex image
-and indexes PAL's containers by position. A USA player gets their default.xex
+and indexes PAL's containers by position. Another release gets its default.xex
 converted by the SDK's game data selector, and the containers whose layout
-the code depends on converted by the asset system as it serves them. The USA
+the code depends on converted by the asset system as it serves them. Its
 scripts (.e) are left alone: they run as they are and carry the text.
 
 Every patch works on a normalized form, so that the bytes it diffs have
@@ -29,10 +29,12 @@ The triples are bsdiff's: add `x` bytes of diff to the source, copy `y` bytes
 of extra, then move the source cursor by `z`.
 
 Bundle layout: 'RXDB', u32 count, then per patch a 64-byte NUL padded guest
-path ("default.xex", "btldata/battlekeep.bop"), a u32 length and the patch.
+path ("default.xex", "btldata/battlekeep.bop"), a u32 length and the patch. A
+path has one patch per release that differs from PAL there; the reader tries
+each, since only one accepts its source.
 
 usage:
-    python scripts/gen-usa-patches.py <pal assets> <usa assets> <out.bin>
+    python scripts/gen-release-patches.py <pal assets> <out.bin> <release assets>...
 """
 import hashlib
 import os
@@ -46,8 +48,9 @@ import numpy
 import unpack_e
 from xex_image import XEX_FILE_FORMAT_INFO, XexImage
 
-# Everything that differs between the releases except the scripts. index.vmtoc
-# is not here: the served one is rebuilt from the containers.
+# Everything that differs between the releases except the scripts, the voice
+# banks and the music, which are loaded whole. index.vmtoc is not here: the
+# served one is rebuilt from the containers.
 CONTAINERS = [
     "appkeep.bmd",
     "title.bmd",
@@ -56,6 +59,7 @@ CONTAINERS = [
     "ed2.bmd",
     "btldata/battlekeep.bop",
     "btldata/map/lnt90.bop",
+    "campdata/scp.bmd",
 ]
 
 
@@ -101,25 +105,29 @@ def make_patch(source_raw, source, target):
 
 
 def main():
-    if len(sys.argv) != 4:
+    if len(sys.argv) < 4:
         sys.exit(__doc__)
-    pal, usa, out_path = sys.argv[1:]
+    pal, out_path = sys.argv[1:3]
 
     patches = []
-    _, target = normalize_xex(os.path.join(pal, "default.xex"))
-    source_raw, source = normalize_xex(os.path.join(usa, "default.xex"))
-    patches.append(("default.xex", make_patch(source_raw, source, target)))
-
+    _, pal_xex = normalize_xex(os.path.join(pal, "default.xex"))
     pal_toc = unpack_e.load_toc(pal)
-    usa_toc = unpack_e.load_toc(usa)
-    for name in CONTAINERS:
-        target, _, _ = unpack_e.unpack_file(name, pal, pal_toc)
-        source, _, _ = unpack_e.unpack_file(name, usa, usa_toc)
-        if source == target:
-            continue
-        source_raw = open(os.path.join(usa, name), "rb").read()
-        patches.append((name, make_patch(source_raw, source, target)))
-        print(f"{name}: {len(patches[-1][1])} bytes")
+    for release in sys.argv[3:]:
+        print(release)
+        source_raw, source = normalize_xex(os.path.join(release, "default.xex"))
+        if source != pal_xex:
+            patches.append(("default.xex", make_patch(source_raw, source, pal_xex)))
+            print(f"  default.xex: {len(patches[-1][1])} bytes")
+
+        toc = unpack_e.load_toc(release)
+        for name in CONTAINERS:
+            target, _, _ = unpack_e.unpack_file(name, pal, pal_toc)
+            source, _, _ = unpack_e.unpack_file(name, release, toc)
+            if source == target:
+                continue
+            source_raw = open(os.path.join(release, name), "rb").read()
+            patches.append((name, make_patch(source_raw, source, target)))
+            print(f"  {name}: {len(patches[-1][1])} bytes")
 
     bundle = b"RXDB" + struct.pack("<I", len(patches))
     for name, patch in patches:

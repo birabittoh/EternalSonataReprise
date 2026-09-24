@@ -60,13 +60,14 @@ void ApplyXexTextPatches(rex::Runtime* runtime);
 // that leaves the text as shipped does not count.
 bool XexTextModded(uint32_t blob, const char* lang, uint32_t id);
 
-// The patch converting a USA copy's `guest_path` ("default.xex",
-// "btldata/battlekeep.bop") into PAL's, from the bundle linked into the
-// executable (scripts/gen-usa-patches.py); empty if there is none.
-std::span<const uint8_t> FindUsaPatch(std::string_view guest_path);
+// The patches converting another release's `guest_path` ("default.xex",
+// "btldata/battlekeep.bop") into PAL's, one per release that differs there,
+// from the bundle linked into the executable (scripts/gen-release-patches.py).
+// Each accepts only its own release's bytes.
+std::vector<std::span<const uint8_t>> FindReleasePatches(std::string_view guest_path);
 
 // Every container the bundle converts, default.xex aside.
-std::vector<std::string> UsaPatchedContainers();
+std::vector<std::string> ReleasePatchedContainers();
 
 // Whether the `fourcc` BTX block ("ITA " and so on) has text to show: the
 // release in game_data_root ships it, or a mod patches .e text into it. The USA

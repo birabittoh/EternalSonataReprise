@@ -43,7 +43,7 @@ enum {
   ETERNALSONATA_PAGE_GRAPHICS = 1
 };
 
-// Language slots. The first five match the Options display lists the game ships
+// Language slots. The first six match the Options display lists the game ships
 // (see kOptionsListByLang in eternalsonata_options.cpp); the rest are for
 // languages a mod added, which take the next free slot in registration order.
 // Slot n is the n'th entry of settings.h's GetLanguageOptions(), so a mod that
@@ -59,7 +59,8 @@ enum {
   ETERNALSONATA_LANG_FR = 2,
   ETERNALSONATA_LANG_ES = 3,
   ETERNALSONATA_LANG_IT = 4,
-  ETERNALSONATA_LANG_BUILTIN_COUNT = 5,
+  ETERNALSONATA_LANG_JA = 5,
+  ETERNALSONATA_LANG_BUILTIN_COUNT = 6,
   ETERNALSONATA_LANG_COUNT = 9
 };
 

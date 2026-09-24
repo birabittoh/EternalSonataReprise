@@ -70,15 +70,22 @@ namespace {
 // 2026-08-06 by watching sub_821F2F38's actual argument per language (ids
 // found empirically, not derivable from the language byte's own switch below -
 // this is a different value entirely, an argument computed by the screen's
-// caller). Indexed by LanguageIndex() below: en, de, fr, es, it.
-constexpr u32 kOptionsListByLang[5] = {
+// caller). Indexed by LanguageIndex() below: en, de, fr, es, it, ja. The
+// Japanese ones were read off sub_821EC050's language switch instead.
+constexpr u32 kOptionsListByLang[6] = {
     0x8202F388u,  // en
     0x820723F8u,  // de
     0x82068648u,  // fr
     0x8206D520u,  // es
     0x8205E880u,  // it
+    0x82059970u,  // ja
 };
 constexpr u32 kOptionsListBytes = 0x868u;  // up to, excluding, its terminator
+
+// The Japanese Options list carries two extra 0xC byte type 707 records near
+// its top; everything after them is the other lists' layout, so every offset
+// into page 1 is measured from past them.
+constexpr u32 kOptionsListLead[6] = {0, 0, 0, 0, 0, 0x18u};
 
 // The button-configuration screen - the *second* page of Options, reached with
 // RB - is built by the very same interpreter. sub_822028C8 (menu state 6) calls
@@ -95,12 +102,13 @@ constexpr u32 kOptionsListBytes = 0x868u;  // up to, excluding, its terminator
 // go on to *position* three objects itself, but only the three stock rows'
 // value markers - ids 0/1/2 - which is why our records must never renumber
 // them; see the ordering rule in EnsurePageRows.)
-constexpr u32 kButtonsListByLang[5] = {
+constexpr u32 kButtonsListByLang[6] = {
     0x8202FBF8u,  // en
     0x82072C68u,  // de
     0x82068EB8u,  // fr
     0x8206DD90u,  // es
     0x8205F108u,  // it
+    0x8205A1F8u,  // ja
 };
 constexpr u32 kButtonsListBytes = 0x460u;
 
@@ -433,6 +441,7 @@ static_assert(kMaxRowValues + 2 <= kRowSidStride,
 // "Resolution"/"Frame Rate"/"Fullscreen"), so unlike the boolean values above
 // they cannot ride the game's own localisation for free - each language needs
 // its own literal. Index matches LanguageIndex() below: en, de, fr, es, it.
+// Japanese has none yet and draws the English one.
 //
 // Accents are written as raw CP1252/Latin-1 byte escapes rather than UTF-8
 // source characters: the stock EFIGS text in the game's own BTX blocks is
@@ -443,14 +452,14 @@ static_assert(kMaxRowValues + 2 <= kRowSidStride,
 // Two different counts, and conflating them reads past the end of the tables
 // above.
 //
-// kGuestListCount is the game's: five display lists per page, one per shipped
+// kGuestListCount is the game's: six display lists per page, one per shipped
 // language (kOptionsListByLang / kButtonsListByLang). It is fixed forever,
 // because the lists are addresses in the xex.
 //
 // kLanguageCount is ours: how many languages a row can carry a translated label
 // or value for, which now includes the ones mods add (see settings.h's
 // GetLanguageOptions). A mod-added language still *draws* through one of the
-// five guest lists, the one its donor BTX slot belongs to.
+// six guest lists, the one its donor BTX slot belongs to.
 constexpr int kGuestListCount = static_cast<int>(std::size(kOptionsListByLang));
 constexpr int kLanguageCount = ETERNALSONATA_LANG_COUNT;
 static_assert(kGuestListCount == ETERNALSONATA_LANG_BUILTIN_COUNT,
@@ -460,7 +469,7 @@ struct LocalizedLabel {
   const char* text[kLanguageCount];
 };
 
-// Which language is active is derived from *which of the 5 known list
+// Which language is active is derived from *which of the 6 known list
 // addresses matched* (see kOptionsListByLang), not from dword_8243D370's own
 // switch - that byte's numbering doesn't correspond to XLanguage kernel ids in
 // any way that was confirmed reliable (verified Italian, guessed the other
@@ -2182,7 +2191,10 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   st.rows = RowsOnPage(page);
   const u32 row_count = static_cast<u32>(st.rows.size());
 
-  u32 bytes = pl.list_bytes + static_cast<u32>(sizeof(u32));
+  const u32 lead = page == kPageOptions ? kOptionsListLead[lang_idx] : 0;
+  const u32 list_bytes = pl.list_bytes + lead;
+  const u32 insert_offset = pl.insert_offset + lead;
+  u32 bytes = list_bytes + static_cast<u32>(sizeof(u32));
   for (const u32 r : st.rows) {
     // Two text records per row before its values: the label, and the restart
     // marker. The marker is only emitted while the row is actually pending, but
@@ -2240,7 +2252,7 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   // layout at a different address - so every copy below reads from whichever
   // one is active right now rather than a single fixed address.
   const u32 src_list = pl.lists[lang_idx];
-  const u32 tpl_list = kOptionsListByLang[lang_idx];
+  const u32 tpl_list = kOptionsListByLang[lang_idx] + kOptionsListLead[lang_idx];
   st.value_base_x =
       static_cast<int32_t>(REX_LOAD_U32(tpl_list + kSubtitlesValue1Offset + 8));
   // How far below a row's text its separator sits, taken from the stock
@@ -2306,8 +2318,8 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   // renders in the wrong place (observed on page 1: label offset from the
   // cursor, which sat correctly at y=530). Both splice points sit right after
   // a text record, which is the state the real rows draw in.
-  std::memcpy(REX_RAW_ADDR(list), REX_RAW_ADDR(src_list), pl.insert_offset);
-  u32 at = list + pl.insert_offset;
+  std::memcpy(REX_RAW_ADDR(list), REX_RAW_ADDR(src_list), insert_offset);
+  u32 at = list + insert_offset;
 
   // Mirror the Subtitles row's layout for every row: label at X=120 and
   // every value drawn side by side from the language's real value column,
@@ -2388,7 +2400,7 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   // point through first (page 1's icon record; page 2 is already past the last
   // one), then append ours, so each row's bar takes the next free index and
   // nothing shifts.
-  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + pl.insert_offset),
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + insert_offset),
               pl.bar_skip_bytes);
   at += pl.bar_skip_bytes;
   for (u32 i = 0; i < row_count; ++i) {
@@ -2419,10 +2431,9 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
       at += kBarRecordBytes;
     }
   }
-  const u32 rest = pl.insert_offset + pl.bar_skip_bytes;
-  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + rest),
-              pl.list_bytes - rest);
-  at += pl.list_bytes - rest;
+  const u32 rest = insert_offset + pl.bar_skip_bytes;
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + rest), list_bytes - rest);
+  at += list_bytes - rest;
   REX_STORE_U32(at, kListTerminator);
 
   REXLOG_INFO("[options] page {}: {} native rows built (list=0x{:08X})", page,

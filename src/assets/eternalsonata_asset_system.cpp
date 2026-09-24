@@ -40,10 +40,10 @@
 #include "loading_screen.h"
 #include "settings.h"
 
-// The USA to PAL patch bundle, linked in by usa-patches.S.
+// The USA and JP to PAL patch bundle, linked in by release-patches.S.
 extern "C" {
-extern const uint8_t kUsaPatchData[];
-extern const uint8_t kUsaPatchDataEnd[];
+extern const uint8_t kReleasePatchData[];
+extern const uint8_t kReleasePatchDataEnd[];
 }
 
 namespace eternalsonata {
@@ -1572,7 +1572,7 @@ void ApplyLipSyncPatches(const std::string& guest_path, Container& container,
   }
 }
 
-bool ApplyUsaPatch(const std::string& guest_path, std::vector<uint8_t>& bytes);
+bool ApplyReleasePatch(const std::string& guest_path, std::vector<uint8_t>& bytes);
 
 std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const assets::Toc& toc,
                                                const std::string& guest_path,
@@ -1633,7 +1633,7 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
     } else {
       result.bytes = std::move(encoded);
     }
-    if (ApplyUsaPatch(guest_path, result.bytes))
+    if (ApplyReleasePatch(guest_path, result.bytes))
       ++result.patches_applied;
   }
 
@@ -1701,28 +1701,29 @@ bool WriteWholeFile(const std::filesystem::path& path, const std::vector<uint8_t
   return out.good();
 }
 
-// A USA copy's containers are converted to PAL's as they are read, since the
-// code indexes into them by position; see scripts/gen-usa-patches.py.
-bool ApplyUsaPatch(const std::string& guest_path, std::vector<uint8_t>& bytes) {
-  const auto patch = FindUsaPatch(guest_path);
-  if (patch.empty())
-    return false;
-  std::vector<uint8_t> converted;
-  if (!rex::system::ApplyReleasePatch(patch, bytes, converted))
-    return false;
-  bytes = std::move(converted);
-  return true;
+// A USA or JP copy's containers are converted to PAL's as they are read, since
+// the code indexes into them by position; see scripts/gen-release-patches.py.
+bool ApplyReleasePatch(const std::string& guest_path, std::vector<uint8_t>& bytes) {
+  for (const auto patch : FindReleasePatches(guest_path)) {
+    std::vector<uint8_t> converted;
+    if (rex::system::ApplyReleasePatch(patch, bytes, converted)) {
+      bytes = std::move(converted);
+      return true;
+    }
+  }
+  return false;
 }
 
 // The camp menu loads its art from campdata/camp_grpN.bmd, one per language
 // (sub_821E8E28), and waits forever for one that is missing. Only PAL ships
-// them: USA keeps the same textures in AppKeep.bmd, in slots PAL left empty.
-// So on USA data each is rebuilt from those slots, in the order camp_grp1
-// lists them, with the English art standing in for every language.
+// them: USA and JP keep their own language's textures in AppKeep.bmd, in the
+// same slots, which PAL left empty. So on their data each is rebuilt from those
+// slots, in the order camp_grp1 lists them, with that one language's art
+// standing in for every language. JP's are byte for byte PAL's camp_grp0.
 constexpr std::array kCampGroupSlots = {251, 268, 269, 267, 304, 305, 306};
 constexpr size_t kCampGroupHeader = 0x30;
 
-bool IsUsaRelease(const assets::Toc& toc) {
+bool NeedsCampGroups(const assets::Toc& toc) {
   return !toc.Find("campdata/camp_grp1.bmd") && toc.Find("appkeep.bmd");
 }
 
@@ -1744,7 +1745,7 @@ size_t WriteCampGroups(assets::Toc& toc, const std::filesystem::path& dir) {
   };
   const uint32_t count = be32(8);
   if (count <= kCampGroupSlots.back() + 1 || 12 + 4 * size_t(count) > keep.size()) {
-    REXLOG_ERROR("assets: AppKeep.bmd has {} entries, not the USA layout", count);
+    REXLOG_ERROR("assets: AppKeep.bmd has {} entries, not the USA or JP layout", count);
     return 0;
   }
 
@@ -1782,16 +1783,17 @@ size_t WriteCampGroups(assets::Toc& toc, const std::filesystem::path& dir) {
 
 // Serves the converted form of every container the bundle covers that no mod
 // patched, which BuildCache has already written. Returns how many it wrote.
-size_t WriteUsaContainers(rex::Runtime* runtime, assets::Toc& toc,
-                          const std::filesystem::path& dir) {
+size_t WriteReleaseContainers(rex::Runtime* runtime, assets::Toc& toc,
+                              const std::filesystem::path& dir) {
   size_t written = 0;
-  for (const auto& path : UsaPatchedContainers()) {
+  for (const auto& path : ReleasePatchedContainers()) {
     std::error_code ec;
     if (std::filesystem::is_regular_file(dir / path, ec) || !toc.Find(path))
       continue;
     std::vector<uint8_t> bytes;
-    if (!LoadDecodedContainer(path, bytes, false) || !ApplyUsaPatch(path, bytes)) {
-      REXLOG_WARN("assets: {} is not the USA release's, so it is served as it is", path);
+    // Not every release differs from PAL on every path: USA's scp.bmd is PAL's.
+    if (!LoadDecodedContainer(path, bytes, false) || !ApplyReleasePatch(path, bytes)) {
+      REXLOG_INFO("assets: no patch takes this release's {}, so it is served as it is", path);
       continue;
     }
     if (!WriteWholeFile(dir / path, bytes) || !toc.SetStored(path, uint32_t(bytes.size()))) {
@@ -1800,7 +1802,7 @@ size_t WriteUsaContainers(rex::Runtime* runtime, assets::Toc& toc,
     }
     ++written;
   }
-  REXLOG_INFO("assets: converted {} USA containers to the PAL layout", written);
+  REXLOG_INFO("assets: converted {} containers to the PAL layout", written);
   return written;
 }
 
@@ -1910,9 +1912,9 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir, bool sh
 
   if (shown)
     report(total, "", true);
-  if (IsUsaRelease(toc)) {
+  if (NeedsCampGroups(toc)) {
     built += WriteCampGroups(toc, dir);
-    built += WriteUsaContainers(runtime, toc, dir);
+    built += WriteReleaseContainers(runtime, toc, dir);
   }
   if (!built) {
     std::filesystem::remove_all(dir, ec);
@@ -2022,7 +2024,7 @@ bool LoadDecodedContainer(const std::string& guest_path, std::vector<uint8_t>& o
   if (!assets::DecodeAsset(encoded.data(), encoded.size(), entry->size, entry->flag, out))
     return false;
   if (convert)
-    ApplyUsaPatch(NormalizeGuestPath(guest_path), out);
+    ApplyReleasePatch(NormalizeGuestPath(guest_path), out);
   return true;
 }
 
@@ -2169,7 +2171,7 @@ void BindAssetSystem(rex::Runtime* runtime) {
   s.bound = true;
   assets::Toc base_toc;
   if (s.containers.empty() &&
-      !(base_toc.Load(runtime->game_data_root() / "index.vmtoc") && IsUsaRelease(base_toc)))
+      !(base_toc.Load(runtime->game_data_root() / "index.vmtoc") && NeedsCampGroups(base_toc)))
     return;
   RebuildAndServe(true);
 }
@@ -2326,38 +2328,42 @@ void ApplyXexTextPatches(rex::Runtime* runtime) {
               kXexContainer);
 }
 
-std::span<const uint8_t> FindUsaPatch(std::string_view guest_path) {
-  const std::span<const uint8_t> bundle(kUsaPatchData, kUsaPatchDataEnd);
-  if (bundle.size() < 8 || std::memcmp(bundle.data(), "RXDB", 4) != 0)
-    return {};
-  size_t at = 8;
-  while (at + 68 <= bundle.size()) {
-    const auto* rec = reinterpret_cast<const char*>(bundle.data() + at);
-    const uint32_t size = uint32_t(bundle[at + 64]) | uint32_t(bundle[at + 65]) << 8 |
-                          uint32_t(bundle[at + 66]) << 16 | uint32_t(bundle[at + 67]) << 24;
-    if (at + 68 + size > bundle.size())
-      break;
-    if (std::string_view(rec, strnlen(rec, 64)) == guest_path)
-      return bundle.subspan(at + 68, size);
-    at += 68 + size;
-  }
-  return {};
-}
+namespace {
 
-std::vector<std::string> UsaPatchedContainers() {
-  std::vector<std::string> paths;
-  const std::span<const uint8_t> bundle(kUsaPatchData, kUsaPatchDataEnd);
+// Calls `visit(path, patch)` for every entry of the bundle.
+template <typename Visit>
+void ForEachReleasePatch(Visit&& visit) {
+  const std::span<const uint8_t> bundle(kReleasePatchData, kReleasePatchDataEnd);
   if (bundle.size() < 8 || std::memcmp(bundle.data(), "RXDB", 4) != 0)
-    return paths;
+    return;
   for (size_t at = 8; at + 68 <= bundle.size();) {
     const auto* rec = reinterpret_cast<const char*>(bundle.data() + at);
     const uint32_t size = uint32_t(bundle[at + 64]) | uint32_t(bundle[at + 65]) << 8 |
                           uint32_t(bundle[at + 66]) << 16 | uint32_t(bundle[at + 67]) << 24;
-    std::string path(rec, strnlen(rec, 64));
-    if (path != kXexContainer)
-      paths.push_back(std::move(path));
+    if (at + 68 + size > bundle.size())
+      return;
+    visit(std::string_view(rec, strnlen(rec, 64)), bundle.subspan(at + 68, size));
     at += 68 + size;
   }
+}
+
+}  // namespace
+
+std::vector<std::span<const uint8_t>> FindReleasePatches(std::string_view guest_path) {
+  std::vector<std::span<const uint8_t>> patches;
+  ForEachReleasePatch([&](std::string_view path, std::span<const uint8_t> patch) {
+    if (path == guest_path)
+      patches.push_back(patch);
+  });
+  return patches;
+}
+
+std::vector<std::string> ReleasePatchedContainers() {
+  std::vector<std::string> paths;
+  ForEachReleasePatch([&](std::string_view path, std::span<const uint8_t>) {
+    if (path != kXexContainer && std::find(paths.begin(), paths.end(), path) == paths.end())
+      paths.emplace_back(path);
+  });
   return paths;
 }
 
