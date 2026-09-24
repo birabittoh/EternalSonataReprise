@@ -1,0 +1,9 @@
+# Guest logic that assumes the PAL language set.
+
+# sub_82132A08 clamps the text index below 1 to USA; skip the clamp when the
+# player picked Japanese (EternalSonataKeepJapaneseText, game_settings.cpp).
+[[midasm_hook]]
+address = 0x82132A30
+name = "EternalSonataKeepJapaneseText"
+registers = ["r4"]
+jump_address_on_true = 0x82132A38
