@@ -887,7 +887,7 @@ std::vector<OptionRow>& Rows() {
 
     // Page 1, the game page, below the stock Subtitles and Voice rows.
     MakeLiteralRow(initial[3], kLabelText, nullptr, 0);
-    for (int i = 0; i < eternalsonata::UserLanguageCount(); ++i) {
+    for (int i : eternalsonata::VisibleUserLanguages()) {
       OptionValue value;
       value.literal[0] = eternalsonata::UserLanguageCode(i);
       initial[3].values.push_back(std::move(value));
@@ -1952,9 +1952,19 @@ void CameraFovSet(u8* base, int index) {
 }
 
 // Text language. Applies live; the screen itself switches on its next entry.
-int TextGetIndex() { return eternalsonata::UserLanguageIndex(); }
+// The row lists only the languages this release has text for, so its column is
+// a position in VisibleUserLanguages rather than a list index.
+int TextGetIndex() {
+  const auto visible = eternalsonata::VisibleUserLanguages();
+  const auto it = std::find(visible.begin(), visible.end(), eternalsonata::UserLanguageIndex());
+  return it != visible.end() ? static_cast<int>(it - visible.begin()) : 0;
+}
 
-void TextSetIndex(u8* base, int idx) {
+void TextSetIndex(u8* base, int column) {
+  const auto visible = eternalsonata::VisibleUserLanguages();
+  if (column < 0 || column >= static_cast<int>(visible.size()))
+    return;
+  const int idx = visible[column];
   eternalsonata::SetUserLanguageSetting(idx);
   REXLOG_INFO("[options] user_language -> {}",
               eternalsonata::UserLanguageCode(idx));

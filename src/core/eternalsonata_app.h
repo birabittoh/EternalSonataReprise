@@ -184,6 +184,9 @@ class EternalsonataApp : public rex::ReXApp {
 
     rex::system::GameDataSelectorSettings settings;
     settings.default_xex_sha256 = "91184E7765172A358ECAA6E5CA1784DB1AE796C60F25051A45C5206F8949501E";
+    // A USA copy is converted into the PAL xex the code was generated from.
+    if (const auto patch = eternalsonata::FindUsaPatch("default.xex"); !patch.empty())
+      settings.default_xex_patches.push_back(patch);
     settings.config_path = config_path();
     // Only used where the loading screen cannot draw (no native renderer).
     settings.progress_theme = eternalsonata::ProgressTheme();
@@ -476,6 +479,9 @@ class EternalsonataApp : public rex::ReXApp {
     achievements_menu::RegisterIcons();
 
     eternalsonata::BindAssetSystem(runtime());
+
+    // Needs the mods' text patches, which BindAssetSystem just collected.
+    eternalsonata::ApplyUnavailableLanguageFallback();
 
     // Photo album for mods: src/eternalsonata_photo_api.h answers
     // "unavailable" and publishes no photo event until this runs.

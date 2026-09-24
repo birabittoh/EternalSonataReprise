@@ -3,6 +3,7 @@
 
 #include "settings.h"
 
+#include "eternalsonata_asset_system.h"
 #include "eternalsonata_options_api.h"
 #include "eternalsonata_settings_api.h"
 
@@ -1200,14 +1201,17 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     // The registry, not a fixed array: a translation mod's language shows up
     // here and in the game's own Options screen from the one registration.
     const std::vector<LanguageOption> options = GetLanguageOptions();
-    const int cur_idx = UserLanguageIndex();
+    const std::vector<int> visible = VisibleUserLanguages();
+    int cur_idx = UserLanguageIndex();
+    if (std::find(visible.begin(), visible.end(), cur_idx) == visible.end())
+      cur_idx = visible.front();
 
     DrawRowLabel("Language", nullptr);  // Applies live, whatever the SDK declares.
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("user_language");
     if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
-      for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+      for (int i : visible) {
         bool selected = (i == cur_idx);
         if (ImGui::Selectable(options[i].label, selected)) {
           // Goes through SetUserLanguageSetting rather than the cvar directly,
@@ -2052,6 +2056,45 @@ const char* UserLanguageCode(int index) {
   return options[index].code;
 }
 
+bool UserLanguageAvailable(int index) {
+  const auto options = GetLanguageOptions();
+  if (index < 0 || index >= static_cast<int>(options.size()))
+    return false;
+  if (index >= static_cast<int>(kBuiltinLanguages.size()))
+    return true;
+  // Text a mod language patched into a borrowed block is that language's.
+  const std::string_view slot = options[index].btx_slot;
+  const bool borrowed = std::any_of(g_mod_languages.begin(), g_mod_languages.end(),
+                                    [&](const ModLanguage& mod) { return mod.btx_slot == slot; });
+  return BtxLanguageAvailable(options[index].btx_slot, !borrowed);
+}
+
+std::vector<int> VisibleUserLanguages() {
+  std::vector<int> visible;
+  for (int i = 0; i < UserLanguageCount(); ++i)
+    if (UserLanguageAvailable(i))
+      visible.push_back(i);
+  if (visible.empty())
+    visible.push_back(0);
+  return visible;
+}
+
+void ApplyUnavailableLanguageFallback() {
+  const int index = BootUserLanguageIndex();
+  if (UserLanguageAvailable(index))
+    return;
+  // Same setter route and bookkeeping as the donor slot, for the same reasons:
+  // no pending restart, nothing persisted, the menus keep the player's choice.
+  const auto options = GetLanguageOptions();
+  const char* english = kBuiltinLanguages[0].id;
+  auto* entry = rex::cvar::GetFlagInfo("user_language");
+  if (!entry || !entry->setter || !entry->setter(english))
+    return;
+  g_language_donor_applied = true;
+  REXLOG_INFO("[settings] {} has no text in this release; booting the guest in {}",
+              options[index].label, kBuiltinLanguages[0].label);
+}
+
 const char* UserLanguageLabel(int index) {
   const auto options = GetLanguageOptions();
   if (index < 0 || index >= static_cast<int>(options.size())) {
@@ -2077,7 +2120,9 @@ int UserLanguageIndex() {
   const auto options = GetLanguageOptions();
   for (int i = 0; i < static_cast<int>(options.size()); ++i) {
     if (current == options[i].id) {
-      return i;
+      // A choice this release has no text for runs in English (see
+      // ApplyUnavailableLanguageFallback), so that is what is selected.
+      return UserLanguageAvailable(i) ? i : 0;
     }
   }
   // Unrecognised, which is the normal state after a mod that added a language
