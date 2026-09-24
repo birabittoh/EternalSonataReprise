@@ -31,7 +31,8 @@ of extra, then move the source cursor by `z`.
 Bundle layout: 'RXDB', u32 count, then per patch a 64-byte NUL padded guest
 path ("default.xex", "btldata/battlekeep.bop"), a u32 length and the patch. A
 path has one patch per release that differs from PAL there; the reader tries
-each, since only one accepts its source.
+each, since only one accepts its source. A file the release lacks is patched
+from an empty source.
 
 usage:
     python scripts/gen-release-patches.py <pal assets> <out.bin> <release assets>...
@@ -60,6 +61,13 @@ CONTAINERS = [
     "btldata/battlekeep.bop",
     "btldata/map/lnt90.bop",
     "campdata/scp.bmd",
+]
+
+# Only PAL ships these; the battle code loads them unconditionally. A release
+# without one gets a patch from an empty source, shared by every such release.
+ADDED = [
+    "btldata/btl_exit_text.tex",
+    "btldata/levelup_jpn.tex",
 ]
 
 
@@ -114,7 +122,11 @@ def main():
     pal_toc = unpack_e.load_toc(pal)
     for release in sys.argv[3:]:
         print(release)
-        source_raw, source = normalize_xex(os.path.join(release, "default.xex"))
+        # The game converts default.xex in place and keeps the original beside it.
+        xex = os.path.join(release, "default.xex")
+        if os.path.exists(xex + ".orig"):
+            xex += ".orig"
+        source_raw, source = normalize_xex(xex)
         if source != pal_xex:
             patches.append(("default.xex", make_patch(source_raw, source, pal_xex)))
             print(f"  default.xex: {len(patches[-1][1])} bytes")
@@ -128,6 +140,13 @@ def main():
             source_raw = open(os.path.join(release, name), "rb").read()
             patches.append((name, make_patch(source_raw, source, target)))
             print(f"  {name}: {len(patches[-1][1])} bytes")
+
+        for name in ADDED:
+            if name in toc or any(path == name for path, _ in patches):
+                continue
+            target, _, _ = unpack_e.unpack_file(name, pal, pal_toc)
+            patches.append((name, make_patch(b"", b"", target)))
+            print(f"  {name}: {len(patches[-1][1])} bytes, added")
 
     bundle = b"RXDB" + struct.pack("<I", len(patches))
     for name, patch in patches:
