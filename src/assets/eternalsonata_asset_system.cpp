@@ -908,7 +908,7 @@ bool ReadWholeFile(const std::filesystem::path& path, std::vector<uint8_t>& out)
 // too: containers built from one regional release are wrong for another.
 uint64_t CacheKey(rex::Runtime* runtime) {
   uint64_t h = 0xCBF29CE484222325ull;
-  h = HashUpdate(h, "v4");
+  h = HashUpdate(h, "v5");
   std::vector<uint8_t> base_toc;
   ReadWholeFile(runtime->game_data_root() / "index.vmtoc", base_toc);
   h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(base_toc.data()),
@@ -1788,15 +1788,19 @@ size_t WriteReleaseContainers(rex::Runtime* runtime, assets::Toc& toc,
   size_t written = 0;
   for (const auto& path : ReleasePatchedContainers()) {
     std::error_code ec;
-    if (std::filesystem::is_regular_file(dir / path, ec) || !toc.Find(path))
+    if (std::filesystem::is_regular_file(dir / path, ec))
       continue;
+    // A file PAL has and this release lacks is patched from nothing.
+    const bool added = !toc.Find(path);
     std::vector<uint8_t> bytes;
     // Not every release differs from PAL on every path: USA's scp.bmd is PAL's.
-    if (!LoadDecodedContainer(path, bytes, false) || !ApplyReleasePatch(path, bytes)) {
+    if ((!added && !LoadDecodedContainer(path, bytes, false)) || !ApplyReleasePatch(path, bytes)) {
       REXLOG_INFO("assets: no patch takes this release's {}, so it is served as it is", path);
       continue;
     }
-    if (!WriteWholeFile(dir / path, bytes) || !toc.SetStored(path, uint32_t(bytes.size()))) {
+    const uint32_t size = uint32_t(bytes.size());
+    if (!WriteWholeFile(dir / path, bytes) ||
+        !(added ? toc.AddStored(path, size) : toc.SetStored(path, size))) {
       REXLOG_ERROR("assets: could not write the converted {}", path);
       continue;
     }
