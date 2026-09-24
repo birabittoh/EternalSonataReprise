@@ -50,6 +50,7 @@
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
 #include <rex/system/mod_plugin.h>
+#include <rex/system/flags.h>
 #include <rex/system/mod_registry.h>
 
 #include "eternalsonata_settings_api.h"
@@ -87,6 +88,12 @@ constexpr uint32_t kBlockBytes = (kVoiceLanguage - kControllerP1) + 1u;
 // commits with sub_82141FE0. Writing the setting byte alone would only change
 // what the menu draws.
 REX_IMPORT(__imp__sub_821E6EA8, g_set_volume, u32(u32, u32));
+
+// sub_821D3208(fonts, language) is how the game sets dword_8243D370 at boot:
+// it also swaps between the Japanese font and the western one when the
+// language crosses that line, which a plain store does not.
+REX_IMPORT(__imp__sub_821D3208, g_set_text_language, void(u32, u32));
+constexpr uint32_t kFontSystem = 0x82555690u;
 
 constexpr int kSettingCount = ETERNALSONATA_SETTING_COUNT;
 
@@ -219,11 +226,16 @@ void WriteGuestTextLanguage(const char* btx_slot) {
   for (uint32_t i = 0; i < std::size(kTextLanguageSlots); ++i) {
     if (std::string_view(kTextLanguageSlots[i]) != btx_slot)
       continue;
-    std::lock_guard<std::mutex> lock(g_mutex);
-    auto* memory = Mem();
-    auto* host = memory ? memory->TranslateVirtual<uint8_t*>(kTextLanguage) : nullptr;
-    if (host)
-      rex::memory::store_and_swap<uint32_t>(host, i);
+    {
+      std::lock_guard<std::mutex> lock(g_mutex);
+      auto* memory = Mem();
+      auto* host = memory ? memory->TranslateVirtual<uint8_t*>(kTextLanguage) : nullptr;
+      if (host)
+        rex::memory::store_and_swap<uint32_t>(host, i);
+    }
+    // Queued even from the guest thread: the Options row calls this from
+    // inside a guest hook, where a nested guest call is not safe.
+    PostToGuestMainThread([i] { g_set_text_language(kFontSystem, i); });
     return;
   }
 }
@@ -493,4 +505,13 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetSetting(int setting, int va
   // Outside the lock: the work may run here and there is guest code in it.
   return RunOnGuestThread(
       [channel, value] { return SetVolumeOnGuestThread(channel, value); });
+}
+
+// sub_82132A08 forces the text index to USA when it is below 1, because PAL
+// shipped without Japanese. Keep block 0 when the player asked for Japanese;
+// sub_8212D908 also maps unknown language ids to 0, and those stay English.
+extern "C++" bool EternalSonataKeepJapaneseText(PPCRegister& r4);
+
+bool EternalSonataKeepJapaneseText(PPCRegister& r4) {
+  return r4.s32 == 0 && REXCVAR_GET(user_language) == 2;
 }
