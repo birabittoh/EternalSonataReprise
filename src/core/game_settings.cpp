@@ -642,20 +642,102 @@ void EternalSonataFontCharacter(PPCRegister& r3, PPCRegister& r4, PPCRegister& r
 
 // TITLE_TASK__Init loads title.bmd, whose effect only offers PAL's western
 // logos; for Japanese text load the Japanese release's, with Trusty Bell.
-extern "C++" void EternalSonataJapaneseTitle(PPCRegister& r4);
+namespace {
 
-void EternalSonataJapaneseTitle(PPCRegister& r4) {
+constexpr uint32_t kWesternTitlePath = 0x8208332Cu;  // "title.bmd"
+
+// The title task's fields, from TITLE_TASK__Init and sub_821333C0.
+constexpr uint32_t kTitleFile = 48;        // sub_8210C9D8's loader; +4 is the buffer
+constexpr uint32_t kTitleFilePending = 84;  // nonzero while the read is in flight
+constexpr uint32_t kTitleState = 372;       // 2 is the menu
+constexpr uint32_t kTitleEffects = 464;
+constexpr uint32_t kTitleEffect = 10640;
+constexpr uint32_t kTitleCursor = 10644;
+constexpr uint32_t kTitleOnLabels = 0x8238EBD4u;  // "NEON", "LOON", "OPON" by cursor
+
+// Which file the title task holds, and whether it is loading the other one.
+bool g_title_japanese = false;
+bool g_title_reloading = false;
+
+bool WantJapaneseTitle() {
+  return eternalsonata::JapaneseTitleServed() &&
+         eternalsonata::ReadGuestByte(eternalsonata::kTextLanguage + 3) == 0;
+}
+
+uint32_t TitlePath(bool japanese) {
   static uint32_t path = 0;
   auto* memory = eternalsonata::Mem();
-  if (!memory || !eternalsonata::JapaneseTitleServed() ||
-      eternalsonata::ReadGuestByte(eternalsonata::kTextLanguage + 3) != 0)
-    return;
+  if (!japanese || !memory)
+    return kWesternTitlePath;
   if (!path) {
     static constexpr char kPath[] = "title_jpn.bmd";
     path = memory->SystemHeapAlloc(sizeof(kPath), 0x20);
     if (!path)
-      return;
+      return kWesternTitlePath;
     std::memcpy(memory->TranslateVirtual<char*>(path), kPath, sizeof(kPath));
   }
-  r4.u64 = path;
+  return path;
+}
+
+}  // namespace
+
+extern "C++" void EternalSonataJapaneseTitle(PPCRegister& r4);
+
+void EternalSonataJapaneseTitle(PPCRegister& r4) {
+  g_title_reloading = false;
+  r4.u64 = TitlePath(WantJapaneseTitle());
+  g_title_japanese = r4.u32 != kWesternTitlePath;
+}
+
+// sub_82133CA0 ticks the title task. A language change on the menu swaps the
+// file: the effect is torn down and the other file read while the task idles
+// in state 4, then the effect is rebuilt as sub_821333C0's state 2 builds it,
+// without restarting the music.
+REX_EXTERN(__imp__sub_82133CA0);
+
+REX_HOOK_RAW(sub_82133CA0) {
+  const uint32_t task = ctx.r3.u32;
+  PPCContext call = ctx;
+  if (g_title_reloading) {
+    const uint32_t handle = REX_LOAD_U32(task + kTitleFile);
+    if (!(handle && handle != 0xFFFFFFFFu && REX_LOAD_U32(task + kTitleFilePending))) {
+      call.r3.u32 = task + kTitleFile;
+      sub_8210CBB8(call, base);
+      const uint32_t file = REX_LOAD_U32(task + kTitleFile + 4);
+      uint32_t effect = 0;
+      if (file && REX_LOAD_U32(file) == 0x424D4420u && REX_LOAD_U32(file + 8) > 3)
+        effect = file + REX_LOAD_U32(file + 28);
+      call.r3.u32 = task + kTitleEffects;
+      call.r4.u32 = effect;
+      call.r5.u64 = call.r6.u64 = call.r7.u64 = call.r8.u64 = 0;
+      sub_820CC310(call, base);
+      const uint32_t id = call.r3.u32;
+      REX_STORE_U32(task + kTitleEffect, id);
+      call.r3.u32 = task + kTitleEffects;
+      call.r4.u32 = id;
+      call.r5.u32 = REX_LOAD_U32(kTitleOnLabels + 4 * REX_LOAD_U32(task + kTitleCursor));
+      sub_820CCE28(call, base);
+      REX_STORE_U32(task + kTitleState, 2);
+      g_title_reloading = false;
+    }
+  } else if (REX_LOAD_U32(task + kTitleState) == 2 && WantJapaneseTitle() != g_title_japanese) {
+    g_title_japanese = !g_title_japanese;
+    call.r3.u32 = task + kTitleEffects;
+    call.r4.u32 = REX_LOAD_U32(task + kTitleEffect);
+    sub_820CC420(call, base);
+    REX_STORE_U32(task + kTitleEffect, 0xFFFFFFFFu);
+    call.r3.u32 = REX_LOAD_U32(task + kTitleFile + 4);
+    sub_82113FD0(call, base);
+    REX_STORE_U32(task + kTitleFile + 4, 0);
+    call.r3.u32 = task + kTitleFile;
+    call.r4.u32 = TitlePath(g_title_japanese);
+    sub_8210C9D8(call, base);
+    call.r3.u32 = task + kTitleFile;
+    call.r4.u64 = 16;
+    call.r5.u64 = 0;
+    sub_8210CD20(call, base);
+    REX_STORE_U32(task + kTitleState, 4);
+    g_title_reloading = true;
+  }
+  __imp__sub_82133CA0(ctx, base);
 }
