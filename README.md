@@ -19,7 +19,7 @@ Nightly builds are available from [CI artifacts](https://nightly.link/birabittoh
 
 Just extract the archive, run the executable and it will prompt you to extract the game.
 
-**This project is built and tested against the PAL version of the game.**
+**This project can load assets from the PAL, USA and JAP releases of the game. However, building the actual executable requires the PAL version of `default.xex`.**
 
 ## Troubleshooting
 
