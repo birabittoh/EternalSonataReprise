@@ -1209,9 +1209,7 @@ struct WaterProbeFrame {
   // The render state each surface draws under. Everything examined so far has
   // been an *input* to the shader; how its output is combined with what is
   // already in the target has never been looked at, and the two surfaces do not
-  // have to share it. Blend, depth and alpha test are all per draw, and the
-  // summary already reports that stencil is enabled on 51 pipelines and is not
-  // applied at all, so there is a known gap here.
+  // have to share it. Blend, depth, stencil and alpha test are all per draw.
   // A fingerprint of the guest vertex bytes this surface drew from. See where
   // it is accumulated, in the vertex stream loop.
   uint64_t vertex_hash[kMaxWaterProbeSurfaces] = {};
