@@ -184,9 +184,8 @@ class EternalsonataApp : public rex::ReXApp {
 
     rex::system::GameDataSelectorSettings settings;
     settings.default_xex_sha256 = "91184E7765172A358ECAA6E5CA1784DB1AE796C60F25051A45C5206F8949501E";
-    // A USA copy is converted into the PAL xex the code was generated from.
-    if (const auto patch = eternalsonata::FindUsaPatch("default.xex"); !patch.empty())
-      settings.default_xex_patches.push_back(patch);
+    // A USA or JP copy is converted into the PAL xex the code was generated from.
+    settings.default_xex_patches = eternalsonata::FindReleasePatches("default.xex");
     settings.config_path = config_path();
     // Only used where the loading screen cannot draw (no native renderer).
     settings.progress_theme = eternalsonata::ProgressTheme();

@@ -20,10 +20,11 @@ on:
 env:
   ASSETS_REPO: ${{ vars.ASSETS_REPO }}
   ASSET_PATH: default.xex
-  # The prebuilt patches that let a USA copy play (scripts/gen-usa-patches.py).
-  # Optional: without them the build refuses USA copies.
-  USA_ASSET_PATH: usa-patches.bin
-  ASSET_CACHE_KEY: codegen-assets-v2
+  # The prebuilt patches that let USA and JP copies play
+  # (scripts/gen-release-patches.py). Optional: without them the build refuses
+  # those copies.
+  RELEASE_ASSET_PATH: release-patches.bin
+  ASSET_CACHE_KEY: codegen-assets-v3
 
 jobs:
   build:
@@ -157,7 +158,7 @@ jobs:
         with:
           path: |
             assets/${{ env.ASSET_PATH }}
-            assets/${{ env.USA_ASSET_PATH }}
+            assets/${{ env.RELEASE_ASSET_PATH }}
           key: ${{ env.ASSET_CACHE_KEY }}
 
       # On a cold cache all 6 matrix legs hit the assets repo's contents API
@@ -185,7 +186,7 @@ jobs:
             return 1
           }
           fetch "${{ env.ASSET_PATH }}" 1048576
-          fetch "${{ env.USA_ASSET_PATH }}" 65536 || echo "::warning::${{ env.USA_ASSET_PATH }} unavailable; this build will refuse USA copies"
+          fetch "${{ env.RELEASE_ASSET_PATH }}" 65536 || echo "::warning::${{ env.RELEASE_ASSET_PATH }} unavailable; this build will refuse USA and JP copies"
 
       - name: Build (desktop)
         if: matrix.platform != 'android-arm64'

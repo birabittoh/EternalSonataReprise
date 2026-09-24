@@ -132,7 +132,7 @@ const char* FrameRateOptionLabel(int index);
 int FrameRateOptionIndex();
 void SetFrameRateOption(int index);
 
-// One entry in the Language list: the five the game shipped with, followed by
+// One entry in the Language list: the six the game shipped with, followed by
 // anything mods added (see RegisterLanguageListeners).
 //
 //   `id`       stringified XLanguage value, as stored by the user_language cvar
@@ -303,9 +303,10 @@ const char* FindNativeString(uint32_t language_id, std::string_view key);
 // The user_language cvar as an ordered list, for the native Text row in the
 // game's Options screen. Index 0..UserLanguageCount()-1; UserLanguageCode
 // returns the two-letter form the row draws ("EN", "DE", ...), and
-// UserLanguageIndex the entry currently selected (0 if unrecognised: a mod that
-// added a language and was then disabled leaves its id behind in the config,
-// and that has to read as the first entry rather than clamp to the last).
+// UserLanguageIndex the entry currently selected (the first one with text if
+// unrecognised: a mod that added a language and was then disabled leaves its id
+// behind in the config, and that has to read as the first entry rather than
+// clamp to the last).
 // SetUserLanguageSetting writes and persists it, and moves the guest's own
 // language with it, so it applies live.
 int UserLanguageCount();
@@ -313,13 +314,13 @@ const char* UserLanguageCode(int index);
 
 // Whether entry `index` has text in the release being run. A mod-added language
 // always does; a built-in one needs its BTX block filled, which the USA release
-// does only for English. The menus list VisibleUserLanguages, in list order, and
+// does only for English and Japanese, and the JP release only for Japanese. The menus list VisibleUserLanguages, in list order, and
 // keep speaking list indices everywhere else.
 bool UserLanguageAvailable(int index);
 std::vector<int> VisibleUserLanguages();
 
-// When the boot language has no text in this release, points the guest at
-// English for the run without persisting, so the config keeps the player's
+// When the boot language has no text in this release, points the guest at the
+// first language that has some for the run without persisting, so the config keeps the player's
 // choice for when the release that has it comes back. Call after
 // BindAssetSystem and before the guest boots.
 void ApplyUnavailableLanguageFallback();

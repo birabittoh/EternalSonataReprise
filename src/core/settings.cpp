@@ -344,6 +344,9 @@ constexpr std::array kBuiltinLanguages = {
     LanguageOption{"4", "French", "FR", "FRA "},
     LanguageOption{"5", "Spanish", "ES", "ESP "},
     LanguageOption{"6", "Italian", "IT", "ITA "},
+    // Last, so the five PAL display list slots keep their indices. Every
+    // release ships its text; it is the only text the JP release has.
+    LanguageOption{"2", "Japanese", "JP", "JPN "},
 };
 
 // Entries mods added, through either the "settings.language_option" event or
@@ -2086,13 +2089,13 @@ void ApplyUnavailableLanguageFallback() {
   // Same setter route and bookkeeping as the donor slot, for the same reasons:
   // no pending restart, nothing persisted, the menus keep the player's choice.
   const auto options = GetLanguageOptions();
-  const char* english = kBuiltinLanguages[0].id;
+  const int fallback = VisibleUserLanguages().front();
   auto* entry = rex::cvar::GetFlagInfo("user_language");
-  if (!entry || !entry->setter || !entry->setter(english))
+  if (!entry || !entry->setter || !entry->setter(options[fallback].id))
     return;
   g_language_donor_applied = true;
   REXLOG_INFO("[settings] {} has no text in this release; booting the guest in {}",
-              options[index].label, kBuiltinLanguages[0].label);
+              options[index].label, options[fallback].label);
 }
 
 const char* UserLanguageLabel(int index) {
@@ -2120,16 +2123,16 @@ int UserLanguageIndex() {
   const auto options = GetLanguageOptions();
   for (int i = 0; i < static_cast<int>(options.size()); ++i) {
     if (current == options[i].id) {
-      // A choice this release has no text for runs in English (see
-      // ApplyUnavailableLanguageFallback), so that is what is selected.
-      return UserLanguageAvailable(i) ? i : 0;
+      // A choice this release has no text for runs in the first language it
+      // has (see ApplyUnavailableLanguageFallback), so that is what is selected.
+      return UserLanguageAvailable(i) ? i : VisibleUserLanguages().front();
     }
   }
   // Unrecognised, which is the normal state after a mod that added a language
   // is disabled with its id still saved: fall back to the first entry rather
   // than clamping to the last, or the player ends up in a language they never
   // chose.
-  return 0;
+  return VisibleUserLanguages().front();
 }
 
 uint32_t UserLanguageId() {
