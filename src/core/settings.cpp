@@ -295,7 +295,8 @@ constexpr std::array kBasicCvarNames = {
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
     "camera_fov_scale", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
     "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button",
-    "enemy_exp_multiplier", "enemy_gold_multiplier", "enemy_hp_multiplier", "ui_scale"};
+    "enemy_exp_multiplier", "enemy_gold_multiplier", "enemy_hp_multiplier", "ui_scale",
+    "save_row_portraits", "force_japanese_font"};
 
 // Steps for the Game tab's multiplier rows. HP stops short of zero, the
 // same floor enemy_hp_multiplier has.
@@ -745,6 +746,14 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       if (ImGui::BeginTabItem("Game")) {
         DrawLanguageRow();
         DrawVoiceLanguageRow();
+        DrawCvarRow("Save Portraits", "save_row_portraits",
+                    "Shows the party portraits on save rows in every language, as the "
+                    "Japanese release does.");
+        // A release with only Japanese text is already on the Japanese font.
+        if (WesternTextAvailable()) {
+          DrawCvarRow("Japanese Fonts", "force_japanese_font",
+                      "Draws western text with the Japanese release's font.");
+        }
         ImGui::Separator();
         DrawMultiplierRow("EXP", "enemy_exp_multiplier", kRewardMultiplierSteps,
                           "Multiplies the EXP every enemy is worth. Stacks with mods that "
@@ -2070,6 +2079,14 @@ bool UserLanguageAvailable(int index) {
   const bool borrowed = std::any_of(g_mod_languages.begin(), g_mod_languages.end(),
                                     [&](const ModLanguage& mod) { return mod.btx_slot == slot; });
   return BtxLanguageAvailable(options[index].btx_slot, !borrowed);
+}
+
+bool WesternTextAvailable() {
+  const auto options = GetLanguageOptions();
+  for (const int i : VisibleUserLanguages())
+    if (std::string_view(options[i].btx_slot) != "JPN ")
+      return true;
+  return false;
 }
 
 std::vector<int> VisibleUserLanguages() {

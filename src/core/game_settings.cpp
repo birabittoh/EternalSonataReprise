@@ -58,6 +58,10 @@
 #include "guest_main_thread.h"
 #include "settings.h"
 
+REXCVAR_DEFINE_BOOL(force_japanese_font, false, "Eternal Sonata",
+                    "Draw western text with the Japanese font")
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
 namespace eternalsonata {
 namespace {
 
@@ -367,6 +371,26 @@ void PublishChanged(int setting, int value) {
 
 // Runs once per guest frame off the mod registry's tick.
 void Tick() {
+  // sub_821D3208 only reloads the fonts when the kind it picks changes, and
+  // EternalSonataFontKind picks by this cvar, so rerun it on the language
+  // already set.
+  static bool japanese_font = REXCVAR_GET(force_japanese_font);
+  if (REXCVAR_GET(force_japanese_font) != japanese_font) {
+    japanese_font = REXCVAR_GET(force_japanese_font);
+    PostToGuestMainThread([] {
+      uint32_t language;
+      {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        auto* memory = Mem();
+        if (!memory)
+          return;
+        language = rex::memory::load_and_swap<uint32_t>(
+            memory->TranslateVirtual<uint8_t*>(kTextLanguage));
+      }
+      g_set_text_language(kFontSystem, language);
+    });
+  }
+
   std::vector<std::pair<int, int>> changed;
 
   {
@@ -507,11 +531,110 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetSetting(int setting, int va
       [channel, value] { return SetVolumeOnGuestThread(channel, value); });
 }
 
-// sub_82132A08 forces the text index to USA when it is below 1, because PAL
-// shipped without Japanese. Keep block 0 when the player asked for Japanese;
+// sub_82132A08 forces the text index to USA when it is below 1, because PAL's
+// menus never offer Japanese, though its text ships. Keep block 0 when the
+// player asked for Japanese;
 // sub_8212D908 also maps unknown language ids to 0, and those stay English.
 extern "C++" bool EternalSonataKeepJapaneseText(PPCRegister& r4);
 
 bool EternalSonataKeepJapaneseText(PPCRegister& r4) {
   return r4.s32 == 0 && REXCVAR_GET(user_language) == 2;
+}
+
+// sub_82247D50 builds a save row, and only gives it the three party portraits
+// when the text is Japanese. The row reads its whole layout by that same index,
+// so building every row with Japanese's layout shows them in any language; the
+// text keeps its own font size, which the function looks up separately.
+// sub_82245638 places the row's save preview by the global instead, so it is
+// moved to Japanese's spot too, clear of the portraits.
+REXCVAR_DEFINE_BOOL(save_row_portraits, false, "Eternal Sonata",
+                    "Show the party portraits on save rows in every language, using the "
+                    "Japanese row layout")
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
+namespace {
+
+// The rest of the layout only needs fixing where western text meets it.
+bool WesternSaveRow() {
+  return REXCVAR_GET(save_row_portraits) &&
+         eternalsonata::ReadGuestByte(eternalsonata::kTextLanguage + 3) != 0;
+}
+
+}  // namespace
+
+extern "C++" void EternalSonataSaveRowLayout(PPCRegister& index);
+
+void EternalSonataSaveRowLayout(PPCRegister& index) {
+  if (REXCVAR_GET(save_row_portraits))
+    index.u64 = 0;
+}
+
+// Japanese's layout leaves 100px between the play time label and the time,
+// which a western label fills; its time is moved right to make room.
+extern "C++" void EternalSonataSaveRowTimeX(PPCRegister& f1);
+
+void EternalSonataSaveRowTimeX(PPCRegister& f1) {
+  if (WesternSaveRow())
+    f1.f64 += 40.0;
+}
+
+// Japanese's separator under the play time is 440px from x=620, past the
+// row's edge; give it the 390px of the one below it.
+extern "C++" void EternalSonataSaveRowSeparatorWidth(PPCRegister& r6);
+
+void EternalSonataSaveRowSeparatorWidth(PPCRegister& r6) {
+  if (WesternSaveRow())
+    r6.u64 = 390;
+}
+
+// Western location names wrap, and a box with no height shows only the last
+// line; take the chapter line's room and give it two lines.
+extern "C++" void EternalSonataSaveRowLocationHeight(PPCRegister& f0);
+
+void EternalSonataSaveRowLocationHeight(PPCRegister& f0) {
+  if (WesternSaveRow())
+    f0.f64 = 100.0;
+}
+
+// Its 620px run past the row from x=620; end it with the separators.
+extern "C++" void EternalSonataSaveRowLocationWidth(PPCRegister& f13);
+
+void EternalSonataSaveRowLocationWidth(PPCRegister& f13) {
+  if (WesternSaveRow())
+    f13.f64 = 390.0;
+}
+
+// The chapter line and its separator, parked far below the list.
+extern "C++" void EternalSonataSaveRowHide(PPCRegister& f2);
+
+void EternalSonataSaveRowHide(PPCRegister& f2) {
+  if (WesternSaveRow())
+    f2.f64 = 10000.0;
+}
+
+// sub_821D3208 picks the Japanese font (kind 0) only for Japanese text.
+extern "C++" void EternalSonataFontKind(PPCRegister& r28);
+
+void EternalSonataFontKind(PPCRegister& r28) {
+  if (REXCVAR_GET(force_japanese_font))
+    r28.u64 = 0;
+}
+
+// sub_821D0300 reads one character. With the Japanese font it takes a byte
+// from 0x80 up as a Shift-JIS lead, so a western accented letter is invalid,
+// and the text measuring loop never steps past it. Read it as one byte, as the
+// western font does; control bytes keep their -1.
+extern "C++" void EternalSonataFontCharacter(PPCRegister& r3, PPCRegister& r4, PPCRegister& r5);
+
+void EternalSonataFontCharacter(PPCRegister& r3, PPCRegister& r4, PPCRegister& r5) {
+  if (!REXCVAR_GET(force_japanese_font))
+    return;
+  auto* memory = eternalsonata::Mem();
+  if (!memory)
+    return;
+  const uint8_t c = *memory->TranslateVirtual<const uint8_t*>(r4.u32);
+  if (c < 0x80 || c == 0xFF)
+    return;
+  rex::memory::store_and_swap<uint16_t>(memory->TranslateVirtual<uint8_t*>(r5.u32), c);
+  r3.u64 = 1;
 }
