@@ -7,3 +7,67 @@ address = 0x82132A30
 name = "EternalSonataKeepJapaneseText"
 registers = ["r4"]
 jump_address_on_true = 0x82132A38
+
+# sub_82247D50 only draws the save rows' party portraits in Japanese. With
+# save_row_portraits on, every row is laid out as Japanese, preview included,
+# and the time and its separator are fitted to western text (game_settings.cpp).
+[[midasm_hook]]
+address = 0x82247E54
+name = "EternalSonataSaveRowLayout"
+registers = ["r19"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822456E0
+name = "EternalSonataSaveRowLayout"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82248464
+name = "EternalSonataSaveRowTimeX"
+registers = ["f1"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822485E4
+name = "EternalSonataSaveRowSeparatorWidth"
+registers = ["r6"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82248038
+name = "EternalSonataSaveRowLocationHeight"
+registers = ["f0"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82248048
+name = "EternalSonataSaveRowLocationWidth"
+registers = ["f13"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8224843C
+name = "EternalSonataSaveRowHide"
+registers = ["f2"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822486C0
+name = "EternalSonataSaveRowHide"
+registers = ["f2"]
+after_instruction = true
+
+# force_japanese_font: every language takes sub_821D3208's Japanese font
+# (EternalSonataFontKind, game_settings.cpp).
+[[midasm_hook]]
+address = 0x821D32C8
+name = "EternalSonataFontKind"
+registers = ["r28"]
+
+# Western text under the Japanese font (EternalSonataFontCharacter).
+[[midasm_hook]]
+address = 0x821D03E4
+name = "EternalSonataFontCharacter"
+registers = ["r3", "r4", "r5"]

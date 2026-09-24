@@ -313,11 +313,14 @@ int UserLanguageCount();
 const char* UserLanguageCode(int index);
 
 // Whether entry `index` has text in the release being run. A mod-added language
-// always does; a built-in one needs its BTX block filled, which the USA release
-// does only for English and Japanese, and the JP release only for Japanese. The menus list VisibleUserLanguages, in list order, and
-// keep speaking list indices everywhere else.
+// always does; a built-in one needs its BTX block filled, which PAL does for
+// all of them, the USA release only for English and Japanese, and the JP
+// release only for Japanese. The menus list VisibleUserLanguages, in list
+// order, and keep speaking list indices everywhere else.
 bool UserLanguageAvailable(int index);
 std::vector<int> VisibleUserLanguages();
+// Whether any language other than Japanese has text in this release.
+bool WesternTextAvailable();
 
 // When the boot language has no text in this release, points the guest at the
 // first language that has some for the run without persisting, so the config keeps the player's
