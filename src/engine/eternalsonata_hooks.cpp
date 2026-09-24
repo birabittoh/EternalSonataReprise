@@ -11,6 +11,7 @@
 #include <rex/cvar.h>
 #include <rex/system/kernel_state.h>
 
+#include "eternalsonata_asset_container.h"
 #include "eternalsonata_asset_system.h"
 #include "eternalsonata_hooks_internal.h"
 #include "native_renderer_frame.h"
@@ -40,8 +41,8 @@ constexpr u32 kSaveText = 0x822F94F0;
 constexpr u32 kNewGameText = 0x822FDD00;
 
 // Written as UTF-8 with real line breaks for readability; converted to the
-// blobs' Latin-1 and "\n" markup when installed. English covers USA and GBR,
-// and a null keeps the stock text.
+// blobs' Latin-1 (Shift-JIS for JPN) and "\n" markup when installed. English
+// covers USA and GBR, and a null keeps the stock text.
 struct ConsoleTextFix {
     u32 blob;
     u32 string_id;
@@ -50,6 +51,7 @@ struct ConsoleTextFix {
     const char* it;
     const char* de;
     const char* es;
+    const char* ja;
 };
 
 constexpr ConsoleTextFix kConsoleTextFixes[] = {
@@ -58,153 +60,179 @@ constexpr ConsoleTextFix kConsoleTextFixes[] = {
      "Les données de sauvegarde ne sont\nplus accessibles.",
      "I dati di salvataggio non sono\npiù accessibili.",
      "Auf die Speicherdaten kann nicht\nmehr zugegriffen werden.",
-     "Ya no se puede acceder a los\ndatos guardados."},
+     "Ya no se puede acceder a los\ndatos guardados.",
+     "セーブデータに\nアクセスできなくなりました。"},
     {kUnlockKeyText, 6,
      "Unable to check the Unlock Key.",
      "Impossible de vérifier la clé de déblocage.",
      "Impossibile verificare la chiave di attivazione.",
      "Freischalt-Code kann nicht überprüft werden.",
-     "No se pudo comprobar la clave de desbloqueo."},
+     "No se pudo comprobar la clave de desbloqueo.",
+     "アンロックキーを確認できません。"},
     {kUnlockKeyText, 7,
      "Checking Unlock Key.\nPlease do not close the game.\n",
      "Vérification de clé de déblocage.\nNe pas fermer le jeu.\n",
      "Verifica chiave di attivazione.\nNon chiudere il gioco.\n",
      "Freischalt-Code wird überprüft.\nBitte das Spiel nicht beenden.\n",
-     "Comprobando clave de desbloqueo.\nNo cierres el juego.\n"},
+     "Comprobando clave de desbloqueo.\nNo cierres el juego.\n",
+     "アンロックキーのチェック中です…。\nゲームを終了しないでください。\n"},
 
     {kSystemText, 182,
      "An error has occurred.\nReturning to Title Screen",
      "Une erreur est survenue.\nRetour à l'écran de titre.",
      "Si è verificato un errore.\nTorna alla schermata del titolo.",
      "Ein Fehler ist aufgetreten.\nZurück zum Titelbildschirm.",
-     "Se ha producido un error.\nRegresarás a la pantalla de inicio."},
+     "Se ha producido un error.\nRegresarás a la pantalla de inicio.",
+     "エラーが発生しました。\nタイトル画面に戻ります。"},
 
     {kSaveText, 0,
      "Checking save files...\nPlease do not close the game.\n",
      "Vérification des fichiers de sauvegarde en cours.\nNe pas fermer le jeu.\n",
      "Verifica del salvataggio in corso...\nNon chiudere il gioco.",
      "Gespeicherte Spielstände werden geprüft ...\nBitte das Spiel nicht beenden.\n",
-     "Comprobando los archivos de guardado...\nNo cierres el juego.\n"},
+     "Comprobando los archivos de guardado...\nNo cierres el juego.\n",
+     "セーブファイルをチェックしています…。\nゲームを終了しないでください。"},
     {kSaveText, 3,
      "Saving...\nPlease do not close the game.\n",
      "Sauvegarde en cours.\nNe pas fermer le jeu.\n",
      "Salvataggio in corso...\nNon chiudere il gioco.",
      "Speichern ...\nBitte das Spiel nicht beenden.\n",
-     "Guardando...\nNo cierres el juego.\n"},
+     "Guardando...\nNo cierres el juego.\n",
+     "データを書き込んでいます…。\nゲームを終了しないでください。\n"},
     {kSaveText, 7,
      "Loading...\nPlease do not close the game.\n",
      "Chargement en cours.\nNe pas fermer le jeu.\n",
      "Caricamento in corso...\nNon chiudere il gioco.",
      "Laden ...\nBitte das Spiel nicht beenden.\n",
-     "Cargando...\nNo cierres el juego.\n"},
+     "Cargando...\nNo cierres el juego.\n",
+     "データを読み込んでいます…。\nゲームを終了しないでください。"},
     {kSaveText, 12,
      "Insufficient disk space.",
      "Espace disque insuffisant.",
      "Spazio su disco insufficiente.",
      "Unzureichender Speicherplatz.",
-     "No hay espacio suficiente en el disco."},
+     "No hay espacio suficiente en el disco.",
+     "ディスクの空き容量が足りないため、セーブできません"},
     {kSaveText, 17,
      "There was an error checking the save file.\n",
      "Erreur lors de la vérification du fichier de sauvegarde.\n",
      "Si è verificato un errore durante il controllo del salvataggio.\n",
      "Beim Prüfen der Speicherdatei ist ein Fehler aufgetreten.\n",
-     "Se produjo un error al comprobar el archivo de guardado.\n"},
+     "Se produjo un error al comprobar el archivo de guardado.\n",
+     "セーブファイルのチェック中にエラーが発生しました。\n"},
     {kSaveText, 18,
      "An unexpected error has occurred.\nThe save data cannot be accessed.\n",
      "Une erreur est survenue.\nAccès aux données de sauvegarde impossible.\n",
      "Si è verificato un errore inatteso.\nImpossibile accedere ai dati di salvataggio.\n",
      "Ein unerwarteter Fehler ist aufgetreten.\nAuf die Speicherdaten kann nicht zugegriffen werden.\n",
-     "Se ha producido un error inesperado.\nNo se puede acceder a los datos guardados.\n"},
+     "Se ha producido un error inesperado.\nNo se puede acceder a los datos guardados.\n",
+     "予期しないエラーが発生したため、\nセーブデータにアクセスできません。\n"},
     {kSaveText, 22,
      "An unexpected error has occurred.\nThe save data cannot be accessed.\n",
      "Une erreur est survenue.\nAccès aux données de sauvegarde impossible.\n",
      "Si è verificato un errore inatteso.\nImpossibile accedere ai dati di salvataggio.\n",
      "Ein unerwarteter Fehler ist aufgetreten.\nAuf die Speicherdaten kann nicht zugegriffen werden.\n",
-     "Se ha producido un error inesperado.\nNo se puede acceder a los datos guardados.\n"},
+     "Se ha producido un error inesperado.\nNo se puede acceder a los datos guardados.\n",
+     "予期しないエラーが発生したため、\nセーブデータにアクセスできません。\n"},
     {kSaveText, 24,
      "Saving is not available.\n",
      "La sauvegarde n'est pas disponible.\n",
      "Il salvataggio non è disponibile.",
      "Speichern ist nicht verfügbar.\n",
-     "No es posible guardar.\n"},
+     "No es posible guardar.\n",
+     "セーブできません。\n"},
     {kSaveText, 25,
      "The save data can no longer be accessed.\n",
      "Les données de sauvegarde ne sont plus accessibles.\n",
      "I dati di salvataggio non sono\npiù accessibili.",
      "Auf die Speicherdaten kann nicht\nmehr zugegriffen werden.\n",
-     "Ya no se puede acceder a los\ndatos guardados.\n"},
+     "Ya no se puede acceder a los\ndatos guardados.\n",
+     "セーブデータにアクセスできなくなりました。\n"},
     {kSaveText, 26,
      "There is no Eternal Sonata save data.\n",
      "Aucune sauvegarde d'Eternal Sonata n'a été détectée.\n",
      "Nessun salvataggio di Eternal Sonata trovato.\n",
      "Es wurden keine Spieldaten von Eternal Sonata gefunden.\n",
-     "No hay datos guardados de Eternal Sonata.\n"},
+     "No hay datos guardados de Eternal Sonata.\n",
+     "トラスティベルのセーブファイルがありません。\n"},
     {kSaveText, 29,
      "Loading is not available.\n",
      "Le chargement n'est pas disponible.\n",
      "Il caricamento non è disponibile.",
      "Laden ist nicht verfügbar.\n",
-     "No es posible cargar.\n"},
+     "No es posible cargar.\n",
+     "ロードできません。\n"},
     {kSaveText, 37,
      "The save data may have become\ninaccessible during game play.\n",
      "Les données de sauvegarde sont peut-être devenues\ninaccessibles en cours de partie.\n",
      "I dati di salvataggio potrebbero essere diventati\ninaccessibili durante il gioco.\n",
      "Auf die Speicherdaten konnte während\ndes Spiels eventuell nicht zugegriffen werden.\n",
-     "Es posible que no se haya podido acceder a los\ndatos guardados durante la partida.\n"},
+     "Es posible que no se haya podido acceder a los\ndatos guardados durante la partida.\n",
+     "ゲームプレイ中にセーブデータに\nアクセスできなくなった可能性があります。\n"},
     {kSaveText, 40,
      "Insufficient disk space.\nGame data has not been saved.\n\nContinue without saving?",
      "Espace disque insuffisant.\n\nLes données de jeu n'ont pas été sauvegardées. \nContinuer sans sauvegarder ?",
      "Spazio su disco insufficiente. \nI dati di gioco non sono stati salvati.\nContinuare senza salvare?",
      "Unzureichender Speicherplatz. \nDer Spielstand wurde nicht gespeichert.\nOhne zu speichern fortfahren?",
-     "No hay espacio suficiente en el disco.\n\nNo se han guardado los datos del juego. ¿Salir de todos modos?"},
+     "No hay espacio suficiente en el disco.\n\nNo se han guardado los datos del juego. ¿Salir de todos modos?",
+     "ディスクの空き容量が足りないため、\nデータを保存することは出来ません。\n\nセーブされていませんが、セーブを終了しますか？"},
 
     {kNewGameText, 1,
      "Preparing save data.\n",
      "Préparation des données de sauvegarde.\n",
      "Preparazione dei dati di salvataggio.",
      "Speicherdaten werden vorbereitet.\n",
-     "Preparando los datos guardados.\n"},
+     "Preparando los datos guardados.\n",
+     "セーブデータを準備しています。\n"},
     {kNewGameText, 2,
      "Checking disk space...\nPlease do not close the game.\n",
      "Vérification de l'espace libre sur le disque...\nNe pas fermer le jeu.\n",
      "Controllo spazio su disco...\nNon chiudere il gioco.",
      "Speicherplatz wird geprüft...\nBitte das Spiel nicht beenden.\n",
-     "Comprobando el espacio en disco...\nNo cierres el juego.\n"},
+     "Comprobando el espacio en disco...\nNo cierres el juego.\n",
+     "空き容量をチェック中です……。\nゲームを終了しないでください。\n"},
     {kNewGameText, 3,
      nullptr,
      "Espace disque suffisant. \nLancement de la partie en cours.\n",
      nullptr,
      nullptr,
-     "Hay suficiente espacio en el disco.\nIniciando el juego."},
+     "Hay suficiente espacio en el disco.\nIniciando el juego.",
+     nullptr},
     {kNewGameText, 4,
      "Insufficient disk space.\nGame data will not be saved.\nStart game anyway?\n",
      "L'espace disque est insuffisant.\nLes données de jeu ne seront pas sauvegardées.\n\nLancer quand même la partie ?\n",
      "Spazio su disco insufficiente.\nI dati di gioco non saranno salvati.\n\nAvviare il gioco comunque?\n",
      "Es ist nicht genügend Speicherplatz\nverfügbar.\nSpieldaten werden nicht gespeichert.\n\nSpiel trotzdem starten?\n",
-     "No hay espacio suficiente en el disco.\nNo se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n"},
+     "No hay espacio suficiente en el disco.\nNo se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n",
+     "ディスクの空き容量が足りません。\nこの状態ではデータは保存されません。\n\nこのままゲームを開始しますか？"},
     {kNewGameText, 6,
      "No save location is available.\nGame data will not be saved.\nStart game anyway?\n",
      "Aucun emplacement de sauvegarde n'est\ndisponible. Les données de jeu\nne seront pas sauvegardées.\nLancer quand même la partie ?\n",
      "Nessuna posizione di salvataggio\ndisponibile. I dati di gioco\nnon saranno salvati.\nAvviare il gioco comunque?",
      "Es ist kein Speicherort verfügbar.\nSpieldaten werden nicht gespeichert.\nSpiel trotzdem starten?\n",
-     "No hay ninguna ubicación de guardado\ndisponible. No se guardarán\nlos datos del juego.\n¿Deseas iniciar el juego de todos modos?\n"},
+     "No hay ninguna ubicación de guardado\ndisponible. No se guardarán\nlos datos del juego.\n¿Deseas iniciar el juego de todos modos?\n",
+     "データの保存先がありません。\nこの状態ではデータは保存されません。\n\nこのままゲームを開始しますか？"},
     {kNewGameText, 8,
      "Game data will not be saved.\nStart game anyway?\n",
      "Les données de jeu ne seront pas sauvegardées.\n\nLancer quand même la partie ?\n",
      "I dati di gioco non saranno salvati.\n\nAvviare il gioco comunque?",
      "Spieldaten werden nicht gespeichert.\nSpiel trotzdem starten?\n",
-     "No se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n"},
+     "No se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n",
+     "この状態ではデータは保存されません。\n\nこのままゲームを開始しますか？"},
     {kNewGameText, 9,
      "The save data could not be accessed.\nGame data will not be saved.\nStart game anyway?\n",
      "Impossible d'accéder aux données de sauvegarde.\nLes données de jeu ne seront pas sauvegardées.\n\nLancer quand même la partie ?\n",
      "Impossibile accedere ai dati di salvataggio. \nI dati di gioco non saranno salvati.\nAvviare il gioco comunque?",
      "Zugriff auf die Speicherdaten nicht möglich. \nSpieldaten werden nicht gespeichert.\nSpiel trotzdem starten?\n",
-     "No se pudo acceder a los datos guardados. \nNo se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n"},
+     "No se pudo acceder a los datos guardados. \nNo se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n",
+     "セーブデータにアクセスできませんでした。\nこの状態ではデータは保存されません。\n\nこのままゲームを開始しますか？"},
 };
 
-// The rewrite for the language block tagged `lang`. JPN is not selectable.
+// The rewrite for the language block tagged `lang`.
 const char* TextFor(const ConsoleTextFix& fix, u32 lang) {
     switch (lang) {
+    case 0x4A504E20:  // "JPN "
+        return fix.ja;
     case 0x55534120:  // "USA "
     case 0x47425220:  // "GBR "
         return fix.en;
@@ -278,7 +306,13 @@ void BuildConsoleText(u8* base) {
                     continue;
                 }
                 const u32 stock = block + REX_LOAD_U32(table + 8 * i + 4);
-                if (const u32 copy = CopyToGuest(base, ToBlobText(text))) {
+                std::string encoded;
+                if (lang == 0x4A504E20) {
+                    eternalsonata::assets::EncodeShiftJis(text, encoded);
+                } else {
+                    encoded = ToBlobText(text);
+                }
+                if (const u32 copy = CopyToGuest(base, encoded)) {
                     g_console_text[stock] = copy;
                 }
                 break;
