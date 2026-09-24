@@ -8,6 +8,14 @@ name = "EternalSonataKeepJapaneseText"
 registers = ["r4"]
 jump_address_on_true = 0x82132A38
 
+# TITLE_TASK__Init: the Japanese release's title screen for Japanese text
+# (EternalSonataJapaneseTitle, game_settings.cpp).
+[[midasm_hook]]
+address = 0x8213325C
+name = "EternalSonataJapaneseTitle"
+registers = ["r4"]
+after_instruction = true
+
 # sub_82247D50 only draws the save rows' party portraits in Japanese. With
 # save_row_portraits on, every row is laid out as Japanese, preview included,
 # and the time and its separator are fitted to western text (game_settings.cpp).

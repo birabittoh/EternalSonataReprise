@@ -69,6 +69,9 @@ std::vector<std::span<const uint8_t>> FindReleasePatches(std::string_view guest_
 // Every container the bundle converts, default.xex aside.
 std::vector<std::string> ReleasePatchedContainers();
 
+// Whether "title_jpn.bmd", the Japanese release's title screen, is served.
+bool JapaneseTitleServed();
+
 // Whether the `fourcc` BTX block ("ITA " and so on) has text to show: the
 // release in game_data_root ships it, or a mod patches .e text into it. The USA
 // release carries all seven blocks but leaves the European ones empty. When

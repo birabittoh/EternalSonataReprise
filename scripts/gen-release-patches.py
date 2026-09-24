@@ -34,6 +34,10 @@ path has one patch per release that differs from PAL there; the reader tries
 each, since only one accepts its source. A file the release lacks is patched
 from an empty source.
 
+"title_jpn.bmd" is no release's file: it is the Japanese release's title.bmd,
+patched from PAL's, which the title screen loads for Japanese text. PAL's
+title has no Japanese variant of its logo.
+
 usage:
     python scripts/gen-release-patches.py <pal assets> <out.bin> <release assets>...
 """
@@ -69,6 +73,16 @@ ADDED = [
     "btldata/btl_exit_text.tex",
     "btldata/levelup_jpn.tex",
 ]
+
+JAPANESE_TITLE = "title_jpn.bmd"
+
+
+def is_japanese(xex):
+    """True for a copy whose xex is locked to the NTSC-J region only."""
+    raw = open(xex, "rb").read(0x10000)
+    security, = struct.unpack_from(">I", raw, 16)
+    region, = struct.unpack_from(">I", raw, security + 0x178)
+    return region & 0xFF00 and not region & 0xFF00FF
 
 
 def normalize_xex(path):
@@ -140,6 +154,13 @@ def main():
             source_raw = open(os.path.join(release, name), "rb").read()
             patches.append((name, make_patch(source_raw, source, target)))
             print(f"  {name}: {len(patches[-1][1])} bytes")
+
+        if is_japanese(xex):
+            target, _, _ = unpack_e.unpack_file("title.bmd", release, toc)
+            source, _, _ = unpack_e.unpack_file("title.bmd", pal, pal_toc)
+            source_raw = open(os.path.join(pal, "title.bmd"), "rb").read()
+            patches.append((JAPANESE_TITLE, make_patch(source_raw, source, target)))
+            print(f"  {JAPANESE_TITLE}: {len(patches[-1][1])} bytes")
 
         for name in ADDED:
             if name in toc or any(path == name for path, _ in patches):
