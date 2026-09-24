@@ -64,6 +64,8 @@ guest_shaders_debug.bin
 # (the ISO itself and anything derived from it must NEVER be committed)
 /*.iso
 /assets/
+/assets-usa/
+/assets-jp/
 !/assets/.gitkeep
 /out/iso_extract/
 *.vert

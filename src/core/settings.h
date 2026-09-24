@@ -310,6 +310,19 @@ const char* FindNativeString(uint32_t language_id, std::string_view key);
 // language with it, so it applies live.
 int UserLanguageCount();
 const char* UserLanguageCode(int index);
+
+// Whether entry `index` has text in the release being run. A mod-added language
+// always does; a built-in one needs its BTX block filled, which the USA release
+// does only for English. The menus list VisibleUserLanguages, in list order, and
+// keep speaking list indices everywhere else.
+bool UserLanguageAvailable(int index);
+std::vector<int> VisibleUserLanguages();
+
+// When the boot language has no text in this release, points the guest at
+// English for the run without persisting, so the config keeps the player's
+// choice for when the release that has it comes back. Call after
+// BindAssetSystem and before the guest boots.
+void ApplyUnavailableLanguageFallback();
 const char* UserLanguageLabel(int index);
 int UserLanguageIndex();
 void SetUserLanguageSetting(int index);

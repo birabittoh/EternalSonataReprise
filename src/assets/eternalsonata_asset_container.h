@@ -60,6 +60,8 @@ class Toc {
   const std::vector<uint8_t>& bytes() const { return raw_; }
 
  private:
+  void Reindex();
+
   std::vector<uint8_t> raw_;
   std::vector<TocEntry> entries_;
   std::unordered_map<std::string, size_t> index_;

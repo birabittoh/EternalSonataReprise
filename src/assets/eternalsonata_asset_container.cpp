@@ -204,7 +204,13 @@ bool Toc::Load(const std::filesystem::path& file) {
     raw_.clear();
     return false;
   }
+  Reindex();
+  return true;
+}
 
+void Toc::Reindex() {
+  entries_.clear();
+  index_.clear();
   const size_t count = raw_.size() / 48;
   entries_.reserve(count);
   for (size_t i = 0; i < count; ++i) {
@@ -218,7 +224,6 @@ bool Toc::Load(const std::filesystem::path& file) {
       index_.emplace(e.path, i);
     entries_.push_back(std::move(e));
   }
-  return true;
 }
 
 const TocEntry* Toc::Find(std::string_view guest_path) const {
@@ -245,21 +250,23 @@ bool Toc::AddStored(std::string_view guest_path, uint32_t decoded_size) {
   if (index_.count(path))
     return SetStored(path, decoded_size);
 
-  const size_t at = raw_.size();
-  raw_.resize(at + 48, 0);
+  // sub_8210D080 binary searches the records, comparing bytes, so a new one
+  // goes where it sorts and is spelled the way the shipped ones are.
+  std::string name = path;
+  std::replace(name.begin(), name.end(), '/', '\\');
+  size_t at = 0;
+  while (at < raw_.size() &&
+         std::string_view(reinterpret_cast<const char*>(raw_.data() + at),
+                          strnlen(reinterpret_cast<const char*>(raw_.data() + at), 32)) < name)
+    at += 48;
+  uint8_t record[48] = {};
   // strnlen(rec, 32) is how Load reads it back, so a path that fills the field
   // exactly is stored without a terminator, which is why the check above is
   // `> 32` and not `>= 32`.
-  std::memcpy(raw_.data() + at, path.data(), path.size());
-  WriteBE32(raw_.data() + at + 32, decoded_size);
-  raw_[at + 36] = 0;
-
-  TocEntry e;
-  e.path = path;
-  e.size = decoded_size;
-  e.flag = 0;
-  index_.emplace(e.path, entries_.size());
-  entries_.push_back(std::move(e));
+  std::memcpy(record, name.data(), name.size());
+  WriteBE32(record + 32, decoded_size);
+  raw_.insert(raw_.begin() + at, record, record + 48);
+  Reindex();
   return true;
 }
 

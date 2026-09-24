@@ -20,7 +20,10 @@ on:
 env:
   ASSETS_REPO: ${{ vars.ASSETS_REPO }}
   ASSET_PATH: default.xex
-  ASSET_CACHE_KEY: codegen-assets-v1
+  # The prebuilt patches that let a USA copy play (scripts/gen-usa-patches.py).
+  # Optional: without them the build refuses USA copies.
+  USA_ASSET_PATH: usa-patches.bin
+  ASSET_CACHE_KEY: codegen-assets-v2
 
 jobs:
   build:
@@ -152,7 +155,9 @@ jobs:
         id: asset-cache
         uses: actions/cache@v5
         with:
-          path: assets/${{ env.ASSET_PATH }}
+          path: |
+            assets/${{ env.ASSET_PATH }}
+            assets/${{ env.USA_ASSET_PATH }}
           key: ${{ env.ASSET_CACHE_KEY }}
 
       # On a cold cache all 6 matrix legs hit the assets repo's contents API
@@ -165,18 +170,22 @@ jobs:
         shell: bash
         run: |
           mkdir -p assets
-          for attempt in 1 2 3 4 5; do
-            if gh api -H "Accept: application/vnd.github.raw" \
-                 "repos/${{ env.ASSETS_REPO }}/contents/${{ env.ASSET_PATH }}" \
-                 > "assets/${{ env.ASSET_PATH }}"; then
-              break
-            fi
-            echo "Attempt $attempt failed; retrying in $((attempt * 15))s"
-            sleep $((attempt * 15))
-          done
-          size=$(wc -c < "assets/${{ env.ASSET_PATH }}")
-          echo "Fetched ${{ env.ASSET_PATH }} ($size bytes)"
-          [ "$size" -ge 1048576 ] || { echo "Asset too small, fetch likely failed"; exit 1; }
+          fetch() {
+            for attempt in 1 2 3 4 5; do
+              if gh api -H "Accept: application/vnd.github.raw" "repos/${{ env.ASSETS_REPO }}/contents/$1" > "assets/$1"; then
+                size=$(wc -c < "assets/$1")
+                echo "Fetched $1 ($size bytes)"
+                [ "$size" -ge "$2" ] && return 0
+                echo "Asset too small, fetch likely failed"
+              fi
+              echo "Attempt $attempt failed; retrying in $((attempt * 15))s"
+              sleep $((attempt * 15))
+            done
+            rm -f "assets/$1"
+            return 1
+          }
+          fetch "${{ env.ASSET_PATH }}" 1048576
+          fetch "${{ env.USA_ASSET_PATH }}" 65536 || echo "::warning::${{ env.USA_ASSET_PATH }} unavailable; this build will refuse USA copies"
 
       - name: Build (desktop)
         if: matrix.platform != 'android-arm64'

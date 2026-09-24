@@ -252,6 +252,39 @@ add_custom_target(eternalsonata_guest_shaders
     DEPENDS ${ETERNALSONATA_GUEST_SHADER_PACK} ${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
             ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK} ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM})
 
+# The patches that let a USA copy play (scripts/gen-usa-patches.py): default.xex
+# for the SDK's game data selector, the layout-sensitive containers for the
+# asset system. Generating them takes both releases' full data, so the bundle is
+# prebuilt and fetched like default.xex; without it USA copies are refused.
+set(ETERNALSONATA_USA_PATCHES ${CMAKE_SOURCE_DIR}/assets/usa-patches.bin CACHE FILEPATH
+    "Prebuilt USA to PAL patch bundle")
+if(NOT EXISTS ${ETERNALSONATA_USA_PATCHES})
+    set(ETERNALSONATA_USA_PATCHES ${CMAKE_BINARY_DIR}/usa-patches.empty)
+    file(TOUCH ${ETERNALSONATA_USA_PATCHES})
+endif()
+set(ETERNALSONATA_USA_PATCHES_ASM ${CMAKE_BINARY_DIR}/usa-patches.S)
+file(CONFIGURE OUTPUT ${ETERNALSONATA_USA_PATCHES_ASM} CONTENT [=[
+#if defined(__APPLE__)
+#define SYM(name) _##name
+.section __TEXT,__const
+#elif defined(_WIN32)
+#define SYM(name) name
+.section .rdata,"dr"
+#else
+#define SYM(name) name
+.section .rodata
+#endif
+
+.p2align 4
+.global SYM(kUsaPatchData)
+SYM(kUsaPatchData):
+.incbin "@ETERNALSONATA_USA_PATCHES@"
+.global SYM(kUsaPatchDataEnd)
+SYM(kUsaPatchDataEnd):
+]=] @ONLY)
+set_source_files_properties(${ETERNALSONATA_USA_PATCHES_ASM}
+    PROPERTIES OBJECT_DEPENDS ${ETERNALSONATA_USA_PATCHES})
+
 # Sources
 set(ETERNALSONATA_SOURCES
     src/core/main.cpp
@@ -309,6 +342,7 @@ set(ETERNALSONATA_SOURCES
     src/core/settings.cpp
     ${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
     ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM}
+    ${ETERNALSONATA_USA_PATCHES_ASM}
     ${ETERNALSONATA_AREA_NAMES_HEADER}
     ${ETERNALSONATA_ICON_HEADER}
     ${ETERNALSONATA_FONTS_HEADER}

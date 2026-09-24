@@ -18,6 +18,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <set>
 #include <string>
 #include <tuple>
@@ -29,6 +30,7 @@
 #include <rex/audio/xma/decoder.h>
 #include <rex/filesystem/vfs.h>
 #include <rex/logging.h>
+#include <rex/system/game_data_selector.h>
 #include <rex/system/mod_plugin.h>
 
 #include "eternalsonata_asset_api.h"
@@ -37,6 +39,12 @@
 #include "eternalsonata_asset_texture.h"
 #include "loading_screen.h"
 #include "settings.h"
+
+// The USA to PAL patch bundle, linked in by usa-patches.S.
+extern "C" {
+extern const uint8_t kUsaPatchData[];
+extern const uint8_t kUsaPatchDataEnd[];
+}
 
 namespace eternalsonata {
 namespace {
@@ -893,11 +901,18 @@ uint64_t HashUpdate(uint64_t h, std::string_view s) {
   return h;
 }
 
+bool ReadWholeFile(const std::filesystem::path& path, std::vector<uint8_t>& out);
+
 // Keyed on the mod list plus every patch's bytes, so a full translation pays
-// the decode once per install rather than once per launch.
+// the decode once per install rather than once per launch. The base TOC is in
+// too: containers built from one regional release are wrong for another.
 uint64_t CacheKey(rex::Runtime* runtime) {
   uint64_t h = 0xCBF29CE484222325ull;
-  h = HashUpdate(h, "v3");
+  h = HashUpdate(h, "v4");
+  std::vector<uint8_t> base_toc;
+  ReadWholeFile(runtime->game_data_root() / "index.vmtoc", base_toc);
+  h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(base_toc.data()),
+                                     base_toc.size()));
   for (const auto& mod : runtime->EnabledModsInfo()) {
     h = HashUpdate(h, mod.folder_name);
     h = HashUpdate(h, mod.version);
@@ -1557,6 +1572,8 @@ void ApplyLipSyncPatches(const std::string& guest_path, Container& container,
   }
 }
 
+bool ApplyUsaPatch(const std::string& guest_path, std::vector<uint8_t>& bytes);
+
 std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const assets::Toc& toc,
                                                const std::string& guest_path,
                                                Container& container) {
@@ -1616,6 +1633,8 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
     } else {
       result.bytes = std::move(encoded);
     }
+    if (ApplyUsaPatch(guest_path, result.bytes))
+      ++result.patches_applied;
   }
 
   std::vector<assets::TextEdit> edits;
@@ -1680,6 +1699,109 @@ bool WriteWholeFile(const std::filesystem::path& path, const std::vector<uint8_t
     return false;
   out.write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
   return out.good();
+}
+
+// A USA copy's containers are converted to PAL's as they are read, since the
+// code indexes into them by position; see scripts/gen-usa-patches.py.
+bool ApplyUsaPatch(const std::string& guest_path, std::vector<uint8_t>& bytes) {
+  const auto patch = FindUsaPatch(guest_path);
+  if (patch.empty())
+    return false;
+  std::vector<uint8_t> converted;
+  if (!rex::system::ApplyReleasePatch(patch, bytes, converted))
+    return false;
+  bytes = std::move(converted);
+  return true;
+}
+
+// The camp menu loads its art from campdata/camp_grpN.bmd, one per language
+// (sub_821E8E28), and waits forever for one that is missing. Only PAL ships
+// them: USA keeps the same textures in AppKeep.bmd, in slots PAL left empty.
+// So on USA data each is rebuilt from those slots, in the order camp_grp1
+// lists them, with the English art standing in for every language.
+constexpr std::array kCampGroupSlots = {251, 268, 269, 267, 304, 305, 306};
+constexpr size_t kCampGroupHeader = 0x30;
+
+bool IsUsaRelease(const assets::Toc& toc) {
+  return !toc.Find("campdata/camp_grp1.bmd") && toc.Find("appkeep.bmd");
+}
+
+bool LoadDecodedContainer(const std::string& guest_path, std::vector<uint8_t>& out,
+                          bool convert = true);
+
+// Writes the camp_grp files into `dir` and gives them TOC records. Returns
+// how many it wrote.
+size_t WriteCampGroups(assets::Toc& toc, const std::filesystem::path& dir) {
+  std::vector<uint8_t> keep;
+  if (!LoadDecodedContainer("appkeep.bmd", keep, false) || keep.size() < 16 ||
+      std::memcmp(keep.data(), "BMD ", 4) != 0) {
+    REXLOG_ERROR("assets: AppKeep.bmd unreadable, so the camp menu has no art");
+    return 0;
+  }
+  auto be32 = [&](size_t off) {
+    return uint32_t(keep[off]) << 24 | uint32_t(keep[off + 1]) << 16 |
+           uint32_t(keep[off + 2]) << 8 | uint32_t(keep[off + 3]);
+  };
+  const uint32_t count = be32(8);
+  if (count <= kCampGroupSlots.back() + 1 || 12 + 4 * size_t(count) > keep.size()) {
+    REXLOG_ERROR("assets: AppKeep.bmd has {} entries, not the USA layout", count);
+    return 0;
+  }
+
+  std::vector<uint8_t> group(kCampGroupHeader, 0);
+  std::memcpy(group.data(), "CAMP", 4);
+  auto put32 = [&](size_t off, uint32_t v) {
+    for (int i = 0; i < 4; ++i)
+      group[off + i] = uint8_t(v >> (24 - 8 * i));
+  };
+  put32(8, uint32_t(kCampGroupSlots.size()));
+  for (size_t i = 0; i < kCampGroupSlots.size(); ++i) {
+    const uint32_t begin = be32(12 + 4 * kCampGroupSlots[i]);
+    const uint32_t end = be32(12 + 4 * (kCampGroupSlots[i] + 1));
+    if (end <= begin || end > keep.size() || std::memcmp(keep.data() + begin, "NTEX", 4) != 0) {
+      REXLOG_ERROR("assets: AppKeep.bmd slot {} is not a texture", kCampGroupSlots[i]);
+      return 0;
+    }
+    put32(12 + 4 * i, uint32_t(group.size()));
+    group.insert(group.end(), keep.begin() + begin, keep.begin() + end);
+  }
+  put32(4, uint32_t(group.size()));
+
+  size_t written = 0;
+  for (int n = 0; n < 6; ++n) {
+    const std::string path = "campdata/camp_grp" + std::to_string(n) + ".bmd";
+    if (!WriteWholeFile(dir / path, group) || !toc.AddStored(path, uint32_t(group.size()))) {
+      REXLOG_ERROR("assets: could not write {}", path);
+      continue;
+    }
+    ++written;
+  }
+  REXLOG_INFO("assets: rebuilt {} camp_grp files from AppKeep.bmd", written);
+  return written;
+}
+
+// Serves the converted form of every container the bundle covers that no mod
+// patched, which BuildCache has already written. Returns how many it wrote.
+size_t WriteUsaContainers(rex::Runtime* runtime, assets::Toc& toc,
+                          const std::filesystem::path& dir) {
+  size_t written = 0;
+  for (const auto& path : UsaPatchedContainers()) {
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(dir / path, ec) || !toc.Find(path))
+      continue;
+    std::vector<uint8_t> bytes;
+    if (!LoadDecodedContainer(path, bytes, false) || !ApplyUsaPatch(path, bytes)) {
+      REXLOG_WARN("assets: {} is not the USA release's, so it is served as it is", path);
+      continue;
+    }
+    if (!WriteWholeFile(dir / path, bytes) || !toc.SetStored(path, uint32_t(bytes.size()))) {
+      REXLOG_ERROR("assets: could not write the converted {}", path);
+      continue;
+    }
+    ++written;
+  }
+  REXLOG_INFO("assets: converted {} USA containers to the PAL layout", written);
+  return written;
 }
 
 // Builds every patched container plus the index.vmtoc that describes them, into
@@ -1788,6 +1910,10 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir, bool sh
 
   if (shown)
     report(total, "", true);
+  if (IsUsaRelease(toc)) {
+    built += WriteCampGroups(toc, dir);
+    built += WriteUsaContainers(runtime, toc, dir);
+  }
   if (!built) {
     std::filesystem::remove_all(dir, ec);
     return false;
@@ -1877,7 +2003,8 @@ void RebuildAndServe(bool show_progress = false) {
 // ---------------------------------------------------------------------------
 // Reading the shipped asset back (GetText / enumerate)
 // ---------------------------------------------------------------------------
-bool LoadDecodedContainer(const std::string& guest_path, std::vector<uint8_t>& out) {
+bool LoadDecodedContainer(const std::string& guest_path, std::vector<uint8_t>& out,
+                          bool convert) {
   State& s = state();
   if (!s.runtime)
     return false;
@@ -1892,7 +2019,11 @@ bool LoadDecodedContainer(const std::string& guest_path, std::vector<uint8_t>& o
     out = std::move(encoded);
     return true;
   }
-  return assets::DecodeAsset(encoded.data(), encoded.size(), entry->size, entry->flag, out);
+  if (!assets::DecodeAsset(encoded.data(), encoded.size(), entry->size, entry->flag, out))
+    return false;
+  if (convert)
+    ApplyUsaPatch(NormalizeGuestPath(guest_path), out);
+  return true;
 }
 
 bool SupplyReplacementPcm(void*, const uint8_t tag[16], uint64_t* cursor, int sample_rate,
@@ -2036,7 +2167,9 @@ void BindAssetSystem(rex::Runtime* runtime) {
   }
 
   s.bound = true;
-  if (s.containers.empty())
+  assets::Toc base_toc;
+  if (s.containers.empty() &&
+      !(base_toc.Load(runtime->game_data_root() / "index.vmtoc") && IsUsaRelease(base_toc)))
     return;
   RebuildAndServe(true);
 }
@@ -2193,8 +2326,92 @@ void ApplyXexTextPatches(rex::Runtime* runtime) {
               kXexContainer);
 }
 
+std::span<const uint8_t> FindUsaPatch(std::string_view guest_path) {
+  const std::span<const uint8_t> bundle(kUsaPatchData, kUsaPatchDataEnd);
+  if (bundle.size() < 8 || std::memcmp(bundle.data(), "RXDB", 4) != 0)
+    return {};
+  size_t at = 8;
+  while (at + 68 <= bundle.size()) {
+    const auto* rec = reinterpret_cast<const char*>(bundle.data() + at);
+    const uint32_t size = uint32_t(bundle[at + 64]) | uint32_t(bundle[at + 65]) << 8 |
+                          uint32_t(bundle[at + 66]) << 16 | uint32_t(bundle[at + 67]) << 24;
+    if (at + 68 + size > bundle.size())
+      break;
+    if (std::string_view(rec, strnlen(rec, 64)) == guest_path)
+      return bundle.subspan(at + 68, size);
+    at += 68 + size;
+  }
+  return {};
+}
+
+std::vector<std::string> UsaPatchedContainers() {
+  std::vector<std::string> paths;
+  const std::span<const uint8_t> bundle(kUsaPatchData, kUsaPatchDataEnd);
+  if (bundle.size() < 8 || std::memcmp(bundle.data(), "RXDB", 4) != 0)
+    return paths;
+  for (size_t at = 8; at + 68 <= bundle.size();) {
+    const auto* rec = reinterpret_cast<const char*>(bundle.data() + at);
+    const uint32_t size = uint32_t(bundle[at + 64]) | uint32_t(bundle[at + 65]) << 8 |
+                          uint32_t(bundle[at + 66]) << 16 | uint32_t(bundle[at + 67]) << 24;
+    std::string path(rec, strnlen(rec, 64));
+    if (path != kXexContainer)
+      paths.push_back(std::move(path));
+    at += 68 + size;
+  }
+  return paths;
+}
+
 bool XexTextModded(uint32_t blob, const char* lang, uint32_t id) {
   return g_xex_modded_text.count({blob, lang, id}) != 0;
+}
+
+bool BtxLanguageAvailable(const char* fourcc, bool count_mods) {
+  State& s = state();
+  std::lock_guard<std::recursive_mutex> lock(s.mutex);
+  if (!s.bound || !fourcc)
+    return true;
+
+  // lib.e is the global script library: every release ships it, and on PAL
+  // every block of its BTX has text.
+  static std::optional<std::set<std::string>> shipped;
+  if (!shipped) {
+    std::vector<uint8_t> data;
+    if (!LoadDecodedContainer("cfdata/lib.e", data)) {
+      REXLOG_WARN("assets: could not read cfdata/lib.e; listing every language");
+      return true;
+    }
+    shipped.emplace();
+    for (const auto& blob : assets::FindBtxBlobs(data))
+      for (const auto& lang : blob.langs)
+        for (const auto& [id, text] : lang.entries)
+          if (!text.empty()) {
+            shipped->insert(lang.fourcc);
+            break;
+          }
+    if (shipped->empty()) {
+      REXLOG_WARN("assets: cfdata/lib.e has no text; listing every language");
+      shipped.reset();
+      return true;
+    }
+  }
+  if (shipped->count(fourcc))
+    return true;
+  if (!count_mods)
+    return false;
+  // The menus ask every frame, and a full translation is tens of thousands of
+  // patches, so they are walked once.
+  static std::optional<std::set<std::string>> modded;
+  if (!modded) {
+    modded.emplace();
+    for (const auto& [path, container] : s.containers) {
+      if (path == kXexContainer)
+        continue;
+      for (const auto& [key, patch] : container.text)
+        if (!patch.lang.empty())
+          modded->insert(patch.lang);
+    }
+  }
+  return modded->count(fourcc) != 0;
 }
 
 }  // namespace eternalsonata

@@ -17,6 +17,11 @@
 
 #include <rex/runtime.h>
 
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
 namespace eternalsonata {
 
 // Publishes the `[[language]]` blocks in every enabled mod's assets.toml into
@@ -54,5 +59,20 @@ void ApplyXexTextPatches(rex::Runtime* runtime);
 // the image blob at guest address `blob`. Filled by ApplyXexTextPatches; a patch
 // that leaves the text as shipped does not count.
 bool XexTextModded(uint32_t blob, const char* lang, uint32_t id);
+
+// The patch converting a USA copy's `guest_path` ("default.xex",
+// "btldata/battlekeep.bop") into PAL's, from the bundle linked into the
+// executable (scripts/gen-usa-patches.py); empty if there is none.
+std::span<const uint8_t> FindUsaPatch(std::string_view guest_path);
+
+// Every container the bundle converts, default.xex aside.
+std::vector<std::string> UsaPatchedContainers();
+
+// Whether the `fourcc` BTX block ("ITA " and so on) has text to show: the
+// release in game_data_root ships it, or a mod patches .e text into it. The USA
+// release carries all seven blocks but leaves the European ones empty. When
+// `count_mods` is false only the shipped text counts. Valid once
+// BindAssetSystem has run; true before that, and when the probe cannot be read.
+bool BtxLanguageAvailable(const char* fourcc, bool count_mods = true);
 
 }  // namespace eternalsonata
