@@ -165,6 +165,7 @@ struct State {
   std::vector<std::pair<uint32_t, std::pair<EternalSonataAssetProviderFn, void*>>> providers;
   uint32_t next_provider_token = 1;
   std::filesystem::path cache_dir;
+  bool japanese_title = false;  // the served cache has kJapaneseTitle
   std::map<std::string, ModVoiceBanks> mod_voice;  // mod folder name -> its banks
   bool bound = false;
   std::map<std::array<uint8_t, 16>, AudioPatch*> tagged_audio;
@@ -404,6 +405,7 @@ bool MeshMatches(const assets::MeshRef& ref, size_t index, const std::string& se
 // there is nothing to serve and no vmtoc record to update -- it is written
 // straight into guest memory instead. See ApplyXexTextPatches.
 const char kXexContainer[] = "default.xex";
+const char kJapaneseTitle[] = "title_jpn.bmd";
 
 bool IsXexContainer(const std::string& guest_path) { return guest_path == kXexContainer; }
 
@@ -908,7 +910,7 @@ bool ReadWholeFile(const std::filesystem::path& path, std::vector<uint8_t>& out)
 // too: containers built from one regional release are wrong for another.
 uint64_t CacheKey(rex::Runtime* runtime) {
   uint64_t h = 0xCBF29CE484222325ull;
-  h = HashUpdate(h, "v5");
+  h = HashUpdate(h, "v6");
   std::vector<uint8_t> base_toc;
   ReadWholeFile(runtime->game_data_root() / "index.vmtoc", base_toc);
   h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(base_toc.data()),
@@ -1787,6 +1789,8 @@ size_t WriteReleaseContainers(rex::Runtime* runtime, assets::Toc& toc,
                               const std::filesystem::path& dir) {
   size_t written = 0;
   for (const auto& path : ReleasePatchedContainers()) {
+    if (path == kJapaneseTitle)
+      continue;
     std::error_code ec;
     if (std::filesystem::is_regular_file(dir / path, ec))
       continue;
@@ -1808,6 +1812,23 @@ size_t WriteReleaseContainers(rex::Runtime* runtime, assets::Toc& toc,
   }
   REXLOG_INFO("assets: converted {} containers to the PAL layout", written);
   return written;
+}
+
+// PAL's title effect has no Japanese variant of its logo, so the title screen
+// loads the Japanese release's title.bmd instead, built from PAL's.
+size_t WriteJapaneseTitle(assets::Toc& toc, const std::filesystem::path& dir) {
+  std::vector<uint8_t> bytes;
+  if (FindReleasePatches(kJapaneseTitle).empty() || !LoadDecodedContainer("title.bmd", bytes) ||
+      !ApplyReleasePatch(kJapaneseTitle, bytes)) {
+    REXLOG_INFO("assets: no Japanese title screen to serve");
+    return 0;
+  }
+  if (!WriteWholeFile(dir / kJapaneseTitle, bytes) ||
+      !toc.AddStored(kJapaneseTitle, uint32_t(bytes.size()))) {
+    REXLOG_ERROR("assets: could not write {}", kJapaneseTitle);
+    return 0;
+  }
+  return 1;
 }
 
 // Builds every patched container plus the index.vmtoc that describes them, into
@@ -1920,6 +1941,7 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir, bool sh
     built += WriteCampGroups(toc, dir);
     built += WriteReleaseContainers(runtime, toc, dir);
   }
+  built += WriteJapaneseTitle(toc, dir);
   if (!built) {
     std::filesystem::remove_all(dir, ec);
     return false;
@@ -2002,8 +2024,10 @@ void RebuildAndServe(bool show_progress = false) {
       std::filesystem::remove_all(it->path(), ec);
   }
 
-  if (Remount(s.runtime, dir))
+  if (Remount(s.runtime, dir)) {
     s.cache_dir = dir;
+    s.japanese_title = std::filesystem::is_regular_file(dir / kJapaneseTitle, ec);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2174,7 +2198,7 @@ void BindAssetSystem(rex::Runtime* runtime) {
 
   s.bound = true;
   assets::Toc base_toc;
-  if (s.containers.empty() &&
+  if (s.containers.empty() && FindReleasePatches(kJapaneseTitle).empty() &&
       !(base_toc.Load(runtime->game_data_root() / "index.vmtoc") && NeedsCampGroups(base_toc)))
     return;
   RebuildAndServe(true);
@@ -2369,6 +2393,10 @@ std::vector<std::string> ReleasePatchedContainers() {
       paths.emplace_back(path);
   });
   return paths;
+}
+
+bool JapaneseTitleServed() {
+  return state().japanese_title;
 }
 
 bool XexTextModded(uint32_t blob, const char* lang, uint32_t id) {

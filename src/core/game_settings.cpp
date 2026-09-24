@@ -40,6 +40,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <mutex>
 #include <string_view>
@@ -53,6 +54,7 @@
 #include <rex/system/flags.h>
 #include <rex/system/mod_registry.h>
 
+#include "eternalsonata_asset_system.h"
 #include "eternalsonata_settings_api.h"
 #include "game_settings.h"
 #include "guest_main_thread.h"
@@ -531,10 +533,9 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetSetting(int setting, int va
       [channel, value] { return SetVolumeOnGuestThread(channel, value); });
 }
 
-// sub_82132A08 forces the text index to USA when it is below 1, because PAL's
-// menus never offer Japanese, though its text ships. Keep block 0 when the
-// player asked for Japanese;
-// sub_8212D908 also maps unknown language ids to 0, and those stay English.
+// sub_82132A08 forces a text index below 1, Japanese, to USA. Keep block 0
+// when the player asked for Japanese; sub_8212D908 also maps unknown language
+// ids to 0, and those stay English.
 extern "C++" bool EternalSonataKeepJapaneseText(PPCRegister& r4);
 
 bool EternalSonataKeepJapaneseText(PPCRegister& r4) {
@@ -637,4 +638,24 @@ void EternalSonataFontCharacter(PPCRegister& r3, PPCRegister& r4, PPCRegister& r
     return;
   rex::memory::store_and_swap<uint16_t>(memory->TranslateVirtual<uint8_t*>(r5.u32), c);
   r3.u64 = 1;
+}
+
+// TITLE_TASK__Init loads title.bmd, whose effect only offers PAL's western
+// logos; for Japanese text load the Japanese release's, with Trusty Bell.
+extern "C++" void EternalSonataJapaneseTitle(PPCRegister& r4);
+
+void EternalSonataJapaneseTitle(PPCRegister& r4) {
+  static uint32_t path = 0;
+  auto* memory = eternalsonata::Mem();
+  if (!memory || !eternalsonata::JapaneseTitleServed() ||
+      eternalsonata::ReadGuestByte(eternalsonata::kTextLanguage + 3) != 0)
+    return;
+  if (!path) {
+    static constexpr char kPath[] = "title_jpn.bmd";
+    path = memory->SystemHeapAlloc(sizeof(kPath), 0x20);
+    if (!path)
+      return;
+    std::memcpy(memory->TranslateVirtual<char*>(path), kPath, sizeof(kPath));
+  }
+  r4.u64 = path;
 }
