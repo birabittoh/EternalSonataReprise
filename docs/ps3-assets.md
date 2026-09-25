@@ -275,6 +275,18 @@ A resized `NMDL` ends with an `NPAD` that keeps the size change a multiple of
 `NOBJ`s out of it into the `pc*_v*.p3obj` files, so it cannot replace the 360
 one as is.
 
+`btldata\BattleKeep.bop` is addressed by slot too: 106 entries on the 360, 98
+on the PS3. The PS3 dropped the eight `Mefc`s at 360 slots 26..33 and every
+later entry moved down by eight; tags line up one to one around the gap. Slot
+38 is the battle voice table (`BMD `, read by `sub_821BCC40` through
+`unk_824D05D0+324`): per character, a list of categories of 12 byte voice
+candidates. The pre-battle line (battle state 5, `sub_821BB310`) asks it for
+category 35 and waits until that voice ends, so a non `BMD ` chunk in slot 38
+leaves the intro camera circling forever. The PS3 table has twelve character
+rows ahead of the enemies and 61 categories, where the executable expects ten
+and 59. The converter rebuilds the 360 slot order and takes slots 26..33 and
+38 from the 360 file, whose clip ordinals the converted banks keep.
+
 ## 5. Audio
 
 No XMA encoder exists, so audio the 360 does not already have is shipped as
