@@ -14,7 +14,8 @@ Converted:
   NSHP  RSX vertex packing -> Xenos (normals, colours, skin weights)
   NMTR, NLIT, NFOG, NCLC, NOL2  RGBA colours -> ARGB
   NLOB  offsets of the placed objects it holds
-  .e    list B bulk offsets, header size, reloc offset
+  .e    list B bulk offsets, header size, reloc offset, task priorities,
+        state global ids
   .bmd / CAMP  entry table; .bop  entry directory
   .p3tex  -> .x3tex (a bare texture chain)
   .csf / .cps  audio, see ps3_audio.py; needs ffmpeg on PATH
@@ -30,6 +31,7 @@ import shutil
 import struct
 import tempfile
 
+import e_disasm
 import ps3_audio
 
 u32 = struct.Struct('>I')
@@ -514,6 +516,69 @@ def convert_e(d, report):
     return bytes(image) + bulk + d[reloc_base:]
 
 
+# VM builtins 5 (spawn task) and 7 (spawn child task) take the priority as
+# args[2]; the 360 has 16 task lists (dword_8243D800), the PS3 more.
+SPAWN_NATIVES = (5, 7)
+TASK_PRIORITY = {17: 8, 18: 9}
+
+
+def remap_task_priority(d, report):
+    """Rewrites u8 spawn priorities in place, tracking what each push held."""
+    image_end, tables = e_disasm.parse(d)
+    spawns = {off for ents in tables for sym, off in ents if sym in SPAWN_NATIVES}
+    if not spawns:
+        return d
+    out = bytearray(d)
+    o, loaded, stack = 0x18, None, []
+    while o < image_end:
+        name, width, _ = e_disasm.OPS.get(out[o], ('??', 0, ''))
+        arg = int.from_bytes(out[o + 1:o + 1 + width], 'big')
+        if name.startswith(('acc=pop', 'memcpy(pop')) or 'pop=' in name:
+            stack = stack[:-1]
+        if name == 'push':
+            stack.append(loaded)
+        elif name == 'push f64':
+            stack += [None, None]
+        elif name.startswith('push struct'):
+            stack += [None] * (arg // 4)
+        elif name in ('pop4', 'pop8', 'pop u8', 'pop u32'):
+            n = {'pop4': 4, 'pop8': 8}.get(name, arg) // 4
+            stack = stack[:-n] if n < len(stack) else []
+        elif name == 'native' and o + 1 in spawns and len(stack) >= 3:
+            at = stack[-3]  # args[0] is the last push
+            if at is not None and out[at] == 0x01 and out[at + 1] in TASK_PRIORITY:
+                out[at + 1] = TASK_PRIORITY[out[at + 1]]
+                report.counts['task priority remapped'] += 1
+        elif name in ('ret', 'jmp', 'switch', 'halt'):
+            stack = []
+        if name.startswith('acc='):
+            loaded = o
+        o += 1 + width
+    return bytes(out)
+
+
+# The 500 series are pointers into the map state block at dword_8243C230;
+# the PS3's block has an extra field before the skip handler, so 541.. is 540..
+STATE_SYMBOL_SHIFT = range(541, 549)
+
+
+def remap_state_symbols(d, report):
+    """Renumbers block2 imports of the shifted state globals, in place."""
+    out = bytearray(d)
+    o = 0x18 + rd32(d, 0x10) + rd32(d, 0x14)
+    for _ in range(2):  # list A, list B
+        o += 4 + 4 * rd32(d, o)
+    for _ in range(4):
+        n = rd32(d, o)
+        for i in range(n):
+            at = o + 4 + 8 * i
+            if rd32(out, at) in STATE_SYMBOL_SHIFT:
+                struct.pack_into('>I', out, at, rd32(out, at) - 1)
+                report.counts['state symbol remapped'] += 1
+        o += 4 + 8 * n
+    return bytes(out)
+
+
 def convert_bmd(d, report):
     count = rd32(d, 8)
     table_end = 12 + 4 * count
@@ -559,7 +624,8 @@ def convert_file(rel, d, report):
     if low in KEEP_360 or low.endswith(KEEP_360_EXT):
         return None
     if low.endswith('.e') and d[:4] in (b'\0\0\x01\x81', b'\0\0\x01\x80'):
-        return rel, ps3_audio.rename_music(convert_e(d, report))
+        e = remap_state_symbols(remap_task_priority(convert_e(d, report), report), report)
+        return rel, ps3_audio.rename_music(e)
     if d[:4] in (b'BMD ', b'CAMP'):
         return rel, convert_bmd(d, report)
     if d[:4] == b'BOP ':
