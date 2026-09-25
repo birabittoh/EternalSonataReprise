@@ -266,8 +266,10 @@ def convert_colours(d, o, tag, report):
     size = rd32(d, o + 4)
     buf = bytearray(d[o:o + size])
     if tag == b'NMTR':
-        # 96 byte materials; +8 is a flags word, not a colour.
-        rotate_words(buf, (m + k for m in range(8, size - 95, 96) for k in (4, 36, 40, 44)))
+        # 96 byte materials; +8 is a flags word. With its bit 0 set, +4 is the
+        # texture index rather than a colour.
+        rotate_words(buf, (m + k for m in range(8, size - 95, 96) for k in (4, 36, 40, 44)
+                           if k != 4 or not buf[m + 11] & 1))
     elif tag == b'NLIT':
         rotate_words(buf, (r + k for r in range(8, size - 47, 48) for k in (20, 28)))
     elif tag == b'NFOG':

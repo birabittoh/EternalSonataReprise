@@ -174,8 +174,9 @@ the 360 supports, so it is left alone.
 
 ### 3.3 Materials and lights
 
-`NMTR` holds 96 byte materials; the colours are at +4, +36, +40 and +44 (+8 is
-a flags word). `NLIT` is 48 byte records from +8 with colours at +20 and +28,
+`NMTR` holds 96 byte materials; the colours are at +4, +36, +40 and +44, and +8
+is a flags word. When its bit 0 is set the material is textured and +4 holds
+the texture index (u16) instead of a colour, so it must not be rotated. `NLIT` is 48 byte records from +8 with colours at +20 and +28,
 `NFOG` has one at +12, `NCLC` at +20 and +36, and `NOL2` 32 byte records with
 the colour at +24, or +8 for type 0 records.
 
