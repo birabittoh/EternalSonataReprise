@@ -79,3 +79,10 @@ registers = ["r28"]
 address = 0x821D03E4
 name = "EternalSonataFontCharacter"
 registers = ["r3", "r4", "r5"]
+
+# A glyph missing from its font, fallback included (EternalSonataSkipMissingGlyph).
+[[midasm_hook]]
+address = 0x821D7178
+name = "EternalSonataSkipMissingGlyph"
+registers = ["r1", "r27"]
+jump_address_on_true = 0x821D75F0
