@@ -3352,8 +3352,21 @@ void ResetRowGroup(u8* base, int page) {
 constexpr u32 kVolContHeapStockSize = 768u;
 constexpr u32 kVolContHeapSize = 2048u;
 
+// sub_8212DA18 gives both .fnt files one unnamed 5 MiB heap, and a font that
+// does not fit is silently left empty. Leave room for larger mod fonts.
+constexpr u32 kFontHeap = 0x82553890u;
+constexpr u32 kFontHeapStockSize = 5u << 20;
+constexpr u32 kFontHeapSize = 16u << 20;
+
 REX_EXTERN(__imp__sub_82112240);
 REX_HOOK_RAW(sub_82112240) {
+  if (ctx.r3.u32 == kFontHeap && ctx.r4.u32 == kFontHeapStockSize) {
+    ctx.r4.u32 = kFontHeapSize;
+    __imp__sub_82112240(ctx, base);
+    REXLOG_INFO("[font] font heap grown to {} MiB: {}", kFontHeapSize >> 20,
+                ctx.r3.u32 ? "ok" : "failed");
+    return;
+  }
   const u32 name_ptr = ctx.r5.u32;
   // Names live either in the image or on a heap, so this is wider than
   // GuestPtr; the point is only to reject the null some callers pass.
