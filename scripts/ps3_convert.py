@@ -29,6 +29,7 @@ import math
 import os
 import shutil
 import struct
+import subprocess
 import tempfile
 
 import e_disasm
@@ -607,6 +608,62 @@ def convert_bop(d, report):
     return bytes(head) + body
 
 
+# BattleKeep.bop is addressed by slot, like AppKeep. The PS3 dropped the eight
+# effects at 360 slots 26..33, moving every later slot down by eight, and its
+# voice table (360 slot 38) has rows for twelve characters where the executable
+# indexes ten. The 360 table is kept: every 360 clip keeps its ordinal in the
+# converted banks. A wrong chunk in slot 38 gives the pre-battle line no voice,
+# and the intro waits for it forever.
+BATTLEKEEP = 'btldata/battlekeep.bop'
+BATTLEKEEP_DROPPED = range(26, 34)
+BATTLEKEEP_VOICE_TABLE = 38
+
+
+def bop_entries(d):
+    dir_at = rd32(d, 12)
+    offsets = [rd32(d, dir_at + 4 + 4 * i) for i in range(rd32(d, dir_at))]
+    ends = sorted(set(o for o in offsets if o) | {len(d)})
+    return dir_at, [d[o:ends[bisect.bisect_right(ends, o)]] if o else None for o in offsets]
+
+
+def rebuild_battlekeep(ps3, x360, report):
+    """Converted PS3 BattleKeep -> the 360's slot order."""
+    dir_at, have = bop_entries(ps3)
+    _, want = bop_entries(x360)
+    if len(have) + len(BATTLEKEEP_DROPPED) != len(want):
+        report.warn(f'{BATTLEKEEP}: {len(have)} entries, expected {len(want) - 8}; kept as is')
+        return ps3
+    shift = len(BATTLEKEEP_DROPPED)
+    slots = []
+    for i, x in enumerate(want):
+        if i in BATTLEKEEP_DROPPED or i == BATTLEKEEP_VOICE_TABLE:
+            slots.append(x)
+            continue
+        p = have[i if i < BATTLEKEEP_DROPPED.start else i - shift]
+        if (p or b'')[:4] != (x or b'')[:4]:
+            report.warn(f'{BATTLEKEEP}: slot {i} holds {p[:4]!r}, the 360 {x[:4]!r}')
+        slots.append(p)
+    out = bytearray(ps3[:dir_at]) + u32.pack(len(slots)) + bytes(4 * len(slots))
+    for i, s in enumerate(slots):
+        if s is None:
+            continue
+        out += bytes(-len(out) % 0x80)
+        u32.pack_into(out, dir_at + 4 + 4 * i, len(out))
+        out += s
+    out += bytes(-len(out) % 0x1000)
+    u32.pack_into(out, 4, len(out))
+    report.counts['BattleKeep slots restored from the 360'] += shift + 1
+    return bytes(out)
+
+
+def decoded_360_file(base, scratch, rel):
+    """One 360 asset decoded with unpack_e.exe; TOC names use backslashes."""
+    exe = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unpack_e.exe')
+    subprocess.run([exe, base, scratch, rel.replace('/', '\\')], check=True, capture_output=True)
+    with open(os.path.join(scratch, *rel.split('/')), 'rb') as fh:
+        return fh.read()
+
+
 def convert_bare(d, report):
     body, _ = convert_region(d, 0, len(d), report)
     return body
@@ -815,6 +872,7 @@ def main():
         scratch = tempfile.mkdtemp(prefix='ps3_convert_')
         banks = ps3_audio.decoded_360_banks(args.base, scratch)
         donors = ps3_audio.load_cxs_donors(args.base)
+        battlekeep = decoded_360_file(args.base, os.path.join(scratch, 'bop'), BATTLEKEEP)
 
     def write_pcm(tok, data):
         replace_file(os.path.join(args.out, 'pcm', tok.hex() + '.wav'), data)
@@ -860,6 +918,8 @@ def main():
                 continue
             out_rel, data = result
             report.counts['converted'] += 1
+            if low == BATTLEKEEP and args.out:
+                data = rebuild_battlekeep(data, battlekeep, report)
             if args.out:
                 out_rel = emit(out_rel, data)
             for ref_root in args.verify:

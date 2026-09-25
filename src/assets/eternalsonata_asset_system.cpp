@@ -2066,9 +2066,19 @@ bool SupplyReplacementPcm(void*, const uint8_t tag[16], uint64_t* cursor, int sa
   std::array<uint8_t, 16> key;
   std::memcpy(key.data(), tag, key.size());
   auto found = s.tagged_audio.find(key);
-  if (found == s.tagged_audio.end())
+  if (found == s.tagged_audio.end()) {
+    if (*cursor == 0) {
+      std::string name;
+      for (size_t i = 8; i < 16; ++i)
+        name += fmt::format("{:02x}", tag[i]);
+      REXLOG_WARN("assets: no PCM clip carries tag {}", name);
+    }
     return false;
+  }
   AudioPatch& patch = *found->second;
+  if (*cursor == 0)
+    REXLOG_DEBUG("assets: PCM clip {} starts ({} Hz, {} ch out)", patch.host_file.filename().string(),
+                 sample_rate, channels);
   if (patch.samples.empty()) {
     std::string error;
     if (!EnsureAudioLoaded(patch, &error)) {
