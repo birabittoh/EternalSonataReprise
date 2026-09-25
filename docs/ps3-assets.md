@@ -82,6 +82,28 @@ native. `src/engine/ps3_natives.cpp` registers ids 5026..5033 as host stubs
 returning 0 until their real behaviour is known, which needs the PS3
 executable decrypted (RPCS3, Utilities > Decrypt PS3 Binaries).
 
+Task priorities differ. Builtins 5 (spawn task, `sub_82102500`) and 7
+(spawn child task, `sub_82102538`) take the priority as `args[2]` (the third
+push back), an index into 16 task lists, `dword_8243D800` (heads) and
+`dword_8243D840` (tails), in `sub_8212DD10`. Where the 360 passes 8 and 9,
+the PS3 passes 17 and 18 (one native 5 call in `lib.e`; 211 native 7 calls in
+`cfdata` and the battle tutorials). An index of 16 or more reads a tail as the
+head and writes past the tails, so it corrupts memory and faults storing to
+`0x1C` when the stray head is set and the stray tail is not (loading a save
+in the Ritardando sewers). The PS3 battle AI already passes 9 or a
+parameter, as on the 360. The converter rewrites the `acc=u8` immediates
+17 -> 8 and 18 -> 9, tracking the VM stack, since some calls compute
+`args[0]` with `acc=pop+acc`.
+
+The 500 series (pointers into the map state block at `dword_8243C230`) is
+shifted too: ids up to 538 match, but from 540 on each PS3 id is the 360's
+plus one (the PS3 block has an extra field there). Only `lib.e` and `Tnt01.e`
+use them. Unconverted, `lib.e`'s skip helper stores the skip handler into
+541, the 360's running skip task slot `dword_8243C350`, so a skipped scene
+suspends the event and then waits forever for it to end. The converter
+renumbers imports 541..548 down by one, which reproduces the 360's usage
+exactly.
+
 `lib.e` exports nearly the same symbol ids on both releases (block2 table 2):
 the PS3 one adds 147, 159, 170, 173, 174 and lacks 149, 165, 171, and no other
 PS3 script imports the new ones. How cross file symbols resolve has not been
