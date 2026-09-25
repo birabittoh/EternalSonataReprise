@@ -17,6 +17,7 @@ Converted:
   .e    list B bulk offsets, header size, reloc offset
   .bmd / CAMP  entry table; .bop  entry directory
   .p3tex  -> .x3tex (a bare texture chain)
+  .csf / .cps  audio, see ps3_audio.py; needs ffmpeg on PATH
 
 usage: ps3_convert.py PS3_ROOT OUT --base ASSETS_360 [--verify DECODED_360]
 """
@@ -25,7 +26,11 @@ import bisect
 import collections
 import math
 import os
+import shutil
 import struct
+import tempfile
+
+import ps3_audio
 
 u32 = struct.Struct('>I')
 u16 = struct.Struct('>H')
@@ -543,7 +548,7 @@ def convert_bare(d, report):
 # Slot addressed containers whose PS3 layout differs from the 360's, and
 # formats nothing converts yet. The 360 file is kept for these.
 KEEP_360 = {'appkeep.bmd', 'op.bmd', 'ed1.bmd', 'ed2.bmd', 'campdata/scp.bmd'}
-KEEP_360_EXT = ('.cps', '.csf', '.fnt', '.tex')
+KEEP_360_EXT = ('.fnt', '.tex')
 
 
 def convert_file(rel, d, report):
@@ -552,7 +557,7 @@ def convert_file(rel, d, report):
     if low in KEEP_360 or low.endswith(KEEP_360_EXT):
         return None
     if low.endswith('.e') and d[:4] in (b'\0\0\x01\x81', b'\0\0\x01\x80'):
-        return rel, convert_e(d, report)
+        return rel, ps3_audio.rename_music(convert_e(d, report))
     if d[:4] in (b'BMD ', b'CAMP'):
         return rel, convert_bmd(d, report)
     if d[:4] == b'BOP ':
@@ -730,10 +735,30 @@ def main():
         ap.error('building a game directory needs --base')
 
     toc = names = None
+    banks = donors = scratch = None
     if args.out:
+        ps3_audio.require_ffmpeg()
         with open(os.path.join(args.base, 'index.vmtoc'), 'rb') as fh:
             toc = Toc(fh.read())
         names = link_base(args.base, args.out)
+        pcm_dir = os.path.join(args.out, 'pcm')
+        if not args.only and os.path.isdir(pcm_dir):
+            shutil.rmtree(pcm_dir)
+        scratch = tempfile.mkdtemp(prefix='ps3_convert_')
+        banks = ps3_audio.decoded_360_banks(args.base, scratch)
+        donors = ps3_audio.load_cxs_donors(args.base)
+
+    def write_pcm(tok, data):
+        replace_file(os.path.join(args.out, 'pcm', tok.hex() + '.wav'), data)
+
+    def emit(out_rel, data):
+        if out_rel.lower() not in names:
+            report.counts['new files'] += 1
+        out_rel = names.get(out_rel.lower(), out_rel)
+        replace_file(os.path.join(args.out, out_rel), data)
+        if not toc.set_stored(out_rel, len(data)):
+            report.warn(f'{out_rel}: path too long for an index.vmtoc record')
+        return out_rel
 
     report = Report()
     stats = collections.Counter()
@@ -745,6 +770,22 @@ def main():
                 continue
             with open(path, 'rb') as fh:
                 d = fh.read()
+            low = rel.lower()
+            if low.endswith(('.csf', '.cps')):
+                if not args.out:
+                    report.counts['audio, converted only into a game directory'] += 1
+                    continue
+                if low.endswith('.csf'):
+                    x360 = None
+                    if low in banks:
+                        with open(banks[low], 'rb') as fh:
+                            x360 = fh.read()
+                    emit(rel, ps3_audio.convert_csf(rel, d, x360, write_pcm, report))
+                else:
+                    for out_rel, data in ps3_audio.convert_cps(rel, d, args.base, donors,
+                                                                write_pcm, report):
+                        emit(out_rel, data)
+                continue
             result = convert_file(rel, d, report)
             if result is None:
                 report.counts['kept 360 ' + (os.path.splitext(f)[1].lower() or f)] += 1
@@ -752,12 +793,7 @@ def main():
             out_rel, data = result
             report.counts['converted'] += 1
             if args.out:
-                if out_rel.lower() not in names:
-                    report.counts['new files'] += 1
-                out_rel = names.get(out_rel.lower(), out_rel)
-                replace_file(os.path.join(args.out, out_rel), data)
-                if not toc.set_stored(out_rel, len(data)):
-                    report.warn(f'{out_rel}: path too long for an index.vmtoc record')
+                out_rel = emit(out_rel, data)
             for ref_root in args.verify:
                 ref = os.path.join(ref_root, out_rel.lower())
                 if os.path.exists(ref):
@@ -767,6 +803,7 @@ def main():
 
     if args.out:
         replace_file(os.path.join(args.out, 'index.vmtoc'), toc.bytes())
+        shutil.rmtree(scratch, ignore_errors=True)
 
     for k, v in sorted(report.counts.items()):
         print(f'{v:8}  {k}')

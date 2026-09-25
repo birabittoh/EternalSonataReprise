@@ -45,7 +45,8 @@ The directory starts as hard links to the 360 tree (`--base`, which provides
 convertible PS3 file is written over its counterpart, PS3-only files are
 added, and `index.vmtoc` gets a stored record for every converted file. Files
 kept from the 360: `AppKeep.bmd`, `op.bmd`, `ed1.bmd`, `ed2.bmd`,
-`campdata/scp.bmd` (slot layouts differ), and all audio, fonts and `.tex`.
+`campdata/scp.bmd` (slot layouts differ), fonts and `.tex`. Audio needs
+`ffmpeg` on `PATH` (§5).
 
 `--verify extracted/e --verify extracted/other` compares converted models
 against the decoded 360 release; without an output directory it only
@@ -56,8 +57,8 @@ converts and reports.
 | `.e`, `.bop`, `.bmd` | same | Same containers, same chunk tree; see §3 |
 | `.p3tex` | `.x3tex` | Map textures: a bare `NTX3` chain vs `NTX2` |
 | `.p3obj` | none | Field character models moved out of `AppKeep.bmd` |
-| `.cps` | `.cxs` | Music, different codec |
-| `.csf` | `.csf` | Same banks, PS3 audio payloads |
+| `.cps` | `.cxs` / `.wav` | Music, PS-ADPCM or PCM; see §5 |
+| `.csf` | `.csf` | Same banks, ATRAC3 clips; see §5 |
 
 ## 2. Scripts
 
@@ -196,12 +197,58 @@ A resized `NMDL` ends with an `NPAD` that keeps the size change a multiple of
 `NOBJ`s out of it into the `pc*_v*.p3obj` files, so it cannot replace the 360
 one as is.
 
-## 5. Not done yet
+## 5. Audio
+
+No XMA encoder exists, so audio the 360 does not already have is shipped as
+PCM: `pcm/<16 hex digits>.wav` in the game directory. The converter writes a
+16 byte tag (`RXPcmSub` plus those eight bytes) at the start of the clip's
+payload, and the host (`ScanGamePcm`) substitutes the WAV when the XMA decoder
+meets it, the same way mod audio works.
+
+### Sound banks (`.csf`)
+
+Same container as the 360: `CSF ` (total, header size, payload size), `BOOK`
+(the `SONG` sequences, byte identical in layout), then `PGHD` holding `PROG`s
+of `TIM` clips. `TIM` fields from +0x08, all u32: flags, rate, payload offset,
+size, loop start, loop end, then (offset, length) of the `LIP ` chunk, the XMA2
+header and the seek table, each relative to the `TIM`. The PS3 leaves the XMA
+pair empty and packs chunks unaligned; the 360 aligns `TIM`s to 4, clip
+payloads to 0x1000 and the header to 0x1000.
+
+* PS3 payloads are mono ATRAC3, 192 byte frames of 1024 samples (`a2 00 ...`).
+* Flags: PS3 1 (looping effect) is 360 0xFF, 0 and 0x100 (voice) are equal.
+  The first parameter word at +0x38 has 6 in its low half on every PS3 clip
+  and 0 on the 360.
+* The 360 rate field is tuned per looping clip (47968..48019); PS3 says 48000.
+* XMA2 header, nine u32: `0x030100FF` looping / `0x03010000`, loop begin
+  (384) and end, rate, block size (0x4000 effects, 0x1000 voices), samples,
+  samples without padding, block count, `0x01000001`. The seek table is one
+  cumulative sample count per block.
+
+The PS3 appended its new clips: `pc001` keeps all of the 360's 173 in place and
+adds 29. A clip whose 360 twin at the same ordinal has the same flags and a
+length within 3000 samples keeps the 360 `TIM` and XMA; about 1400 MB of PCM
+comes down to about 210 MB. The `BOOK`s differ in a few sequencer timing bytes
+and the PS3's are kept.
+
+### Music (`.cps`)
+
+`CPS ` header: u32 header size (0x20), channels, data size, rate, loop start
+and end in bytes, and a kind: 3 is PS-ADPCM with channels interleaved per 16
+byte frame, 0 is big endian PCM. Every track both releases share has the same
+sample count, so only names differ: PS3 scripts ask for `MP139.cps`, which the
+converter rewrites to `MP139.cxs` in the `.e` files (the same length, and
+`sub_820F80F8` builds `sound\cxs\<name>` from whatever the script says).
+
+New PS3 tracks: `MP109_us`, `MP166..168` become a 360 `.cxs` of the nearest
+length with a tagged payload plus a PCM sidecar (`smpl` loop); `MP187..189`
+and their 5.1 versions `MP197..199` are PCM already and become plain big
+endian `.wav`, which scripts ask for by that name.
+
+## 6. Not done yet
 
 * `NMR2` and the colours in `NATR`.
 * `Mefc` effects: only their textures are converted.
-* Audio: `.cps` music and the PS3 `.csf` payloads. The mod audio pipeline
-  already builds `.cxs` / `.csf` from PCM, so a decoder is the missing piece.
 * Real implementations of the seven stubbed natives, and cross file script
   symbols (§2).
 * Slot addressed containers (`AppKeep.bmd`, `title.bmd`) and how the PS3 loads

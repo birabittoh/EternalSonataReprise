@@ -169,6 +169,9 @@ struct State {
   std::map<std::string, ModVoiceBanks> mod_voice;  // mod folder name -> its banks
   bool bound = false;
   std::map<std::array<uint8_t, 16>, AudioPatch*> tagged_audio;
+  // Clips a converted game directory ships as PCM (scripts/ps3_audio.py), keyed
+  // on the tag its banks already carry; loaded on first play.
+  std::map<std::array<uint8_t, 16>, AudioPatch> game_pcm;
 };
 
 State& state() {
@@ -2065,7 +2068,15 @@ bool SupplyReplacementPcm(void*, const uint8_t tag[16], uint64_t* cursor, int sa
   auto found = s.tagged_audio.find(key);
   if (found == s.tagged_audio.end())
     return false;
-  const AudioPatch& patch = *found->second;
+  AudioPatch& patch = *found->second;
+  if (patch.samples.empty()) {
+    std::string error;
+    if (!EnsureAudioLoaded(patch, &error)) {
+      REXLOG_WARN("assets: {} {}", patch.host_file.string(), error);
+      s.tagged_audio.erase(found);
+      return false;
+    }
+  }
   if (!patch.frame_count || !patch.channels || !patch.sample_rate || sample_rate <= 0)
     return false;
 
@@ -2175,10 +2186,38 @@ void ScanModLanguages(rex::Runtime* runtime) {
   }
 }
 
+// pcm/<16 hex digits>.wav under the game directory: the digits are the tag's
+// last eight bytes, which the converter wrote into the clip's payload.
+void ScanGamePcm(const std::filesystem::path& root) {
+  State& s = state();
+  std::error_code ec;
+  size_t found = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(root / "pcm", ec)) {
+    const std::string stem = entry.path().stem().string();
+    if (entry.path().extension() != ".wav" || stem.size() != 16 ||
+        stem.find_first_not_of("0123456789abcdef") != std::string::npos)
+      continue;
+    std::array<uint8_t, 16> tag;
+    std::memcpy(tag.data(), "RXPcmSub", 8);
+    for (size_t i = 0; i < 8; ++i)
+      tag[8 + i] = uint8_t(std::stoul(stem.substr(i * 2, 2), nullptr, 16));
+    AudioPatch& patch = s.game_pcm[tag];
+    patch.kind = "sfx";
+    patch.host_file = entry.path();
+    patch.owner = "game data";
+    patch.tag = tag;
+    s.tagged_audio[tag] = &patch;
+    ++found;
+  }
+  if (found)
+    REXLOG_INFO("assets: game directory ships {} PCM clips", found);
+}
+
 void BindAssetSystem(rex::Runtime* runtime) {
   State& s = state();
   std::lock_guard<std::recursive_mutex> lock(s.mutex);
   s.runtime = runtime;
+  ScanGamePcm(runtime->game_data_root());
 
   int priority = 0;
   for (const auto& mod : runtime->EnabledModsInfo())
