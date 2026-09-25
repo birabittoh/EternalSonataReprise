@@ -64,7 +64,7 @@ converts and reports.
 
 The `.e` bytecode is produced by the same compiler: `bos01_v1.e` differs only
 in its header id and timestamp. Of every native id imported by any PS3 script,
-only seven are missing from the 360 executable's tables:
+only seven are missing from the 360 executable's tables (5028 is never imported):
 
 | id | used by |
 |---|---|
@@ -74,13 +74,33 @@ only seven are missing from the 360 executable's tables:
 | 5030, 5031 | `sbi02.e`..`sbi05.e` |
 | 5033 | `Dld17.e` |
 
-The 5000 range is the party lookup table (`off_8240CA88`, 26 entries on the
-360), and the call sites are about the twelve character roster: `sbi02..05`
-loop characters 0..11 through 5030 and 5031. `sub_820FF748`'s range check is
-inclusive, so an unregistered 5026 silently resolves to the first battle
-native. `src/engine/ps3_natives.cpp` registers ids 5026..5033 as host stubs
-returning 0 until their real behaviour is known, which needs the PS3
-executable decrypted (RPCS3, Utilities > Decrypt PS3 Binaries).
+The 5000 range is the party table (`off_8240CA88`, 26 entries on the 360).
+`sub_820FF748`'s range check is inclusive, so an unregistered 5026 silently
+resolves to the first battle native; `src/engine/ps3_natives.cpp` registers
+5026..5033. Their PS3 code (table at `0x7795B8` in the EBOOT, see "PS3
+executable" below) takes a 0 based character in the 360's numbering:
+
+| id | PS3 | behaviour | used for |
+|---|---|---|---|
+| 5026 (c, v) | `0x381E18` | unlock costume v of c | `lib.e` grants ALG 2, PLK 2, PLK 3, BET 2 |
+| 5027 (c, v) | `0x381DD8` | costume unlocked (v 1 always) | `Tnt03.e` text 1973..1976 |
+| 5028 (c) | `0x381DA0` | selected costume, default 1 | |
+| 5029 (x) | `0x381D60` | camp menu flag, block `+0x921 = x != 0` | `Bel01.e` |
+| 5030 (c) | `0x381D18` | c has joined (display position > 0) | `sbi02..05` |
+| 5031 (c, d) | `0x381CD8` | HP += d, clamped to [1, max], both stat copies | `sbi02..05`: -50 to everyone joined |
+| 5032 (x) | `0x381C98` | camp menu flag, block `+0x920 = x == 0` | `lib.e` |
+| 5033 (c) | `0x381C10` | c at display position 1..3 | `Dld17.e` picks a line |
+
+Costumes exist only for Allegretto, Polka and Beat (`pcALG_v2`, `pcPLK_v2`,
+... models, a "Costumes" camp menu). The PS3 party block (`G+0x820`, the
+360's `0x8243FC08`, grows from 10 to 12 entries) keeps unlocks at
+`+0x919..+0x91C` and the selected variant at `+0x91D..+0x91F`;
+`sub_1E5840` turns the selection into a model index. The 360 has neither the
+models nor the menu, so the host keeps unlocks in memory (not saved), always
+reports costume 1 and ignores the menu flags.
+
+The PS3 also stubs two 360 natives: 5021 (Xbox rich presence) returns 0 and
+5022 (achievement write) returns 1.
 
 Task priorities differ. Builtins 5 (spawn task, `sub_82102500`) and 7
 (spawn child task, `sub_82102538`) take the priority as `args[2]` (the third
@@ -103,6 +123,41 @@ use them. Unconverted, `lib.e`'s skip helper stores the skip handler into
 suspends the event and then waits forever for it to end. The converter
 renumbers imports 541..548 down by one, which reproduces the 360's usage
 exactly.
+
+Every other native table has the same base and count on both executables,
+and they line up entry for entry:
+
+| ids | 360 table | PS3 table |
+|---|---|---|
+| 1..30, 100..115 | `off_8240C628`, `off_8240C6A0` (`sub_821030C8`) | `0x7799D8`, `0x779A50` (`sub_3B3218`) |
+| 200..225 | `off_8240C5C0` (`sub_82105A18`) | `0x779A90` (`sub_3BB308`) |
+| 500..548 / 549 | `off_8240C6E0` (`sub_820FDFC0`, `sub_82240D40`) | `0x779910` (`sub_3AC8B0`) |
+| 1000..1151 | `off_8240C828` | `0x779640` (`sub_387940`) |
+| 2000..2027 | `off_8240C7B8` | `0x7798A0` (`sub_39F9A0`) |
+| 5000..5025 / 5033 | `off_8240CA88` | `0x7795B8` (`sub_382360`) |
+| 20000..20206 | `off_8238E840` (`sub_82176078`) | `0x776FEC` (`sub_EE628`) |
+| 40000..40070 | `off_8238E720` | `0x777328` (`sub_137E30`) |
+| 45000..45040 | `off_8240CAF0` | `0x776F48` (`sub_7C750`) |
+| 60000..60101 | `off_822F4260` (`sub_82252430`) | `0x778F88` (`sub_3606F8`) |
+
+Alignment was checked per entry by the argument words each native reads
+(identical in 1, 100, 1000, 5000 and 45000 apart from compiler noise) and by
+floating point use, which matches best at offset 0 in every table, e.g. 100%
+against at most 78% one entry off for 2000, 93% against 81% for 40000. Tables
+whose PS3 natives fetch arguments through out of line accessors (20000, 40000,
+`sub_E5CB0` = `lwz r3, 0(r3)`) rely on the latter. 60016 is a null entry on the
+PS3.
+
+### PS3 executable
+
+`EBOOT.BIN` decrypts with `rpcs3 --decrypt`; the result is a PPC64 big endian
+ELF. The TOC is `0x5415F8` (every function descriptor's second word, starting
+with the entry descriptor at `0x51D5E0`); IDA does not set it and has to be
+told in the processor options. Native tables hold pointers to 8 byte
+descriptors (code, TOC), and table pointers are loaded from TOC slots.
+`sub_3B00F8` is `sub_820FF028`. The party block `G` is `0x828EB0` with the
+same leading layout as the 360's `0x8243F3E8` (gold at `+8`); its stat arrays
+sit at `G+0xAD0` (the 360's `G+0x920`), same 48 byte stride.
 
 `lib.e` exports nearly the same symbol ids on both releases (block2 table 2):
 the PS3 one adds 147, 159, 170, 173, 174 and lacks 149, 165, 171, and no other
@@ -272,8 +327,7 @@ endian `.wav`, which scripts ask for by that name.
 
 * `NMR2` and the colours in `NATR`.
 * `Mefc` effects: only their textures are converted.
-* Real implementations of the seven stubbed natives, and cross file script
-  symbols (§2).
+* Saving the PS3 costume unlocks, and cross file script symbols (§2).
 * Slot addressed containers (`AppKeep.bmd`, `title.bmd`) and how the PS3 loads
   `.p3obj`.
 * Runtime validation: none of the converted files has been loaded in game yet.
