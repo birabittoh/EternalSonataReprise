@@ -66,6 +66,9 @@ guest_shaders_debug.bin
 /assets/
 /assets-usa/
 /assets-jp/
+/assets-ps3/
+/assets-ps3-raw/
+/assets-ps3-360/
 !/assets/.gitkeep
 /out/iso_extract/
 *.vert
