@@ -640,6 +640,28 @@ void EternalSonataFontCharacter(PPCRegister& r3, PPCRegister& r4, PPCRegister& r
   r3.u64 = 1;
 }
 
+// sub_821D5CC0 overwrites a character its font lacks with '@' or Shift-JIS
+// 0x81A1 and reads it again. A font without those, such as one that failed to
+// load, loops forever, so step past a character that is already the fallback.
+extern "C++" bool EternalSonataSkipMissingGlyph(PPCRegister& r1, PPCRegister& r27);
+
+bool EternalSonataSkipMissingGlyph(PPCRegister& r1, PPCRegister& r27) {
+  auto* memory = eternalsonata::Mem();
+  if (!memory)
+    return false;
+  const uint32_t cursor_slot = r1.u32 + 0x54;
+  const uint32_t cursor = rex::memory::load_and_swap<uint32_t>(
+      memory->TranslateVirtual<const uint8_t*>(cursor_slot));
+  const uint8_t* text = memory->TranslateVirtual<const uint8_t*>(cursor);
+  const bool fallback =
+      r27.u32 == 1 ? text[0] == '@' : text[0] == 0x81 && text[1] == 0xA1;
+  if (!fallback)
+    return false;
+  rex::memory::store_and_swap<uint32_t>(memory->TranslateVirtual<uint8_t*>(cursor_slot),
+                                        cursor + r27.u32);
+  return true;
+}
+
 // TITLE_TASK__Init loads title.bmd, whose effect only offers PAL's western
 // logos; for Japanese text load the Japanese release's, with Trusty Bell.
 namespace {
