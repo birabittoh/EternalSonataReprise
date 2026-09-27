@@ -131,6 +131,27 @@ Both 48 byte character stat tables store total EXP as a `u32` at offset
 `0x04`, immediately after level. `sub_821E7F18` updates both copies when battle
 EXP is awarded and derives the cached level from the same total.
 
+The results state machine assigns each party member to exactly one reward
+category:
+
+| Character at the end of battle | Retail share | Configurable share |
+|---|---:|---:|
+| Active position 1 through 3, battle HP above zero | 100% | 100% |
+| Active position 1 through 3, battle HP zero or below | 0% | `incapacitated_exp_multiplier` |
+| Benched position 4 or later | 50% | `benched_exp_multiplier` |
+| Outside the current party | 0% | 0% |
+
+Only active characters have live battle HP. A benched character is never
+classified as incapacitated, even when the character's stored overworld HP is
+zero. That character receives only the configured bench share. The bench and
+incapacitated multipliers therefore never combine.
+
+`sub_821E7D88` awards one active character after the state machine checks that
+character's live battle HP. `sub_821E7F18` walks every party position after the
+active three and awards the bench share without checking HP. Defaults of `0.0`
+for incapacitated characters and `0.5` for benched characters retain the retail
+rules.
+
 `sub_821E8308`, used by the status screen's Next field, walks one shared curve
 for the whole cast. The first level costs 200 EXP. Its running cost increment
 starts at 10, the increment's own step starts at 45, and that step grows by 9
