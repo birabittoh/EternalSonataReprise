@@ -108,6 +108,7 @@ constexpr std::uint32_t kAchievementsTag = 11u;
 constexpr std::uint32_t kStatusLabelSid = 23u;
 
 constexpr std::uint32_t kLanguageIndexAddress = 0x8243D370u;
+constexpr std::uint32_t kJapaneseLanguage = 0u;
 constexpr std::uint32_t kSpanishLanguage = 6u;
 constexpr std::uint32_t kMenuRootAddress = 0x824400E8u;
 
@@ -245,6 +246,20 @@ bool FindSelectableRun(const std::uint8_t* base, std::uint32_t list,
   return false;
 }
 
+void AdjustJapanesePartyLevel(std::uint8_t* base, std::uint32_t list,
+                              std::uint32_t end) {
+  if (ReadU32(base, kLanguageIndexAddress) != kJapaneseLanguage) {
+    return;
+  }
+  for (std::uint32_t at = list; at + 16u <= end; at += 4u) {
+    if (ReadU32(base, at) == 300u && ReadI32(base, at + 8u) == 375 &&
+        ReadI32(base, at + 12u) == 620) {
+      WriteU32(base, at + 8u, 415u);
+      return;
+    }
+  }
+}
+
 // Reorder one run in place: record at new position i is old position kOrder[i],
 // with x restated so the run stays evenly spaced from its own first record.
 // Both runs are permuted the same way, which is what keeps the art, the cursor
@@ -330,6 +345,8 @@ void MaybeEditOptionStrip(std::uint8_t* base, std::uint32_t list) {
   if (sel.stride > 0x80u) {
     return;  // beyond what PermuteRun can hold; refuse rather than corrupt
   }
+
+  AdjustJapanesePartyLevel(base, list, end);
 
   // Both runs keep eleven records, so nothing has to be inserted or deleted and
   // the cursor still stops at Save. The selectable records carry their own tags
