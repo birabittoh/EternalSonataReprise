@@ -643,6 +643,15 @@ void EternalSonataSaveRowHide(PPCRegister& f2) {
     f2.f64 = 10000.0;
 }
 
+// The item count builders embed 0xD7 directly, bypassing localized text.
+extern "C++" void EternalSonataQuantityPrefix(PPCRegister& character);
+
+void EternalSonataQuantityPrefix(PPCRegister& character) {
+  if (REXCVAR_GET(force_japanese_font) ||
+      eternalsonata::ReadGuestByte(eternalsonata::kTextLanguage + 3) == 0)
+    character.u64 = 'x';
+}
+
 // sub_821D3208 picks the Japanese font (kind 0) only for Japanese text.
 extern "C++" void EternalSonataFontKind(PPCRegister& r28);
 

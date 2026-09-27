@@ -67,6 +67,25 @@ name = "EternalSonataSaveRowHide"
 registers = ["f2"]
 after_instruction = true
 
+# Quantity labels embed western byte 0xD7, which selects kana in Japanese fonts.
+[[midasm_hook]]
+address = 0x821FE250
+name = "EternalSonataQuantityPrefix"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8221461C
+name = "EternalSonataQuantityPrefix"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82214A20
+name = "EternalSonataQuantityPrefix"
+registers = ["r9"]
+after_instruction = true
+
 # force_japanese_font: every language takes sub_821D3208's Japanese font
 # (EternalSonataFontKind, game_settings.cpp).
 [[midasm_hook]]
