@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -36,6 +37,7 @@
 #include <string>
 #include <vector>
 
+#include <rex/cvar.h>
 #include <rex/hook.h>
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
@@ -45,6 +47,14 @@
 #include "guest_main_thread.h"
 #include "party_system.h"
 #include "room_presence.h"
+
+REXCVAR_DEFINE_DOUBLE(benched_exp_multiplier, 0.5, "Eternal Sonata",
+                      "Share of battle EXP awarded to party members outside the active three")
+    .range(0.0, 1.0);
+
+REXCVAR_DEFINE_DOUBLE(incapacitated_exp_multiplier, 0.0, "Eternal Sonata",
+                      "Share of battle EXP awarded to incapacitated active party members")
+    .range(0.0, 1.0);
 
 namespace eternalsonata {
 namespace {
@@ -127,6 +137,23 @@ REX_IMPORT(__imp__sub_820E78B8, g_place_member, u32(u32));
 REX_IMPORT(__imp__sub_820E7948, g_unplace_member, u32(u32));
 REX_IMPORT(__imp__sub_821E6428, g_rebuild_battle_party, u32());
 REX_IMPORT(__imp__sub_821E7898, g_refresh_stats, u32(u32, u32));
+
+// Battle results award the three active positions in states 2, 8 and 11,
+// then award every later position in state 14. Each active state skips its
+// character when this live battle value is zero.
+constexpr uint32_t kBattleResultStateOffset = 4u;
+constexpr uint32_t kBattleResultTotalPtrAddr = 0x82552698u;
+constexpr uint32_t kBattleResultTotalOffset = 0x10u;
+constexpr std::array<uint32_t, 3> kActiveAwardStates = {2u, 8u, 11u};
+constexpr std::array<uint32_t, 3> kActiveAwardHpAddrs = {0x82510FECu, 0x82525020u,
+                                                        0x82539054u};
+
+thread_local bool g_scale_incapacitated_award = false;
+
+int32_t ScaleBattleExp(int32_t total, double multiplier) {
+  const double clamped = std::clamp(multiplier, 0.0, 1.0);
+  return static_cast<int32_t>(std::lround(static_cast<double>(total) * clamped));
+}
 
 constexpr int kCharacterCount = ETERNALSONATA_CHARACTER_COUNT;
 
@@ -678,6 +705,58 @@ uint32_t PartyNameOverrideFor(uint32_t text_address) {
 
 }  // namespace eternalsonata
 
+// Let the game's result state process an incapacitated active member normally,
+// including its level-up presentation. The live value is restored before the
+// hook returns.
+REX_EXTERN(__imp__sub_82198450);
+REX_HOOK_RAW(sub_82198450) {
+  const u32 result = ctx.r3.u32;
+  const u32 state = result ? REX_LOAD_U32(result + eternalsonata::kBattleResultStateOffset) : 0;
+  uint32_t hp_addr = 0;
+  for (size_t i = 0; i < eternalsonata::kActiveAwardStates.size(); ++i) {
+    if (state == eternalsonata::kActiveAwardStates[i]) {
+      hp_addr = eternalsonata::kActiveAwardHpAddrs[i];
+      break;
+    }
+  }
+
+  const int32_t hp = hp_addr ? static_cast<int32_t>(REX_LOAD_U32(hp_addr)) : 1;
+  const double multiplier =
+      std::clamp(REXCVAR_GET(incapacitated_exp_multiplier), 0.0, 1.0);
+  if (hp_addr && hp <= 0 && multiplier > 0.0) {
+    REX_STORE_U32(hp_addr, 1u);
+    eternalsonata::g_scale_incapacitated_award = true;
+    __imp__sub_82198450(ctx, base);
+    eternalsonata::g_scale_incapacitated_award = false;
+    REX_STORE_U32(hp_addr, static_cast<u32>(hp));
+    return;
+  }
+  __imp__sub_82198450(ctx, base);
+}
+
+REX_EXTERN(__imp__sub_821E7D88);
+REX_HOOK_RAW(sub_821E7D88) {
+  if (eternalsonata::g_scale_incapacitated_award) {
+    ctx.r4.s64 = eternalsonata::ScaleBattleExp(
+        ctx.r4.s32, REXCVAR_GET(incapacitated_exp_multiplier));
+  }
+  __imp__sub_821E7D88(ctx, base);
+}
+
+REX_EXTERN(__imp__sub_821E7F18);
+REX_HOOK_RAW(sub_821E7F18) {
+  const double multiplier = std::clamp(REXCVAR_GET(benched_exp_multiplier), 0.0, 1.0);
+  if (multiplier != 0.5) {
+    const u32 result = REX_LOAD_U32(eternalsonata::kBattleResultTotalPtrAddr);
+    const int32_t total = result
+                              ? static_cast<int32_t>(REX_LOAD_U32(
+                                    result + eternalsonata::kBattleResultTotalOffset))
+                              : ctx.r3.s32 * 2;
+    ctx.r3.s64 = eternalsonata::ScaleBattleExp(total, multiplier);
+  }
+  __imp__sub_821E7F18(ctx, base);
+}
+
 // ---------------------------------------------------------------------------
 // Public C ABI (see src/eternalsonata_party_api.h)
 // ---------------------------------------------------------------------------
@@ -1097,4 +1176,3 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCharacterName(int character
   PublishNameLocked(slot);
   return ETERNALSONATA_PARTY_OK;
 }
-

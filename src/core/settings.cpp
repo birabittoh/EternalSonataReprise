@@ -295,13 +295,15 @@ constexpr std::array kBasicCvarNames = {
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
     "camera_fov_scale", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
     "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button",
-    "enemy_exp_multiplier", "enemy_gold_multiplier", "enemy_hp_multiplier", "ui_scale",
+    "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
+    "enemy_gold_multiplier", "enemy_hp_multiplier", "ui_scale",
     "save_row_portraits", "force_japanese_font"};
 
 // Steps for the Game tab's multiplier rows. HP stops short of zero, the
 // same floor enemy_hp_multiplier has.
 constexpr std::array kRewardMultiplierSteps = {0.0, 0.25, 0.5, 0.75, 1.0, 1.5,
                                                2.0, 3.0,  4.0, 5.0,  10.0};
+constexpr std::array kExpShareSteps = {0.0, 0.25, 0.5, 0.75, 1.0};
 constexpr std::array kUiScaleSteps = {0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0};
 constexpr std::array kHpMultiplierSteps = {0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0};
 
@@ -756,14 +758,17 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         }
         ImGui::Separator();
         DrawMultiplierRow("EXP", "enemy_exp_multiplier", kRewardMultiplierSteps,
-                          "Multiplies the EXP every enemy is worth. Stacks with mods that "
-                          "rebalance enemies, and with EXP bonus equipment.");
+                          "Multiplies the EXP every enemy is worth.");
+        DrawMultiplierRow("Bench EXP", "benched_exp_multiplier", kExpShareSteps,
+                          "Share of battle EXP awarded to party members outside the active "
+                          "three. The original game awards 0.5x.");
+        DrawMultiplierRow("Downed EXP", "incapacitated_exp_multiplier", kExpShareSteps,
+                          "Share of battle EXP awarded to incapacitated active party members. "
+                          "The original game awards none.");
         DrawMultiplierRow("Gold", "enemy_gold_multiplier", kRewardMultiplierSteps,
-                          "Multiplies the gold every enemy drops. Stacks with mods that "
-                          "rebalance enemies.");
+                          "Multiplies the gold every enemy drops.");
         DrawMultiplierRow("Enemy HP", "enemy_hp_multiplier", kHpMultiplierSteps,
-                          "Multiplies every enemy's max HP, for longer or shorter fights. "
-                          "Stacks with mods that rebalance enemies.");
+                          "Multiplies every enemy's max HP, for longer or shorter fights.");
         ImGui::Separator();
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();
