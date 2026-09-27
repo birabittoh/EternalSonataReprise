@@ -116,6 +116,11 @@ rex::Runtime* g_runtime = nullptr;
 bool g_have_snapshot = false;
 std::array<int, kSettingCount> g_snapshot{};
 
+// PAL initializes its own selector after the host has read settings.toml. The
+// first live frame applies the configured built-in voice, then later byte
+// changes are choices made through the game's Options row.
+bool g_voice_guest_synced = false;
+
 rex::memory::Memory* Mem() { return g_runtime ? g_runtime->memory() : nullptr; }
 
 bool Readable(uint32_t address, uint32_t span) {
@@ -394,6 +399,8 @@ void Tick() {
   }
 
   std::vector<std::pair<int, int>> changed;
+  int guest_voice_index = -1;
+  bool reload_voice = false;
 
   {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -401,6 +408,20 @@ void Tick() {
       // Guest memory went away under us (shutdown); start clean next time.
       g_have_snapshot = false;
       return;
+    }
+
+    const int configured_voice = VoiceLanguageIndex();
+    const int configured_byte = VoiceLanguageGuestByte(configured_voice);
+    if (!g_voice_guest_synced) {
+      if (configured_byte >= 0 && ReadGuestByte(kVoiceLanguage) != configured_byte) {
+        WriteGuestByte(kVoiceLanguage, static_cast<uint8_t>(configured_byte));
+        REXLOG_INFO("[settings] applied configured voice '{}' to PAL selector {}",
+                    VoiceLanguageCode(configured_voice), configured_byte);
+        reload_voice = true;
+      }
+      g_voice_guest_synced = true;
+    } else if (configured_byte >= 0 && ReadGuestByte(kVoiceLanguage) != configured_byte) {
+      guest_voice_index = VoiceLanguageIndexForGuestByte(ReadGuestByte(kVoiceLanguage));
     }
 
     std::array<int, kSettingCount> state{};
@@ -421,6 +442,13 @@ void Tick() {
     g_have_snapshot = true;
   }
 
+  if (guest_voice_index >= 0) {
+    SetVoiceLanguageSetting(guest_voice_index);
+  }
+  if (reload_voice) {
+    RequestVoiceBankReload();
+  }
+
   for (const auto& [setting, value] : changed) {
     PublishChanged(setting, value);
   }
@@ -437,6 +465,7 @@ void BindGameSettings(rex::Runtime* runtime) {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_runtime = runtime;
     g_have_snapshot = false;
+    g_voice_guest_synced = false;
   }
   if (runtime && runtime->mod_registry()) {
     runtime->mod_registry()->RegisterTick([] { Tick(); });
@@ -446,6 +475,7 @@ void BindGameSettings(rex::Runtime* runtime) {
 void NotifyGameSettingsSaveLoaded() {
   std::lock_guard<std::mutex> lock(g_mutex);
   g_have_snapshot = false;
+  g_voice_guest_synced = false;
 }
 
 }  // namespace eternalsonata
