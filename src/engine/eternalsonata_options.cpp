@@ -3353,10 +3353,11 @@ constexpr u32 kVolContHeapStockSize = 768u;
 constexpr u32 kVolContHeapSize = 2048u;
 
 // sub_8212DA18 gives both .fnt files one unnamed 5 MiB heap, and a font that
-// does not fit is silently left empty. Leave room for larger mod fonts.
+// does not fit is silently left empty. Keep enough headroom for larger mod
+// fonts without starving later allocations from the shared game arena.
 constexpr u32 kFontHeap = 0x82553890u;
 constexpr u32 kFontHeapStockSize = 5u << 20;
-constexpr u32 kFontHeapSize = 16u << 20;
+constexpr u32 kFontHeapSize = 12u << 20;
 
 REX_EXTERN(__imp__sub_82112240);
 REX_HOOK_RAW(sub_82112240) {
