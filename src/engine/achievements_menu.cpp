@@ -202,8 +202,9 @@ constexpr const char* kTabLabel[kTabCount][7] = {
 };
 
 // Restrict edits to the seven stock Music lists.
+constexpr std::uint32_t kJapaneseScreenList = 0x8205BBC0u;
 constexpr std::uint32_t kScreenLists[] = {
-    0x8205BBC0u, 0x820315B8u, 0x82065998u, 0x8206A878u,
+    kJapaneseScreenList, 0x820315B8u, 0x82065998u, 0x8206A878u,
     0x82060AD0u, 0x82074628u, 0x8206F750u};
 constexpr std::uint32_t kRecordEnd = 0xFFFFFFFFu;
 constexpr std::uint32_t kListEnd = 0x0000FFFFu;
@@ -510,6 +511,45 @@ void HideCustomTab(PPCContext& ctx, std::uint8_t* base) {
       ctx.r7.u32 = 0u;
       __imp__sub_82179160(ctx, base);
     }
+  }
+
+  ctx.r3.u32 = saved_r3;
+  ctx.r4.u32 = saved_r4;
+  ctx.r5.u32 = saved_r5;
+  ctx.r6.u32 = saved_r6;
+  ctx.r7.u32 = saved_r7;
+}
+
+// Japanese adds a D-pad beside the LB/RB Change Tab prompt. Its two type 707
+// records reference screen object 355; the object's first field is its sprite
+// handle.
+void HideJapaneseTabPrompt(PPCContext& ctx, std::uint8_t* base) {
+  if (ReadU32(base, kLanguageIndexAddr) != 0u) {
+    return;
+  }
+  const std::uint32_t ui = REX_LOAD_U32(0x824400E4u);
+  const std::uint32_t screen = ui ? REX_LOAD_U32(ui + 2836u) : 0u;
+  if (!screen) {
+    return;
+  }
+
+  const std::uint32_t saved_r3 = ctx.r3.u32;
+  const std::uint32_t saved_r4 = ctx.r4.u32;
+  const std::uint32_t saved_r5 = ctx.r5.u32;
+  const std::uint32_t saved_r6 = ctx.r6.u32;
+  const std::uint32_t saved_r7 = ctx.r7.u32;
+
+  ctx.r3.u32 = ui;
+  ctx.r4.u32 = REX_LOAD_U32(screen + 355u * 4u);
+  __imp__sub_821F6580(ctx, base);
+  const std::uint32_t object = ctx.r3.u32;
+  if (object) {
+    ctx.r3.u32 = kObjectManagerAddr;
+    ctx.r4.u32 = REX_LOAD_U32(object);
+    ctx.r5.u32 = 0u;
+    ctx.r6.u32 = 0u;
+    ctx.r7.u32 = 0u;
+    __imp__sub_82179160(ctx, base);
   }
 
   ctx.r3.u32 = saved_r3;
@@ -882,6 +922,18 @@ std::uint32_t MaybeSwapScreenList(std::uint8_t* base, std::uint32_t list) {
     return 0;
   }
 
+  // String 125 labels the Japanese-only D-pad object. Keep its text object so
+  // later screen ids stay stable, but move it out of the visible prompt strip.
+  if (list == kJapaneseScreenList) {
+    for (std::size_t i = 0; i + 8u < words.size(); ++i) {
+      if (words[i] == kTypeText && words[i + 1u] == 125u &&
+          words[i + 8u] == kRecordEnd) {
+        words[i + 2u] = static_cast<std::uint32_t>(-10000);
+        break;
+      }
+    }
+  }
+
   // Each prompt has command 1, a seven word icon and a nine word label.
   // Other commands have different lengths and can contain sentinel values.
   constexpr std::size_t kPromptWords = 17;
@@ -1038,6 +1090,7 @@ REX_HOOK_RAW(sub_821DD108) {
   if (!achievements_menu::CustomTabVisible()) {
     achievements_menu::HideCustomTab(ctx, base);
   }
+  achievements_menu::HideJapaneseTabPrompt(ctx, base);
   // State 3 has the current tab's cursor and text objects ready.
   if (REX_LOAD_U8(0x8243F3C2u) == 3u) {
     achievements_menu::UpdateDescription(ctx, base);
