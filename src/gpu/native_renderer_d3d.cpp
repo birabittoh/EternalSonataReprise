@@ -104,14 +104,12 @@ int ResolveShaderSlot(uint8_t* base, uint32_t table, uint32_t object) {
   return -1;
 }
 
-// Does SetTexture clobber sampler state set earlier?
+// Checks whether SetTexture overwrites sampler state set earlier.
 //
 // Both write the same texture fetch constant: the three SetSamplerState_*
 // setters patch fields inside it, and SetTexture writes the six dwords for the
-// stage inline. Whether the second can undo the first was an open correctness
-// question, so answer it from the running game rather than by staring at the
-// stores. Snapshot the sampler-owned fields after a sampler setter, then
-// re-read them after the next SetTexture on that stage and compare.
+// stage inline. The sampler owned fields are snapshotted after a sampler setter
+// and compared after the next SetTexture on that stage.
 //
 // The owned fields, from the setters' own read-modify-writes:
 //   word 3: min_filter (+21), mag_filter (+19), aniso_filter (+25)
@@ -303,14 +301,13 @@ uint64_t g_shader_binds = 0;
 // Loop constant traffic, in the unified numbering the microcode uses: i0..i15
 // are the vertex half, i16..i31 the pixel half.
 //
-// A `loop` whose trip count is zero does not merely skip its lights, it leaves
-// whatever the shader seeded its accumulator with in place, and in this title
-// those seeds are comparisons (`sgt r8, -r0.xxxx, c255.zzzz`, and r0 is the
-// position interpolator). So a zero trip count puts a step on the sign of a
-// world coordinate into the frame. Reading the shadow at one draw cannot tell
-// whether that zero is the guest's own intent or a write we never saw, so
-// these count the writes themselves: `nonzero` is the slots that have ever
-// been given a trip count at all, over the whole run.
+// A `loop` with a zero trip count leaves the shader's accumulator seed in
+// place, and in this title those seeds are comparisons (`sgt r8, -r0.xxxx,
+// c255.zzzz`, where r0 is the position interpolator), so a zero trip count
+// puts a step on the sign of a world coordinate into the frame. The shadow at
+// one draw cannot say whether a zero is the guest's intent or a write never
+// seen, so these count the writes: `nonzero` is the slots ever given a trip
+// count, over the whole run.
 constexpr uint32_t kLoopConstants = 32;
 uint64_t g_loop_constant_calls = 0;
 uint32_t g_loop_written = 0;  // bit per slot: written at all
@@ -320,13 +317,12 @@ uint8_t g_loop_last_count[kLoopConstants] = {};
 uint32_t g_loop_last_written[kLoopConstants] = {};  // to log only on a change
 
 // Both setters share this; `first` is the unified index the stage's register 0
-// maps to, which is 0 for the vertex half and 16 for the pixel half.
+// maps to: 0 for the vertex half, 16 for the pixel half.
 //
-// This reads the shadow *back* after the setter has run rather than decoding
-// the source itself. Decoding the source needs an assumption about how the
-// entry is laid out, and the setter takes single bytes out of it (a3[3], a3[7],
-// a3[11]) where a byte-swapping load would report something else entirely. The
-// shadow is the value the draw will read, so reading it removes the guess.
+// The shadow is read back after the setter has run instead of decoding the
+// source, because the setter takes single bytes out of it (a3[3], a3[7],
+// a3[11]) and a byte-swapping load would report something else. The shadow is
+// the value the draw reads.
 //
 // The two halves are contiguous: the pixel base device+10080 is device+10016
 // plus 16 registers, so one unified index addresses the whole bank.
@@ -404,28 +400,17 @@ void MirrorConstants(uint8_t* base, uint32_t shadow_base, uint32_t start, uint32
 // ---------------------------------------------------------------------------
 // The draw path.
 //
-// Everything above tracks binding state without ever observing a draw, so none
-// of it is anchored to anything: it is a running total, not a picture of what
-// one frame does. The hooks below close that gap, and while they are here they
-// answer the question the static compilation plan has left open.
+// The hooks below observe every draw and count the distinct pipelines a frame
+// needs, which bounds an offline pipeline set:
+//   * (vertex shader, pixel shader) pairs: the program count when vertex fetch
+//     is expressed as a host input layout.
+//   * (vertex shader, declaration) pairs: the variant count when fetch stays
+//     inside the shader. This is the key of the guest's own variant cache at
+//     0x82267D08.
 //
-// That question is how many pipelines an offline pipeline set has to contain.
-// Two numbers bound it, and they are very different numbers:
-//
-//   * distinct (vertex shader, pixel shader) pairs -- the program count, if
-//     vertex fetch is lifted out of the shader and expressed as a host input
-//     layout, which is the design the handoff argues for.
-//   * distinct (vertex shader, declaration) pairs -- the variant count, if
-//     fetch is left inside the shader. This is exactly the key the guest's own
-//     variant cache at 0x82267D08 uses, so it is what the game itself pays.
-//
-// The gap between them is the cost of getting that decision wrong, measured
-// rather than assumed. Both are counted below.
-//
-// The declaration decode is also a live check on a layout that so far exists
-// only as a reading of 0x82267218's disassembly: element count at +24,
-// elements from +52 with a 12 byte stride, usage at element+9. If that is
-// misread, the usage bytes are garbage and the validation below says so.
+// The vertex declaration layout comes from 0x82267218's disassembly: element
+// count at +24, elements from +52 with a 12 byte stride, usage at element+9.
+// A misread shows up as garbage usage bytes in the validation below.
 
 // Open addressed set of packed keys, sized well past what a frame needs so
 // that occupancy stays low and probes stay short. Saturates rather than grows;
@@ -598,16 +583,15 @@ uint32_t PhysicalAddress(uint32_t raw) {
   return (raw & 0x1FFFFFFFu) + (((raw >> 20) + 512) & 0x1000u);
 }
 
-// The address to actually *read* a resource through, which is not the one
-// above. PhysicalAddress is a key: its extra page exists only so that an
-// E-aperture resource compares equal to its resolve destination, and reading
-// through it is a page of skew into whatever follows -- or, when the resource
-// sits near the top of its allocation, an access violation.
+// The address to *read* a resource through, which is not PhysicalAddress.
+// PhysicalAddress is a key: its extra page exists so that an E-aperture
+// resource compares equal to its resolve destination. Reading through it skews
+// by a page, or faults near the top of an allocation.
 //
 // A guest address that already carries aperture bits is readable as it stands.
-// A bare physical one is not: only 0xA0000000, 0xC0000000 and 0xE0000000 back
-// those pages, so it is aliased into one. See GuestPhysicalPointer in the
-// texture mirror, which is the same choice for the same reason.
+// A bare physical one is aliased into one of 0xA0000000, 0xC0000000 or
+// 0xE0000000, the only ones that back those pages. GuestPhysicalPointer in the
+// texture mirror makes the same choice.
 uint32_t ReadableAddress(uint32_t raw) {
   return raw >= 0x80000000u ? raw : (0xC0000000u | (raw & 0x1FFFFFFFu));
 }
@@ -703,22 +687,19 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
         const StreamSource& stream = g_streams[i];
         if (stream.buffer == 0 || stream.stride == 0)
           continue;
-        // The resource carries its own vertex fetch constant at +24, and it is
-        // a *packed* one, which is not obvious from how SetStreamSource uses it:
+        // The resource carries its own *packed* vertex fetch constant at +24:
         //
         //   +24  type : 2 | address : 30   address counted in dwords
         //   +28  endian : 2 | size : 24 | pad : 6   size counted in dwords
         //
-        // 0x8225B550 stores `*(res+24) + offset` and `*(res+28) - offset`
-        // straight into the device without unpacking either, which reads as a
-        // byte address and a byte size until you notice that a byte offset is a
-        // multiple of four and so lands exactly on the dword-counted field in
-        // both words. That is the confirmation of the packing.
+        // 0x8225B550 stores `*(res+24) + offset` and `*(res+28) - offset` into
+        // the device without unpacking either. A byte offset is a multiple of
+        // four, so it lands on the dword counted field in both words, which
+        // confirms the packing.
         //
-        // Read as raw dwords instead: the type in the low two bits of +24 is a
-        // three byte skew on every stream, and the endian bits in +28 make the
-        // size read as hundreds of megabytes, which is what dropped every
-        // indexed draw in the frame.
+        // Read as raw dwords, the type bits in +24 skew every stream by up to
+        // three bytes and the endian bits in +28 inflate the size to hundreds of
+        // megabytes, which drops every indexed draw.
         const uint32_t fetch_address = REX_LOAD_U32(stream.buffer + 24);
         const uint32_t fetch_size = REX_LOAD_U32(stream.buffer + 28);
         const uint32_t raw = (fetch_address & ~3u) + stream.offset;
@@ -771,29 +752,20 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
 // ---------------------------------------------------------------------------
 // Surfaces, clear and resolve.
 //
-// This is the half of the frame the draw hooks above cannot see. A 360 title
-// does not render into a texture: it renders into EDRAM, which is a fixed 10 MB
-// scratch the surface objects carve up by tile, and then *resolves* a rectangle
-// of it out to main memory where it becomes a sampleable texture. So the chain
-// a backend has to reproduce is Clear -> draws -> Resolve, once per render
-// target the frame uses, and the swap chain's front buffer is just the last
-// resolve destination.
+// A 360 title renders into EDRAM, a fixed 10 MB scratch the surface objects
+// carve up by tile, and then *resolves* a rectangle of it out to main memory
+// where it becomes a sampleable texture. The chain reproduced here is
+// Clear -> draws -> Resolve, once per render target the frame uses, and the
+// swap chain's front buffer is the last resolve destination.
 //
-// Two things are worth measuring here and both are measured below.
+// CreateRenderTarget stores hardware register fields in the surface object,
+// not its API arguments (see the header). Decoding the object back and
+// comparing it against the arguments validates those offsets, like the
+// constant shadow check.
 //
-// First, the surface layout itself. CreateRenderTarget's arguments are API
-// values, but what it stores in the object is already hardware register fields
-// (see the header). Decoding the object back and comparing against the
-// arguments the caller passed is a real check on those offsets, in the same
-// shape as the constant shadow check: the two agree only if the layout is read
-// right.
-//
-// Second, and this is the design-relevant number: how much of the texture
-// working set is produced by a resolve rather than loaded from disk. Every such
-// texture is a render target the backend has to schedule, order and transition
-// correctly, which is exactly the part of Plume its README calls unfinished. A
-// count of one means the frame is a straight render-to-screen; a large count
-// means real render-to-texture and a dependency graph to go with it.
+// The count of textures produced by a resolve rather than loaded from disk is
+// tracked too: each is a render target to schedule, order and transition. One
+// means a straight render-to-screen frame; many means render-to-texture.
 
 uint32_t g_surfaces_created = 0;
 uint32_t g_textures_created = 0;
@@ -827,17 +799,14 @@ void CheckSurface(uint8_t* base, uint32_t address, uint32_t want_width, uint32_t
   ++g_surface_decode_ok;
 
   // The format the object keeps is the argument verbatim, so it must match
-  // exactly; the size fields are re-derived from register bits and so are the
-  // part actually under test.
+  // exactly; the size fields are re-derived from register bits and are what is
+  // under test.
   // An EDRAM tile is 80x16 samples at 4 bytes each, so a surface's footprint is
-  // fully determined by its sample count. Checking the stored footprint against
-  // that ties three separately decoded fields together, and it is what caught
-  // this field being a size rather than an offset.
+  // fully determined by its sample count. The stored footprint is checked
+  // against that, which ties three separately decoded fields together.
   //
   // Samples, not pixels: 0x8225DB30 doubles the height at 2x multisampling and
-  // the width as well at 4x, before it sizes anything. Leaving that out is what
-  // made the two 1280x384 multisampled surfaces read as half their real
-  // footprint while every single sample surface matched.
+  // the width as well at 4x, before it sizes anything.
   const uint32_t sample_width = surface.msaa == 2 ? surface.width * 2 : surface.width;
   const uint32_t sample_height = surface.msaa >= 1 ? surface.height * 2 : surface.height;
   const uint32_t expected_tiles = ((sample_width + 79) / 80) * ((sample_height + 15) / 16);
@@ -985,19 +954,17 @@ TextureFetch DecodeTextureFetch(const uint32_t words[6]) {
   out.endianness = (words[1] >> 6) & 0x3u;
   out.stacked = ((words[1] >> 10) & 1u) != 0;
 
-  // The base address field is 20 bits of page number, but turning it into an
-  // address is not just a shift. Resolve (0x82260C68) computes its destination
-  // as `(((base >> 20) + 512) & 0x1000) + (base & 0x1FFFFFFF)`, and the same
-  // expression appears everywhere the D3D block turns a resource address into
-  // something the GPU sees. It does two things: it strips the cache attribute
-  // bits down to a physical address, and it adds one 4 KB page for anything at
-  // or above 0xE0000000, which is the 360's physical aperture quirk.
+  // The base address field is 20 bits of page number. Resolve (0x82260C68)
+  // computes its destination as
+  // `(((base >> 20) + 512) & 0x1000) + (base & 0x1FFFFFFF)`, and the same
+  // expression appears wherever the D3D block turns a resource address into
+  // something the GPU sees. It strips the cache attribute bits down to a
+  // physical address and adds one 4 KB page for anything at or above
+  // 0xE0000000, the 360's physical aperture quirk.
   //
-  // This is not cosmetic. Without it a resolve destination decodes 0x1000 below
-  // the address the very texture it produced is sampled from, so the two never
-  // match and the render-to-texture overlap below reads as zero. The formula is
-  // an identity for addresses outside that aperture, which is why the sampled
-  // side looked right on its own.
+  // Without it a resolve destination decodes 0x1000 below the address the
+  // texture it produced is sampled from, so the render-to-texture overlap check
+  // never matches. The formula is an identity outside that aperture.
   const uint32_t raw_base = ((words[1] >> 12) & 0xFFFFFu) << 12;
   out.base_address = (raw_base & 0x1FFFFFFFu) + (((raw_base >> 20) + 512u) & 0x1000u);
 
@@ -1491,17 +1458,15 @@ REX_HOOK_RAW(D3DDevice__SetPixelShader) {
 
 // The general cut: every GPU wait in the D3D block goes through this.
 //
-// The block's waits all have the same shape -- a ThrottleWait_Begin /
-// ThrottleWait_Poll / ThrottleWait_End bracket around a spin whose loop
-// condition is `... && Poll(...)`, or which breaks on `!Poll(...)`. Poll
-// normally returns 1 to keep spinning and, once a 5000 timebase tick window
-// expires, calls OnGpuHang instead. Returning 0 makes every one of those loops
-// fall straight out through its normal exit; none of them has an error path on
-// that edge, they just proceed to ThrottleWait_End.
+// Each wait is a ThrottleWait_Begin / ThrottleWait_Poll / ThrottleWait_End
+// bracket around a spin whose loop condition is `... && Poll(...)`, or which
+// breaks on `!Poll(...)`. Poll returns 1 to keep spinning and, once a 5000
+// timebase tick window expires, calls OnGpuHang. Returning 0 makes every such
+// loop exit normally into ThrottleWait_End.
 //
-// This is one place rather than one stub per waiting caller, and it also means
-// the "GPU is hung" recovery path can never be reached, which it otherwise
-// would be, since with no GPU every wait exceeds the window by definition.
+// One hook covers every waiting caller, and it keeps the GPU hang recovery
+// path unreachable, which it otherwise would not be, since with no GPU every
+// wait exceeds the window.
 REX_HOOK_RAW(D3DDevice__ThrottleWait_Poll) {
   if (!eternalsonata::NativeRendererEnabled()) {
     __imp__D3DDevice__ThrottleWait_Poll(ctx, base);
@@ -1512,15 +1477,12 @@ REX_HOOK_RAW(D3DDevice__ThrottleWait_Poll) {
 
 // The fence wait underneath everything else that blocks.
 //
-// It spins until the retired counter the GPU writes into the identifier block
-// at device+10768 passes the requested fence. Nothing writes that counter with
-// no GPU plugin, so every caller blocks forever: this is where the game parked
-// once the ring buffer init was got past, reached from Swap's frame throttle
-// (the guest lets itself run at most 15 frames ahead of the GPU).
-//
-// With no GPU, work submitted is work already finished, so every fence is
-// retired the moment it is asked about. Returns its first argument, which is
-// the device, so leaving r3 alone is the correct return value.
+// The guest spins until the retired counter the GPU writes into the identifier
+// block at device+10768 passes the requested fence, reached from Swap's frame
+// throttle (the guest runs at most 15 frames ahead of the GPU). Nothing writes
+// that counter, so every fence is reported retired immediately: submitted work
+// is finished work. Returns its first argument, the device, so r3 is left
+// alone.
 REX_HOOK_RAW(D3DDevice__BlockUntilFenceRetired) {
   eternalsonata::SpriteBatchFlush();
   if (!eternalsonata::NativeRendererEnabled()) {
@@ -1529,20 +1491,17 @@ REX_HOOK_RAW(D3DDevice__BlockUntilFenceRetired) {
   }
 }
 
-// The first ring buffer call that has to go.
+// Wait for GPU idle.
 //
-// This emits a wait-for-idle packet, submits it, and then busy waits on
-// device+10872 until the GPU clears it. With no GPU plugin nothing ever will,
-// so the guest spins forever: this is where the game parked on the first
-// headless run, reached from the renderer init (0x8210A148) through
+// The guest emits a wait-for-idle packet, submits it, and busy waits on
+// device+10872 until the GPU clears it; nothing does, so this returns success
+// immediately. It is reached from the renderer init (0x8210A148) through
 // SetRingBufferParameters, which drains the previous ring before replacing it.
 //
-// A GPU that does not exist is always idle, so the honest answer here is to
-// return success immediately. Note this deliberately does not stub
-// SetRingBufferParameters itself: letting it run keeps the ring buffer memory
-// allocated and the command buffer pointers at device+48/52/56 valid, so the
-// guest's packet writers keep writing somewhere harmless instead of through a
-// null write pointer.
+// SetRingBufferParameters itself is not stubbed: running it keeps the ring
+// buffer memory allocated and the command buffer pointers at device+48/52/56
+// valid, so the guest's packet writers write somewhere harmless instead of
+// through a null pointer.
 REX_HOOK_RAW(D3DDevice__BlockUntilGpuIdle) {
   eternalsonata::SpriteBatchFlush();
   if (!eternalsonata::NativeRendererEnabled()) {

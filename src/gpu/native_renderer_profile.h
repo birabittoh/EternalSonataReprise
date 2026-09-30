@@ -2,22 +2,20 @@
 //
 // Where the frame time goes.
 //
-// The design rule the rest of the native renderer follows is that anything not
-// implemented is counted rather than silently substituted. This is the same idea
-// applied to time: every phase that could plausibly own the frame gets an
+// Anything not implemented is counted rather than silently substituted; this
+// does the same for time. Every phase that could own the frame has an
 // accumulator, and the summary prints what is left over as `other`, so a phase
-// that is not instrumented shows up as a gap rather than as nothing.
+// that is not instrumented shows up as a gap.
 //
 // Everything here runs on the guest's render thread, inside guest D3D entry
-// points, and the present runs there too. That is the only reason plain
-// non-atomic counters are sound; if any of this ever moves off that thread the
-// accumulators have to become atomics.
+// points, and the present runs there too, which is why plain non-atomic
+// counters are sound. If any of this moves off that thread the accumulators
+// have to become atomics.
 //
 // The clock is read twice per zone. At the innermost zone (the per draw ones)
 // that is roughly 40 ns of `steady_clock` against a draw that costs a few
 // microseconds, so the instrument perturbs the measurement by about a percent.
-// Zones inside the per vertex and per texel loops would not be; do not put any
-// there.
+// Do not put zones inside the per vertex and per texel loops.
 
 #ifndef ETERNALSONATA_NATIVE_RENDERER_PROFILE_H
 #define ETERNALSONATA_NATIVE_RENDERER_PROFILE_H
@@ -116,18 +114,17 @@ class ProfileZone {
 // alongside the other summaries.
 void LogProfileSummary();
 
-// The one question the summary above answers only if you read every line of it:
-// is this frame waiting on us or on the GPU? Both numbers come from instruments
-// that already exist -- the GPU timestamp pair and the fence wait zone -- over a
-// short trailing window, so the verdict tracks the scene rather than the run.
+// Whether the frame is waiting on the CPU or the GPU, from the GPU timestamp
+// pair and the fence wait zone over a short trailing window, so the verdict
+// tracks the scene.
 //
-//   busy  = wall clock minus the fence wait, i.e. time the CPU spent working
-//           rather than blocked on the GPU. This is the CPU cost of the frame.
+//   busy  = wall clock minus the fence wait: time the CPU spent working rather
+//           than blocked on the GPU. This is the CPU cost of the frame.
 //   gpu   = the queue's own measurement of the same frame.
 //
 // Whichever is larger is what the frame is waiting on. If neither is close to
-// the frame time, something outside both is pacing us (vsync, the guest's own
-// throttle, or a sleep), and saying "CPU bound" there would be a lie.
+// the frame time, something outside both is pacing (vsync, the guest's own
+// throttle, or a sleep) and the verdict is not CPU or GPU bound.
 struct FrameBoundStats {
   double frame_ms = 0.0;  // swap to swap wall clock
   double cpu_ms = 0.0;    // of which the CPU was busy

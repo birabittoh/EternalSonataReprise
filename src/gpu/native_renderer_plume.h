@@ -1,22 +1,14 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
 // The host side of the native renderer: a Plume device and swap chain on the
-// game's own window.
+// game's own window. native_renderer_d3d.cpp watches what the guest asks for;
+// this turns it into draws and presents once per guest swap.
 //
-// This is the half that actually owns pixels. native_renderer_d3d.cpp watches
-// what the guest asks for; this is where it will eventually be turned into real
-// draws. Right now it does the minimum that proves the path end to end -- it
-// acquires, clears and presents once per guest swap -- which is what turns the
-// black window into something that visibly tracks the game.
+// With no GPU plugin the SDK creates no presenter, so nothing draws, including
+// the F3/F4 overlays, until this does.
 //
-// Why this exists at all rather than the SDK's own presenter: with no GPU
-// plugin loaded the SDK sets `config.graphics` to null and never creates a
-// presenter, on the understanding that the app brings its own renderer. So
-// nothing draws, not even the F3/F4 overlays, until something here does.
-//
-// Deliberately kept behind a plain C++ interface with no Plume types in the
-// header. Plume pulls in d3d12.h and windows.h, and confining that to one
-// translation unit keeps it out of the guest-facing code.
+// Kept behind a plain C++ interface with no Plume types in the header: Plume
+// pulls in d3d12.h and windows.h, which stay confined to one translation unit.
 
 #pragma once
 
@@ -70,12 +62,11 @@ void PlumePresentOverlayOnly();
 // presenting. The frame carries on recording into a fresh command list
 // afterwards.
 //
-// This exists for one caller: the readback path, when the guest reads a resolve
-// destination in the very frame it was resolved. The copy into the readback
-// buffer is recorded but has not run, and the only way to answer the guest with
-// this frame's pixels rather than the last frame's is to make the GPU catch up.
-// It is a full stall, which is why it is on demand and not a frame boundary;
-// the SDK's own `readback_resolve=full` is the same trade.
+// Used by the readback path when the guest reads a resolve destination in the
+// frame it was resolved. The copy into the readback buffer is recorded but has
+// not run, and answering with this frame's pixels rather than the last frame's
+// needs the GPU to catch up. It is a full stall, so it is on demand and not a
+// frame boundary; the SDK's `readback_resolve=full` is the same trade.
 //
 // Guest render thread only, since that is the thread that records the frame.
 // False when there was nothing recorded or the backend is not up.
@@ -84,20 +75,15 @@ bool PlumeFlushGuestWork();
 // How many frames may be recorded and submitted before the CPU blocks on the
 // oldest one's fence.
 //
-// One would be the old behaviour: record a frame, submit it, wait for it, start
-// the next. That made the frame cost CPU + GPU end to end, with the CPU idle
-// for the whole GPU half and the GPU idle for the whole CPU half. Measured in
-// the first overworld map, that was 16.1 ms of CPU and 6.2 ms of GPU making a
-// 22.2 ms frame; the fence wait matched the GPU time to within 0.03 ms, which
-// is what a total absence of overlap looks like.
-//
 // Two lets frame N's GPU work run while the CPU records frame N+1, so the frame
-// is max(CPU, GPU) rather than their sum. Everything the GPU reads out of a
-// frame's own resources therefore has to exist once per slot: the command list,
-// the fence, the acquire semaphore, the timestamp pool, the upload arena and
-// the readback buffers. More than two would buy nothing here (the CPU half is
-// more than twice the GPU half, so the ring is never the constraint) and would
-// cost another arena and another set of readback buffers.
+// costs max(CPU, GPU) rather than their sum. One would record, submit and wait
+// each frame (in the first overworld map, 16.1 ms of CPU plus 6.2 ms of GPU
+// made a 22.2 ms frame). Everything the GPU reads out of a frame's own
+// resources therefore exists once per slot: the command list, the fence, the
+// acquire semaphore, the timestamp pool, the upload arena and the readback
+// buffers. More than two would buy nothing, since the CPU half is more than
+// twice the GPU half, and would cost another arena and set of readback
+// buffers.
 inline constexpr uint32_t kFramesInFlight = 2;
 
 // Which slot the frame currently being recorded owns, in [0, kFramesInFlight).

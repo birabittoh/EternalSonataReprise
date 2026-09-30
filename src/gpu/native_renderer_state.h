@@ -2,32 +2,29 @@
 //
 // The guest's render and sampler state, decoded.
 //
-// The obvious way to get this is to hook the nine SetRenderState_* setters and
-// the three SetSamplerState_* ones the config names. That is the wrong shape,
-// and not only because it is more code: the named setters do not cover the
-// state a host pipeline needs. There is no named setter for blending, for the
-// depth compare function, for depth writes or for the colour write mask, and
-// there is no list of what the block is missing -- an API this title reaches
-// through a path nobody has looked at would simply never be mirrored, silently.
+// State is read from the *destination* rather than by hooking the nine
+// SetRenderState_* and three SetSamplerState_* setters the config names. Those
+// do not cover what a host pipeline needs: there is no named setter for
+// blending, the depth compare function, depth writes or the colour write mask,
+// and an API reached through an unlooked at path would go unmirrored silently.
 //
-// So this reads the *destination* instead. Every setter in the D3D block writes
-// a Xenos context register shadow inside the device object and dirties a bit;
-// the shadow is what the flush at 0x82266D08 hands the GPU, so it is the state
-// the draw genuinely runs with, whichever setter last touched it and whether or
-// not that setter has a name. The dirty-bit map in eternalsonata_config.toml
-// gives the shadow bases, and two of them are anchored against setters that
-// were decompiled: cull mode writes device+10440 (0x2205 PA_SU_SC_MODE_CNTL)
-// and alpha ref writes device+10372 (0x210E RB_ALPHA_REF).
+// Every setter in the D3D block writes a Xenos context register shadow inside
+// the device object and dirties a bit. The shadow is what the flush at
+// 0x82266D08 hands the GPU, so it is the state the draw runs with, whichever
+// setter last touched it. The dirty-bit map in eternalsonata_config.toml gives
+// the shadow bases, and two are anchored against decompiled setters: cull mode
+// writes device+10440 (0x2205 PA_SU_SC_MODE_CNTL) and alpha ref writes
+// device+10372 (0x210E RB_ALPHA_REF).
 //
-// Sampler state is the same argument from the other side. The three setters
-// patch fields inside the texture fetch constant at device+1024+24*stage rather
-// than writing a register, so the fetch constant is the destination, and the
-// mirror already reads it for the texture itself. Every tfetch in this title
-// asks for mag, min and mip "from the fetch constant" (filter 3) and aniso 7,
-// which is exactly what makes reading it here sufficient.
+// Sampler state works the same way. The three setters patch fields inside the
+// texture fetch constant at device+1024+24*stage rather than writing a
+// register, so the fetch constant is the destination and the mirror already
+// reads it for the texture. Every tfetch in this title asks for mag, min and
+// mip "from the fetch constant" (filter 3) and aniso 7, which makes reading it
+// sufficient.
 //
-// Field positions come from xenia's registers.h and xenos.h, which are accurate
-// down to bit offsets; the enum values below are xenia's, not D3D9's.
+// Field positions come from xenia's registers.h and xenos.h, accurate down to
+// bit offsets; the enum values below are xenia's, not D3D9's.
 
 #pragma once
 
@@ -76,7 +73,7 @@ struct GuestRenderState {
   // backface_enable is set, and otherwise repeats the front, which is what the
   // hardware does. The masks and the reference are not per face here because a
   // host pipeline has one of each, so RB_STENCILREFMASK_BF has nowhere to go;
-  // this title never sets backface_enable, so nothing is lost yet.
+  // this title never sets backface_enable, so nothing is lost.
   uint32_t stencil_ref_mask = 0;
   bool stencil_backface_enabled = false;
   GuestCompare stencil_func = GuestCompare::kAlways;

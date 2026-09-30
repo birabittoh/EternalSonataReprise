@@ -323,11 +323,9 @@ bool EnsureResources(RenderDevice* device) {
   if (g_resources_failed)
     return false;
 
-  // A texture mirror does not exist yet, so every one of the sixteen slots gets
-  // one opaque white texel. That is not a placeholder in the "wrong pixels"
-  // sense: a shader that multiplies by a sampled texture reads 1.0, so the
-  // geometry appears in its untextured colour rather than not at all, and the
-  // difference between that and a real texture is obvious on sight.
+  // The fallback for a slot with no texture: one opaque white texel. A shader
+  // that multiplies by a sampled texture reads 1.0, so the geometry appears in
+  // its untextured colour rather than not at all.
   g_white_texture =
       device->createTexture(RenderTextureDesc::Texture2D(1, 1, 1, RenderFormat::R8G8B8A8_UNORM));
   if (!g_white_texture) {
@@ -403,34 +401,26 @@ bool EnsureResources(RenderDevice* device) {
 // ---------------------------------------------------------------------------
 // Descriptor sets, one per distinct set of bindings.
 //
-// This has to be a set per binding combination and cannot be one set rewritten
-// per draw, which is what it was and what made every draw in a frame sample the
-// same textures. A descriptor set is a range of a GPU visible heap, and
-// `setGraphicsDescriptorSet` records a pointer to it, not a copy of it: the GPU
-// reads the contents when the command list *executes*, which here is at the
-// present, long after every draw in the frame was recorded. Rewriting the set
-// between draws therefore does not rebind anything, it retroactively changes
-// what every draw already recorded reads, and the whole frame ends up with the
-// bindings of the last draw. The symptom is a late drawn effect's texture
-// appearing on everything.
-//
-// The overlay never had the bug because it keeps a descriptor set per texture.
-// The guest side cannot do that -- a binding is sixteen textures and sixteen
-// samplers, not one -- so the sets are cached on their contents instead. That
-// keeps the count near the number of distinct material bindings the title uses
+// A descriptor set is a range of a GPU visible heap, and
+// `setGraphicsDescriptorSet` records a pointer to it, not a copy: the GPU reads
+// the contents when the command list executes, at the present. Rewriting one
+// set between draws would retroactively change what every recorded draw reads,
+// so each distinct binding combination gets its own set, cached on its
+// contents. That keeps the count near the number of distinct material bindings
 // rather than the number of draws.
+//
+// A binding is sixteen textures and sixteen samplers, so the overlay's
+// one set per texture does not apply here.
 
-// Textures and samplers are two separate sets, and that split is not cosmetic.
-// D3D12 gives a shader-visible *sampler* heap 1024 descriptors against the view
-// heap's 65536. A single set carrying sixteen of each therefore costs 1/64th of
-// the sampler heap, and a cache of them dies after sixty four sets -- which this
-// title reaches on loading a save, at which point Plume's allocator fails and
-// (before it was fixed) handed back a set whose descriptor writes went through
-// an invalid heap offset, faulting inside the driver.
+// Textures and samplers are two separate sets. D3D12 gives a shader-visible
+// *sampler* heap 1024 descriptors against the view heap's 65536, so a single
+// set carrying sixteen of each costs 1/64th of the sampler heap and a cache of
+// them is exhausted after sixty four sets, which this title reaches on loading
+// a save.
 //
 // Split, the many distinct texture combinations cost only view descriptors and
-// the handful of distinct sampler combinations cost sampler descriptors. The
-// emitted HLSL declares samplers in space1 to match; see the pipeline layout.
+// the few distinct sampler combinations cost sampler descriptors. The emitted
+// HLSL declares samplers in space1; see the pipeline layout.
 
 struct BindingKey {
   const void* slots[kTextureSlots] = {};
@@ -1130,37 +1120,19 @@ void DumpConstantsForShader(const GuestDrawCall& call) {
 
 // --- The water probe ---
 //
-// What this is for, and what it already ruled out. The first theory about the
-// water was that it animated too fast, which would have put the motion in the
-// UV matrix vs_040 builds from vertex constants c24/c25 (`dp3 r6.y, c24.xyzz,
-// r6.xzww`, under bool b2). It does not: over a thirty second run those two
-// constants held the identity matrix on every single draw. Whatever the water
-// does frame to frame, it is not a scrolling texture matrix, so do not go back
-// there.
+// Logs one line per frame for a bounded run of frames, for diagnosing the
+// water pair (vs_040 / ps_058) frame to frame. Each line carries:
 //
-// The symptom as it actually presents is flicker: the strength of the effect
-// changing between one frame and the next. That is a frame-to-frame difference,
-// so a probe that samples every few seconds cannot see it. This one logs one
-// line per frame for a bounded run of frames, carrying the three things that
-// could differ between two consecutive frames of the same static scene:
+//   * the draw count of the pair.
+//   * the bool bank over b128..b159. ps_058 branches on them: b128 picks a
+//     computed tangent frame or a normal map fetch, b134 the screen-space
+//     refraction through tf13, b138/b140/b142/b143 which maps are sampled.
+//   * what is bound in each texture slot. ps_058 samples tf11 and tf13 at
+//     screen-space coordinates, which come from resolve destinations rather
+//     than asset memory.
 //
-//   * how many draws of the pair there were. Alternating between one and two,
-//     or one and none, is itself the flicker.
-//   * the bool bank over b128..b159. ps_058 is almost entirely branches on
-//     those: b128 picks between a computed tangent frame and a normal map fetch,
-//     b134 the screen-space refraction through tf13, b138/b140/b142/b143 which
-//     maps get sampled at all. A bool flipping per frame changes which shader
-//     effectively runs.
-//   * what is bound in each texture slot. A slot alternating between a real
-//     texture and the white placeholder is the single most likely cause here:
-//     ps_058 samples tf11 and tf13 at projected/screen-space coordinates, which
-//     is how a title samples the scene behind the water, and those come from
-//     resolve destinations rather than from asset memory. A resolve that is not
-//     ready every frame reads back as the placeholder on the frames it misses.
-//
-// Off unless `ES_WATER_PROBE` is set, following the ES_DUMP_PS convention; its
-// value is how many frames to log (default 120). `ES_WATER_VS` and
-// `ES_WATER_PS` move the pair off 40/58.
+// Off unless `ES_WATER_PROBE` is set; its value is how many frames to log
+// (default 120). `ES_WATER_VS` and `ES_WATER_PS` move the pair off 40/58.
 struct WaterProbeKnobs {
   bool enabled = false;
   uint32_t frames = 120;
@@ -1199,19 +1171,12 @@ struct WaterProbeFrame {
   uint32_t draws = 0;
   int vertex_slot = -1;
   int pixel_slot = -1;
-  // All of these are **per draw within the frame**, for the same reason the
-  // constant banks are: the pair draws more than one surface and they do not
-  // share state. Kept as one set for the whole frame, they held whatever the
-  // last draw bound, and every conclusion drawn from them described that
-  // surface alone. The bool bank especially: "b128 is set, so tf12 is bound but
-  // never sampled" was read off the last draw's bank, and tf12 is the one input
-  // to this pair that changes every single frame.
-  // The render state each surface draws under. Everything examined so far has
-  // been an *input* to the shader; how its output is combined with what is
-  // already in the target has never been looked at, and the two surfaces do not
-  // have to share it. Blend, depth, stencil and alpha test are all per draw.
-  // A fingerprint of the guest vertex bytes this surface drew from. See where
-  // it is accumulated, in the vertex stream loop.
+  // Per draw within the frame, because the pair draws more than one surface
+  // and they do not share state.
+  // The render state each surface draws under: blend, depth, stencil and alpha
+  // test.
+  // A fingerprint of the guest vertex bytes this surface drew from. See the
+  // vertex stream loop.
   uint64_t vertex_hash[kMaxWaterProbeSurfaces] = {};
 
   uint32_t depth_control[kMaxWaterProbeSurfaces] = {};
@@ -1233,18 +1198,9 @@ struct WaterProbeFrame {
   uint32_t height[kMaxWaterProbeSurfaces][kTextureSlots] = {};
   bool from_resolve[kMaxWaterProbeSurfaces][kTextureSlots] = {};
   bool is_render_target[kMaxWaterProbeSurfaces][kTextureSlots] = {};
-  // The float banks, **per draw within the frame** rather than one set for the
-  // whole frame. ps_058 scales its output through c10.x, c16.w, c8.x and c4/c7,
-  // so a constant oscillating is what "the intensity flickers" looks like from
-  // here.
-  //
-  // Keyed by draw index because the pair draws more than one surface per frame
-  // and they do not share constants. An earlier version kept a single set and
-  // overwrote it on every draw, so it held the *last* draw's banks and the
-  // frame-to-frame diff only ever described that one surface. With
-  // ES_WATER_ONLY_SURFACE having since shown that draw 0 flickers and draw 1
-  // does not, that meant the diff was describing the surface that behaves.
-  // Diffing each surface against itself is the whole point.
+  // The float banks, per draw within the frame, keyed by draw index because
+  // the pair draws more than one surface per frame and they do not share
+  // constants. ps_058 scales its output through c10.x, c16.w, c8.x and c4/c7.
   float pixel[kMaxWaterProbeSurfaces][d3d::kConstantRegisters * 4] = {};
   float vertex[kMaxWaterProbeSurfaces][d3d::kConstantRegisters * 4] = {};
   bool banks_valid[kMaxWaterProbeSurfaces] = {};
@@ -1406,28 +1362,25 @@ void WaterProbeNoteTextures(const GuestDrawCall& call, uint32_t texture_mask,
   }
 }
 
-// --- The water rotation, slowed down ---
+// --- The water rotation scale ---
 //
-// vs_040's world matrix lives in vertex constants c0..c3, and for this material
-// the guest rewrites four of its components every frame in the pattern
+// vs_040's world matrix lives in vertex constants c0..c3. For this material
+// the guest rewrites four of its components every frame:
 //
 //     c0.x =  s*cos(t)   c0.z = s*sin(t)
 //     c2.x = -s*sin(t)   c2.z = s*cos(t)
 //
-// which is a rotation about Y at scale s (0.15 as measured). The angle advances
-// a fixed 0.01745 rad -- exactly one degree -- per rendered frame, so the water
-// spins at the frame rate rather than in real time: at 60 fps it turns twice as
-// fast as it did on a console locked to 30. That is both halves of the reported
-// symptom, because one degree per frame against a high frequency normal map
-// also aliases temporally, which is what reads as flicker. The refraction under
-// b134 is only the term that aliases hardest, not the cause.
+// a rotation about Y at scale s (0.15). The angle advances a fixed 0.01745 rad
+// (one degree) per rendered frame, so the water spins at the frame rate rather
+// than in real time: at 60 fps it turns twice as fast as on a console locked to
+// 30, and one degree per frame against a high frequency normal map aliases
+// temporally.
 //
-// The angle is recovered rather than the components scaled, because scaling
-// cos and sin independently would stop the matrix being a rotation and shear
-// the mesh. The guest's own angle is differenced frame to frame, that delta is
-// re-integrated at `ES_WATER_SCALE`, and the matrix is rebuilt from the result
-// at the guest's own scale. A frame where the guest did not move the angle
-// contributes nothing, so this tracks exactly whenever the water is still.
+// The angle is recovered rather than the components scaled, since scaling cos
+// and sin independently would shear the mesh. The guest's angle is differenced
+// frame to frame, that delta is re-integrated at `ES_WATER_SCALE`, and the
+// matrix is rebuilt at the guest's own scale. A frame where the guest did not
+// move the angle contributes nothing.
 //
 // `ES_WATER_SCALE=0.5` restores the console's speed at 60 fps. Unset means off.
 float WaterRotationScale() {
@@ -1456,20 +1409,11 @@ uint8_t g_water_vertex_bank[d3d::kConstantRegisters * 16];
 
 // --- One water surface at a time ---
 //
-// The probed pair draws two surfaces per frame, and every input to them is now
-// byte-identical frame to frame except the world matrix rotation: same bools,
-// same texture bindings, same host texture pointers, same float banks. An
-// oscillation cannot come out of inputs that do not oscillate, so the remaining
-// candidate is the two surfaces interacting with each other rather than either
-// one being wrong. Two coplanar-ish surfaces covering the same pixels is
-// z-fighting, which shimmers, is driven by geometry rather than by time, and
-// therefore does not change rate with the frame rate -- the one property of the
-// symptom nothing else has explained.
-//
-// `ES_WATER_ONLY_SURFACE=0` keeps only the first of the pair, `=1` only the
-// second. If either alone is steady, the surfaces are fighting and neither
-// shader is at fault. If one alone still flickers, that surface owns the defect
-// and the other is a bystander. Unset means off; -1 also means off.
+// The probed pair draws two surfaces per frame. `ES_WATER_ONLY_SURFACE=0`
+// keeps only the first, `=1` only the second, to tell whether a defect belongs
+// to one surface or to the two interacting (z-fighting between near coplanar
+// surfaces, which is driven by geometry rather than time). Unset or -1 means
+// off.
 int WaterOnlySurface() {
   static const int only = [] {
     const char* value = std::getenv("ES_WATER_ONLY_SURFACE");
@@ -1484,19 +1428,13 @@ uint32_t g_water_draw_index = 0;
 
 // --- Pinning the ping-pong buffer ---
 //
-// Surface 0 has b128 *clear* (0x8D0) where surface 1 has it set (0xC71), so
-// surface 0 takes the branch that samples tf12 -- the opposite of what the
-// frame-level bool bank suggested when it was really only ever surface 1's.
-// And tf12's fetch address alternates every frame between two 64x64 resolve
-// destinations, 0x0AF6C000 and 0x0AF70000. A surface sampling a texture that
-// swaps every frame is a flicker whose rate is set by the swap rather than by
-// elapsed time, which is the property nothing else has explained.
+// Surface 0 has b128 clear (0x8D0) and surface 1 has it set (0xC71), so
+// surface 0 samples tf12. tf12's fetch address alternates every frame between
+// two 64x64 resolve destinations, 0x0AF6C000 and 0x0AF70000.
 //
-// Both destinations are resolved, so neither is missing; the open question is
-// whether their *contents* agree. `ES_WATER_PIN_T12=0AF70000` (hex, no prefix)
-// forces every tf12 fetch on the probed pair to one of them. If the flicker
-// stops, the two buffers hold different images and the bug is in how one of
-// them is produced. If it continues, the alternation is innocent.
+// `ES_WATER_PIN_T12=0AF70000` (hex, no prefix) forces every tf12 fetch on the
+// probed pair to one of them, to show whether the two buffers hold the same
+// image.
 uint32_t WaterPinT12() {
   static const uint32_t address = [] {
     const char* value = std::getenv("ES_WATER_PIN_T12");
@@ -1586,23 +1524,17 @@ const uint8_t* WaterSlowVertexBank(const GuestDrawCall& call, bool* patched) {
   return g_water_vertex_bank;
 }
 
-// --- The refraction cut, an experiment rather than a fix ---
+// --- The refraction cut ---
 //
-// ps_058 samples the scene behind the water in screen space through tf13, under
-// bool b134. The capture shows the guest re-copying the scene into that texture
-// immediately before each water draw, so every water surface refracts an image
-// that already contains the water drawn before it, and the next frame refracts
-// a scene containing this frame's water. That is a feedback path across frames,
-// and feedback is what oscillates instead of settling.
+// ps_058 samples the scene behind the water in screen space through tf13,
+// under bool b134. The guest re-copies the scene into that texture immediately
+// before each water draw, so each surface refracts an image that already
+// contains the water drawn before it, and the next frame refracts a scene
+// containing this frame's water.
 //
-// Clearing b134 for this shader pair removes the refraction and nothing else.
-// If the flicker stops, the feedback is the cause and the fix is to give the
-// refraction a copy of the scene taken before any water is drawn. If it
-// continues, the feedback is innocent and this rules out the last branch that
-// depends on frame history.
-//
-// The water will look wrong while this is on. It is a diagnostic switch:
-// `ES_WATER_NO_REFRACT=1`.
+// `ES_WATER_NO_REFRACT=1` clears b134 for this shader pair, removing the
+// refraction and nothing else. A diagnostic switch: the water looks wrong while
+// it is on.
 bool WaterCutRefraction() {
   static const bool cut = [] {
     const char* value = std::getenv("ES_WATER_NO_REFRACT");
@@ -1729,16 +1661,14 @@ DrawStateCache g_draw_state_cache;
 // A one-shot probe for the world-locked "colour filter" boundary. The terrain
 // pixel shader branches on a projected mask in texture slot 11, sampled at
 // coordinates a matrix in vertex constants c36..c39 builds out of world space.
-// A frame capture cannot say which of the two is wrong: RenderDoc reports no
-// sampler address mode for this renderer, and reads root CBVs as zero (see the
-// note about get_cbuffer_contents in the handoff). So latch both off the first
-// draw each frame that declares the slot and print them next to each other.
+// It latches the sampler and that matrix off the first draw each frame that
+// declares the slot and prints them together.
 //
-// What the two answers mean. The mask is a 2x2 atlas whose two diagonal cells
-// are unused white, and the projected coordinates run well outside [0,1], so
-// a repeat mode sweeps the terrain across all four cells and the two empty ones
-// become the regions with no filter. Either the address mode should be a clamp,
-// or the matrix is scaled too large for the mesh to stay inside one cell.
+// The mask is a 2x2 atlas whose two diagonal cells are unused white, and the
+// projected coordinates run well outside [0,1], so a repeat address mode
+// sweeps the terrain across all four cells and the two empty ones become the
+// regions with no filter. A clamp mode, or a matrix scaled to keep the mesh
+// inside one cell, avoids that.
 constexpr uint32_t kProbeSlot = 11;
 constexpr uint32_t kProbeConstant = 36;
 constexpr uint32_t kProbeConstantCount = 4;
@@ -1940,18 +1870,14 @@ bool IsScreenColorFill(const GuestDrawCall& call) {
 
 // The layer probe.
 //
-// Two questions have to be answered from a running frame before the world and
-// the UI can be split into separate targets: whether the UI draws into the
-// banded screen target or into a surface of its own, and whether the frame is
-// cleanly world-then-UI or interleaves the two. Both are about the *sequence* of
-// draws, which no counter can show, so this run-length encodes one frame's
-// shader slots and the target each ran against.
+// Run length encodes one frame's shader slots and the target each ran against,
+// to show whether the UI draws into the banded screen target or a surface of
+// its own, and whether the frame is world then UI or interleaves the two.
 //
-// ES_LAYER_PROBE sets the swap interval. The experimental UI layer defaults
-// to one frame in 300 so resize reports include the draw geometry.
-// `depth` is the depth test and write as one letter pair, because that is the
-// candidate classifier once the shader pair turned out not to be one: vs0f/ps03
-// draws in both layers, so something about the *state* has to separate them.
+// ES_LAYER_PROBE sets the swap interval. The UI layer defaults to one frame in
+// 300 so resize reports include the draw geometry. `depth` is the depth test
+// and write as one letter pair: vs0f/ps03 draws in both layers, so the state
+// has to separate them.
 struct ProbeRun {
   int vertex_slot = -1;
   int pixel_slot = -1;
@@ -2324,20 +2250,14 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     if (out_bytes == 0)
       continue;
 
-    // The last input to this draw that has never been measured. Every constant,
-    // bool, binding and register on the flickering surface is identical frame to
-    // frame, so if anything about it varies it is the geometry -- and the guest
-    // animating a water mesh in place is exactly the shape that would not show
-    // up anywhere else. Hashed from the guest bytes before the swap, so this is
-    // what the guest wrote rather than what was uploaded.
+    // A hash of the guest vertex bytes, taken before the swap, so it is what
+    // the guest wrote rather than what was uploaded. It is read only as the
+    // vhash= field of the probe's per frame line, so it runs under
+    // IsWaterProbeDraw, not IsWaterPairDraw: only logging keys off the probe
+    // being on.
     //
-    // Note the stream cache below keys on the source *pointer*, not on its
-    // contents, which is safe only because the cache is cleared every frame.
-    // IsWaterProbeDraw, not IsWaterPairDraw. This hash is read back only as the
-    // vhash= field of the probe's per frame line, so it is logging, and the
-    // rule stated above IsWaterPairDraw is that only logging keys off the probe
-    // being on. Keyed off the pair alone it ran whenever the scene used that
-    // vertex shader, probe or not, hashing the whole stream a byte at a time.
+    // The stream cache below keys on the source *pointer*, not its contents,
+    // which is safe only because the cache is cleared every frame.
     if (IsWaterProbeDraw(call)) {
       ProfileZone water_zone(kPhaseWaterHash);
       const uint64_t bytes = uint64_t(source_vertices) * stream.stride;
@@ -2483,14 +2403,13 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
         // Swapped in ordinary memory and written out once, rather than swapped
         // in place in the arena.
         //
-        // The arena is an upload heap, which is write-combined: writes to it
-        // are cheap and coalesced, but *reads* are uncached and cost about two
-        // orders of magnitude more than a read from RAM. Swapping in place
-        // reads every vertex back out of it, and that alone was 76% of the
-        // frame (93 us per upload, 420 ns per vertex) on the in-game scenes.
-        // The extra pass over cached memory here is far cheaper than the reads
-        // it removes. The rect expansion path above already had this shape, via
-        // its own stack scratch, which is why it never showed the cost.
+        // The arena is an upload heap, which is write-combined: writes are
+        // cheap and coalesced, but reads are uncached and about two orders of
+        // magnitude slower than from RAM. Swapping in place reads every vertex
+        // back (420 ns per vertex), which measured at 76% of the frame on
+        // in-game scenes. The extra pass over cached memory is far cheaper. The
+        // rect expansion path above uses its own stack scratch for the same
+        // reason.
         g_swap_scratch.resize(size_t(out_bytes));
         std::memcpy(g_swap_scratch.data(), stream.data, size_t(out_bytes));
         for (uint32_t v = 0; v < out_vertices; ++v)
@@ -2672,20 +2591,18 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     ++g_alpha_test_draws;
 
   // The viewport, clamped to the target. The guest renders 720p through EDRAM
-  // in bands, so its viewport can be taller than the surface it is bound to;
-  // the band's own origin is what the resolve carries, not what this does.
+  // in bands, so its viewport can be taller than the surface it is bound to.
   //
   // The guest states it in guest pixels and the target may be supersampled, so
-  // it is scaled up before the clamp -- that scaling *is* the higher rendering
-  // resolution, since it is the viewport transform that decides how many host
-  // pixels the same clip-space triangle covers. `target_scale_x`/`target_scale_y` rather than
-  // NativeRenderScale, so a draw into a target that was not grown is untouched.
+  // it is scaled up before the clamp: that scaling is the higher rendering
+  // resolution, since the viewport transform decides how many host pixels a
+  // clip-space triangle covers. `target_scale_x`/`target_scale_y` are used
+  // rather than NativeRenderScale, so a target that was not grown is untouched.
   //
   // `target_offset_x`/`target_offset_y` place it inside the attachment, which
   // only the UI layer needs: its image is the window and the guest's 16:9
-  // rectangle is centred in it. Everything below stays relative to that
-  // rectangle's origin and the offset is added at the end, so the clamp keeps
-  // comparing like with like.
+  // rectangle is centred in it. Everything below is relative to that
+  // rectangle's origin and the offset is added at the end.
   float x = 0.0f, y = 0.0f;
   float width = float(target_width), height = float(target_height);
   if (g_viewport.set) {
@@ -2707,47 +2624,35 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   }
   x += float(target_offset_x);
   y += float(target_offset_y);
-  // Shifted half a pixel down and right, because the two APIs disagree about
-  // where a pixel's centre is. D3D9 and the Xenos put it on the integer
-  // coordinate; D3D12 puts it at the half. Interpolants are evaluated at that
-  // centre, so the same geometry sampled through the same UVs lands half a
-  // pixel further along here than it did on the console.
+  // Shifted half a pixel down and right, because D3D9 and the Xenos put a
+  // pixel's centre on the integer coordinate and D3D12 puts it at the half.
+  // Interpolants are evaluated at that centre, so the same geometry sampled
+  // through the same UVs lands half a pixel further along here.
   //
-  // The sign is worth deriving rather than recalling, and the obvious rule of
-  // thumb ("port D3D9 to D3D11 by offsetting vertices -0.5") gets it backwards
-  // here. Measured: a quad whose left edge is at 0 interpolates t =
-  // (i+0.5)/64 at host pixel i, and the guest's baked half texel takes that to
-  // (i+1)/64. The console, sampling at integer centres, gets t = i/64 and so
-  // lands on (i+0.5)/64, the centre of texel i. Reproducing that needs the
-  // edge at +0.5, not -0.5.
-  //
-  // Note that -0.5 is not merely useless but invisible: it takes the UV to
-  // (i+1.5)/64, which point sampling floors to the same texel i+1 as the
-  // unfixed path. A capture cannot tell the two apart, so do not read "the
-  // capture is unchanged" as "the viewport is not the lever".
+  // The sign is +0.5, not the rule of thumb -0.5. A quad whose left edge is at
+  // 0 interpolates t = (i+0.5)/64 at host pixel i, and the guest's baked half
+  // texel takes that to (i+1)/64. The console, sampling at integer centres,
+  // gets t = i/64 and lands on (i+0.5)/64, the centre of texel i. Reproducing
+  // that needs the edge at +0.5. A -0.5 shift would take the UV to (i+1.5)/64,
+  // which point sampling floors to the same texel as the unshifted path.
   //
   // Titles compensate for the console's convention by baking half a texel into
   // their screen-space UVs, and this one does. Left alone the two biases add:
-  // the ripple simulation's five tap stencil asks for texel i and gets exactly
-  // the boundary between i and i+1, which point sampling resolves to i+1. That
-  // reads the whole stencil, prev-prev tap included, one texel diagonally away
-  // from the texel being written. Measured over eight texels of a capture, and
-  // it is fatal rather than blurry: at the axis-aligned Nyquist modes the
-  // amplification polynomial becomes l^2 + 1.9289l - 1, whose root at -2.354
-  // grows 2.35x per frame while flipping sign. That is the water flicker, and
-  // the saturation and the frame-rate independence both follow from it.
+  // the ripple simulation's five tap stencil asks for texel i and gets the
+  // boundary between i and i+1, which point sampling resolves to i+1, reading
+  // the whole stencil one texel diagonally away. At the axis-aligned Nyquist
+  // modes the amplification polynomial becomes l^2 + 1.9289l - 1, whose root
+  // at -2.354 grows 2.35x per frame while flipping sign.
   //
-  // Moving the viewport rather than the vertices puts it before the rasteriser
-  // for every draw, which is what makes it correct for the passes that never
-  // touch a screen-space UV as well.
+  // Moving the viewport rather than the vertices applies it before the
+  // rasteriser for every draw, including passes that never touch a screen-space
+  // UV.
   //
-  // Half a *host* pixel, so it is deliberately not multiplied by the target scale
-  // above: what it corrects is where the host rasteriser takes its sample
-  // within a target pixel, which is a property of the target's own grid. The
-  // game's baked half-texel UVs are a separate, guest-space term and are
-  // already right. The ripple field is never supersampled anyway (it is not
-  // screen-width, so AcquireTarget leaves it alone), so the case this comment
-  // was written about is unaffected either way.
+  // Half a *host* pixel, so it is not multiplied by the target scale above: it
+  // corrects where the host rasteriser samples within a target pixel, a
+  // property of the target's own grid. The baked half-texel UVs are a separate,
+  // guest-space term. The ripple field is never supersampled (it is not
+  // screen-width, so AcquireTarget leaves it alone).
   commands->setViewports(
       RenderViewport(x + 0.5f, y + 0.5f, width, height, g_viewport.min_z, g_viewport.max_z));
   commands->setScissors(
@@ -2756,28 +2661,25 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // The draw state buffer. Not a guest bank: these are host-order values built
   // from the register shadows, so nothing here swaps.
   //
-  // The alpha test's disabled case is sent as ALWAYS rather than skipped,
-  // because the buffer has to hold something and a stale enabled test would
-  // discard the whole draw. Param gen is likewise sent as off for anything that
-  // is not a point list: the guest sets it per pixel shader and leaves it set,
-  // but its zw is only meaningful under the point sprite geometry shader, and
-  // overwriting an interpolator register with a stale one everywhere else would
-  // cost far more geometry than it fixed.
+  // A disabled alpha test is sent as ALWAYS, since the buffer must hold
+  // something and a stale enabled test would discard the draw. Param gen is
+  // sent as off for anything that is not a point list: the guest sets it per
+  // pixel shader and leaves it set, but its zw is only meaningful under the
+  // point sprite geometry shader, and overwriting an interpolator register
+  // with a stale one elsewhere would break more geometry than it fixed.
   //
   // The scaled viewport reciprocal turns a point diameter in guest pixels into
-  // a clip space radius. This includes the target and world clip scales because
+  // a clip space radius. It includes the target and world clip scales because
   // both PA_SU_POINT_SIZE and a vertex shader's e63 export are measured on the
-  // guest's 1280x720 pixel grid. The uniform world fit keeps their quads square
-  // when the target aspect changes. Its y is negated under SPIR-V because the
-  // vertex shaders are compiled with
-  // -fvk-invert-y and the geometry shader is not, so the position it expands has
-  // already been flipped into Vulkan's y-down clip space while the sprite
-  // coordinate's v still runs from the top down.
+  // guest's 1280x720 pixel grid, and the uniform world fit keeps the quads
+  // square when the target aspect changes. Its y is negated under SPIR-V
+  // because the vertex shaders are compiled with -fvk-invert-y and the geometry
+  // shader is not: the position it expands is already in Vulkan's y-down clip
+  // space while the sprite coordinate's v still runs from the top down.
   //
-  // Reused between draws while the values hold, the same way the constant banks
-  // are: a 256 byte root CBV allocation per draw would otherwise be the largest
-  // single consumer of the arena, and this changes far less often than it is
-  // read.
+  // Reused between draws while the values hold, like the constant banks: a 256
+  // byte root CBV allocation per draw would be the largest consumer of the
+  // arena, and this changes far less often than it is read.
   const bool point_list = call.primitive_type == 1;
   const float ndc_y_sign = PlumeShaderFormat() == RenderShaderFormat::SPIRV ? -1.0f : 1.0f;
   uint32_t draw_state[kDrawStateWords] = {};
@@ -2838,44 +2740,37 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // The texture mirror.
   //
   // Only the slots the bound pixel shader declares are decoded. The other
-  // stages still hold whatever fetch constant was last written there, and the
-  // guest never fetches from them precisely because its shader does not name
-  // them; treating those as textures means decoding a resource that may have
-  // been freed, which is a read through an unmapped address rather than a
-  // wrong picture.
+  // stages hold whatever fetch constant was last written there and the guest
+  // never fetches from them; decoding one can read a freed resource through an
+  // unmapped address.
   //
   // Every slot is still *written*, declared or not, because the descriptor set
-  // is shared across draws and a texture left in a slot by the previous one
-  // would otherwise stay bound. An undeclared slot, and one whose texture the
-  // mirror could not produce, gets the white placeholder, so a draw the mirror
-  // cannot serve appears in flat colour rather than not at all.
+  // is shared across draws and a texture left in a slot by the previous draw
+  // would stay bound. An undeclared slot, or one the mirror could not produce,
+  // gets the white placeholder, so a draw the mirror cannot serve appears in
+  // flat colour rather than not at all.
   //
-  // The sampler comes out of the same six dwords as the texture, because on
-  // this hardware it *is* the same six dwords: the three SetSamplerState_*
-  // setters patch fields inside the fetch constant rather than writing a
-  // register. A slot the shader does not declare keeps the fallback sampler,
-  // for the same reason it keeps the white texture.
-  // All of that is derived from the fetch constants and the shader's slot mask,
-  // and neither moves between most consecutive draws: this title issues roughly
-  // three draws per SetTexture call. So the whole loop, and the two set lookups
-  // under it, are cached against the fetch constants they were built from.
+  // The sampler comes out of the same six dwords as the texture: the three
+  // SetSamplerState_* setters patch fields inside the fetch constant rather
+  // than writing a register. An undeclared slot keeps the fallback sampler.
   //
-  // Keyed on what the bindings are actually made of rather than on the binding
-  // generation. The generation moves on every SetTexture, and this title issues
-  // roughly three draws per SetTexture while frequently setting the same
-  // texture back, so keying on it missed about 39% of the time and paid the
-  // whole loop again for bindings that had not moved. The signature is a hash
-  // of the raw fetch constants of the declared slots, which covers everything
-  // SetTexture and the three sampler setters can do; the content epoch covers
-  // the two things they cannot, a resolve replacing the host image behind an
-  // unchanged address and the frame boundary.
+  // Both are derived from the fetch constants and the shader's slot mask, which
+  // do not move between most consecutive draws (about three draws per
+  // SetTexture). So the loop and the two set lookups under it are cached
+  // against the fetch constants they were built from.
   //
-  // That frame boundary is what keeps this honest: the texture mirror refreshes
-  // a rewritten texture at most once per texture per frame, so a cache that
-  // survived one would freeze the font atlas, which is a bug this renderer has
-  // already had once. Within a frame, skipping the mirror on identical fetch
-  // constants is exactly equivalent, since the second visit would find the
-  // refresh already throttled out.
+  // The key is a hash of the raw fetch constants of the declared slots, which
+  // covers everything SetTexture and the three sampler setters can do, not the
+  // binding generation, which moves on every SetTexture even when the same
+  // texture is set back (39% misses). The content epoch covers what they
+  // cannot: a resolve replacing the host image behind an unchanged address, and
+  // the frame boundary.
+  //
+  // The frame boundary keeps the font atlas refreshing: the mirror refreshes a
+  // rewritten texture at most once per texture per frame, so a cache that
+  // survived one would freeze it. Within a frame, skipping the mirror on
+  // identical fetch constants is equivalent, since the second visit would find
+  // the refresh already throttled out.
   const uint32_t texture_mask = GuestPipelineTextureMask(call.pipeline);
   const uint64_t content_epoch = TextureContentEpoch();
   const uint64_t fetch_signature = BoundTextureFetchSignature(call.memory_base, texture_mask);

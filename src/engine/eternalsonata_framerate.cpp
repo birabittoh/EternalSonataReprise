@@ -146,26 +146,18 @@ u8 RequestedFrameRate(u8 stock) {
 // host can actually hit. Two constraints on the fallback rungs:
 //
 //   - The rung must divide 300, or `300 / rate` truncates and the game runs at
-//     the wrong speed (120 -> 2.5 -> 2 was measured at ~20% slow motion).
-//   - The rung must divide 60. This is the constraint that matters and the one
-//     two earlier attempts got wrong. `300 / rate` is the amount added per
-//     frame, and the game's content is authored around the stock cadence of 30
-//     (step 10) and 60 (step 5). Rates that divide 60 keep the step a multiple
-//     of 5 and stay on that grid: 20 -> 15, 15 -> 20. Rates that don't come off
-//     it (50 -> 6, 75 -> 4, 100 -> 3) and the models visibly twitch even
-//     though game speed is arithmetically exact.
+//     the wrong speed (120 -> 2.5 -> 2 gives ~20% slow motion).
+//   - The rung must divide 60. `300 / rate` is the amount added per frame, and
+//     the game's content is authored around the stock cadence of 30 (step 10)
+//     and 60 (step 5). Rates that divide 60 keep the step a multiple of 5 and
+//     stay on that grid: 20 -> 15, 15 -> 20. Rates that don't come off it
+//     (50 -> 6, 75 -> 4, 100 -> 3) and the models visibly twitch even though
+//     game speed is arithmetically exact.
 //
-// The first attempt used a fixed ladder containing 100/75/50 and parked on 50.
-// The second derived rungs as whole-number divisions of the *target*, which
-// gives 150 -> 75 -> 50 and parks on 50 again. A third derived them from the
-// display refresh rate; that happens to give the right answer on a 60 Hz panel
-// (60/30/20 divide 60) but makes the game's behaviour depend on the user's
-// monitor, which is wrong; the authored cadence is a property of the content,
-// not of the screen.
-//
-// So the ladders are fixed. The selected target is always the first rung even
-// when it is off-grid (the user asked for it, and it is the ceiling we try
-// first), but every fallback beneath it divides 60.
+// The ladders are fixed rather than derived from the target or the display
+// refresh rate: the authored cadence is a property of the content, not of the
+// screen. The selected target is always the first rung even when it is off-grid
+// (it is the ceiling tried first), but every fallback beneath it divides 60.
 //
 // LimitFrame measures the per-frame work time; guest logic plus present, with
 // our own pacing wait excluded. Sustained work over the current rung's budget
@@ -647,8 +639,7 @@ void LimitFrame(double fps) {
 //
 // So above 60 fps there is no single byte that keeps game speed exact (the
 // step has to be an integer, and 300 / byte is at most 5 for anything faster
-// than 60), and an earlier 150 preset ran the frame-counted parts of the sim
-// at 5x. Instead the byte is chosen per frame: the measured frame time is
+// than 60). Instead the byte is chosen per frame: the measured frame time is
 // accumulated in 1/300 s units and each frame takes the integer step that
 // keeps the running total on the wall clock, Bresenham style. Integer sites
 // see steps that are exact on average and off by at most one unit at any

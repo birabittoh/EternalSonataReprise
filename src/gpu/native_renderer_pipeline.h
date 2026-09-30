@@ -2,42 +2,38 @@
 //
 // Host graphics pipelines for the guest's own shaders.
 //
-// The offline step (scripts/gen-guest-shaders.py) has already turned all 260
-// guest shaders into compiled blobs; guest_shaders.h hands them out by table
-// slot. What is missing between a blob and a draw is the rest of a pipeline
-// state object: the input layout, the render target formats, and the topology.
-// This is where those are assembled and cached.
+// scripts/gen-guest-shaders.py compiles all 260 guest shaders ahead of time and
+// guest_shaders.h hands them out by table slot. This layer assembles the rest of
+// a pipeline state object (input layout, render target formats, topology) and
+// caches it.
 //
 // The cache key is the one the guest itself is keyed by, plus what the host
 // bakes into a PSO that the guest keeps in registers:
 //
 //   * the vertex and pixel shader table slots
-//   * the vertex declaration, by a hash of its decoded elements. The guest's own
+//   * the vertex declaration, by a hash of its decoded elements. The guest's
 //     variant cache (0x82267D08) probes with the serial number at declaration
 //     +48, but that serial is assigned lazily and declarations created after
-//     boot were seen to keep it at 0 for their whole life, so it identifies
-//     nothing. The elements are what the host input layout is built from, which
-//     makes hashing them both stable and exactly as discriminating as needed.
+//     boot keep it at 0, so it identifies nothing. The host input layout is
+//     built from the elements, so hashing them is stable and exactly as
+//     discriminating as needed.
 //   * the per-stream strides, because a host input slot carries its stride and
 //     the guest's does not: SetStreamSource writes it into the fetch constant,
-//     so the same declaration under two strides is two host pipelines
+//     so one declaration under two strides is two host pipelines
 //   * the topology and the bound target formats
 //
-// The measured pipeline set is small -- 35 (VS, PS) pairs over 10 declarations
-// in the opening hours -- which is what makes a cache with a linear probe the
-// right shape here rather than something with a hash table in it.
+// The pipeline set is small (35 (VS, PS) pairs over 10 declarations in the
+// opening hours), so the cache is a linear probe.
 //
-// Vertex fetch is lifted out of the shader, so the input layout is built by
+// Vertex fetch is lifted out of the shader. The input layout is built by
 // matching the shader's own vertex input signature (which ships in the pack,
 // decoded from the container's fetch patch table) against the bound
-// declaration's elements by (D3DDECLUSAGE, usage index). That is the same match
-// 0x82267218 performs when it patches the microcode; doing it here produces an
-// input layout instead of a patched instruction stream.
+// declaration's elements by (D3DDECLUSAGE, usage index), the same match
+// 0x82267218 performs when it patches the microcode.
 //
-// Plume types are deliberately absent from this header, the same way they are
-// from native_renderer_frame.h: the guest-facing hooks include it, and Plume
-// drags d3d12.h and windows.h in behind it. A TU that speaks Plume gets at the
-// objects through native_renderer_pipeline_internal.h.
+// No Plume types appear in this header; the guest facing hooks include it. A
+// TU that speaks Plume gets at the objects through
+// native_renderer_pipeline_internal.h.
 
 #pragma once
 
@@ -66,23 +62,19 @@ inline constexpr uint32_t kNullInputSlot = kMaxPipelineStreams;
 // The input slot the widened attributes read from.
 //
 // A declaration element in an unnormalised integer format has no usable host
-// input layout format at all. The *_UINT spelling carries the right data, but
-// the emitted HLSL declares every vertex input as float4 and no host will feed
-// an integer typed input layout format into a float register: what arrives is
-// the raw bits, so a bone index of 3 reads as 4.2e-45, every skinned vertex
-// truncates to matrix 0, and the mesh stays in its bind pose while anything
-// transformed by an ordinary constant matrix keeps moving. This title uses
-// k_8_8_8_8 unnormalised for BLENDINDICES on every character, which is exactly
-// that failure.
+// input layout format. The *_UINT spelling carries the right data, but the
+// emitted HLSL declares every vertex input as float4 and no host feeds an
+// integer typed input layout format into a float register: the raw bits arrive,
+// so a bone index of 3 reads as 4.2e-45 and every skinned vertex truncates to
+// matrix 0. This title uses k_8_8_8_8 unnormalised for BLENDINDICES on every
+// character.
 //
-// Rather than putting the declaration into the shader's key so those inputs
-// could be declared uint4, the elements are rebuilt into a stream of their own
-// on upload, four halves each, and read as R16G16B16A16_FLOAT. A half holds
-// every integer up to 2048 exactly, so an 8 bit index survives untouched, and
-// the guest's own stream keeps its stride and all of its other offsets. This is
-// the widening conversion the note on VertexFormatRepacksToSnorm8 below
-// describes as the way out if precision ever showed; it is cheaper here because
-// the elements that need it are few and narrow.
+// The elements are rebuilt into a stream of their own on upload, four halves
+// each, and read as R16G16B16A16_FLOAT. A half holds every integer up to 2048
+// exactly, so an 8 bit index survives untouched, and the guest's own stream
+// keeps its stride and its other offsets. This is the widening conversion
+// described on VertexFormatRepacksToSnorm8 below; it is cheaper here because the
+// elements that need it are few and narrow.
 inline constexpr uint32_t kWidenedInputSlot = kMaxPipelineStreams + 1;
 
 // Bytes one widened element occupies in that stream: four halves.
@@ -105,22 +97,19 @@ bool VertexFormatWidensToHalf4(uint32_t type);
 
 // Signed k_2_10_10_10 has no host input layout format in any of the three
 // backends: DXGI carries only the UNORM and UINT spellings, and Plume's own
-// R10G10B10A2_UNORM (added for the unsigned case) is the whole of what is
-// available. This title uses the signed spelling for most of its normals and
-// tangents, so refusing it costs most of the geometry.
+// R10G10B10A2_UNORM (added for the unsigned case) is all that is available.
+// This title uses the signed spelling for most of its normals and tangents.
 //
-// The way out taken here is to repack it on upload into R8G8B8A8_SNORM, which
-// is the same four bytes, so the vertex stride and every element offset stay
-// exactly what the guest declared and the declaration stays out of the shader's
-// key. It costs precision: 10 bits per component down to 8, and the 2 bit w down
-// to the same 8. For unit length normals and tangents that is what a great many
-// titles ship natively; if it ever shows, the fix is a widening conversion into
-// a host layout of our own offsets, which the upload pass could do in the same
-// loop but the pipeline's input layout would then have to be built from the host
-// offsets rather than the guest's.
+// It is repacked on upload into R8G8B8A8_SNORM, the same four bytes, so the
+// vertex stride and every element offset stay what the guest declared and the
+// declaration stays out of the shader's key. Precision drops from 10 bits per
+// component to 8, and the 2 bit w to 8, which is what many titles ship natively
+// for unit length normals and tangents. A widening conversion into a host layout
+// with its own offsets would need the input layout built from the host offsets
+// rather than the guest's.
 //
-// The pipeline cache and the upload path have to agree about exactly which
-// elements this applies to, so both ask here.
+// The pipeline cache and the upload path have to agree about which elements
+// this applies to, so both ask here.
 bool VertexFormatRepacksToSnorm8(uint32_t type);
 
 // What a draw needs a pipeline for. Everything here is state the guest has

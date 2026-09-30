@@ -1,23 +1,18 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
-// A Plume-backed ui::ImmediateDrawer, which is what brings the SDK's overlays
-// (F3 debug, F4 settings, toasts, the mod manager) back in native rendering
-// mode.
+// A Plume-backed ui::ImmediateDrawer, which draws the SDK's overlays (F3 debug,
+// F4 settings, toasts, the mod manager) in native rendering mode.
 //
-// They are not missing because anything broke. With no GPU plugin the SDK sets
-// `config.graphics` to null and never creates a presenter; instead it asks the
-// app for a drawer through ReXApp::OnCreateImmediateDrawer, and the default
-// returns nullptr, whose documented meaning is "no overlay". So the overlays
-// are off for exactly as long as nothing here answers that call.
+// With no GPU plugin the SDK creates no presenter and asks the app for a drawer
+// through ReXApp::OnCreateImmediateDrawer; the default returns nullptr, meaning
+// "no overlay".
 //
-// Two parts of the SDK's contract for this mode shape the implementation, and
-// both are easy to violate:
-//
+// The SDK's contract for this mode:
 //  * the drawer is constructed presenter-less, and OnEnterPresenter /
 //    OnLeavePresenter are never called, so all GPU setup has to be lazy;
 //  * CreateTexture MUST return nullptr rather than fail loudly when the device
-//    is not up yet, because the SDK uploads the ImGui font atlas lazily on the
-//    first draw and that can happen before the backend exists.
+//    is not up yet, because the SDK uploads the ImGui font atlas on the first
+//    draw, which can happen before the backend exists.
 
 #pragma once
 

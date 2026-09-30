@@ -222,15 +222,12 @@ RenderFormat MapVertexFormat(uint32_t type) {
   // The emitted HLSL declares every vertex input as float4, because the shader
   // is compiled without knowing which declaration it will be paired with. A
   // *_UINT or *_SINT input layout format feeding a float register is a type
-  // mismatch the D3D12 debug layer objects to, so it is counted and reported
-  // here: the fix is an emitter change (declare those inputs uint4/int4 and
-  // convert), and the counter says which shaders would need it. The format is
-  // still emitted rather than the draw refused, so the geometry appears and the
-  // problem is visible in the picture instead of absent from it.
+  // mismatch the D3D12 debug layer objects to, so it is counted and reported:
+  // the counter says which shaders would need the emitter to declare uint4/int4
+  // inputs. The format is still emitted rather than the draw refused.
   // `num_format_all` says nothing for a format that is already floating point:
   // a float is never "normalised", so every float declaration element has the
-  // bit set. Only the fixed point formats can actually arrive as raw integers,
-  // which is the case that mismatches the shader's float4.
+  // bit set. Only the fixed point formats can arrive as raw integers.
   const bool is_float = format == kVf_16_16_FLOAT || format == kVf_16_16_16_16_FLOAT ||
                         format == kVf_32_FLOAT || format == kVf_32_32_FLOAT ||
                         format == kVf_32_32_32_FLOAT || format == kVf_32_32_32_32_FLOAT;
@@ -627,37 +624,30 @@ RenderPipelineLayout* EnsureLayout(RenderDevice* device) {
   if (g_layout_failed)
     return nullptr;
 
-  // Two sets, not one: t0..t15 in set 0 and s0..s15 in set 1, which is register
-  // space 1 in the emitted HLSL because Plume maps a set's index onto
-  // RegisterSpace.
+  // Two sets: t0..t15 in set 0 and s0..s15 in set 1, which is register space 1
+  // in the emitted HLSL because Plume maps a set's index onto RegisterSpace.
   //
-  // They are split because the two live in different heaps with very different
-  // sizes. A D3D12 shader-visible sampler heap holds 1024 descriptors against
-  // the view heap's 65536, so a cache of sets carrying sixteen samplers each
-  // exhausts the sampler heap after sixty four sets -- which this title reaches
-  // on loading a save. Splitting them means the many distinct *texture*
-  // combinations cost only view descriptors, and the handful of distinct
+  // They are split because they live in different heaps. A D3D12 shader-visible
+  // sampler heap holds 1024 descriptors against the view heap's 65536, so a
+  // cache of sets carrying sixteen samplers each exhausts it after sixty four
+  // sets, which this title reaches on loading a save. Split, the many distinct
+  // texture combinations cost only view descriptors and the few distinct
   // sampler combinations cost sampler descriptors.
   //
-  // The whole range is reserved in each whatever a given pixel shader declares.
-  // The pack carries a texture slot mask per shader, so a narrower layout per
-  // shader is possible; it would buy nothing but more layouts to manage.
+  // The whole range is reserved in each whatever a given pixel shader declares;
+  // a narrower layout per shader would only add layouts to manage.
   //
-  // One range per slot, not a single range sixteen descriptors wide. The two
-  // spell the same thing to D3D12, where a table range at t0 of sixteen
-  // descriptors is t0..t15 either way, but not to Vulkan. Plume turns each range
-  // into one VkDescriptorSetLayoutBinding whose descriptorCount is the range's
-  // count, so a single range of sixteen declares *one* binding, number zero,
-  // that is a sixteen element array. The emitted HLSL declares sixteen separate
-  // objects at t0..t15, which DXC compiles to sixteen separate bindings, 0..15.
-  // Bindings one upwards then do not exist in the layout at all, and a driver
-  // that actually checks rejects the pipeline. Adreno fails to link with "Bind
-  // group info mismatches the shader source for symbol xe_texture12" for the
-  // first shader that samples any slot other than zero, which is most of them.
-  // Desktop drivers happen not to complain, which is why this survived.
+  // One range per slot, not a single range sixteen descriptors wide. D3D12
+  // reads both as t0..t15, but Plume turns each range into one
+  // VkDescriptorSetLayoutBinding whose descriptorCount is the range's count, so
+  // a single range declares one binding, number zero, that is a sixteen element
+  // array. The emitted HLSL declares sixteen separate objects, which DXC
+  // compiles to bindings 0..15, so bindings one upwards would not exist in the
+  // layout. Adreno rejects that with "Bind group info mismatches the shader
+  // source for symbol xe_texture12"; desktop drivers do not check.
   //
   // See the overlay's layout in native_renderer_overlay.cpp for the same shape
-  // written out by hand: one range per binding.
+  // written by hand: one range per binding.
   RenderDescriptorRange texture_ranges[kTextureSlots];
   RenderDescriptorRange sampler_ranges[kTextureSlots];
   for (uint32_t slot = 0; slot < kTextureSlots; ++slot) {
@@ -671,15 +661,15 @@ RenderPipelineLayout* EnsureLayout(RenderDevice* device) {
 
   // The four constant banks, as root descriptors rather than a descriptor set:
   // they change per draw and a root CBV is the cheapest way to point at a new
-  // slice of an upload buffer. b0/b1 are the vertex float and bool banks,
-  // b2/b3 the pixel ones, and b4 is XeDrawState, which is render state rather
-  // than a guest constant bank: the alpha test the console does in fixed
-  // function hardware, the point sprite size, and the world clip scale. All
-  // three stages read it, so it carries no visibility restriction.
+  // slice of an upload buffer. b0/b1 are the vertex float and bool banks, b2/b3
+  // the pixel ones, and b4 is XeDrawState, which is render state rather than a
+  // guest constant bank: the alpha test the console does in fixed function
+  // hardware, the point sprite size, and the world clip scale. All three stages
+  // read it, so it has no visibility restriction.
   //
   // Register space 2, matching the generated HLSL: under Vulkan these become a
-  // push descriptor set at set index 2, and space 0 is already the textures'.
-  // See CB_SPACE in scripts/xenos_hlsl.py for why they cannot share a space.
+  // push descriptor set at set index 2, and space 0 is the textures'. See
+  // CB_SPACE in scripts/xenos_hlsl.py for why they cannot share a space.
   const RenderRootDescriptorDesc root_descriptors[] = {
       RenderRootDescriptorDesc(0, kConstantRegisterSpace, RenderRootDescriptorType::CONSTANT_BUFFER),
       RenderRootDescriptorDesc(1, kConstantRegisterSpace, RenderRootDescriptorType::CONSTANT_BUFFER),
