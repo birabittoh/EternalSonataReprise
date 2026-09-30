@@ -32,10 +32,9 @@ back to its default.
 game_data_root   = "assets"    # extracted game files (default: assets)
 user_data_root   = "saves"     # saves and profiles (default: Documents/<app name>)
 cache_root       = "cache"     # shader cache (default: <user_data_root>/cache)
-mods_data_root   = "mods"      # mod folders (default: <exe folder>/mods)
-mods_dump_root   = "dumps"     # dumped textures and shaders (default: <exe folder>/dumps)
-update_data_root = "update"    # extracted title update files (default: none, set by the wizard if needed)
-metadata_root    = "metadata"  # game metadata (default: searched for in <game_data_root>/metadata)
+mods_data_root   = "mods"      # mod folders (default: mods)
+mods_dump_root   = "dumps"     # dumped textures and shaders (default: dumps)
+update_data_root = "update"    # extracted title update files (default: update)
 ```
 
 Use absolute paths if you launch the game from a different working directory,
