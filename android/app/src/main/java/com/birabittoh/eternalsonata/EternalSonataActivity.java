@@ -107,7 +107,7 @@ public class EternalSonataActivity extends SDLActivity {
             android.content.Intent intent =
                 new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
-            // STFS packages and our own archives have no reliable MIME type,
+            // STFS packages and mod/save zips have no reliable MIME type,
             // and a picker hides whatever it cannot name.
             intent.setType("*/*");
             startActivityForResult(intent, REQUEST_BASE + op);
@@ -155,7 +155,7 @@ public class EternalSonataActivity extends SDLActivity {
 
     /** Stage the picked document as a cache file, then let native consume it. */
     private void importFrom(int op, android.net.Uri uri) {
-        File staged = new File(getCacheDir(), "hostmenu_import.tmp");
+        File staged = new File(getCacheDir(), "hostmenu_import.zip");
         try (InputStream in = getContentResolver().openInputStream(uri);
              OutputStream out = new FileOutputStream(staged)) {
             byte[] buf = new byte[1 << 16];
