@@ -37,6 +37,7 @@
 #include "fonts.generated.h"
 #include "force_load_area.h"
 #include "guest_profiler.h"
+#include "fast_forward_key.h"
 #include "host_menu.h"
 #include "equipment_system.h"
 #include "flag_system.h"
@@ -563,6 +564,8 @@ class EternalsonataApp : public rex::ReXApp {
     host_menu_ = std::make_unique<eternalsonata::HostMenu>(window(), runtime()->user_data_root(),
                                                            cache_root());
 
+    fast_forward_key_ = eternalsonata::CreateFastForwardKey(window());
+
     // On-screen pad. The SDK's touch driver reports no device until a layout
     // is installed, so this is what turns the touch controls on for this game;
     // the touch_controls cvar (on by default only on Android) still decides
@@ -648,6 +651,7 @@ class EternalsonataApp : public rex::ReXApp {
   // Back-button entry point into the F-key overlays on touch-only devices.
   // See host_menu.h.
   std::unique_ptr<eternalsonata::HostMenu> host_menu_;
+  std::unique_ptr<eternalsonata::FastForwardKey> fast_forward_key_;
 
   // Guest frame present count, bumped by the per-swap callback (any thread).
   std::atomic<uint64_t> guest_swap_count_{0};
