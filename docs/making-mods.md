@@ -1045,16 +1045,18 @@ by the game's own text renderer and navigated with the game's own cursor, not
 an ImGui overlay. There is only one Options screen; a row added this way shows
 up both from the main menu and from the in-game status screen.
 
-Options is two pages, paged with LB/RB. Page 1 (`ETERNALSONATA_PAGE_GAME`) is
-the Options screen proper, where the game's own Subtitles and Voice rows live
-alongside this project's Text row; page 2 (`ETERNALSONATA_PAGE_GRAPHICS`) is the
-button-configuration screen, which the project uses for graphics settings --
-Resolution and Frame Rate.
+Options is paged with LB/RB. Page 1 (`ETERNALSONATA_PAGE_GAME`) is the Options
+screen proper, where the game's own Subtitles and Voice rows live alongside
+this project's Text row; page 2 (`ETERNALSONATA_PAGE_GRAPHICS`) is the
+button-configuration screen, which the project uses for graphics settings and
+Quit Game. Every page from page 3 (`ETERNALSONATA_PAGE_MODS`) on belongs to
+mods, and there are as many as their rows need: RB from page 2 reaches them
+while they have rows.
 
-**A mod row lands on page 2 by default.** Page 1 is reserved for the game's own
-settings and is expected to fill up with them.
-`EternalSonataSetOptionRowPage(row, ETERNALSONATA_PAGE_GAME)` moves a row over
-if you have a reason to.
+**A mod row lands on the first mods page with room** (on page 2 with an ABI
+version 1 host); a new page opens whenever the last one fills, so there is no
+limit on rows. The first two pages are full of the project's own rows.
+`EternalSonataSetOptionRowPage` moves a row to another page if there is room.
 
 The entry points are exported from the host executable, not from the SDK, so
 you resolve them at runtime rather than linking against anything. Copy
@@ -1082,7 +1084,7 @@ void MyMod::OnModuleLaunched() {
     set_label(row, ETERNALSONATA_LANG_IT, "Mia impostazione");
   }
 
-  // Optional: put the row on the game page instead of the graphics one.
+  // Optional: put the row on the game page instead of the mods one.
   auto set_page = reinterpret_cast<EternalSonataSetOptionRowPageFn>(
       GetProcAddress(GetModuleHandle(nullptr), "EternalSonataSetOptionRowPage"));
   if (set_page && row >= 0) {
@@ -1098,13 +1100,12 @@ Things worth knowing before you use it:
   `EternalSonataOptionsAbiVersion()` if you need to branch on host capability.
 - **Register from `OnModuleLaunched()`.** Rows registered later still appear,
   but only the next time the screen is built -- not on a screen already open.
-- **Room is finite, and it is per page: 8 rows on page 1, 7 on page 2.** That
-  is the game's limit, not an arbitrary one: a selectable group's item array is
-  pre-allocated with 10 slots, of which page 1's stock Subtitles and Voice rows
-  take 2 and page 2's three button rows take 3. Registration past that is
-  refused and logged rather than corrupting the menu. The project's own rows
-  take two of page 2's seven (Resolution, Frame Rate) and one of page 1's eight
-  (Text).
+- **Room is per page: 8 rows on page 1, 7 on page 2, 9 on each mods page.**
+  That is the game's limit: a selectable group's item array is pre-allocated
+  with 10 slots, of which page 1's stock Subtitles and Voice rows take 2 and
+  page 2's three button rows take 3. A mods page is limited by the screen's
+  height instead. Moving a row onto a full page is refused;
+  registering never is, since a full mods page just opens the next one.
 - **Values are drawn side by side on one line, so keep them short.** They share
   the width between the row's value column and the end of the row rule, about
   630px. Columns are evenly spaced when that fits -- 200px each for two or

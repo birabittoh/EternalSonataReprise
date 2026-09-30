@@ -30,17 +30,21 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_OPTIONS_ABI_VERSION 1u
+#define ETERNALSONATA_OPTIONS_ABI_VERSION 2u
 
-// Options is two pages, paged between with LB/RB. Page 1 is the Options screen
-// proper: the game's own Subtitles and Voice rows plus this project's Text
-// row. Page 2 is the button-configuration screen, which the recompilation uses
-// for graphics settings (Resolution, Frame Rate) and Quit Game. A row registered by a mod
-// starts on page 2, because page 1 is reserved for the game's own settings;
-// move it with EternalSonataSetOptionRowPage.
+// Options is paged with LB/RB. Page 1 is the Options screen proper: the game's
+// own Subtitles and Voice rows plus this project's Text row. Page 2 is the
+// button-configuration screen, which the recompilation uses for graphics
+// settings (Resolution, Frame Rate) and Quit Game. Both are full, so mod rows
+// get pages of their own from page 3 on (ETERNALSONATA_PAGE_MODS + n): a row
+// registered by a mod goes to the first of them with room, and a new page opens
+// whenever the last one fills, so there is no limit on how many rows mods add.
+// Move a row with EternalSonataSetOptionRowPage. Mods pages need ABI version
+// 2; version 1 hosts put mod rows on page 2.
 enum {
   ETERNALSONATA_PAGE_GAME = 0,
-  ETERNALSONATA_PAGE_GRAPHICS = 1
+  ETERNALSONATA_PAGE_GRAPHICS = 1,
+  ETERNALSONATA_PAGE_MODS = 2
 };
 
 // Language slots. The first six match the Options display lists the game ships
@@ -77,7 +81,7 @@ typedef void (*EternalSonataOptionSetFn)(int index, void* user);
 
 // Registers one row. Returns the new row's index (>= 0), or -1 if the row was
 // rejected: null/empty label, value_count outside 1..ETERNALSONATA_MAX_ROW_VALUES,
-// null callbacks, or the screen is already full (see below).
+// or null callbacks.
 //
 // `label` and the strings in `values` are copied; the caller keeps ownership.
 // Text is single-byte (CP1252/Latin-1), NOT UTF-8 - the game's font draws one
@@ -103,9 +107,12 @@ typedef void (*EternalSonataOptionSetFn)(int index, void* user);
 // group's item array is pre-allocated with 10 slots, of which page 1's stock
 // Subtitles and Voice rows take 2 and page 2's three button rows take 3. That
 // leaves ETERNALSONATA_MAX_OPTION_ROWS rows on page 1 and one fewer on page 2,
-// built-in rows included - registration past that is rejected rather than
-// silently corrupting the menu.
+// built-in rows included. A mods page has no stock rows and holds
+// ETERNALSONATA_MAX_MODS_PAGE_ROWS, which is what fits above its hint line.
+// Registration only fails on bad arguments, since a full mods page just opens
+// the next one.
 #define ETERNALSONATA_MAX_OPTION_ROWS 8
+#define ETERNALSONATA_MAX_MODS_PAGE_ROWS 9
 #define ETERNALSONATA_MAX_ROW_VALUES 9
 
 typedef int (*EternalSonataRegisterOptionRowFn)(const char* label,
@@ -143,8 +150,10 @@ typedef int (*EternalSonataSetOptionRowLabelFn)(int row, int language,
 typedef int (*EternalSonataSetOptionValueFn)(int row, int value, int language,
                                              const char* text, int bar_width);
 
-// Moves `row` to another page (ETERNALSONATA_PAGE_*). Returns false for an
-// unknown row, an unknown page, or a destination page that is already full.
+// Moves `row` to another page (ETERNALSONATA_PAGE_*, or ETERNALSONATA_PAGE_MODS
+// + n). Returns false for an unknown row, a destination page that is already
+// full, or a mods page past the one after the last that has rows (it could not
+// be reached with RB).
 // Safe to call any time; the move shows up the next time each page is built.
 typedef int (*EternalSonataSetOptionRowPageFn)(int row, int page);
 

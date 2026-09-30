@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <functional>
 #include <iterator>
 #include <mutex>
@@ -373,7 +374,14 @@ constexpr u8 kStateOptionRows = 3;   // sub_82201620, page 1's row handler
 constexpr u8 kStateOptionSlider = 11;  // sub_82201FB0, page 1's slider handler
 constexpr u8 kStateButtons = 7;      // sub_82202CB0, page 2's handler
 
-enum PageId { kPageOptions = 0, kPageButtons = 1, kPageCount = 2 };
+// Every page from kPageMods on belongs to mods, and there are as many as their
+// rows need. Each is a rebuild of the button screen (see the page turn hooks at
+// the end of this file), so they share page 2's lists and state bytes.
+enum PageId { kPageOptions = 0, kPageButtons = 1, kPageMods = 2 };
+constexpr int kFixedPages = kPageMods;  // pages with lists of their own
+static_assert(kPageMods == ETERNALSONATA_PAGE_MODS, "page ids are the ABI's");
+
+bool IsModsPage(int page) { return page >= kPageMods; }
 
 struct PageLayout {
   // Display list, one address per language (same order as LanguageIndex).
@@ -405,7 +413,7 @@ struct PageLayout {
   u32 bar_parent;  // parent object the page's own bars hang from
 };
 
-constexpr PageLayout kPages[kPageCount] = {
+constexpr PageLayout kPages[] = {
     // Page 1: rows appended below Voce (record y 285, 335).
     {kOptionsListByLang, kOptionsListBytes, kInsertOffset, kIconRecordBytes, 2,
      2, 480, 385, 5, 1},
@@ -413,16 +421,27 @@ constexpr PageLayout kPages[kPageCount] = {
     // selectable items at 165/215/265).
     {kButtonsListByLang, kButtonsListBytes, kButtonsInsertOffset, 0, 1, 3, 265,
      175, 5, 0},
+    // Mods pages: page 2's screen with its button rows hidden, so rows start
+    // where those did and the group holds only ours. stock_item_yn is the item
+    // one pitch above the first row.
+    {kButtonsListByLang, kButtonsListBytes, kButtonsInsertOffset, 0, 1, 0, 115,
+     25, 5, 0},
 };
 
+const PageLayout& Layout(int page) { return kPages[std::min(page, int{kPageMods})]; }
+
+// A mods page starts its rows where page 2's button rows were, which leaves
+// room for one more above the hint line than the other pages have.
+constexpr u32 kModsPageMaxRows = ETERNALSONATA_MAX_MODS_PAGE_ROWS;
+static_assert(kModsPageMaxRows <= kSelectableSlots, "a group holds 10 items");
+
 u32 PageMaxRows(int page) {
-  return kSelectableSlots - kPages[page].stock_rows;
+  if (IsModsPage(page)) {
+    return kModsPageMaxRows;
+  }
+  return std::min(kSelectableSlots - Layout(page).stock_rows, kMaxOptionRows);
 }
 
-// Where a mod row lands unless it asks otherwise. Page 1 is reserved for the
-// game's own settings and is expected to fill up with them, so mods start on
-// page 2 and spill over only by asking.
-constexpr int kModDefaultPage = kPageButtons;
 
 // Synthetic BTX ids, far above any real entry (the xex block defines 211) so
 // they can never collide with a genuine lookup. Row r's label is
@@ -499,7 +518,7 @@ std::string LabelText(const LocalizedLabel& label, int lang) {
 // "which page is this list, and in which language" at once. Returns false for
 // every other screen in the game, which is the overwhelming majority.
 bool ClassifyList(u32 list_addr, int* page, int* lang_idx) {
-  for (int p = 0; p < kPageCount; ++p) {
+  for (int p = 0; p < kFixedPages; ++p) {
     for (int i = 0; i < kGuestListCount; ++i) {
       if (kPages[p].lists[i] == list_addr) {
         *page = p;
@@ -644,9 +663,9 @@ struct OptionRow {
   int32_t bar_nudge_x = 0;
   int32_t bar_nudge_step_x = 0;
   // Which page the row is drawn on. kPageOptions is the game-settings page,
-  // kPageButtons the graphics one - that split is the whole point of having
-  // two pages. The built-in rows pick their page explicitly; a mod row
-  // defaults to kModDefaultPage.
+  // kPageButtons the graphics one, kPageMods and on the ones mods get. The
+  // built-in rows pick their page explicitly; a mod row goes to the first mods
+  // page with room.
   int page = kPageOptions;
   // A slider row draws the game's own volume gauge instead of a list of values:
   // no `values`, no highlight bar, and get_index/set_index speak a step index.
@@ -682,7 +701,9 @@ bool RowPendingRestart(const OptionRow& row) {
 // The registry proper. Rows are appended in registration order and drawn top
 // to bottom in that order. Never shrinks: a row index handed out by
 // RegisterOptionRow stays valid for the process lifetime.
-std::vector<OptionRow>& Rows();
+// A deque so appending never moves a row the guest side holds a reference to.
+using RowStore = std::deque<OptionRow>;
+RowStore& Rows();
 
 u32 RowCount() { return static_cast<u32>(Rows().size()); }
 
@@ -872,14 +893,9 @@ void TranslateBuiltinLabel(OptionRow& row, const char* key) {
 // reached from the Options screen build, long after every mod DLL has had its
 // OnModuleLaunched() call, so the built-ins are always rows 0 and 1 and mod
 // rows follow in load order.
-std::vector<OptionRow>& Rows() {
-  static std::vector<OptionRow> rows = [] {
-    std::vector<OptionRow> initial;
-    // Reserved to the hard cap up front, and never allowed past it, so the
-    // vector can never reallocate. That is what makes a mod registering a row
-    // while the guest thread is walking the registry safe: appends only ever
-    // touch the tail, and references the guest side already holds stay valid.
-    initial.reserve(kMaxOptionRows * kPageCount);
+RowStore& Rows() {
+  static RowStore rows = [] {
+    RowStore initial;
     initial.resize(8);
 
     // Page 2, the graphics page, in the order they are drawn.
@@ -1052,7 +1068,21 @@ struct PageState {
   // Global row indices drawn on this page, top to bottom.
   std::vector<u32> rows;
 };
-PageState g_page[kPageCount];
+// Grown on demand, one entry per page ever built; a deque keeps references
+// stable across growth.
+std::deque<PageState> g_page(kPageMods + 1);
+
+PageState& Page(int page) {
+  while (g_page.size() <= static_cast<size_t>(page)) {
+    g_page.emplace_back();
+  }
+  return g_page[page];
+}
+
+// Page 2 and the mods pages are one guest screen: the page turn hooks name the
+// page to build, and the list hook latches the one that was built.
+int g_build_page = -1;
+int g_buttons_page = kPageButtons;
 
 // The UI roots, and the slot table each keeps one screen object per menu depth
 // in (sub_821F2F38 allocates the 1744-byte screen object into
@@ -1154,9 +1184,9 @@ int ActivePage(u8* base) {
     if (!top) {
       continue;
     }
-    for (int p = 0; p < kPageCount; ++p) {
+    for (size_t p = 0; p < g_page.size(); ++p) {
       if (g_page[p].screen == top) {
-        return p;
+        return static_cast<int>(p);
       }
     }
   }
@@ -1165,7 +1195,7 @@ int ActivePage(u8* base) {
     case kStateOptionSlider:
       return kPageOptions;
     case kStateButtons:
-      return kPageButtons;
+      return g_buttons_page;
     default:
       return -1;
   }
@@ -1318,7 +1348,7 @@ constexpr int32_t kRecordToRuntimeY = 130;
 
 // Record y of row `row` (page-local index) on `page`.
 int32_t RowRecordY(int page, u32 row) {
-  return kPages[page].first_row_y + kRowYStep * static_cast<int32_t>(row);
+  return Layout(page).first_row_y + kRowYStep * static_cast<int32_t>(row);
 }
 
 // ---------------------------------------------------------------------------
@@ -1402,9 +1432,9 @@ int32_t MarkerRecordX(int page, const std::string& label,
                       const std::string& marker) {
   const int32_t width = TextWidth(marker);
   const int32_t label_end = kRowXLabel + TextWidth(label);
-  const int32_t right = g_page[page].value_base_x - kMarkerGapPx - width;
+  const int32_t right = Page(page).value_base_x - kMarkerGapPx - width;
   const int32_t left = label_end + kMarkerGapPx;
-  if (left + width > g_page[page].value_base_x) {
+  if (left + width > Page(page).value_base_x) {
     return -1;
   }
   return std::max(left, right);
@@ -1415,7 +1445,7 @@ int32_t MarkerRecordX(int page, const std::string& label,
 // about 126px - which is why the Text row draws two-letter language codes
 // rather than names.
 int32_t ColumnStride(int page, size_t value_count) {
-  const PageState& st = g_page[page];
+  const PageState& st = Page(page);
   if (value_count < 2 || st.row_right_edge <= st.value_base_x) {
     return kBarColumnStride;
   }
@@ -1432,7 +1462,7 @@ int32_t ValueColumnOffset(int page, const std::vector<OptionValue>& values,
   if (index == 0 || values.size() < 2) {
     return 0;
   }
-  const PageState& st = g_page[page];
+  const PageState& st = Page(page);
   const int32_t stride = ColumnStride(page, values.size());
 
   int32_t widest = 0;
@@ -1467,7 +1497,7 @@ int32_t ValueColumnOffset(int page, const std::vector<OptionValue>& values,
 // and every placement below goes through it, so a bar can never disagree with
 // the value it highlights.
 int32_t BarX(int page, const OptionRow& row, int index) {
-  return g_page[page].value_base_x + kRecordToRuntimeX + kBarOffsetX +
+  return Page(page).value_base_x + kRecordToRuntimeX + kBarOffsetX +
          ValueColumnOffset(page, row.values, static_cast<u32>(index)) +
          row.bar_nudge_x + index * row.bar_nudge_step_x;
 }
@@ -1486,9 +1516,9 @@ int32_t BarX(int page, const OptionRow& row, int index) {
 // shift is zero there and nothing about the known-good placement changes.
 //
 int32_t BarY(int page, u32 row) {
-  const PageState& st = g_page[page];
+  const PageState& st = Page(page);
   const int32_t shift =
-      st.stock_item_yn ? st.stock_item_yn - kPages[page].stock_item_yn : 0;
+      st.stock_item_yn ? st.stock_item_yn - Layout(page).stock_item_yn : 0;
   return RowRecordY(page, row) + kRecordToRuntimeY + kBarShrinkFixup + shift;
 }
 
@@ -1610,7 +1640,7 @@ int32_t BarWidthPx(const OptionRow& row, int index) {
 }
 
 void MoveOptionBar(u8* base, int page, u32 row, int value_index, bool move) {
-  PageState& st = g_page[page];
+  PageState& st = Page(page);
   if (row >= st.bar_id.size() || st.bar_id[row].empty() || !g_bar_vec) {
     return;
   }
@@ -1662,7 +1692,7 @@ u32 TextNodeFor(u8* base, u32 text_obj) {
 
 // The gauge object of `row` (page-local index), or 0.
 u32 SliderObject(u8* base, int page, u32 row) {
-  const PageState& st = g_page[page];
+  const PageState& st = Page(page);
   if (row >= st.slider_id.size() || st.slider_id[row] == 0xFFFFFFFFu) {
     return 0;
   }
@@ -1711,7 +1741,7 @@ void RefreshSlider(u8* base, int page, u32 row) {
   if (!obj) {
     return;
   }
-  const PageState& st = g_page[page];
+  const PageState& st = Page(page);
   const OptionRow& def = Rows()[st.rows[row]];
   const int index = def.get_index();
   const int value = def.slider_display ? def.slider_display(index) : index;
@@ -1740,7 +1770,7 @@ void RefreshSlider(u8* base, int page, u32 row) {
 // notices the page is no longer active. The close slide itself is carried by
 // the bars' parent object (see kBarBlockParentOffset), not by this.
 void HideAllPageBars(u8* base, int page) {
-  PageState& st = g_page[page];
+  PageState& st = Page(page);
   if (!g_bar_vec) {
     return;
   }
@@ -1787,7 +1817,9 @@ constexpr u32 kVoiceByte = 0x8243FC06u;   // BYTE2(dword_8243FC04): 0 = Japanese
 constexpr int kVoiceStockValues = 2;
 // Synthetic BTX ids for the extra values, past the last id any row can claim so
 // the two ranges cannot collide however many rows are registered.
-constexpr u32 kVoiceSidBase = kRowSidBase + kRowSidStride * kMaxOptionRows * kPageCount;
+// Below the rows' ids, which run on for as many rows as mods register.
+constexpr u32 kVoiceSidBase = kRowSidBase - 20u;
+static_assert(ETERNALSONATA_LANG_COUNT - 2 <= 20, "voice ids fit below the rows'");
 
 // One guest string per extra value, allocated on the first build that needs it.
 std::vector<u32> g_voice_addr;
@@ -1822,7 +1854,7 @@ int VoiceIndex(u8* base) {
 // continue it. There is no squeezing to do, because the row keeps its stock
 // values' own widths whatever we add.
 int32_t VoiceBarX(int page, int index) {
-  return g_page[page].value_base_x + kRecordToRuntimeX + kBarColumnStride * index;
+  return Page(page).value_base_x + kRecordToRuntimeX + kBarColumnStride * index;
 }
 
 // The stock bar object's registry id, read out of the screen's id array at the
@@ -2140,7 +2172,7 @@ int32_t RowBarDisplayY(int page, u32 row) {
 // Global row indices drawn on `page`, in registration order.
 std::vector<u32> RowsOnPage(int page) {
   std::vector<u32> out;
-  const std::vector<OptionRow>& rows = Rows();
+  const RowStore& rows = Rows();
   for (u32 r = 0; r < rows.size(); ++r) {
     if (rows[r].page == page) {
       out.push_back(r);
@@ -2149,12 +2181,138 @@ std::vector<u32> RowsOnPage(int page) {
   return out;
 }
 
+// The selection block's records, {type, ...} in words (see docs/debug-hooks.md
+// §14): begin group, one item per row, end of items, navigation links.
+constexpr u32 kSelectBegin = 1500u;
+constexpr u32 kSelectEnd = 1501u;
+constexpr u32 kSelectItem = 1502u;
+constexpr u32 kSelectLinks = 1503u;
+constexpr u32 kSelectState = 2101u;
+constexpr u32 kSelectItemBytes = 0x10u;
+constexpr u32 kSelectItemYOffset = 0x08u;
+constexpr u32 kSelectItemIdOffset = 0x0Cu;
+
+// Page 2's own rows, which the mods pages draw over: its text and its
+// controller icon ({100, sprite, x, y, sx, sy, -1}), everything above the hint
+// line at record y 490. Moved off screen rather than dropped, because the
+// handlers index the screen's objects by position.
+constexpr int32_t kButtonsHintY = 490;
+
+void HideButtonRows(u8* base, u32 list, u32 bytes) {
+  for (u32 off = 0; off + kTextRecordBytes <= bytes; off += 4) {
+    const u32 rec = list + off;
+    const u32 type = REX_LOAD_U32(rec);
+    u32 size = 0;
+    if (type == kTextRecord && REX_LOAD_U32(rec + 0x1C) == kTextRecordBytes &&
+        REX_LOAD_U32(rec + 0x20) == 0xFFFFFFFFu) {
+      size = kTextRecordBytes;
+    } else if (type == kIconRecord && REX_LOAD_U32(rec + 0x18) == 0xFFFFFFFFu) {
+      size = kIconRecordBytes;
+    } else {
+      continue;
+    }
+    if (static_cast<int32_t>(REX_LOAD_U32(rec + 0x0C)) < kButtonsHintY) {
+      REX_STORE_U32(rec + 0x08, static_cast<u32>(kBarParkedX));
+    }
+    off += size - 4;
+  }
+}
+
+// Rewrites page 2's selection block, [src, end), with one item per mods page
+// row in place of the three button rows, cloned from the first of those so the
+// cursor column and pitch stay the game's. Returns the bytes written, or 0 if
+// the block is not shaped as expected.
+u32 WriteModsSelection(u8* base, u32 at, u32 src, u32 end, u32 rows) {
+  const u32 start = at;
+  u32 item = 0;
+  while (src < end) {
+    const u32 type = REX_LOAD_U32(src);
+    u32 words = 0;
+    switch (type) {
+      case kSelectState:
+        words = 1;
+        break;
+      case kSelectBegin:
+        words = 2;
+        break;
+      case kSelectItem:
+        if (!item) {
+          item = src;
+        }
+        src += kSelectItemBytes;
+        continue;
+      case kSelectEnd:
+        if (!item) {
+          return 0;
+        }
+        for (u32 r = 0; r < rows; ++r) {
+          std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(item), kSelectItemBytes);
+          const int32_t y = static_cast<int32_t>(REX_LOAD_U32(item + kSelectItemYOffset));
+          REX_STORE_U32(at + kSelectItemYOffset, static_cast<u32>(y + kRowYStep * static_cast<int32_t>(r)));
+          REX_STORE_U32(at + kSelectItemIdOffset,
+                        REX_LOAD_U32(item + kSelectItemIdOffset) + r);
+          at += kSelectItemBytes;
+        }
+        words = 1;
+        break;
+      case kSelectLinks:
+        words = 6;
+        break;
+      default:
+        REXLOG_WARN("[options] mods page: unexpected record {} in the selection block",
+                    type);
+        return 0;
+    }
+    std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src), 4 * words);
+    at += 4 * words;
+    src += 4 * words;
+  }
+  return at - start;
+}
+
+// The last page RB can reach: mods pages run on while each has rows.
+int LastPage() {
+  int last = kPageButtons;
+  while (!RowsOnPage(last + 1).empty()) {
+    ++last;
+  }
+  return last;
+}
+
+// The "1/2" in the hint line is two number records, {300, value, x, y, 40, -1,
+// digits}, current page first. Both screens draw it at y 490.
+constexpr u32 kNumberRecord = 300u;
+constexpr u32 kNumberRecordBytes = 0x1Cu;
+
+u32 Digits(u32 v) { return v >= 10 ? 1 + Digits(v / 10) : 1; }
+
+void PatchPageCounter(u8* base, u32 list, u32 bytes, int page) {
+  const u32 total = static_cast<u32>(LastPage() + 1);
+  u32 seen = 0;
+  for (u32 off = 0; off + kNumberRecordBytes <= bytes && seen < 2; off += 4) {
+    const u32 rec = list + off;
+    if (REX_LOAD_U32(rec) != kNumberRecord ||
+        static_cast<int32_t>(REX_LOAD_U32(rec + 0x0C)) != kButtonsHintY ||
+        REX_LOAD_U32(rec + 0x14) != 0xFFFFFFFFu) {
+      continue;
+    }
+    const u32 value = seen == 0 ? static_cast<u32>(page + 1) : total;
+    REX_STORE_U32(rec + 4, value);
+    REX_STORE_U32(rec + 0x18, Digits(value));
+    ++seen;
+    off += kNumberRecordBytes - 4;
+  }
+  if (seen != 2) {
+    REXLOG_WARN("[options] page {}: page counter not found", page + 1);
+  }
+}
+
 // Allocates the guest-side label and value strings for every row registered so
 // far. Page-independent: a row keeps its strings whichever page it is on, and
 // rows that already have theirs are left alone.
 template <typename Mem>
 bool EnsureRowStrings(u8* base, Mem* mem) {
-  const std::vector<OptionRow>& rows = Rows();
+  const RowStore& rows = Rows();
   const u32 row_count = static_cast<u32>(rows.size());
   if (row_count <= g_strings_rows) {
     return true;
@@ -2205,13 +2363,13 @@ bool EnsureRowStrings(u8* base, Mem* mem) {
 // build picks the new row up.
 //
 // Both pages are built by this one function. What differs is entirely in
-// kPages[page]: which list to copy, where to splice, and where the rows start.
+// Layout(page): which list to copy, where to splice, and where the rows start.
 // The *record templates* - the bar, the separator, the value column x - are
 // read from the Options list on both pages, because page 2 has no rows of this
 // shape to clone from; that is safe because the templates are static xex data,
 // readable no matter which screen is being built.
 void EnsurePageRows(u8* base, int page, int lang_idx) {
-  PageState& st = g_page[page];
+  PageState& st = Page(page);
   if (st.failed) {
     return;
   }
@@ -2225,8 +2383,8 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     return;
   }
 
-  const PageLayout& pl = kPages[page];
-  const std::vector<OptionRow>& all = Rows();
+  const PageLayout& pl = Layout(page);
+  const RowStore& all = Rows();
   st.rows = RowsOnPage(page);
   const u32 row_count = static_cast<u32>(st.rows.size());
 
@@ -2254,6 +2412,11 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
           ? static_cast<u32>(std::max(0, VoiceValueCount() - kVoiceStockValues))
           : 0;
   bytes += voice_extra * kTextRecordBytes;
+  // A mods page declares one selectable item per row in place of the stock
+  // three.
+  if (IsModsPage(page)) {
+    bytes += row_count * kSelectItemBytes;
+  }
 
   // Allocate on the first build, and again if a late registration made the
   // list outgrow what we have.
@@ -2357,14 +2520,16 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   // cursor, which sat correctly at y=530). Both splice points sit right after
   // a text record, which is the state the real rows draw in.
   std::memcpy(REX_RAW_ADDR(list), REX_RAW_ADDR(src_list), insert_offset);
+  if (IsModsPage(page)) {
+    HideButtonRows(base, list, insert_offset);
+  }
   u32 at = list + insert_offset;
 
   // Mirror the Subtitles row's layout for every row: label at X=120 and
   // every value drawn side by side from the language's real value column,
-  // 200px apart. Each row also gets the separator that belongs *above* it -
-  // drawn where the preceding row's rule would sit, one row pitch up - so the
-  // stock row we now follow gets separated from us and our bottom row is left
-  // without a rule under it, matching how the stock sections end.
+  // 200px apart. On pages 1 and 2 each row's rule goes above it, separating it
+  // from the stock row it follows; a mods page has none, so its rules go below
+  // every row but the last.
   for (u32 i = 0; i < row_count; ++i) {
     const OptionRow& row = all[st.rows[i]];
     const u32 sid = kRowSidBase + kRowSidStride * st.rows[i];
@@ -2393,8 +2558,13 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
       at += WriteSliderRecords(base, at, tpl_list, st.value_base_x,
                                y + kSliderRecordDY, row.slider_max);
     }
-    WriteSeparatorRecord(base, at, tpl_list, y - kRowYStep + sep_dy);
-    at += kSepRecordBytes;
+    if (!IsModsPage(page)) {
+      WriteSeparatorRecord(base, at, tpl_list, y - kRowYStep + sep_dy);
+      at += kSepRecordBytes;
+    } else if (i + 1 < row_count) {
+      WriteSeparatorRecord(base, at, tpl_list, y + sep_dy);
+      at += kSepRecordBytes;
+    }
   }
 
   // The extra values on the game's own Voice row. Written here, among our own
@@ -2470,9 +2640,19 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     }
   }
   const u32 rest = insert_offset + pl.bar_skip_bytes;
-  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + rest), list_bytes - rest);
-  at += list_bytes - rest;
+  const u32 tail =
+      IsModsPage(page)
+          ? WriteModsSelection(base, at, src_list + rest, src_list + list_bytes,
+                               row_count)
+          : 0;
+  if (tail) {
+    at += tail;
+  } else {
+    std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(src_list + rest), list_bytes - rest);
+    at += list_bytes - rest;
+  }
   REX_STORE_U32(at, kListTerminator);
+  PatchPageCounter(base, list, at - list, page);
 
   REXLOG_INFO("[options] page {}: {} native rows built (list=0x{:08X})", page,
               row_count, list);
@@ -2483,8 +2663,8 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
 // page turn parked its bars off-screen. Which of the two it is decides the y,
 // through PageState::bars_parked; see InstantBarBiasY.
 void PlacePageBars(u8* base, int page) {
-  const PageState& st = g_page[page];
-  const std::vector<OptionRow>& all = Rows();
+  const PageState& st = Page(page);
+  const RowStore& all = Rows();
   for (u32 r = 0; r < st.rows.size(); ++r) {
     MoveOptionBar(base, page, r, all[st.rows[r]].get_index(), /*move=*/false);
     if (all[st.rows[r]].slider) {
@@ -2505,9 +2685,9 @@ void PlacePageBars(u8* base, int page) {
 // at its row's current value (see EnsurePageRows), so the bar is *created* in
 // the right place and this only ever confirms it.
 void ResolveBars(u8* base, int page) {
-  PageState& st = g_page[page];
+  PageState& st = Page(page);
   st.bars_resolved = true;
-  const std::vector<OptionRow>& all = Rows();
+  const RowStore& all = Rows();
   const u32 rows = static_cast<u32>(st.rows.size());
   const u32 screen = CurrentScreenObject(base);
   if (!screen) {
@@ -2619,6 +2799,8 @@ void ResolveBars(u8* base, int page) {
 // Defined further down, next to the group lookup it undoes; called from the
 // screen build hook above it.
 void ResetRowGroup(u8* base, int page);
+// Defined with the mods page hooks at the end of this file.
+void ParkButtonBars(u8* base);
 }  // namespace
 
 // sub_8223B780(blob, string_id) -> char*: the BTX text lookup. Answer our
@@ -2707,7 +2889,7 @@ REX_HOOK_RAW(sub_8223B780) {
     ctx.r3.u32 = g_voice_addr[sid - kVoiceSidBase];
     return;
   }
-  if (sid >= kRowSidBase && sid < kVoiceSidBase) {
+  if (sid >= kRowSidBase) {
     const u32 rel = sid - kRowSidBase;
     const u32 row = rel / kRowSidStride;
     const u32 sub = rel % kRowSidStride;
@@ -2789,11 +2971,18 @@ REX_HOOK_RAW(sub_821F2F38) {
   const u32 built_root = ctx.r3.u32;
 
   const bool ours = ClassifyList(ctx.r4.u32, &page, &lang_idx);
+  if (ours && page == kPageButtons) {
+    if (g_build_page >= 0) {
+      page = g_build_page;
+    }
+    g_buttons_page = page;
+    g_build_page = -1;
+  }
   if (ours) {
     ResetRowGroup(base, page);
     EnsurePageRows(base, page, lang_idx);
-    if (g_page[page].list) {
-      ctx.r4.u32 = g_page[page].list;
+    if (Page(page).list) {
+      ctx.r4.u32 = Page(page).list;
     }
   }
   __imp__sub_821F2F38(ctx, base);
@@ -2826,7 +3015,7 @@ REX_HOOK_RAW(sub_821F2F38) {
   if (!ours) {
     return;
   }
-  g_page[page].screen = screen;
+  Page(page).screen = screen;
   REXLOG_INFO("[options] page {}: built by root 0x{:08X} ({}), screen 0x{:08X}",
               page, built_root,
               built_root_ptr == kUiRootField
@@ -2837,11 +3026,11 @@ REX_HOOK_RAW(sub_821F2F38) {
   // bar records are the last of those - so this count, taken here and nowhere
   // later, is the boundary between the objects we own and the ones the screen's
   // own handler goes on to create afterwards (see PageState::list_objects).
-  g_page[page].list_objects =
+  Page(page).list_objects =
       screen ? ScreenObjectIds(base, screen, nullptr, 256) : 0;
-  g_page[page].list_gauges =
+  Page(page).list_gauges =
       screen ? CountIdArray(base, screen, kScreenSliderIds, kScreenSliderCount) : 0;
-  g_page[page].list_numbers =
+  Page(page).list_numbers =
       screen ? CountIdArray(base, screen, kScreenSliderNumIds, kScreenNumberMax) : 0;
 }
 
@@ -3169,9 +3358,9 @@ void DumpHighlightBars(u8* base, int page) {
   const u32 stock_id = REX_LOAD_U32(screen + 120);
   for (int which = 0; which < 2; ++which) {
     const bool have_ours =
-        !g_page[page].bar_id.empty() && !g_page[page].bar_id[0].empty();
+        !Page(page).bar_id.empty() && !Page(page).bar_id[0].empty();
     const u32 id =
-        which ? (have_ours ? g_page[page].bar_id[0][0] : 0xFFFFFFFFu) : stock_id;
+        which ? (have_ours ? Page(page).bar_id[0][0] : 0xFFFFFFFFu) : stock_id;
     if (id == 0xFFFFFFFFu) {
       continue;
     }
@@ -3254,7 +3443,7 @@ constexpr u32 kMenuObject = 0x824400E8u;
 // from the caller writing by value instead: re-running it every frame writes
 // the same numbers, and heals a stale node the first frame it is seen.
 u32 FindRowGroup(u8* base, u32 menu, int page, u32* arr, int32_t* stock_yn) {
-  const PageLayout& pl = kPages[page];
+  const PageLayout& pl = Layout(page);
   for (u32 i = REX_LOAD_U32(menu + 392); GuestPtr(i);
        i = REX_LOAD_U32(i + 48)) {
     if (REX_LOAD_U32(i) != pl.group_id) {
@@ -3270,15 +3459,21 @@ u32 FindRowGroup(u8* base, u32 menu, int page, u32* arr, int32_t* stock_yn) {
     if (!GuestPtr(items)) {
       continue;
     }
+    // A page with no stock rows (a mods page) is anchored one pitch above its
+    // first item, which is where its own list put that item.
+    const u32 last = pl.stock_rows ? pl.stock_rows - 1 : 0;
     const u32 s0 = REX_LOAD_U32(items);
-    const u32 sn = REX_LOAD_U32(items + 4 * (pl.stock_rows - 1));
+    const u32 sn = REX_LOAD_U32(items + 4 * last);
     if (!GuestPtr(s0) || !GuestPtr(sn)) {
       continue;
     }
     const int32_t y0 = static_cast<int32_t>(REX_LOAD_U32(s0 + 8));
-    const int32_t yn = static_cast<int32_t>(REX_LOAD_U32(sn + 8));
-    if (yn - y0 != kRowYStep * static_cast<int32_t>(pl.stock_rows - 1)) {
+    int32_t yn = static_cast<int32_t>(REX_LOAD_U32(sn + 8));
+    if (yn - y0 != kRowYStep * static_cast<int32_t>(last)) {
       continue;
+    }
+    if (!pl.stock_rows) {
+      yn -= kRowYStep;
     }
     if (arr) {
       *arr = items;
@@ -3315,7 +3510,7 @@ void ResetRowGroup(u8* base, int page) {
   if (!GuestPtr(menu)) {
     return;
   }
-  const PageLayout& pl = kPages[page];
+  const PageLayout& pl = Layout(page);
   for (u32 group = REX_LOAD_U32(menu + 392); GuestPtr(group);
        group = REX_LOAD_U32(group + 48)) {
     if (REX_LOAD_U32(group) != pl.group_id) {
@@ -3449,12 +3644,12 @@ REX_HOOK_RAW(sub_821F62B8) {
   }
   s_last_active_page = page;
   g_options_last_seen = std::chrono::steady_clock::now();
-  PageState& st = g_page[page];
+  PageState& st = Page(page);
   if (!st.list) {
     return;
   }
-  const PageLayout& pl = kPages[page];
-  const std::vector<OptionRow>& all = Rows();
+  const PageLayout& pl = Layout(page);
+  const RowStore& all = Rows();
   const u32 rows = static_cast<u32>(st.rows.size());
 
   // Found before anything is placed, not after: the group's last stock item is
@@ -3491,6 +3686,11 @@ REX_HOOK_RAW(sub_821F62B8) {
     --s_replace_frames;
     PlacePageBars(base, page);
   }
+  // sub_822028C8 places page 2's own bars while the screen is still coming up,
+  // where parking them does not stick yet.
+  if (IsModsPage(page)) {
+    ParkButtonBars(base);
+  }
   // The stock Voice bar, whenever an extra value is selected. Every frame, not
   // once: sub_82201620 believes the donor language is selected (the byte is
   // left at the donor's value, since it is the guest's own bank-cache key) and
@@ -3526,7 +3726,7 @@ REX_HOOK_RAW(sub_821F62B8) {
   bool matched = false;
   if (group) {
     const u32 n = std::min<u32>(rows, PageMaxRows(page));
-    u32 srow[kMaxOptionRows];
+    u32 srow[kSelectableSlots];
     matched = true;
     for (u32 r = 0; r < n; ++r) {
       const u32 s = REX_LOAD_U32(group_items + 4 * (pl.stock_rows + r));
@@ -3571,7 +3771,10 @@ REX_HOOK_RAW(sub_821F62B8) {
   // The rows are spliced into the display list by a hook that never consults
   // this group, so a miss here is invisible except as rows the cursor refuses
   // to reach. Say so once per visit rather than leaving it silent.
-  static bool s_warned[kPageCount] = {};
+  static std::vector<bool> s_warned;
+  if (s_warned.size() <= static_cast<size_t>(page)) {
+    s_warned.resize(page + 1, false);
+  }
   if (page_changed) {
     s_warned[page] = false;
   }
@@ -3780,8 +3983,8 @@ REX_HOOK_RAW(sub_82201620) {
 // Threading: registration is expected from a mod's OnModuleLaunched(), which
 // runs during startup, before the Options screen can be opened. The mutex
 // below only covers two mods registering at once; safety against the guest
-// thread reading the registry mid-append comes from Rows() reserving to
-// kMaxOptionRows, so the vector never reallocates.
+// thread reading the registry mid-append comes from Rows() being a deque, whose
+// appends never move an existing row.
 
 namespace {
 std::mutex g_registry_mutex;
@@ -3811,13 +4014,12 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterOptionRow(
   }
 
   std::lock_guard<std::mutex> lock(g_registry_mutex);
-  std::vector<OptionRow>& rows = Rows();
-  // Capacity is per page, and a mod row starts on kModDefaultPage; moving it
-  // with EternalSonataSetOptionRowPage is checked against the page it moves to.
-  if (RowsOnPage(kModDefaultPage).size() >= PageMaxRows(kModDefaultPage)) {
-    REXLOG_WARN("[options] mod row '{}' rejected: page {} holds {} rows", label,
-                kModDefaultPage + 1, PageMaxRows(kModDefaultPage));
-    return -1;
+  RowStore& rows = Rows();
+  // The first mods page with room; there is always one, since a new page opens
+  // whenever the last fills.
+  int page = kPageMods;
+  while (RowsOnPage(page).size() >= PageMaxRows(page)) {
+    ++page;
   }
 
   rows.emplace_back();
@@ -3833,13 +4035,13 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterOptionRow(
     value.literal[0] = values[i];
     row.values.push_back(std::move(value));
   }
-  row.page = kModDefaultPage;
+  row.page = page;
   row.get_index = [get, user] { return get(user); };
   row.set_index = [set, user](u8*, int idx) { set(idx, user); };
 
   const int index = static_cast<int>(rows.size()) - 1;
-  REXLOG_INFO("[options] mod row '{}' registered as row {} ({} values)", label,
-              index, value_count);
+  REXLOG_INFO("[options] mod row '{}' registered as row {} on page {} ({} values)",
+              label, index, page + 1, value_count);
   return index;
 }
 
@@ -3849,7 +4051,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetOptionRowLabel(
     return 0;
   }
   std::lock_guard<std::mutex> lock(g_registry_mutex);
-  std::vector<OptionRow>& rows = Rows();
+  RowStore& rows = Rows();
   if (row < 0 || static_cast<size_t>(row) >= rows.size()) {
     return 0;
   }
@@ -3863,7 +4065,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetOptionValue(
     return 0;
   }
   std::lock_guard<std::mutex> lock(g_registry_mutex);
-  std::vector<OptionRow>& rows = Rows();
+  RowStore& rows = Rows();
   if (row < 0 || static_cast<size_t>(row) >= rows.size()) {
     return 0;
   }
@@ -3884,11 +4086,12 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetOptionValue(
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetOptionRowPage(int row,
                                                                   int page) {
-  if (page < 0 || page >= kPageCount) {
+  std::lock_guard<std::mutex> lock(g_registry_mutex);
+  // A page past the one after the last would never be reached with RB.
+  if (page < 0 || page > LastPage() + 1) {
     return 0;
   }
-  std::lock_guard<std::mutex> lock(g_registry_mutex);
-  std::vector<OptionRow>& rows = Rows();
+  RowStore& rows = Rows();
   if (row < 0 || static_cast<size_t>(row) >= rows.size()) {
     return 0;
   }
@@ -3988,4 +4191,144 @@ REX_HOOK_RAW(sub_82200FE8) {
     ctx.r3.u32 = 1;
   }
   __imp__sub_82200FE8(ctx, base);
+}
+
+// ---------------------------------------------------------------------------
+// Options pages for mod rows
+// ---------------------------------------------------------------------------
+//
+// The game has no screen past page 2 to borrow, so every mods page is page 2
+// built again (state 6, sub_822028C8) with a flag telling the list hook which
+// page to splice in, and with the button rows hidden. Getting there reuses the
+// game's own page turn: RB is handed to the stock handler as LB, which runs
+// state 10 (pop back to page 1), and the state machine hook then sends it
+// straight on to state 6 instead of letting page 1 take input. LB from a mods
+// page is the same trip to the page before it.
+//
+// There are as many mods pages as their rows fill. With no mod rows there are
+// none, and RB on page 2 stays inert.
+namespace {
+
+constexpr u32 kMenuPressed = 448;  // menu object: buttons pressed this frame
+constexpr u32 kMenuCancel = 444;   // -1 unless the screen is being cancelled
+constexpr u32 kMenuPageTurnTimer = 428;
+constexpr u32 kBtnLB = 0x100u;
+constexpr u32 kBtnRB = 0x200u;
+constexpr u8 kStateButtonsBuild = 6;   // sub_822028C8
+constexpr u8 kStatePageBack = 10;      // pops page 2, lands on state 3 or 11
+// sub_822028C8 names page 2's rows after the party (portraits included) when
+// this is non-zero, which a mods page must not do.
+constexpr u32 kOptionsContext = 0x8243F358u;
+// Root fields both page turns write: the transition's direction, and the
+// timer page 1's RB starts. Copied from sub_82201620's RB branch.
+constexpr u32 kRootTurnDirection = 0x668;
+constexpr u32 kTurnDirectionForward = 2;
+constexpr u32 kTurnTimerForward = 20;
+// The first three objects of the button screen are its row highlights, which
+// both sub_822028C8 and sub_82202CB0 place every time they run.
+constexpr u32 kButtonBarCount = 3;
+
+// The page state 10 should hand over to, or -1 to leave it on page 1.
+int g_page_turn_to = -1;
+
+void ParkButtonBars(u8* base) {
+  if (!IsModsPage(g_buttons_page)) {
+    return;
+  }
+  const u32 screen = Page(g_buttons_page).screen;
+  if (!screen) {
+    return;
+  }
+  u32 ids[kButtonBarCount];
+  const u32 n = ScreenObjectIds(base, screen, ids, kButtonBarCount);
+  for (u32 i = 0; i < n; ++i) {
+    PlaceBar(base, ids[i], kBarParkedX, 0, /*move=*/false);
+  }
+}
+
+}  // namespace
+
+REX_EXTERN(__imp__sub_82202CB0);
+
+REX_HOOK_RAW(sub_82202CB0) {
+  const u32 menu = REX_LOAD_U32(kMenuObject);
+  const int page = ActivePage(base);
+  if (!GuestPtr(menu) || page < kPageButtons) {
+    __imp__sub_82202CB0(ctx, base);
+    return;
+  }
+  const u32 pressed = REX_LOAD_U32(menu + kMenuPressed);
+  const bool cancelling = REX_LOAD_U32(menu + kMenuCancel) != 0xFFFFFFFFu;
+
+  u32 handed = pressed;
+  if (!cancelling && (pressed & kBtnRB) && page < LastPage()) {
+    g_page_turn_to = page + 1;
+    handed |= kBtnLB;
+  } else if (!cancelling && (pressed & kBtnLB) && IsModsPage(page)) {
+    g_page_turn_to = page - 1;
+  }
+  if (IsModsPage(page)) {
+    // Left/right would reassign the controller of whichever button row sits
+    // under the cursor's index, and those rows are hidden here.
+    handed &= ~(kLeftMask | kRightMask);
+  }
+  REX_STORE_U32(menu + kMenuPressed, handed);
+  if (IsModsPage(page)) {
+    MaskedDirections masked(base);
+    __imp__sub_82202CB0(ctx, base);
+  } else {
+    __imp__sub_82202CB0(ctx, base);
+  }
+  REX_STORE_U32(menu + kMenuPressed, pressed);
+  ParkButtonBars(base);
+  if (REX_LOAD_U8(kMenuState) != kStatePageBack) {
+    g_page_turn_to = -1;
+  }
+}
+
+REX_EXTERN(__imp__sub_822028C8);
+
+REX_HOOK_RAW(sub_822028C8) {
+  if (!IsModsPage(g_build_page)) {
+    __imp__sub_822028C8(ctx, base);
+    return;
+  }
+  const u32 context = REX_LOAD_U32(kOptionsContext);
+  REX_STORE_U32(kOptionsContext, 0);
+  __imp__sub_822028C8(ctx, base);
+  REX_STORE_U32(kOptionsContext, context);
+  ParkButtonBars(base);
+}
+
+REX_EXTERN(__imp__sub_821DCC08);
+
+REX_HOOK_RAW(sub_821DCC08) {
+  const u8 before = REX_LOAD_U8(kMenuState);
+  const u32 r3 = ctx.r3.u32;
+  const u32 r4 = ctx.r4.u32;
+  __imp__sub_821DCC08(ctx, base);
+  if (before != kStatePageBack || g_page_turn_to < 0) {
+    return;
+  }
+  const int to = g_page_turn_to;
+  g_page_turn_to = -1;
+  const u8 now = REX_LOAD_U8(kMenuState);
+  if (now != kStateOptionRows && now != kStateOptionSlider) {
+    return;
+  }
+  const u32 menu = REX_LOAD_U32(kMenuObject);
+  const u32 root = REX_LOAD_U32(kUiRootMenu);
+  if (!GuestPtr(menu) || !GuestPtr(root)) {
+    return;
+  }
+  g_build_page = to;
+  REX_STORE_U8(kMenuState, kStateButtonsBuild);
+  REX_STORE_U32(menu + kMenuPageTurnTimer, kTurnTimerForward);
+  REX_STORE_U32(root + kRootTurnDirection, kTurnDirectionForward);
+  REXLOG_INFO("[options] page turn to page {}", to + 1);
+  // Built in this same tick: a frame drawn between the pop and the build shows
+  // the page being left.
+  ctx.r3.u32 = r3;
+  ctx.r4.u32 = r4;
+  __imp__sub_821DCC08(ctx, base);
 }
