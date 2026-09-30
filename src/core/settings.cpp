@@ -252,6 +252,11 @@ constexpr std::array kGameDefaults = {
     DefaultValue{"keybind_lstick_press", "T"},
     DefaultValue{"keybind_back", "Backspace"},
     DefaultValue{"keybind_start", "Escape"},
+    // Shift+arrows would collide with the Shift fast forward key.
+    DefaultValue{"keybind_dpad_up", ""},
+    DefaultValue{"keybind_dpad_down", ""},
+    DefaultValue{"keybind_dpad_left", ""},
+    DefaultValue{"keybind_dpad_right", ""},
     DefaultValue{"resolution", "720p"},
     DefaultValue{"resolution_scale", "1"},
     DefaultValue{"fullscreen", "false"},
@@ -734,7 +739,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawCvarRow("Invert Aim X", "aim_invert_x");
         DrawCvarRow("Invert Aim Y", "aim_invert_y");
         DrawCvarRow("Fast Forward", "fast_forward_button",
-                    "Controller button that fast forwards the game while held, like Tab "
+                    "Controller button that fast forwards the game while held, like Shift "
                     "on the keyboard.");
         ImGui::Separator();
         DrawCvarRow("Gyro Aiming", "gyro_aim");
