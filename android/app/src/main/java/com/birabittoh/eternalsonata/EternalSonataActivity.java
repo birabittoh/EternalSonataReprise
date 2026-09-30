@@ -58,26 +58,6 @@ public class EternalSonataActivity extends SDLActivity {
         });
     }
 
-    /**
-     * Called from native code to list installed DLC. Picking an entry asks for
-     * confirmation before removing it, since there is no undo.
-     */
-    public void showDlcManager(final String[] labels) {
-        runOnUiThread(() -> {
-            new AlertDialog.Builder(EternalSonataActivity.this)
-                .setTitle("Installed DLC")
-                .setItems(labels, (DialogInterface dialog, int which) ->
-                    new AlertDialog.Builder(EternalSonataActivity.this)
-                        .setTitle("Remove DLC?")
-                        .setMessage(labels[which])
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Remove",
-                            (DialogInterface d, int w) -> nativeDlcRemove(which))
-                        .show())
-                .show();
-        });
-    }
-
     /** Called from native code to report the outcome of a menu action. */
     public void showHostToast(final String message) {
         runOnUiThread(() ->
@@ -194,6 +174,5 @@ public class EternalSonataActivity extends SDLActivity {
     }
 
     private native void nativeHostMenuSelect(int index);
-    private native void nativeDlcRemove(int index);
     private native String nativeDocumentReady(int op, String path);
 }

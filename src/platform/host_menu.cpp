@@ -23,7 +23,6 @@
 #include <rex/system/mod_state.h>
 #include <rex/system/xam/content_manager.h>
 #include <rex/system/xcontent.h>
-#include <rex/string.h>
 #endif
 
 namespace eternalsonata {
@@ -43,7 +42,6 @@ namespace {
 // are what nativeHostMenuSelect switches on, so keep the two in step.
 enum MenuItem : int {
   kInstallDlc = 0,
-  kManageDlc,
   kInstallMod,
   kExportSaves,
   kImportSaves,
@@ -51,8 +49,7 @@ enum MenuItem : int {
 };
 
 const char* const kMenuItems[] = {
-    "Install DLC...",     "Remove DLC...",
-    "Install mod (.zip)...", "Export saves", "Import saves", "Exit",
+    "Install DLC...", "Install mod (.zip)...", "Export saves", "Import saves", "Exit",
 };
 
 // Which document request a JNI file callback belongs to. Passed to Java and
@@ -64,15 +61,6 @@ enum DocumentOp : int {
   kOpExportSaves,
   kOpInstallMod,
 };
-
-// The DLC listing the manage dialog last showed, so a selection index means
-// something when it comes back. Only ever touched on the UI thread.
-std::vector<rex::system::xam::XCONTENT_AGGREGATE_DATA> g_listed_dlc;
-
-// Marketplace DLC is filed under the common (all zeroes) xuid, on the dummy
-// HDD device id 1; the same pair dlc_auto_install.cpp enumerates with.
-constexpr uint32_t kDlcDeviceId = 1;
-constexpr uint64_t kCommonXuid = 0;
 
 JNIEnv* JniEnv() { return static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv()); }
 
@@ -268,38 +256,6 @@ std::string DoInstallMod(const std::filesystem::path& archive) {
          ". Restart the game to apply it.";
 }
 
-void ShowDlcManager() {
-  auto* content_manager = ContentManager();
-  if (!content_manager) {
-    ShowToast("Not ready yet, try again once the game has loaded.");
-    return;
-  }
-  g_listed_dlc = content_manager->ListContent(kDlcDeviceId, kCommonXuid,
-                                              rex::system::XContentType::kMarketplaceContent);
-  if (g_listed_dlc.empty()) {
-    ShowToast("No DLC installed.");
-    return;
-  }
-
-  std::vector<std::string> labels;
-  labels.reserve(g_listed_dlc.size());
-  for (const auto& item : g_listed_dlc) {
-    std::string label = rex::string::to_utf8(item.display_name());
-    if (label.empty()) {
-      label = item.file_name();
-    }
-    labels.push_back(std::move(label));
-  }
-
-  JNIEnv* env = JniEnv();
-  if (!env) {
-    return;
-  }
-  jobjectArray array = ToJavaStringArray(env, labels);
-  CallActivityVoid("showDlcManager", "([Ljava/lang/String;)V", array);
-  env->DeleteLocalRef(array);
-}
-
 void RunOnUiThread(std::function<void()> work) {
   if (!g_instance) {
     return;
@@ -330,9 +286,6 @@ Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeHostMenuSelect(JNI
       // Any type: STFS packages have no MIME type of their own and pickers
       // hide what they cannot name.
       CallActivityVoid("requestOpenDocument", "(I)V", static_cast<jint>(kOpInstallDlc));
-      break;
-    case kManageDlc:
-      RunOnUiThread([] { ShowDlcManager(); });
       break;
     case kInstallMod:
       CallActivityVoid("requestOpenDocument", "(I)V", static_cast<jint>(kOpInstallMod));
@@ -403,27 +356,6 @@ Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeDocumentReady(JNIE
     return nullptr;
   }
   return env->NewStringUTF(produced.string().c_str());
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeDlcRemove(JNIEnv*, jobject,
-                                                                       jint index) {
-  RunOnUiThread([index] {
-    auto* content_manager = ContentManager();
-    if (!content_manager || index < 0 || static_cast<size_t>(index) >= g_listed_dlc.size()) {
-      return;
-    }
-    const auto data = g_listed_dlc[static_cast<size_t>(index)];
-    // Unmount first: the guest may already have this package mounted, and
-    // deleting the directory out from under an open package leaves the
-    // enumerator returning a phantom entry.
-    const auto result = content_manager->UnmountAndDeleteContent(kCommonXuid, data);
-    if (XFAILED(result)) {
-      ShowToast("Could not remove that DLC.");
-      return;
-    }
-    ShowToast("DLC removed. Restart the game to finish unloading it.");
-  });
 }
 
 #endif  // REX_PLATFORM_ANDROID
