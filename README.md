@@ -21,6 +21,27 @@ Just extract the archive, run the executable and it will prompt you to extract t
 
 **This project can load assets from the PAL, USA and JAP releases of the game. However, building the actual executable requires the PAL version of `default.xex`.**
 
+## Making it portable
+
+By default saves, options and caches live in your platform user folder. To keep
+everything next to the executable instead, set the root cvars in
+`eternalsonata.toml` (or pass them as `--name=value`). Any root left empty falls
+back to its default.
+
+```toml
+game_data_root   = "assets"    # extracted game files (default: assets)
+user_data_root   = "saves"     # saves and profiles (default: Documents/<app name>)
+cache_root       = "cache"     # shader cache (default: <user_data_root>/cache)
+mods_data_root   = "mods"      # mod folders (default: <exe folder>/mods)
+mods_dump_root   = "dumps"     # dumped textures and shaders (default: <exe folder>/dumps)
+update_data_root = "update"    # extracted title update files (default: none, set by the wizard if needed)
+metadata_root    = "metadata"  # game metadata (default: searched for in <game_data_root>/metadata)
+```
+
+Use absolute paths if you launch the game from a different working directory,
+and launch it from the folder containing the executable when using relative
+ones.
+
 ## Troubleshooting
 
 ### Black screen before the window title appears
