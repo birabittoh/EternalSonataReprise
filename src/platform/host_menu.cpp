@@ -20,6 +20,7 @@
 #include <rex/filesystem.h>
 #include <rex/logging.h>
 #include <rex/system/kernel_state.h>
+#include <rex/system/mod_state.h>
 #include <rex/system/xam/content_manager.h>
 #include <rex/system/xcontent.h>
 #include <rex/string.h>
@@ -43,6 +44,7 @@ namespace {
 enum MenuItem : int {
   kInstallDlc = 0,
   kManageDlc,
+  kInstallMod,
   kExportSaves,
   kImportSaves,
   kExit,
@@ -50,7 +52,7 @@ enum MenuItem : int {
 
 const char* const kMenuItems[] = {
     "Install DLC...",     "Remove DLC...",
-    "Export saves", "Import saves", "Exit",
+    "Install mod (.zip)...", "Export saves", "Import saves", "Exit",
 };
 
 // Which document request a JNI file callback belongs to. Passed to Java and
@@ -60,6 +62,7 @@ enum DocumentOp : int {
   kOpInstallDlc = 0,
   kOpImportSaves,
   kOpExportSaves,
+  kOpInstallMod,
 };
 
 // The DLC listing the manage dialog last showed, so a selection index means
@@ -254,6 +257,17 @@ std::string DoImportSaves(const std::filesystem::path& archive,
   return "Saves imported successfully.";
 }
 
+std::string DoInstallMod(const std::filesystem::path& archive) {
+  std::string error;
+  const auto result = rex::system::ModState::InstallLocalArchive(
+      rex::system::ModState::ResolveModsRoot(), archive, error);
+  if (!result) {
+    return "Could not install that mod: " + error;
+  }
+  return std::string(result->staged ? "Mod updated: " : "Mod installed: ") + result->id +
+         ". Restart the game to apply it.";
+}
+
 void ShowDlcManager() {
   auto* content_manager = ContentManager();
   if (!content_manager) {
@@ -320,6 +334,9 @@ Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeHostMenuSelect(JNI
     case kManageDlc:
       RunOnUiThread([] { ShowDlcManager(); });
       break;
+    case kInstallMod:
+      CallActivityVoid("requestOpenDocument", "(I)V", static_cast<jint>(kOpInstallMod));
+      break;
     case kExportSaves:
       CallActivityVoid("requestCreateDocument", "(I)V", static_cast<jint>(kOpExportSaves));
       break;
@@ -364,6 +381,9 @@ Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeDocumentReady(JNIE
         switch (op) {
           case kOpInstallDlc:
             message = DoInstallDlc(host_path);
+            break;
+          case kOpInstallMod:
+            message = DoInstallMod(host_path);
             break;
           case kOpImportSaves:
             message = DoImportSaves(host_path, user_data_root);
