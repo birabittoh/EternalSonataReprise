@@ -1369,7 +1369,15 @@ REX_EXTERN(__imp__sub_8210AAD8);
 REX_HOOK_RAW(sub_8210AAD8) {
   // The original clobbers r3, so capture the render-pump object up front.
   const u32 a1 = ctx.r3.u32;
-  const u8 fps = AdaptiveFrameRate(RequestedFrameRate(g_guest_rate), g_guest_rate, /*measure=*/true);
+  const bool turbo = TurboHeld();
+  u8 fps = AdaptiveFrameRate(RequestedFrameRate(g_guest_rate), g_guest_rate, /*measure=*/true);
+  // Not pacing only helps when the host can present faster than the declared
+  // rate, and at 60 or wall clock it usually cannot (vsync, GPU). Declaring 30
+  // doubles the step per present instead, so turbo works at any setting.
+  // Screens the guest itself runs at 60 keep their logic rate.
+  if (turbo && g_guest_rate != 60) {
+    fps = 30;
+  }
   const u8 vsynced = PumpIsVsynced();
   if (fps != g_applied_fps || vsynced != g_applied_vsync) {
     ApplyFrameRate(ctx, base, fps);
@@ -1405,7 +1413,6 @@ REX_HOOK_RAW(sub_8210AAD8) {
   // fast-forwarding skips the wait entirely; LimitFrame also drops its stale
   // deadline and flags the frame unmeasured, so unpaced frames can't be read as
   // headroom and talk the ladder into stepping up.
-  const bool turbo = TurboHeld();
   const bool wall = fps == 0 && !turbo;
   LimitFrame(turbo ? 0.0 : (fps ? double(fps) : kWallCeilingFps));
   if (wall) {
