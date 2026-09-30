@@ -3,30 +3,26 @@
 // The texture mirror: turning a guest texture fetch constant into a host
 // texture.
 //
-// This is the last of the four resource kinds a draw needs. The pipeline cache
-// supplies the programs, the draw layer the vertices and constants, the frame
-// layer the render targets; what was still a 1x1 white placeholder is the
-// sampled image.
+// The pipeline cache supplies the programs, the draw layer the vertices and
+// constants, the frame layer the render targets, and this the sampled images.
 //
-// There are two sources for one, and the fetch constant's base address is what
-// tells them apart:
+// The fetch constant's base address tells the two sources apart:
 //
-//   * a resolve destination, i.e. something the guest rendered this frame and
-//     then resolved out of EDRAM. The frame layer already owns those, keyed by
-//     the very address a fetch constant carries, so they are looked up rather
-//     than decoded. Roughly 7% of the working set by the mirror's own count.
-//   * an asset in guest memory, uploaded by the game's own loader. These have
-//     to be read out of guest memory, untiled, byte swapped and uploaded.
+//   * a resolve destination: something the guest rendered this frame and then
+//     resolved out of EDRAM. The frame layer owns those, keyed by the address a
+//     fetch constant carries, so they are looked up rather than decoded. Roughly
+//     7% of the working set.
+//   * an asset in guest memory, uploaded by the game's own loader. These are
+//     read out of guest memory, untiled, byte swapped and uploaded.
 //
-// Nothing here parses a file. By the time a texture is bound, the game has
-// already decoded its container into GPU-visible memory, and the fetch constant
+// Nothing here parses a file. By the time a texture is bound the game has
+// decoded its container into GPU visible memory, and the fetch constant
 // describes the result exactly: format, extent, pitch, tiling and endianness.
-// That is a far better source than the on-disk format, and it covers every
-// texture the title can bind rather than the ones a parser happens to handle.
+// That covers every texture the title can bind, not the ones a parser handles.
 //
-// Plume types are kept out of this header, the same way they are out of the
-// frame and draw headers, so the guest-facing code never pulls in d3d12.h. The
-// lookup hands back an opaque pointer that is a plume::RenderTexture*.
+// No Plume types appear in this header; the guest facing code never pulls in
+// d3d12.h. The lookup hands back an opaque pointer that is a
+// plume::RenderTexture*.
 
 #pragma once
 
@@ -57,21 +53,20 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch);
 // the pixels they already hold instead of re-reading bytes that now belong to a
 // render target.
 //
-// This is the other half of filling a resolve destination, and without it the
-// fill has no safe shape. The guest allocates a screenshot buffer out of a heap
-// whose pages a cached texture still claims, so a faithful fill writes over
-// that texture's source; the mirror then notices the change -- by write watch or
-// by content hash, it has both -- and re-decodes the texture out of render
-// target pixels, which is "textures corrupt whenever the readback is read".
-// Clipping the fill around those ranges instead is what leaves a save preview
-// full of black boxes, since nothing else ever writes the holes.
+// This is the other half of filling a resolve destination. The guest allocates a
+// screenshot buffer out of a heap whose pages a cached texture still claims, so
+// a faithful fill writes over that texture's source; the mirror would then
+// notice the change (by write watch or content hash) and re-decode the texture
+// out of render target pixels. Clipping the fill around those ranges instead
+// leaves a save preview full of black boxes, since nothing else writes the
+// holes.
 //
 // So the fill writes everything and this re-baselines what it crossed: each
 // overlapping entry's content hash is recomputed from the bytes now in guest
-// memory and its write watch is re-armed. The entry is then self consistent
-// again, its host texture still holds its last good pixels, and a *genuine*
-// later write by the guest is still caught, because the hash it is compared
-// against is the one this left behind.
+// memory and its write watch is re-armed. The entry is self consistent again,
+// its host texture still holds its last good pixels, and a genuine later write
+// by the guest is still caught, because the hash it is compared against is the
+// one this left behind.
 //
 // `expected_address` is the destination doing the asking, so a texture that IS
 // that destination is not touched. Returns how many entries were re-baselined.

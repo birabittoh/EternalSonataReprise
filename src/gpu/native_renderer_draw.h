@@ -2,32 +2,27 @@
 //
 // Issuing the guest's draws on the host.
 //
-// This is the layer that closes the loop the previous three opened. The mirror
-// decodes what the guest bound, the frame layer owns the render targets the
-// guest renders into, and the pipeline cache turns a (shader, declaration) pair
-// into a host pipeline state object. What was still missing is the data: the
-// vertices themselves, the indices, and the constant banks the shaders read.
+// The mirror decodes what the guest bound, the frame layer owns the render
+// targets, and the pipeline cache turns a (shader, declaration) pair into a
+// host pipeline state object. This layer supplies the vertices, the indices
+// and the constant banks the shaders read.
 //
-// Everything here happens on the guest thread, inside a guest D3D entry point,
+// Everything here runs on the guest thread, inside a guest D3D entry point,
 // and records into the same command list the clears and resolves record into.
 //
-// Three properties of the console shape this and are worth stating once:
-//
-//   * guest memory is big endian. Vertex data, index data and the constant
-//     shadows are all stored the way the PowerPC wrote them, so every upload
-//     swaps on the way out. The swap width is the *component* width, not the
-//     word width, which is what the fetch constant's endian field means when a
-//     stream holds 16 bit components.
-//   * the vertex data for the dominant draw path does not exist when the draw
-//     is announced. BeginVertices hands the game a pointer and the game fills
-//     it in; the data is complete only at EndVertices, which is where the draw
-//     is issued from.
-//   * there is no host equivalent of RECTANGLE_LIST. Each three vertex triple
+//   * Guest memory is big endian. Vertex data, index data and the constant
+//     shadows are stored the way the PowerPC wrote them, so every upload swaps
+//     on the way out. The swap width is the *component* width, not the word
+//     width, which is what the fetch constant's endian field means for a
+//     stream of 16 bit components.
+//   * The vertex data for the dominant draw path does not exist when the draw
+//     is announced: BeginVertices hands the game a pointer, the game fills it
+//     in, and the data is complete at EndVertices, where the draw is issued.
+//   * There is no host equivalent of RECTANGLE_LIST. Each three vertex triple
 //     is a quad whose fourth corner the hardware synthesises, so the expansion
-//     is done here, on the CPU, while the vertices are being uploaded anyway.
+//     is done on the CPU while the vertices are uploaded.
 //
-// Plume types are deliberately absent from this header, the same way they are
-// from the frame and pipeline headers: the guest facing hooks include it.
+// No Plume types appear in this header; the guest facing hooks include it.
 
 #pragma once
 

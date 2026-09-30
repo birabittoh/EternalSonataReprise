@@ -68,24 +68,19 @@ uint32_t Log2Ceil(uint32_t value) {
   return n;
 }
 
-// Is the whole of [start, start + bytes) actually readable?
+// Is the whole of [start, start + bytes) readable?
 //
-// This is not defensive coding, it is required. A fetch constant is guest state
-// like any other, and a stage can hold one that points at memory the guest has
-// not committed -- an address left over from a freed resource, or a slot the
-// game never cleared because it never sampled it. The hardware would fault the
-// same way; the difference is that the guest only ever fetches from stages its
-// shader actually reads, and the mirror visits all sixteen because it cannot
-// know which those are without reflecting the blob.
+// A fetch constant is guest state, and a stage can hold one that points at
+// memory the guest has not committed: an address left over from a freed
+// resource, or a slot the game never cleared because it never sampled it. The
+// guest only fetches from stages its shader reads, but the mirror visits all
+// sixteen because it cannot know which those are without reflecting the blob.
+// The first texture the title binds is this case (0x0AF5C000 at the second
+// pipeline).
 //
-// The first texture the title binds is exactly this case (0x0AF5C000 at the
-// second pipeline), so without the check the mirror crashes on its first real
-// decode.
-//
-// Returns how many bytes from `start` are readable, capped at `bytes`. The
-// count rather than a flag, because a refusal that stops one page short of the
-// end is a different bug from one that finds nothing mapped at all, and the two
-// are indistinguishable from the counters alone.
+// Returns how many bytes from `start` are readable, capped at `bytes`. A count
+// rather than a flag, because a refusal one page short of the end is a
+// different bug from nothing mapped at all.
 uint64_t GuestRangeReadableBytes(const uint8_t* start, uint64_t bytes) {
   if (start == nullptr || bytes == 0)
     return 0;
@@ -128,31 +123,28 @@ bool GuestRangeReadable(const uint8_t* start, uint64_t bytes) {
 // A host pointer to guest physical memory.
 //
 // The bare physical address a fetch constant carries is not mapped: the host
-// backs physical memory only through the 360's virtual apertures, which was
-// established by probing 0x00000000, 0x80000000, 0xA0000000, 0xC0000000 and
-// 0xE0000000 against a texture that would not read -- the first two are
-// unmapped and the last three all alias the same pages.
+// backs physical memory only through the 360's virtual apertures. 0x00000000
+// and 0x80000000 are unmapped and 0xA0000000, 0xC0000000 and 0xE0000000 alias
+// the same pages (0xA0000000 is the cached one), so where all three are mapped
+// the bytes are identical.
 //
-// 0xA0000000 is the cached one and the three alias the same physical pages, so
-// where all three are mapped the bytes are identical. They do **not** all cover
-// the same range, though, which is what made the first intro logo white: its
-// 1280x720 DXT1 source at 0x08567000 needs 460800 bytes and the A aperture is
-// committed only as far as 0x085C0000, 364544 bytes in, while C and E carry the
-// whole thing. So the aperture is chosen per read, by asking which one actually
-// spans the bytes wanted, rather than fixed.
+// They do not all cover the same range. The first intro logo's 1280x720 DXT1
+// source at 0x08567000 needs 460800 bytes and the A aperture is committed only
+// as far as 0x085C0000, 364544 bytes in, while C and E carry the whole thing.
+// So the aperture is chosen per read, by asking which one spans the bytes
+// wanted.
 //
 // The address is the physical one the fetch decode produces, not the raw field,
 // so an E-aperture resource and its resolve destination agree on one key.
 //
 // Guest side, the 0xE0000000 view sits one 4 KB page above physical memory
 // (PhysicalHeap::GetPhysicalAddress adds 0x1000 for a heap based there). Host
-// side, whether that page is in the mapping at all depends on the platform:
+// side, whether that page is in the mapping depends on the platform:
 // Memory::MapViews maps the E view at file offset 0x100001000 rounded down to
 // the allocation granularity, so the page survives only where the granularity
 // is 4 KB. On Windows, at 64 KB, it is masked away and the heap emulates the
 // offset in its own bookkeeping, leaving the E view aliasing A and C byte for
-// byte. Verified live by comparing the views over one range: with the shift
-// applied they differ from byte 0, without it they are equal.
+// byte.
 const uint32_t kEApertureShift =
     rex::memory::allocation_granularity() > 0x1000 ? 0u : 0x1000u;
 
@@ -179,20 +171,19 @@ const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t physical_addr
 
 // What a guest texture format costs and what it becomes on the host.
 //
-// `block` is the edge of one addressable unit in texels, which is 1 for an
-// uncompressed format and 4 for the DXT ones. Tiling works in these units, not
-// in texels, which is the whole reason it is carried here.
+// `block` is the edge of one addressable unit in texels: 1 for an uncompressed
+// format and 4 for the DXT ones. Tiling works in these units, not texels.
 //
-// `expand` is how a guest unit that has no host format of its own is widened on
-// the way to the GPU. Plume's RenderFormat list has no 16 bit colour format at
-// all, so the packed 5:6:5 and 1:5:5:5 the game takes its photos in are read out
-// of guest memory as the two byte units they are -- which is what tiling and the
-// endian swap need -- and then unpacked into B8G8R8A8 before the upload.
+// `expand` is how a guest unit with no host format of its own is widened on the
+// way to the GPU. Plume's RenderFormat list has no 16 bit colour format, so the
+// packed 5:6:5 and 1:5:5:5 the game takes its photos in are read out of guest
+// memory as the two byte units they are (which tiling and the endian swap need)
+// and unpacked into B8G8R8A8 before the upload.
 //
-// The BC entries are the same mechanism for a different reason: the host format
-// exists but the device may not support it. Vulkan guarantees one compressed
-// family of BC, ETC2 or ASTC, and mobile GPUs implement the latter two, so the
-// DXT formats are decoded to B8G8R8A8 there instead. See g_bc_supported.
+// The BC entries use the same mechanism because the host format exists but the
+// device may not support it. Vulkan guarantees one compressed family of BC,
+// ETC2 or ASTC, and mobile GPUs implement the latter two, so the DXT formats are
+// decoded to B8G8R8A8 there. See g_bc_supported.
 enum class Expand {
   kNone,
   k5_6_5,
@@ -295,13 +286,11 @@ bool MapTextureFormat(uint32_t format, FormatInfo& out) {
 // Guest memory holds what the PowerPC wrote, and the fetch constant's endian
 // field says how the texture hardware unswizzles it on the way in. Xenia's
 // texture loaders apply the swap *uniformly over the whole addressable unit*
-// (XeEndianSwap32 in texture_load_64bpb/128bpb.xesli), so a DXT block is
-// swapped in its entirety, index bytes included, rather than only at its
-// endpoints. That is worth stating because the obvious alternative -- swapping
-// only the 16 bit endpoint pair, which is what a reader of the on-disk NTX2
-// container does -- is right for a file and wrong here. The two differ only in
-// the index bytes, so getting it wrong is a subtly scrambled texture, not an
-// obviously broken one.
+// (XeEndianSwap32 in texture_load_64bpb/128bpb.xesli), so a DXT block is swapped
+// in its entirety, index bytes included, rather than only at its endpoints.
+// Swapping only the 16 bit endpoint pair, as a reader of the on-disk NTX2
+// container does, is right for a file and wrong here; the two differ only in the
+// index bytes, which gives a subtly scrambled texture.
 
 void EndianSwapUnit(uint8_t* data, uint32_t bytes, uint32_t endianness) {
   switch (endianness) {
@@ -394,21 +383,17 @@ struct MirroredTexture {
   // The aperture-resolved host pointer to each source, and the frame each
   // choice was last validated in.
   //
-  // Picking the aperture means asking which of the three spans the bytes, which
-  // is a VirtualQuery walk over the whole source. That was measured at 73 us a
-  // call against the 12 us hash it feeds, once per texture per frame: the
-  // single largest cost in the frame after the vertex upload was fixed. The
-  // answer is a property of the guest's memory map rather than of the frame, so
-  // it is kept and revalidated occasionally instead.
+  // Picking the aperture is a VirtualQuery walk over the whole source: 73 us a
+  // call against the 12 us hash it feeds, once per texture per frame. The answer
+  // is a property of the guest's memory map rather than of the frame, so it is
+  // kept and revalidated occasionally.
   //
-  // Revalidation is cheap insurance rather than a correctness requirement. The
-  // walk never protected this path anyway: when no aperture spans the range it
-  // returns the cached one regardless and lets the read proceed, which is what
-  // the hash has always done.
+  // Revalidation is cheap insurance, not a correctness requirement: when no
+  // aperture spans the range the walk returns the cached one and lets the read
+  // proceed.
   // The frame this texture's source was last hashed in. The hash covers the
-  // whole source and is therefore too expensive to repeat on every bind, so it
-  // runs at most once per texture per frame; a texture bound two hundred times
-  // in a frame is hashed once. See HashSource.
+  // whole source and is too expensive to repeat on every bind, so it runs at
+  // most once per texture per frame. See HashSource.
   uint64_t hashed_frame = ~0ull;
 
   // The frame this texture was last handed to a draw. Only read by
@@ -515,32 +500,28 @@ uint64_t g_texture_bytes = 0;
 // ---------------------------------------------------------------------------
 // Guest write watches
 //
-// Hashing the source is how a rewritten texture is noticed, and completeness
-// makes it expensive: the font atlas alone is 864x864, near three megabytes,
-// and hashing it proves nothing changed the overwhelming majority of the time.
-// Throttling that to once a frame is cheap but wrong, because the game
-// rasterises a glyph into the atlas *between* two draws of the same frame, so
-// the second draw samples a cell the mirror has already decided is current. On
-// screen that is a letter briefly showing whatever character was rasterised
-// into its cell before.
+// Hashing the source is how a rewritten texture is noticed, and it is
+// expensive: the font atlas alone is 864x864, near three megabytes, and hashing
+// it proves nothing changed nearly every time. Throttling to once a frame is
+// cheap but wrong, because the game rasterises a glyph into the atlas *between*
+// two draws of the same frame, so the second draw samples a cell the mirror has
+// already decided is current, and a letter shows whatever character was in its
+// cell before.
 //
-// The fix is to be told instead of asking. The physical heap already knows how
-// to write protect guest pages and report the first write to them, which is the
-// same mechanism Xenia invalidates its GPU copies with, so a watch over a
-// texture's source turns "hash three megabytes per bind" into "one page fault
-// per write burst".
+// So the mirror is told instead of asking. The physical heap can write protect
+// guest pages and report the first write to them, the mechanism Xenia
+// invalidates its GPU copies with, so a watch over a texture's source turns
+// "hash three megabytes per bind" into "one page fault per write burst".
 //
-// Every mirrored texture is watched, not only the ones already seen to change.
-// Selecting them by mutability sounds thriftier and is not: it leaves the ~370
-// static assets on the per frame hash, which was still a gigabyte a second of
-// reads with the atlas already handled. Arming one is a single protection pass
-// over its pages and, for a texture nothing ever writes, costs nothing again.
+// Every mirrored texture is watched, not only ones seen to change: selecting by
+// mutability leaves the ~370 static assets on the per frame hash, still a
+// gigabyte a second of reads. Arming one is a single protection pass over its
+// pages and costs nothing again if nothing writes it.
 //
-// The hash stays as the safety net rather than as the mechanism. An armed
-// texture is revalidated every kWatchRevalidateFrames instead of every frame,
-// so a write the notification somehow misses still surfaces within about a
-// second, at a sixty fourth of the cost. An unarmed one keeps the per frame
-// hash unchanged.
+// The hash stays as the safety net. An armed texture is revalidated every
+// kWatchRevalidateFrames instead of every frame, so a write the notification
+// misses still surfaces within about a second, at a sixty fourth of the cost. An
+// unarmed one keeps the per frame hash.
 // How often an armed texture is hashed anyway. Entries were last hashed in
 // different frames, so this staggers itself.
 constexpr uint64_t kWatchRevalidateFrames = 64;
@@ -687,9 +668,9 @@ uint64_t SourceExtentBytes(const TextureFetch& fetch, const FormatInfo& info) {
 // two layouts:
 //
 // Smallest dimension below 16: the whole chain is packed into one tile and
-// level 0 sits at 16 >> (4 - log2_size) blocks into it. The SDK's
-// texture_util GetPackedMipOffset describes the same tile but clamps
-// `packed_mip_base` at zero, so it reports 16 blocks for every base below 16.
+// level 0 sits at 16 >> (4 - log2_size) blocks into it. The SDK's texture_util
+// GetPackedMipOffset describes the same tile but clamps `packed_mip_base` at
+// zero, so it reports 16 blocks for every base below 16.
 //
 // Otherwise: the mip chain comes first and level 0 follows one extent in.
 uint64_t Level0ByteOffset(const TextureFetch& fetch, const FormatInfo& info) {
@@ -771,28 +752,24 @@ std::vector<TextureSourceRange> TextureSourceRanges(const TextureFetch& fetch,
   return sources;
 }
 
-// A fingerprint of the guest bytes, used to notice that the game has replaced
-// a texture's contents under an address the cache has already seen.
+// A fingerprint of the guest bytes, used to notice that the game has replaced a
+// texture's contents under an address the cache has already seen.
 //
-// This covers **every byte**, and it has to. An earlier version sampled 64
-// chunks of 32 bytes spread across the extent, on the theory that the change
-// worth catching is a wholesale replacement -- streaming a new asset into a
-// buffer the game already owns -- which changes essentially all of them. That
-// is true of assets and false of the one texture that matters most: the font
-// glyph cache is an 864x864 atlas the game fills a cell at a time, and a cell
-// is roughly 30x34 pixels in three megabytes. Sampling covered 2048 bytes of
-// 2,985,984, so a newly rasterised glyph fell between two samples every time,
-// the atlas never refreshed, and the cell kept whatever character had been
-// rasterised into it earlier. On screen that is "Brani" reading as "trani":
-// correct quads, correct UVs, correct atlas *cell*, stale atlas *content*.
+// It covers **every byte**. The font glyph cache is an 864x864 atlas the game
+// fills a cell at a time, a cell being roughly 30x34 pixels in three megabytes.
+// Sampling 64 chunks of 32 bytes covers 2048 of 2,985,984 bytes, so a newly
+// rasterised glyph falls between samples, the atlas never refreshes, and the
+// cell keeps its earlier character ("Brani" reads as "trani"). Sampling would
+// catch wholesale replacement, such as streaming a new asset into a buffer the
+// game already owns, but not this.
 //
-// Completeness costs, so it is throttled to once per texture per frame (see
+// Completeness is throttled to once per texture per frame (see
 // MirroredTexture::hashed_frame) rather than run on each of the ~700 binds a
-// frame contains. That throttle is too coarse on its own, since the guest
-// rasterises glyphs between draws of the same frame; a write watch supplies the
-// mid frame boundary and this stays as the discovery path. See TextureWatch.
-// Bytes fed through HashSource, so the cost of completeness is visible in the
-// summary instead of being guessed at.
+// frame contains. That is too coarse alone, since the guest rasterises glyphs
+// between draws of the same frame; a write watch supplies the mid frame
+// boundary and this stays as the discovery path. See TextureWatch.
+// Bytes fed through HashSource, so the cost of completeness shows in the
+// summary.
 uint64_t g_hash_bytes = 0;
 
 // Cached textures re-baselined because a readback fill crossed them, reported a
@@ -1478,17 +1455,16 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     ++g_decode_hits;
     candidate->bound_frame = g_frame;
 
-    // A failed decode is remembered, but it is *not* final. The reason is
-    // usually that the source was not readable yet, and the game streams a
-    // texture into a buffer some frames before it first samples it, so the very
-    // first bind of an asset can lose a race the second bind would win. Caching
-    // the failure permanently turns that race into a texture that is white for
-    // the rest of the run, which is what the two intro logos were.
+    // A failed decode is remembered but is not final. The usual reason is that
+    // the source was not readable yet: the game streams a texture into a buffer
+    // some frames before it first samples it, so the first bind of an asset can
+    // lose a race the second would win. Caching the failure permanently would
+    // leave the texture white for the run (the two intro logos).
     //
     // Retried on every bind rather than on a timer: the readability walk is a
     // couple of VirtualQuery calls and is cheaper than the content hash the
-    // success path below already pays. The refusal counters are frozen for the
-    // retry so they stay a count of distinct textures, not of binds.
+    // success path pays. The refusal counters are frozen for the retry so they
+    // count distinct textures, not binds.
     if (!candidate->texture) {
       ++g_retries;
       g_count_refusals = false;
@@ -1503,16 +1479,15 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
       return candidate->texture.get();
     }
 
-    // Has the guest replaced what is at this address? This is the check that
-    // was missing, and its absence is what showed a cutscene's texture as a
-    // menu background: the game reuses a buffer rather than allocating a new
-    // one, so the address, format and extent all match while the contents do
-    // not. It also catches the font atlas being filled a glyph at a time, which
-    // is why the hash has to be complete rather than sampled.
+    // Has the guest replaced what is at this address? The game reuses a buffer
+    // rather than allocating a new one, so the address, format and extent match
+    // while the contents do not (a cutscene's texture over a menu background).
+    // It also catches the font atlas being filled a glyph at a time, which is why
+    // the hash has to be complete rather than sampled.
     //
     // Two ways in. A watch notification is precise and arrives between the
-    // write and the next bind, which is what a per frame hash cannot do; the
-    // hash is the periodic safety net behind it. See TextureWatch.
+    // write and the next bind, which a per frame hash cannot do; the hash is the
+    // periodic safety net behind it. See TextureWatch.
     const bool dirty = candidate->watch_dirty.exchange(false, std::memory_order_relaxed);
     const uint64_t since_hash = g_frame - candidate->hashed_frame;
     const bool due = candidate->watch_armed.load(std::memory_order_relaxed)
@@ -1651,22 +1626,21 @@ uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
 
 // Eviction.
 //
-// The cache is keyed by guest layout, so it does not grow within an area: it
-// grows across them, and over a long session it holds every texture the run has
-// ever bound. That is host and device memory nothing will read again.
+// The cache is keyed by guest layout, so it does not grow within an area but
+// across them, and over a long session it holds every texture the run has
+// bound: host and device memory nothing will read again.
 //
-// Two rules, because entry count and memory are not the same question.
+// Two rules, because entry count and memory are different questions.
 //
-// Age is the cheap one: an entry nothing has bound for a while is an area the
-// game has left, and dropping it costs a decode on the next bind if it comes
-// back. The floor keeps the ordinary case untouched, since a cache that has not
-// grown past the ~390 working set has nothing worth reclaiming.
+// Age: an entry nothing has bound for a while belongs to an area the game has
+// left, and dropping it costs a decode if it comes back. The floor leaves the
+// ordinary case untouched, since a cache that has not grown past the ~390
+// working set has nothing worth reclaiming.
 //
-// The budget is the one that bounds memory, and it has to be in bytes: entry
-// count says nothing about footprint when a 32x32 icon and a 2048x2048
-// background are both one entry. Over budget, the least recently bound go until
-// it fits, which is what stops the mirror tracking the size of the session
-// rather than the size of the scene.
+// Budget: this bounds memory, and it is in bytes because entry count says
+// nothing about footprint when a 32x32 icon and a 2048x2048 background are one
+// entry each. Over budget, the least recently bound go until it fits, so the
+// mirror tracks the size of the scene rather than of the session.
 constexpr size_t kEvictFloor = 1024;
 constexpr uint64_t kEvictAfterFrames = 1800;
 

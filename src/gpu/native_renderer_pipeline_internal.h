@@ -54,12 +54,12 @@ inline constexpr uint32_t kRootAlphaTest = 4;
 // resources are declared in: textures are `t0..t15, space0` and samplers
 // `s0..s15, space1`.
 //
-// Two sets rather than one because the heaps behind them are very differently
-// sized. D3D12 gives a shader-visible sampler heap 1024 descriptors against the
-// view heap's 65536, so a descriptor set carrying sixteen of each costs 1/64th
-// of the sampler heap, and a cache of them runs out after sixty four sets. The
-// title has many distinct texture combinations and only a handful of distinct
-// sampler ones; splitting puts each in the heap that can hold it.
+// Two sets because the heaps behind them differ in size. D3D12 gives a
+// shader-visible sampler heap 1024 descriptors against the view heap's 65536,
+// so a descriptor set carrying sixteen of each costs 1/64th of the sampler heap
+// and a cache of them runs out after sixty four sets. The title has many
+// distinct texture combinations and few distinct sampler ones; splitting puts
+// each in the heap that can hold it.
 inline constexpr uint32_t kTextureDescriptorSet = 0;
 inline constexpr uint32_t kSamplerDescriptorSet = 1;
 

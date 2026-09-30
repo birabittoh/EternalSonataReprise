@@ -50,25 +50,21 @@ namespace {
 
 using namespace plume;
 
-// B8G8R8A8 rather than R8G8B8A8 because it is the format every Windows swap
-// chain supports natively; picking the other one costs a conversion on present
-// for no benefit here.
+// B8G8R8A8 rather than R8G8B8A8 because every Windows swap chain supports it
+// natively; the other costs a conversion on present.
 //
-// Android is the exception, and it is not a preference there but a requirement.
-// Adreno's surfaces do not list B8G8R8A8_UNORM at all, and Plume reacts to a
-// format the surface does not support by giving up on picking one, reporting it
-// with fprintf(stderr) (which goes nowhere on Android) and then creating the
-// swap chain with VK_FORMAT_UNDEFINED regardless. The driver accepts that, so
-// there is no error anywhere: presents succeed, buffers reach SurfaceFlinger,
-// and everything drawn into those images is discarded. That was the black
-// screen, and validation is the only thing that says so:
+// On Android it is a requirement: Adreno's surfaces do not list B8G8R8A8_UNORM
+// at all. Plume reacts to an unsupported format by giving up on picking one,
+// reporting it with fprintf(stderr) (which goes nowhere on Android), and
+// creating the swap chain with VK_FORMAT_UNDEFINED. The driver accepts that, so
+// presents succeed and everything drawn into those images is discarded, giving
+// a black screen. Only validation reports it:
 //
 //   VUID-VkSwapchainCreateInfoKHR-imageFormat-01273
 //   vkCreateSwapchainKHR(): pCreateInfo->imageFormat is VK_FORMAT_UNDEFINED.
 //
-// Nothing else has to change with the channel order: a format describes memory
-// layout, not which shader output feeds which channel, so the blit still writes
-// colour 0 and the surface still reads it correctly.
+// The channel order needs no other change: a format describes memory layout,
+// not which shader output feeds which channel.
 #if REX_PLATFORM_ANDROID
 constexpr RenderFormat kSwapChainFormat = RenderFormat::R8G8B8A8_UNORM;
 #else
@@ -93,12 +89,12 @@ constexpr uint32_t kMaxFrameLatency = 2;
 // Point Vulkan at the loader and MoltenVK shipped in the package, so the game
 // runs without a Vulkan SDK or Homebrew installed.
 //
-// The loader has to be dlopen'd by absolute path here rather than found later:
-// volk dlopens it by leaf name, which only searches the DYLD_ variables, and
-// dyld captures those at launch so setenv cannot extend them. Preloading works
-// because a leaf dlopen matches an already loaded image. The driver manifest,
-// by contrast, is read at instance creation, so VK_DRIVER_FILES is in time.
-// Without it vkCreateInstance returns VK_ERROR_INCOMPATIBLE_DRIVER.
+// The loader is dlopen'd by absolute path because volk dlopens it by leaf name,
+// which only searches the DYLD_ variables, and dyld captures those at launch so
+// setenv cannot extend them. Preloading works because a leaf dlopen matches an
+// already loaded image. The driver manifest is read at instance creation, so
+// VK_DRIVER_FILES is in time. Without it vkCreateInstance returns
+// VK_ERROR_INCOMPATIBLE_DRIVER.
 //
 // Both halves defer to an environment that already says otherwise. Probes the
 // flat layout then the .app one, matching the SDK's own vulkan_moltenvk.cpp.
@@ -599,21 +595,21 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
   g_slot = 0;
   g_retired_frame.store(~0ull, std::memory_order_release);
 
-  // Present wait is what makes vsync usable on a frame-clocked engine. Without
-  // it Plume's D3D12 present issues `Present(1, 0)`, which blocks on the vblank
-  // and quantises the achieved rate to 60/30/20; the guest advances its sim a
-  // fixed 300/declared units per present, so a quantised rate is not choppiness
-  // but literal slow motion (game speed = actual fps / declared fps). It showed
-  // up as half speed during battle attacks, where a frame first overruns
-  // 16.7 ms. With present wait, Plume issues `Present(0, 0)` instead: no tearing
-  // (the flip still lands on a vblank, DXGI_PRESENT_ALLOW_TEARING is not set),
-  // but the call does not block, and pacing comes from the frame-latency
-  // waitable object plus the host limiter in eternalsonata_framerate.cpp.
+  // Present wait makes vsync usable on a frame-clocked engine. Without it
+  // Plume's D3D12 present issues `Present(1, 0)`, which blocks on the vblank
+  // and quantises the achieved rate to 60/30/20. The guest advances its sim a
+  // fixed 300/declared units per present, so a quantised rate is literal slow
+  // motion (game speed = actual fps / declared fps), seen as half speed during
+  // battle attacks where a frame first overruns 16.7 ms. With present wait,
+  // Plume issues `Present(0, 0)`: no tearing (the flip still lands on a vblank,
+  // DXGI_PRESENT_ALLOW_TEARING is not set) and no blocking, with pacing from
+  // the frame-latency waitable object plus the host limiter in
+  // eternalsonata_framerate.cpp.
   //
   // Gated on the capability because wait() and present() both assert on it.
-  // D3D12 always reports it; Vulkan needs VK_KHR_present_wait, and where that is
-  // missing this falls back to today's behaviour (FIFO, still quantised — fixing
-  // that needs MAILBOX, which is a Plume-side change).
+  // D3D12 always reports it; Vulkan needs VK_KHR_present_wait. Without it the
+  // present is FIFO and still quantised; fixing that needs MAILBOX, a Plume
+  // side change.
   g_present_wait = g_backend.device->getCapabilities().presentWait;
   g_backend.swap_chain = g_backend.queue->createSwapChain(
       RenderSwapChainDesc(render_window, kSwapChainFormat,
@@ -624,24 +620,21 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
     return false;
   }
 
-  // Vsync from the game's own cvar, which defaults to false (see settings.cpp
-  // for why; the SDK's vblank pump ties the presentation-interval wait to it).
-  // Plume's swap chains come up with vsync *on*, so without this the setting
-  // silently did not apply to the native renderer at all.
+  // Vsync from the game's own cvar, which defaults to false (see settings.cpp;
+  // the SDK's vblank pump ties the presentation-interval wait to it). Plume's
+  // swap chains come up with vsync on, so this applies the setting.
   //
-  // It used to be more than a tearing preference here: with two buffers and a
-  // blocking `Present(1, 0)`, a frame that missed the vblank could not start the
-  // next one until the one after, so the rate quantised to 60/30/20 and anything
-  // over 16.7 ms of work read as exactly 30 fps regardless of how far over it
-  // was. Measured on the heavy scenes: 28.7 ms/frame with vsync on became a flat
-  // 16.67 ms cap with it off. The third buffer and present wait above remove
-  // that quantisation, so this is back to being just a tearing preference.
-  // The cvar itself is registered by RegisterNativeRendererCvars(), because the
-  // one the SDK defines lives in the Xenos plugin and no plugin is loaded here.
-  // It is hot-reloadable there, so it is hot-reloadable here too: the callback
-  // only records the request, and the next present applies it (Vulkan reports
-  // needsResize() until the present mode actually matches, which the present's
-  // existing resize check then honours).
+  // With two buffers and a blocking `Present(1, 0)`, a frame that missed the
+  // vblank could not start the next one until the one after, so the rate
+  // quantised to 60/30/20 (28.7 ms/frame with vsync on against a flat 16.67 ms
+  // with it off on the heavy scenes). The third buffer and present wait above
+  // remove that quantisation, so vsync is only a tearing preference.
+  //
+  // The cvar is registered by RegisterNativeRendererCvars(), because the SDK's
+  // lives in the Xenos plugin and no plugin is loaded. It is hot-reloadable
+  // there, so it is here too: the callback records the request and the next
+  // present applies it (Vulkan reports needsResize() until the present mode
+  // matches, which the present's resize check honours).
   const bool vsync = ReadVsyncCvar();
   g_backend.swap_chain->setVsyncEnabled(vsync);
   g_vsync_wanted.store(vsync, std::memory_order_release);

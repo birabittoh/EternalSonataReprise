@@ -3,19 +3,15 @@
 // Host-side mirror of the guest Direct3D device.
 //
 // The game's D3D runtime is statically linked into default.xex, so there are
-// no imports to hook: interception happens by overriding the recompiled
-// functions themselves (see eternalsonata_config.toml, "Direct3D 9 (Xbox 360
-// static lib)", where every entry point carries an `evidence` field).
+// no imports to hook: interception overrides the recompiled functions
+// themselves (see eternalsonata_config.toml, "Direct3D 9 (Xbox 360 static
+// lib)", where every entry point carries an `evidence` field).
 //
-// This layer only observes. The guest still runs its own device init and still
-// writes PM4 packets, which is harmless with no GPU plugin loaded because the
-// ring buffer those packets go into is never consumed. What this file does is
-// track the API-level state a real backend needs -- bound shaders, shader
-// constants, textures -- and check the device offsets that were recovered
-// statically against what the running game actually does.
-//
-// Once the state here is trusted, a backend consumes it at draw time and the
-// guest's packet writing becomes pure waste to be stubbed out.
+// The guest still runs its own device init and writes PM4 packets, which is
+// harmless because the ring buffer they go into is never consumed. The mirror
+// tracks the API level state the draw path consumes (bound shaders, shader
+// constants, textures) and checks the device offsets recovered statically
+// against what the running game does.
 
 #pragma once
 
@@ -198,26 +194,22 @@ bool GetBoundTextureFetch(uint8_t* base, uint32_t stage, TextureFetch& out,
                           GuestSamplerState* sampler_out = nullptr);
 
 // A counter bumped whenever the *content* behind an unchanged fetch constant
-// can have changed under us: a resolve, which replaces the host image behind an
-// address the guest never rebinds, and the frame boundary.
+// can have changed: a resolve, which replaces the host image behind an address
+// the guest never rebinds, and the frame boundary.
 //
-// Deliberately not bumped by SetTexture or by the sampler setters, which is
-// what it used to do. Those move about three times as often as the bindings
-// actually change, because the guest issues roughly three draws per SetTexture
-// and frequently sets the same texture back, so a cache keyed on them missed
-// about 39% of the time and rebuilt bindings identical to the ones it threw
-// away. Pair this with BoundTextureFetchSignature, which covers everything
-// those setters can write, and the two together are exactly as strict while
-// missing only when something really moved.
+// SetTexture and the sampler setters do not bump it. They fire about three
+// times as often as the bindings change (roughly three draws per SetTexture,
+// and the same texture is often set back), so a cache keyed on them would miss
+// about 39% of the time. Paired with BoundTextureFetchSignature, which covers
+// everything those setters write, the two are exactly as strict and miss only
+// when something really moved.
 //
-// The frame boundary is in there for correctness, not for tidiness. The texture
-// mirror notices the guest rewriting a texture under an address it already
-// holds by hashing the source once per texture per frame, so a draw path that
-// skips the mirror must still visit it at least once per frame or the font
-// atlas stops refreshing. That was a real bug; see the trap about sampled
-// hashes in the handoff.
+// The frame boundary is required for correctness: the texture mirror notices a
+// rewritten texture by hashing its source once per texture per frame, so a
+// draw path that skips the mirror must still visit it once per frame or the
+// font atlas stops refreshing.
 //
-// It never wraps in practice and a wrap would only cost one stale frame anyway.
+// A wrap would cost one stale frame at most.
 uint64_t TextureContentEpoch();
 
 // Invalidate the binding cache. The texture mirror calls this when a guest

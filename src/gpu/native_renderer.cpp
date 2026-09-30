@@ -1,7 +1,6 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
-// See native_renderer.h for what this is and why the ring buffer is the thing
-// being cut. So far this is only the bring-up hook; nothing draws yet.
+// See native_renderer.h for what this is and why there is no ring buffer.
 
 #include "native_renderer.h"
 
@@ -25,16 +24,12 @@
 namespace eternalsonata {
 
 bool NativeRendererEnabled() {
-  // Latched on the first call, which is RegisterNativeRendererCvars from
-  // OnPreSetup: after the config files have been read and before anything else
-  // asks. Deliberately not a live read.
-  //
-  // Which renderer is running is decided once, at boot, by whether the SDK
-  // loaded a GPU plugin; changing gpu_plugin at runtime only records a
-  // preference for the next launch. A live read would flip every hook in
-  // native_renderer_d3d.cpp out from under a guest still running with no
-  // plugin behind it, and the next D3DDevice__BlockUntilFenceRetired would
-  // then spin forever on a retired-fence counter nothing writes.
+  // Latched on the first call, from RegisterNativeRendererCvars in OnPreSetup,
+  // after the config files are read. Which renderer runs is decided once at
+  // boot by whether the SDK loaded a GPU plugin; changing gpu_plugin at runtime
+  // only records a preference for the next launch. A live read would flip the
+  // hooks in native_renderer_d3d.cpp under a running guest, whose next
+  // D3DDevice__BlockUntilFenceRetired would spin on a counter nothing writes.
   static const bool enabled =
       rex::cvar::GetFlagByName("gpu_plugin") == kNativeRendererPluginName;
   return enabled;
@@ -106,16 +101,13 @@ void RegisterNativeRendererCvars() {
 
   // Same name, type, category, description and default as
   // REXCVAR_DEFINE_BOOL(vsync, true, "GPU", ...) in the SDK's
-  // command_processor.cpp, which is compiled into rexgpu-xenos and so only
-  // exists when that plugin is loaded. Registering it here rather than
-  // statically is what keeps the two from colliding: a static definition would
-  // win the registry slot before the plugin ever loaded, leaving the plugin's
-  // own storage frozen at whatever it read at registration time.
+  // command_processor.cpp, which lives in rexgpu-xenos and only exists when
+  // that plugin is loaded. Registered here rather than statically so the two
+  // never collide.
   //
-  // Anything the config file, command line or environment set for `vsync` is
-  // still pending at this point and gets applied by RegisterFlag, as is the
-  // game's own default for it (kGameDefaults in settings.cpp), which is what
-  // makes this default the same under either renderer.
+  // Values from the config file, command line, environment and kGameDefaults
+  // (settings.cpp) are still pending here and are applied by RegisterFlag, so
+  // the default is the same under either renderer.
   rex::cvar::FlagEntry entry;
   entry.name = "vsync";
   entry.type = rex::cvar::FlagType::Boolean;
@@ -253,18 +245,13 @@ void InitNativeRenderer(rex::ui::Window* window) {
     return;
   initialized = true;
 
-  // The window is already created and is ours to render into however we like;
-  // the SDK is not presenting the guest in this mode, and will not draw its own
-  // overlays either until we hand it a drawer.
+  // The window exists and is ours to render into. The SDK presents nothing in
+  // this mode and draws no overlays until it is handed a drawer.
   //
-  // Plume's SDL/Vulkan backend takes an SDL_Window* directly (it creates its
-  // own VkSurfaceKHR via SDL_Vulkan_CreateSurface, which already knows how to
-  // talk to whichever platform backend SDL picked, X11 or Wayland). Plain
-  // GetNativeWindowHandle() only ever returns a platform-native handle
-  // (HWND on Windows); on Linux it's always null, since there's no single
-  // native handle to hand back, and the SDK exposes no accessor for the
-  // SDL_Window behind rex::ui::WindowSDL. Ask SDL instead: the app only ever
-  // opens the one window, so the first entry is ours.
+  // Plume's SDL/Vulkan backend takes an SDL_Window* and creates its own
+  // VkSurfaceKHR. GetNativeWindowHandle() only returns an HWND on Windows and
+  // null elsewhere, and the SDK has no accessor for the SDL_Window behind
+  // rex::ui::WindowSDL, so ask SDL: the app opens one window, the first entry.
 #if defined(PLUME_SDL_VULKAN_ENABLED)
   void* handle = nullptr;
   if (window) {

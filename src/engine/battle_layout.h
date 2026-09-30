@@ -86,10 +86,9 @@ inline constexpr uint32_t kPartyHpMaxOffset = kPartyStatsOffset + 8u;
 //   part + 304  i32  current HP
 //   part + 308  i32  maximum HP
 //
-// How each was pinned down, since an earlier version of this header claimed
-// the raw HP counters did not exist at all (three sweeps for them had found
-// readers of the ratio only, because every access goes through the part
-// indirection above and so never appears as a constant displacement):
+// Evidence for each field. Every access goes through the part indirection
+// above, so none appears as a constant displacement and a search for the raw
+// HP counters finds only the readers of the ratio:
 //
 //   name id    sub_821ABE88 resolves a unit's display name for both sides
 //              from one descriptor: for a party member it feeds the record's
@@ -311,10 +310,10 @@ inline constexpr uint32_t EnemyPart(uint32_t slot, uint32_t part_index) {
 // sub_821AB1A0 on each of those frames. Do not expose 537136 as a previous
 // state; it is not one.
 //
-// All 23 states below were walked out of the dispatch table on 2026-08-19, and
-// the ones marked "live" were also watched on a running battle. Each entry
-// gives what the state does and what it advances to; "holds" means the state
-// stays put until the named condition is met.
+// All 23 states below come from the dispatch table; the ones marked "live"
+// were also observed on a running battle. Each entry gives what the state does
+// and what it advances to; "holds" means the state stays put until the named
+// condition is met.
 //
 // Getting into the battle:
 //
@@ -616,10 +615,9 @@ inline constexpr bool UnitIsResolvingAction(uint32_t state) {
 // the command timer, but since nothing reads it until the FSM handler for
 // state 12 runs, its effect is only observable from state 12 onward.
 //
-// Reverse-engineered 2026-08-22 via IDA (sub_821ACBF8's state 11/12
-// handlers, sub_8218A618's duration setup, sub_8218A7C0/sub_821A9C98's
-// completion checks, sub_820D6168's per-frame decay). Not yet cross-checked
-// against a live battle.
+// Sources: sub_821ACBF8's state 11/12 handlers, sub_8218A618's duration setup,
+// sub_8218A7C0/sub_821A9C98's completion checks and sub_820D6168's per-frame
+// decay. Not observed in a live battle.
 inline constexpr uint32_t kActionTimerObjectPtrOffset = 533100u;
 inline constexpr uint32_t kCommandTimerDurationOffset = 6440u;   // i32, 1/300s ticks, reset value
 inline constexpr uint32_t kCommandTimerRemainingOffset = 6444u;  // i32, 1/300s ticks, live countdown

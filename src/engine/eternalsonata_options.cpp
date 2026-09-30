@@ -460,14 +460,13 @@ static_assert(kMaxRowValues + 2 <= kRowSidStride,
 // "Resolution"/"Frame Rate"/"Fullscreen"), so unlike the boolean values above
 // they cannot ride the game's own localisation for free - each language needs
 // its own literal. Index matches LanguageIndex() below: en, de, fr, es, it.
-// Japanese has none yet and draws the English one.
+// Japanese has none and draws the English one.
 //
 // Accents are written as raw CP1252/Latin-1 byte escapes rather than UTF-8
 // source characters: the stock EFIGS text in the game's own BTX blocks is
 // single-byte, and writing multi-byte UTF-8 into a single-byte text record
-// would render as two garbled glyphs instead of one accented one. Verify
-// in-game per language - this is the one part of the row that cannot be
-// cross-checked against a stock string the way the boolean values are.
+// would render as two garbled glyphs instead of one accented one. Unlike the
+// boolean values, these have no stock string to cross-check against.
 // Two different counts, and conflating them reads past the end of the tables
 // above.
 //
@@ -1529,8 +1528,8 @@ int32_t BarY(int page, u32 row) {
 //
 // Page 2 agrees with itself from either entry point. The same disagreement is
 // in the game's own code, at a different figure: sub_82200FE8 places page 1's
-// stock bars at y 895/945 and its handler slides them to 155/205. Reading a
-// stock bar's y live should eventually replace this measured constant.
+// stock bars at y 895/945 and its handler slides them to 155/205. The constant
+// is measured, not read from the stock bar.
 constexpr int32_t kInstantBarRows = 6;
 
 int32_t InstantBarBiasY(int page) {

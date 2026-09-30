@@ -1,31 +1,16 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
-// Native renderer: the beginnings of a renderer that does not emulate Xenos.
+// Native renderer: draws the guest through Plume by intercepting it at the
+// Direct3D 9 API boundary, with its shaders compiled ahead of time (the
+// inventory is a static blob in the xex; see scripts/extract_shaders.py).
+// Nothing emulates Xenos, so there is no ring buffer, PM4 parsing or EDRAM.
 //
-// The stock path loads the "xenos" GPU plugin, which emulates the GPU at the
-// hardware level: it stands up a ring buffer, the guest's D3D runtime writes
-// PM4 packets into it, and the plugin parses those packets and translates the
-// shader microcode at runtime. The plan here is to intercept the game one
-// level higher, at the Direct3D API boundary, and to compile the game's
-// shaders ahead of time (the whole inventory is a static blob in the xex; see
-// scripts/extract_shaders.py).
-//
-// The two are mutually exclusive, and the ring buffer is the reason: it exists
-// only because Xenos is being emulated. Select the native renderer by setting
-// the `gpu_plugin` cvar to "plume" (its default is "xenos", set in
-// settings.cpp). There is no rexgpu-plume DLL: the name is a sentinel this
-// project recognises in OnPreSetup, where it clears RuntimeConfig::gpu_plugin
-// so the SDK loads no plugin at all. With no plugin loaded
-// the SDK runs headless: it drives the guest's vblank interrupt from its own
-// timer thread, and there is no ring buffer, so every guest path that writes a
-// packet into one is dead code that must be intercepted or stubbed rather than
-// executed.
-//
-// This is deliberately staged. Step one, which is what is implemented so far,
-// is the cut itself: the game boots to a black screen and keeps running. The
-// D3D device hooks, the device struct layout, shader constant tracking,
-// texture/surface mirrors and finally the resolve/swap/present chain get built
-// on top of that, in that order.
+// Selected by the `gpu_plugin` cvar, whose default is "plume" (settings.cpp).
+// There is no rexgpu-plume DLL: the name is a sentinel that OnPostSetup clears
+// from RuntimeConfig::gpu_plugin, so the SDK loads no plugin and runs headless.
+// It then drives the guest's vblank interrupt from its own timer thread. Guest
+// paths that write packets into a ring buffer are dead code and are
+// intercepted or stubbed.
 
 #pragma once
 
@@ -84,8 +69,7 @@ void SetGuestFrameCallback(std::function<void()> callback);
 
 // Brings up the rendering backend. Call once the window exists and before the
 // guest starts executing, so no guest D3D call can arrive ahead of it. Later
-// calls do nothing.
-// No-op unless NativeRendererEnabled(); there is no backend behind it yet.
+// calls do nothing. No-op unless NativeRendererEnabled().
 void InitNativeRenderer(rex::ui::Window* window);
 
 }  // namespace eternalsonata

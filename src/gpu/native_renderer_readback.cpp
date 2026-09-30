@@ -29,35 +29,29 @@
 #endif
 
 // Whether this platform can answer a guest read of a resolve destination with a
-// page fault. It needs two things: a way to make a page inaccessible (portable,
-// rex::memory::Protect) and a fault handler that can say whether the access that
-// trapped was a read or a write. Filling a buffer the guest is in the middle of
-// *writing* destroys what it wrote, so a handler that cannot tell the two apart
-// is worse than no handler.
+// page fault. It needs a way to make a page inaccessible (portable,
+// rex::memory::Protect) and a fault handler that can say whether the trapping
+// access was a read or a write. Filling a buffer the guest is in the middle of
+// *writing* destroys what it wrote, so a platform that cannot tell the two
+// apart must not arm.
 //
-// Both platforms install *in front of* the SDK's own handler, and that ordering
-// is load-bearing rather than incidental.
+// Both platforms install *in front of* the SDK's own handler, and the ordering
+// matters. The memory system watches guest physical pages by protecting them
+// and catching the fault (MMIOHandler). For any address inside the guest
+// mapping that is not an MMIO range it reads the current protection and, on
+// kNoAccess, falls through into its write-watch callback (mmio_handler.cpp,
+// "recheck if the pages are still protected"). It cannot tell one of our armed
+// pages from one of its own watches, so whichever handler runs first owns the
+// fault.
 //
-// The memory system watches guest physical pages by protecting them and catching
-// the fault (MMIOHandler). Its handler, for any address inside the guest mapping
-// that is not an MMIO range, reads the current protection and -- on kNoAccess --
-// falls through into its write-watch callback (mmio_handler.cpp, "recheck if the
-// pages are still protected"). It cannot tell one of our armed pages from one of
-// its own watches, so whichever handler runs first owns the fault.
-//
-// Windows gets this for free: AddVectoredExceptionHandler(1, ...) puts this at
-// the head of the chain, ahead of the SDK's. On Linux, arch::ExceptionHandler
-// appends and the memory system installs at startup, so registering there puts
-// this last -- the memory system claimed every fault, this handler was never
-// reached (one fault in a whole run against 2829 arms), and its watch state was
-// being driven by pages it never watched. Hence a sigaction of our own, which
-// forwards anything that is not ours to whatever was installed before it.
-//
-// Filling a buffer the guest is mid-*write* into destroys what it wrote, so a
-// platform that cannot tell a read fault from a write fault must not arm.
+// Windows: AddVectoredExceptionHandler(1, ...) puts this at the head of the
+// chain, ahead of the SDK's. Linux: arch::ExceptionHandler appends and the
+// memory system installs at startup, so registering there puts this last and
+// the memory system claims every fault. A sigaction of our own is installed
+// instead, and forwards anything that is not ours to the previous handler.
 //
 // Asked as two separate capabilities so a target answering neither trips the
-// #error below instead of inheriting the eager fill unnoticed.
+// #error below instead of silently inheriting the eager fill.
 #if defined(_WIN32)
 #define ETERNALSONATA_READBACK_TRAP_INSTALL_WIN32 1
 #elif defined(__APPLE__) || defined(__linux__)
@@ -104,15 +98,14 @@
 
 // How a resolved render target gets back into guest memory.
 //
-//  auto  - the default. Guest memory is filled in on demand: the destination's
+//  auto  - the default. Guest memory is filled on demand: the destination's
 //          pages are left inaccessible and the guest's own read faults into a
 //          handler that writes the pixels and lets the read through. A
 //          destination nothing reads costs nothing beyond arming it.
 //  eager - fill every destination in every frame it is resolved, with no page
-//          protection anywhere. What "auto" degrades to if the trap turns out to
-//          be the wrong instrument on some machine, and the thing to compare
-//          against when a readback looks stale or missing.
-//  off   - never write guest memory, which is what this renderer did before.
+//          protection anywhere. The fallback if the trap misbehaves on some
+//          machine, and the reference when a readback looks stale or missing.
+//  off   - never write guest memory.
 REXCVAR_DEFINE_STRING(native_readback_resolve, "auto", "Eternal Sonata",
                       "Native renderer: how a resolved render target is written back into guest "
                       "memory for the game's own CPU to read (auto, eager, off)")
@@ -162,28 +155,23 @@ Mode CurrentMode() {
   return Mode::kAuto;
 }
 
-// Where inside an aperture a destination's bytes actually are.
+// Where inside an aperture a destination's bytes are.
 //
-// The **fixed up** address, not the raw field, and this is the difference
-// between a correct readback and one that is off by exactly one 4 KB page.
-//
-// A resolve destination is decoded from the guest's own resource object, whose
-// base field has not been through the address fixup yet: it reads as something
-// like 0xE5FE7000, and the fixup takes that to 0x05FE8000 by adding a page for
-// the 0xE0000000 aperture. Everything that later reads those pixels -- the
-// guest, and the texture mirror through the device's fetch constant, which
-// SetTexture has already fixed up -- uses the fixed address. Writing at the raw
-// one puts the image a page early: at 1280 wide that is 0.8 of a row and looks
-// like a horizontal translation, at 320 wide it is 3.2 rows and looks like a
-// vertical one with a black strip left at the bottom, and either way the page
-// that falls off the front lands on whatever guest allocation sits below, which
-// is unrelated textures being corrupted.
+// The **fixed up** address, not the raw field. A resolve destination is decoded
+// from the guest's resource object, whose base field has not been through the
+// address fixup: it reads as something like 0xE5FE7000, and the fixup takes that
+// to 0x05FE8000 by adding a page for the 0xE0000000 aperture. Everything that
+// later reads those pixels (the guest, and the texture mirror through the
+// device's fetch constant, which SetTexture has already fixed up) uses the fixed
+// address. Writing at the raw one puts the image a page early: a horizontal
+// shift at 1280 wide (0.8 of a row), a vertical one at 320 wide (3.2 rows, with a
+// black strip at the bottom), and in either case the page that falls off the
+// front lands on an unrelated guest allocation.
 //
 // The texture mirror's GuestPhysicalPointer takes the raw field instead, and is
 // right to: it is handed the *device's* fetch, which is already fixed, and
-// applying the fixup twice is a no-op only because the result is masked below
-// 0x20000000. Here the fetch comes from the resource, so the fixup has to be
-// respected.
+// applying the fixup twice is a no-op because the result is masked below
+// 0x20000000. Here the fetch comes from the resource, so the fixup applies.
 uint32_t GuestOffset(const TextureFetch& fetch) { return fetch.base_address & 0x1FFFFFFFu; }
 
 // One host mapping of a destination's guest bytes, page aligned outward.
@@ -272,45 +260,39 @@ struct Destination {
 // How often an armed destination is taken apart and set up again even though
 // nothing about it appears to have changed.
 //
-// Arming is the only thing this costs a frame that never reads anything back,
-// and it is not free: a VirtualProtect over a 720p destination covers 920 pages.
-// So an armed destination that is still described the same way and still backed
-// by the same buffer is left armed rather than disarmed and rearmed, which takes
-// the steady state to no system calls at all. The periodic rebuild is what
-// catches the guest unmapping or recommitting the memory underneath, which the
-// skipped path would otherwise never look at again.
+// Arming is not free: a VirtualProtect over a 720p destination covers 920
+// pages. An armed destination that is still described the same way and backed
+// by the same buffer stays armed rather than being disarmed and rearmed, which
+// makes the steady state free of system calls. The periodic rebuild catches the
+// guest unmapping or recommitting the memory underneath, which the skipped path
+// would never look at again.
 constexpr uint64_t kRearmPeriod = 64;
 
 // The largest destination whose guest pages are worth trapping on.
 //
 // The trap answers a read by writing the destination's *whole extent*, however
-// long ago the resolve was and whatever the guest has done with the memory since,
-// and the fault itself carries no evidence either way: it says some guest code
-// touched an address, not that it still thinks that address holds this image.
-// The damage from getting that wrong scales with the extent, and the two things
-// this title actually reads back with its own CPU are small: the save thumbnail
-// at 320x160 (204,800 bytes) and the in-game photo at 416x256 (425,984).
+// long ago the resolve was and whatever the guest has done with the memory
+// since. The fault says some guest code touched an address, not that it still
+// thinks that address holds this image, and the damage from a wrong fill scales
+// with the extent. The two things this title reads back with its own CPU are
+// small: the save thumbnail at 320x160 (204,800 bytes) and the in-game photo at
+// 416x256 (425,984).
 //
-// Three crashes with an identical shape came from the other end of the range. A
-// 1280x720 destination resolved during the boot sequence, armed and untouched for
-// eighteen hundred frames, then read once: the fill scattered 3,768,320 bytes of
-// an ancient loading screen over whatever the guest had put there since, which
-// every time included the XMA context block. The guest's next XMAReleaseContext
-// indexed XmaDecoder::contexts_ with a zeroed pointer and dereferenced a null.
+// A 1280x720 destination resolved during boot, armed and untouched for eighteen
+// hundred frames and then read once scatters 3,768,320 bytes of an old loading
+// screen over whatever the guest put there since, including the XMA context
+// block; the next XMAReleaseContext dereferences a null contexts_ entry.
 //
-// Nothing cheaper distinguishes those two. Age does not: the thumbnail is
-// resolved once and read 251 frames later, sometimes 649, which is the same order
-// as the crashing reads and is why a lifetime on the arming turned every new save
-// thumbnail black. `guest_owns` does not either -- it is set from a write fault,
-// and all three crashing runs report `faults read=1 write=0`, so nothing ever
-// wrote through an armed aperture to give it a signal.
+// Nothing cheaper distinguishes the two cases. Age does not: the thumbnail is
+// resolved once and read 251 to 649 frames later, the same order as the bad
+// reads. `guest_owns` does not either, since it is set from a write fault and a
+// read only destination never produces one.
 //
-// A large destination is still tracked, still copied into its readback buffer and
-// still filled through ReadbackFillForRead when the texture mirror binds it,
+// A large destination is still tracked, still copied into its readback buffer
+// and still filled through ReadbackFillForRead when the texture mirror binds it,
 // because that path compares the layout the destination was written as against
-// the layout it is being read as and refuses on disagreement. It just no longer
-// has a page trap standing over three megabytes of guest memory waiting to
-// overwrite it on the strength of one read.
+// the layout it is read as and refuses on disagreement. It just has no page
+// trap over megabytes of guest memory.
 constexpr uint64_t kMaxArmedExtentBytes = 1024 * 1024;
 
 // How many times a destination is resolved, with nothing ever reading it, before
@@ -719,15 +701,13 @@ bool Fill(Destination& destination) {
 //
 // Guest memory does not stay one. The game frees a resolve destination and
 // loads an ordinary texture into the same buffer, and an entry here lives
-// forever, so without this a read of *the texture* is answered by filling it
-// with the render target's old pixels: a texture that corrupts itself for no
-// visible reason, some frames after anything last resolved. The frame layer
-// makes the same argument about extents in FrameResolveTextureByAddress.
+// forever, so without this a read of the texture would be answered with the
+// render target's old pixels. The frame layer applies the same rule to extents
+// in FrameResolveTextureByAddress.
 //
-// The rule is that only memory the GPU has just written is written again, which
-// is the narrowest defensible window: the frame that resolved it, or the one
-// before, since a fault arrives from guest code rather than from the frame loop
-// and can land either side of a present.
+// Only memory the GPU has just written is written again: the frame that
+// resolved it, or the one before, since a fault arrives from guest code rather
+// than from the frame loop and can land either side of a present.
 bool Fresh(const Destination& destination) { return !destination.guest_owns; }
 
 // Has the copy recorded for this destination actually run?
@@ -764,17 +744,14 @@ void LogEvent(const Destination& destination, const char* what, bool filled) {
 // Make sure the readback buffer holds a completed image, stalling the GPU if
 // that is what it takes.
 //
-// The stall is the whole point rather than a wart: a destination that is
-// resolved and read in the same frame cannot be answered from a buffer the GPU
-// has not written yet, and answering it with the previous frame's image is what
-// a save screenshot would show as stale or, on the first one, as nothing. This
-// is the SDK's `readback_resolve=full` behaviour, reached only when a read
-// actually needs it.
-// How long a guest thread that is not recording the frame will wait for the
-// copy it needs to retire on its own. Two or three frames at 60 Hz: long enough
-// to cover a present that is already in flight, short enough that a render
-// thread which is itself blocked behind this one degrades to the old black
-// image rather than to a hang.
+// A destination that is resolved and read in the same frame cannot be answered
+// from a buffer the GPU has not written yet, and the previous frame's image
+// would show a save screenshot as stale or, on the first one, empty. This is the
+// SDK's `readback_resolve=full` behaviour, reached only when a read needs it.
+// How long a guest thread that is not recording the frame waits for the copy it
+// needs to retire on its own: two or three frames at 60 Hz, long enough to cover
+// a present already in flight and short enough that a render thread blocked
+// behind this one degrades to a black image rather than a hang.
 constexpr auto kCopyWaitTimeout = std::chrono::milliseconds(50);
 constexpr auto kCopyWaitPoll = std::chrono::milliseconds(1);
 
@@ -815,17 +792,15 @@ bool EnsureData(Destination& destination, std::unique_lock<std::mutex>& lock) {
     // Another thread got there first, so a flush is not available: submitting
     // means submitting a command list the render thread is still writing.
     //
-    // Waiting is, though, and it is what this case actually needs. The save
-    // screenshot is resolved and read in the same frame, from the guest's save
-    // thread rather than from the thread recording the frame, so the copy has
-    // been recorded and simply has not run yet. Giving up here is what made the
-    // *first* save after boot come back black while every later one worked --
-    // a later one is answered from DataReady above, because its copy ran frames
-    // ago.
+    // Waiting works. The save screenshot is resolved and read in the same
+    // frame, from the guest's save thread rather than the thread recording the
+    // frame, so the copy has been recorded and has not run yet. Giving up here
+    // would return black for the first save after boot; later ones are answered
+    // from DataReady above, because their copy ran frames ago.
     //
     // So wait for the render thread to present, which retires the frame and
-    // completes the copy with no extra synchronisation. The caller re-finds the
-    // destination afterwards; this releases the mutex.
+    // completes the copy. The caller re-finds the destination afterwards; this
+    // releases the mutex.
     const uint32_t address = destination.address;
     const uint64_t copy_frame = destination.copy_frame;
     if (WaitForCopy(address, copy_frame, lock)) {
@@ -1425,16 +1400,14 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
   }
 
   if (mode == Mode::kEager) {
-    // Deliberately no EnsureData: this fills with whatever the GPU has already
-    // finished, one frame late, which is what `readback_resolve=fast` does and
-    // what every non-Windows build did before the page trap existed.
+    // No EnsureData: this fills with whatever the GPU has already finished,
+    // one frame late, like `readback_resolve=fast`.
     //
-    // Asking EnsureData for a same-frame guarantee here calls PlumeFlushGuestWork
-    // during the very first resolve, before the frame this is recording into has
-    // ever been presented, and that hangs the guest at frame 0 -- no window ever
-    // appears. `auto` does not hit it because its first resolve arms rather than
-    // fills. Eager is the instrument you reach for when the trap is the suspect,
-    // so it has to boot.
+    // A same-frame guarantee here would call PlumeFlushGuestWork during the
+    // very first resolve, before the frame it records into has been presented,
+    // and hang the guest at frame 0. `auto` does not hit it because its first
+    // resolve arms rather than fills. Eager is the mode used when the trap is
+    // suspect, so it has to boot.
     destination->copy_pending = false;
     Fill(*destination);
     return;
@@ -1499,16 +1472,15 @@ bool ReadbackFillForRead(const TextureFetch& bound) {
         wrote.tiled ? "tiled" : "linear", wrote.format, wrote.endianness, bound.width, bound.height,
         bound.pitch, bound.tiled ? "tiled" : "linear", bound.format, bound.endianness);
   }
-  // And then refused rather than reconciled. A disagreement this wide is not a
-  // resolve destination being read back: it is the guest having freed the buffer
-  // and loaded something else into it, seen live as a 320x160 tiled BGRA
-  // thumbnail destination being bound as a 64x64 linear DXT1 texture. Filling
-  // there scatters render target pixels over an unrelated asset.
+  // Refused rather than reconciled. A disagreement this wide is the guest
+  // having freed the buffer and loaded something else into it, for instance a
+  // 320x160 tiled BGRA thumbnail destination bound as a 64x64 linear DXT1
+  // texture. Filling there scatters render target pixels over an unrelated
+  // asset.
   //
-  // Only this read is refused. Marking the destination as the guest's instead
-  // was tried and is wrong: it makes the refusal self-sustaining, so a later
-  // bind that *does* match the layout is refused too and the preview is drawn
-  // from guest memory nothing has filled.
+  // Only this read is refused. Marking the destination as the guest's would make
+  // the refusal self-sustaining: a later bind that does match the layout would
+  // be refused too and the preview drawn from guest memory nothing has filled.
   if (disagrees) {
     ++g_refused_stale;
     return false;

@@ -55,8 +55,7 @@
 //
 // Names are preferred over ordinals wherever a name exists: ordinals shift if
 // the container ever changes, names do not. EternalSonataEnumerateAssets()
-// lists the valid references for a container. The planned asset browser and
-// scripts/es_asset.py tooling will present the same list.
+// lists the valid references for a container.
 //
 // ---------------------------------------------------------------------------
 // When patches are applied
@@ -493,7 +492,7 @@ typedef void (*EternalSonataUnregisterAssetProviderFn)(uint32_t token);
 // ---------------------------------------------------------------------------
 // Rebuilds and remounts the cache with everything registered at that point.
 // The current implementation rebuilds the whole generation even when a guest
-// path is supplied. The planned asset browser Reload action uses this call.
+// path is supplied.
 typedef void (*EternalSonataInvalidateAssetFn)(const char* guest_path);
 
 // Removes a patch this mod registered, returning the reference to whatever the

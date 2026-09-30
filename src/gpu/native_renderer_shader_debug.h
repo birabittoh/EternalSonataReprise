@@ -3,33 +3,28 @@
 // The native renderer's side of the SDK's shader debugger overlay (F2).
 //
 // The overlay is written against the emulated-Xenos command processor, which
-// tracks shaders by microcode hash because it discovers them at runtime. This
-// renderer discovers nothing: the inventory is the closed set of 260 containers
-// baked into guest_shaders.bin, addressed by guest table slot. ReXApp exposes a
-// ShaderDebuggerOverride hook for exactly this case, so the whole job here is to
-// present slots as if they were hashes and to answer the four questions the
-// dialog asks: what exists, what is running, what is slow, and what should stop
-// drawing.
+// tracks shaders by microcode hash because it discovers them at runtime. Here
+// the inventory is the closed set of 260 containers in guest_shaders.bin,
+// addressed by guest table slot. ReXApp exposes a ShaderDebuggerOverride hook
+// for this case: slots are presented as if they were hashes, and the four
+// questions the dialog asks are answered: what exists, what is running, what is
+// slow, and what should stop drawing.
 //
 // The identifier handed to the dialog is the guest table slot, with 0x100 set
-// for a pixel shader. The type bit has to stay below bit 32, because the dialog
-// derives an ImGui id with `PushID(static_cast<int>(hash))` and a bit above
-// that is truncated away, which puts vs_007 and ps_007 on screen as two visible
-// items with the same id. It is stable across runs,
-// which is what makes the dialog's shaders.toml -- where the user's names and
-// the disable flags are persisted -- meaningful here: a name written against
-// vs_017 still means vs_017 tomorrow. A microcode hash would have been just as
-// stable, but the slot is what every other part of this renderer speaks, so a
-// number read out of the overlay can be pasted straight into a log filter.
+// for a pixel shader. The type bit stays below bit 32 because the dialog
+// derives an ImGui id with `PushID(static_cast<int>(hash))`, which truncates a
+// higher bit and would give vs_007 and ps_007 the same id. The identifier is
+// stable across runs, so the names and disable flags the dialog persists in
+// shaders.toml stay meaningful: a name written against vs_017 still means
+// vs_017. The slot is what every other part of this renderer speaks, so a
+// number read out of the overlay can be pasted into a log filter.
 //
 // Disabling is enforced in the draw path (see IssueGuestDraw): a draw whose
-// pipeline was built from a disabled vertex or pixel shader is dropped, and
-// counted like any other drop. That is deliberately cruder than the emulator's
-// version, which substitutes a no-op translation; dropping the draw is what
-// answers "which shader draws this?", which is the question the overlay is
-// being wired up for.
+// pipeline was built from a disabled vertex or pixel shader is dropped and
+// counted like any other drop. The emulator substitutes a no-op translation;
+// dropping the draw is what answers "which shader draws this?".
 //
-// Free of Plume types, like the rest of the non-internal headers here.
+// No Plume types appear in this header.
 
 #pragma once
 

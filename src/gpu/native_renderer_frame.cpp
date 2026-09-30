@@ -45,9 +45,8 @@ using namespace plume;
 
 // Colour targets are created in the swap chain's format so the present blit is
 // a straight copy rather than a conversion pass. The guest's own formats are
-// recorded in the key but not yet honoured; every colour surface this title
-// creates is an 8888 variant, and the ones that are not will show up as a
-// mismatch in the log rather than silently rendering wrong.
+// recorded in the key but not honoured; every colour surface this title creates
+// is an 8888 variant, and one that is not shows up as a mismatch in the log.
 constexpr RenderFormat kColorFormat = RenderFormat::B8G8R8A8_UNORM;
 // Depth carries a stencil plane because the guest masks whole passes with
 // stencil: see the stencil block in native_renderer_pipeline.cpp. The depth
@@ -100,17 +99,16 @@ struct GuestTarget {
   uint32_t guest_format = 0;
   bool depth = false;
 
-  // What the host image is actually sized to, which is not the guest surface.
+  // What the host image is sized to, which is not the guest surface.
   //
   // The guest renders 720p through an EDRAM surface of 1280x384 and has the GPU
   // replay the command buffer once per band, shifting each band's geometry with
-  // PA_SC_WINDOW_OFFSET. We see each draw once and execute it once, so there is
-  // no replay to hang the second band off: the host renders the whole screen in
-  // one pass and each band's resolve takes its own rows out of it. That only
-  // works if the image is the size of the screen rather than of the band, which
-  // is what BeginTiling's extent at device+13044/13048 gives.
+  // PA_SC_WINDOW_OFFSET. Each draw is executed once here, so the host renders
+  // the whole screen in one pass and each band's resolve takes its own rows out
+  // of it. The image is therefore the size of the screen, BeginTiling's extent
+  // at device+13044/13048, rather than of the band.
   //
-  // Part of the target's identity, so an extent that grows produces a new target
+  // Part of the target's identity, so a grown extent produces a new target
   // rather than a resize of one the previous frame may still be reading.
   uint32_t host_width = 0;
   uint32_t host_height = 0;
@@ -267,21 +265,18 @@ struct ResolvedTexture {
   std::unique_ptr<RenderBuffer> depth_staging;
   uint64_t depth_staging_bytes = 0;
 
-  // The guest's own copy of this image, for the guest's own CPU to read. See
+  // The guest's own copy of this image, for the guest's CPU to read. See
   // native_renderer_readback.h: the copy into this buffer is recorded into the
-  // frame's command list and is therefore a frame behind by the time anything
-  // can read it, which is the same delay the SDK's `readback_resolve=fast`
-  // runs with. Persistently mapped, because the alternative is a map/unmap per
-  // frame for a buffer whose contents are read from a fault handler.
+  // frame's command list, so it is a frame behind by the time anything can read
+  // it, the same delay as the SDK's `readback_resolve=fast`. Persistently
+  // mapped, because its contents are read from a fault handler.
   //
-  // One buffer, not one per frame slot, even with frames in flight. What keeps
-  // the guest off a copy the GPU is still running is the readiness test in the
-  // readback layer (see DataReady), which asks the ring whether that frame has
-  // retired and stalls if it has not; a second buffer would not make an
-  // unfinished copy readable. Per-slot buffers were tried and are a real
-  // regression: the published pointer would alternate every frame, so the
-  // arming cache never recognised it and re-protected the destination's pages
-  // every frame, which cost 1.7 ms/frame for nothing.
+  // One buffer, not one per frame slot. The readiness test in the readback
+  // layer (see DataReady) asks the ring whether that frame has retired and
+  // stalls if not, and a second buffer would not make an unfinished copy
+  // readable. Per-slot buffers make the published pointer alternate every
+  // frame, so the arming cache never recognises it and re-protects the
+  // destination's pages every frame (1.7 ms/frame).
   std::unique_ptr<RenderBuffer> readback;
   uint8_t* readback_mapped = nullptr;
   uint32_t readback_row_bytes = 0;
@@ -419,15 +414,13 @@ std::vector<FramebufferEntry> g_framebuffers;
 // What the guest currently has bound, kept as the *surfaces* rather than as
 // resolved host targets.
 //
-// Resolving them lazily is not a style choice. A host target's size depends on
-// the tiling extent, which BeginTiling does not establish until some way into
-// the first frame, so a target acquired before it and one acquired after it
-// have different heights. Binding colour and depth at different moments would
-// then pair a full screen colour attachment with a band-tall depth one, and
-// Plume takes a framebuffer's size from the colour attachment alone without
-// ever checking that the depth attachment agrees -- so it builds, and the first
-// draw runs off the end of the depth buffer. Acquiring both at the point of use
-// means they are always resolved against the same extent.
+// They are resolved lazily because a host target's size depends on the tiling
+// extent, which BeginTiling does not establish until some way into the first
+// frame. Binding colour and depth at different moments would pair a full screen
+// colour attachment with a band-tall depth one. Plume takes a framebuffer's size
+// from the colour attachment alone and never checks the depth attachment, so
+// the first draw would run off the end of the depth buffer. Acquiring both at
+// the point of use resolves them against the same extent.
 Surface g_bound_color_surface[d3d::kColorSurfaceCount];
 bool g_bound_color_valid[d3d::kColorSurfaceCount] = {};
 Surface g_bound_depth_surface;
@@ -478,19 +471,17 @@ GuestTarget* BoundDepthTarget() { return BoundDepthTarget(g_layer); }
 const RenderFramebuffer* g_bound_framebuffer = nullptr;
 
 // Resources replaced part way through a frame, held until the frame that may
-// still reference them has actually run on the GPU. A command list keeps raw
-// pointers to everything recorded into it and does not execute until the
-// present, so destroying a texture the moment it is replaced leaves the
-// submission reading freed memory.
+// still reference them has run on the GPU. A command list keeps raw pointers to
+// everything recorded into it and does not execute until the present, so
+// destroying a texture the moment it is replaced leaves the submission reading
+// freed memory.
 //
-// Stamped with the frame that retired them, and freed only once that frame is
-// known to have retired. Draining at the next command list open is a frame too
-// early: the present submits frame N and then waits on the slot kFramesInFlight
-// back, which is N-1, so frame N is still executing on the GPU when frame N+1
-// opens its first list. What that buys the GPU is freed memory, and the symptom
-// is a device hang (DXGI_ERROR_DEVICE_HUNG behind a failed Present, plus an
-// nvlddmkm id 153 in the system event log) rather than anything the renderer's
-// own counters can see.
+// Stamped with the frame that retired them, and freed once that frame is known
+// to have retired. Draining at the next command list open is a frame too
+// early: the present submits frame N and waits on the slot kFramesInFlight
+// back (N-1), so frame N is still executing when frame N+1 opens its first
+// list. The symptom is a device hang (DXGI_ERROR_DEVICE_HUNG behind a failed
+// Present), not anything the renderer's counters can see.
 struct RetiredBatch {
   uint64_t frame = 0;
   // Whole targets, kept intact rather than stripped of their textures. Callers
@@ -585,17 +576,14 @@ constexpr uint32_t kReadbackRowAlignment = 256;
 
 // --- The readback downscale ---
 //
-// The same full-screen triangle as the present blit, but rendering into a
-// guest-sized image in the guest targets' own format rather than into the swap
-// chain. It exists for one reason: the guest's CPU occasionally reads the pixels
-// it resolved (the save screenshot, the cross-fade sources; see
-// native_renderer_readback.h), and it expects them at 1280x720 no matter what
-// the renderer drew at.
+// The same full-screen triangle as the present blit, rendered into a guest
+// sized image in the guest targets' own format. The guest's CPU occasionally
+// reads the pixels it resolved (the save screenshot, the cross-fade sources; see
+// native_renderer_readback.h) and expects them at 1280x720 whatever the
+// renderer drew at.
 //
-// The linear sampler makes this a 2x2 (or 4x4) box filter for free, which is
-// the right answer here anyway: what the guest gets back is a downsample of a
-// higher-resolution frame rather than of the frame it would have drawn itself,
-// which is strictly better and is what the save thumbnail wants.
+// The linear sampler makes this a 2x2 (or 4x4) box filter, so the guest gets a
+// downsample of a higher-resolution frame.
 struct DownscaleResources {
   std::unique_ptr<RenderShader> vertex_shader;
   std::unique_ptr<RenderShader> pixel_shader;
@@ -1084,11 +1072,10 @@ bool DownscaleToReadbackSource(RenderCommandList* commands, ResolvedTexture* des
 
 // Keep the guest's own copy of a resolve destination up to date.
 //
-// Two things happen here, in this order and for that reason. First the buffer's
-// current contents -- which the GPU filled during a previous frame, since the
-// present waits on its fence -- are offered to the readback layer, which decides
-// whether the guest ever actually reads them and writes guest memory if so.
-// Then this frame's copy is recorded over them.
+// In order: the buffer's current contents, which the GPU filled during a
+// previous frame since the present waits on its fence, are offered to the
+// readback layer, which decides whether the guest ever reads them and writes
+// guest memory if so. Then this frame's copy is recorded over them.
 //
 // `box` is the region of the destination image the resolve just wrote, in the
 // guest's own coordinates rather than the supersampled image's, so a title that
@@ -1191,28 +1178,27 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
   if (extent_width == surface.width && extent_height > surface.height)
     host_height = extent_height;
 
-  // Supersampling, and only for surfaces that are a *resolution* rather than a
-  // fixed-size buffer. Growing the latter is wrong, not merely wasteful: the
-  // water simulation's 64x64 ping-pong pair is addressed in texels by shaders
-  // with the extent baked in (see the ripple probe below), and a grown one reads
-  // its own neighbourhood at the wrong stride.
+  // Supersampling applies only to surfaces that are a *resolution* rather than
+  // a fixed-size buffer. The water simulation's 64x64 ping-pong pair is
+  // addressed in texels by shaders with the extent baked in (see the ripple
+  // probe below), so growing it reads its own neighbourhood at the wrong
+  // stride.
   //
-  // The test is area against the tiling extent, which is not elegant but is the
-  // only thing that separates the two groups in this title. Matching the extent
-  // width exactly is what the banding logic above wants and is too narrow here:
-  // it misses the 720x720 surface the game renders scenes into at tile 0, which
-  // then resolved into the same 1280x720 destination as the 2x screen target and
-  // fought with it over the destination's size, once per frame, forever.
+  // The test is area against the tiling extent, the only thing that separates
+  // the two groups in this title. Matching the extent width exactly (what the
+  // banding logic above wants) misses the 720x720 surface the game renders
+  // scenes into at tile 0, which resolves into the same 1280x720 destination as
+  // the 2x screen target.
   //
-  // Observed either side of the line, at a 1280x720 extent (area 921600):
+  // At a 1280x720 extent (area 921600):
   //   scaled:     1280x720 (screen), 1280x384 (the 2x MSAA band), 720x720
   //   left alone: 640x360, 320x160, 256x256, 64x64
   // The gap between 720x720 (518400) and 640x360 (230400) is wide, so a third of
-  // the extent's area sits comfortably in it rather than on either edge.
+  // the extent's area sits comfortably in it.
   //
-  // Colour and depth stay in step for free, because a depth surface carries the
-  // same dimensions as the colour surface it pairs with; a rule keyed on the
-  // EDRAM tile would not, and would trip the attachment mismatch check.
+  // Colour and depth stay in step because a depth surface carries the same
+  // dimensions as its colour surface; a rule keyed on the EDRAM tile would trip
+  // the attachment mismatch check.
   const uint64_t extent_area = uint64_t(extent_width) * extent_height;
   const uint64_t surface_area = uint64_t(surface.width) * surface.height;
   const bool is_resolution = extent_area != 0 && surface_area * 3 >= extent_area;
@@ -1310,10 +1296,8 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
   target->window_sized = window_sized;
   target->resolution = is_resolution;
 
-  // Multisampling is recorded but the host image is single sampled for now.
-  // Nothing draws yet, so the only thing this loses is edge quality on a target
-  // that has no geometry in it; it becomes a real decision once draws land, and
-  // it is logged so the choice is visible rather than assumed.
+  // Multisampling is recorded and logged, but the host image is single
+  // sampled. The cost is edge quality.
   target->texture =
       depth ? device->createTexture(
                   RenderTextureDesc::DepthTarget(host_width, host_height, kDepthFormat))
@@ -1468,19 +1452,15 @@ bool ClearTargets(RenderCommandList* commands, GuestTarget* color, GuestTarget* 
 // --- The ripple probe ---
 //
 // The water's height field is a 64x64 ping-pong pair that the guest clears,
-// renders into and resolves every frame, and the flicker is that field
-// inverting with period 2. A frame capture found five host 64x64 images where
-// there should be three, with the guest's clears landing on two that nothing
-// ever samples, so the question this answers is whether one guest address keeps
-// one host image: whether the clear, the draw target, the resolve destination
-// and the later bind are the same image, and whether that image is the same one
-// from frame to frame.
+// renders into and resolves every frame. The probe records whether one guest
+// address keeps one host image: whether the clear, the draw target, the
+// resolve destination and the later bind are the same image, and whether it is
+// the same one from frame to frame.
 //
 // Every event on a surface of exactly ES_RIPPLE_SIZE (default 64) square is
-// recorded in the order it happens, and one line per frame is logged. Host
-// textures get small ids on first sight, because what matters is whether an id
-// alternates rather than what the pointer is; the pointer is logged once, when
-// the id is handed out.
+// recorded in order, and one line per frame is logged. Host textures get small
+// ids on first sight, since what matters is whether an id alternates; the
+// pointer is logged once, when the id is handed out.
 //
 // Off unless ES_RIPPLE_PROBE is set; its value is how many frames to log
 // (default 120), following the ES_DUMP_PS convention.
@@ -1614,24 +1594,18 @@ void RippleNoteBind(uint32_t address, uint32_t width, uint32_t height,
 
 // F11: capture two consecutive frames.
 //
-// RenderDoc's own F12 takes one frame per press, which cannot show an
-// alternation: the ripple simulation's defect is a period 2 flip, so a single
-// frame looks like a still image of noise and says nothing about what changes
-// between frames. TriggerMultiFrameCapture writes N consecutive frames as N
-// separate .rdc files with no input timing involved.
+// RenderDoc's own F12 takes one frame per press, which cannot show a frame to
+// frame alternation. TriggerMultiFrameCapture needs API 1.1.0 and the SDK's
+// renderdoc_app.h stops at 1.0.1, so this brackets two frames with
+// StartFrameCapture/EndFrameCapture (both in 1.0.0), producing one .rdc that
+// holds two frames.
 //
-// The obvious call for this is TriggerMultiFrameCapture, which writes N
-// consecutive frames as N separate files. It needs API 1.1.0 and the SDK ships
-// a renderdoc_app.h that stops at 1.0.1, so this brackets the two frames with
-// StartFrameCapture/EndFrameCapture instead: both are in 1.0.0, and the result
-// is one .rdc holding two frames rather than two files. That suits a diff.
+// It runs at the present, so the capture opens on the frame after the one the
+// key was pressed during and closes two presents later.
 //
-// This runs at the present, so the capture opens on the frame *after* the one
-// the key was pressed during, and closes two presents later.
-//
-// RenderDoc injects renderdoc.dll into the process before it starts, so
-// GetModuleHandle is enough and this never loads anything: outside RenderDoc
-// the handle is null and the key does nothing.
+// RenderDoc injects renderdoc.dll before the process starts, so
+// GetModuleHandle is enough and nothing is loaded: outside RenderDoc the handle
+// is null and the key does nothing.
 void PollCaptureKey() {
 #ifdef _WIN32
   static RENDERDOC_API_1_0_0* api = [] () -> RENDERDOC_API_1_0_0* {
@@ -1749,21 +1723,16 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
   // 720p single sampled pair at tiles 0 and 720 is what BeginTiling's clear
   // reaches, while the scene is drawn through the 2x multisampled 1280x384 pair
   // at tiles 0 and 768. Without this the scene's depth buffer is never cleared,
-  // holds zero, and every draw after the first fails LESS_EQUAL against it --
-  // which is what left the second intro logo white while its geometry, shaders
-  // and textures were all correct.
+  // holds zero, and every draw after the first fails LESS_EQUAL against it.
   //
-  // Clearing the whole aliasing image rather than the intersection is coarser
-  // than the hardware: the two footprints here overlap by 87% and the remainder
-  // is not addressed by the surface that is about to be drawn through. A partial
-  // clear would need a real EDRAM model, which is exactly what this renderer is
-  // built to avoid.
-  // Within one layer only. The two layers are the same EDRAM by construction --
-  // a composite target stands over exactly the tiles its world twin does -- but
-  // they are two renderings of one surface at different resolutions, not two
-  // surface descriptions sharing bytes, which is what this rule is about. Left
-  // unrestricted, a world-layer clear wipes the composite image the blit just
-  // put there, and the frame goes black.
+  // The whole aliasing image is cleared rather than the intersection. That is
+  // coarser than the hardware (the two footprints overlap by 87%), and a partial
+  // clear would need a real EDRAM model.
+  // Within one layer only. The two layers are the same EDRAM by construction (a
+  // composite target stands over exactly the tiles its world twin does) but are
+  // two renderings of one surface at different resolutions, not two surface
+  // descriptions sharing bytes. Unrestricted, a world layer clear wipes the
+  // composite image the blit just put there.
   for (auto& candidate : g_targets) {
     GuestTarget* other = candidate.get();
     const bool alias_color = color != nullptr && other != color && !other->depth &&
@@ -1780,10 +1749,8 @@ void FrameClear(uint32_t flags, uint32_t argb, float z, uint32_t stencil) {
     }
   }
 
-  // The colours themselves, because with no draws yet the clear *is* the frame:
-  // a black screen is the correct output if this is what the guest asks for,
-  // and the only way to tell that apart from the copy not working is to look at
-  // the value.
+  // The colours themselves, so a black clear the guest asked for can be told
+  // apart from a copy that is not working.
   if (g_clear_examples < 12) {
     ++g_clear_examples;
     REXLOG_DEBUG(
@@ -1824,30 +1791,26 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   // colour surface holds 1280x384 and the second band's resolve asks for rows
   // 352..720.
   //
-  // On the console those rows are inside the surface, because the GPU replayed
+  // On the console those rows are inside the surface because the GPU replayed
   // the draws with PA_SC_WINDOW_OFFSET shifting the band's geometry down into
   // it, so the band's origin in the surface is the rectangle minus the
-  // destination point. That subtraction is precisely the window offset, and it
-  // is what this used to do.
+  // destination point.
   //
-  // The host does not replay and does not apply the window offset: it renders
-  // the whole screen once, into a target sized to the tiling extent rather than
-  // to the band (see GuestTarget::host_height). So the rectangle is already in
-  // the target's space and the subtraction has nothing to undo -- doing it
-  // anyway is what put both bands at the top of the image and made the screen
-  // a vertically duplicated pair.
+  // The host does not replay or apply the window offset: it renders the whole
+  // screen once into a target sized to the tiling extent (see
+  // GuestTarget::host_height). The rectangle is already in the target's space,
+  // and subtracting the destination point would put both bands at the top of
+  // the image.
   //
-  // The old reading is kept as the fallback for a target that is not full
-  // screen, which is what a title that never calls BeginTiling would produce,
-  // and the two agree there anyway since such a resolve has a zero destination
-  // point.
+  // The subtraction is kept as the fallback for a target that is not full
+  // screen, such as a title that never calls BeginTiling. The two agree there
+  // since such a resolve has a zero destination point.
   //
   // A resolve with no rectangle passes 0x7FFFFFFF and means "the whole
   // surface", so it is not evidence that the target is too small.
-  // All of the rectangle arithmetic below stays in guest pixels, including the
-  // comparisons against the target, and only the final box and destination point
-  // are scaled. The alternative (scaling the guest's rectangle up front) makes
-  // every clamp and every log line read in two different units at once.
+  // The rectangle arithmetic stays in guest pixels, including the comparisons
+  // against the target, and only the final box and destination point are
+  // scaled, so every clamp and log line is in one unit.
   const float scale_x = target->scale_x;
   const float scale_y = target->scale_y;
   // The guest's own rectangle, not the whole image: a UI layer target is window
@@ -2183,17 +2146,14 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   // Leave the destination in the layout a draw will sample it in.
   //
   // A resolve destination exists to be sampled: that is what
-  // FrameResolveTextureByAddress hands it out for. The resolve itself needs it
-  // as COPY_DEST and the readback copy then needs it as COPY_SOURCE, so without
-  // this it is still in a copy layout when the next draw reads it. The
-  // descriptor set does say SHADER_READ, but a descriptor declares what a
-  // shader expects; only a barrier changes the resource state, and nothing
-  // between here and the draw emits one.
+  // FrameResolveTextureByAddress hands it out for. The resolve needs it as
+  // COPY_DEST and the readback copy as COPY_SOURCE, so without this it is still
+  // in a copy layout when the next draw reads it. A descriptor set declares what
+  // a shader expects; only a barrier changes the resource state.
   //
-  // The symptom is asymmetric in a way worth recording, because it is what made
-  // it hard to see: the present blit transitions its own source explicitly, so
-  // the image on screen was always correct, while anything sampled back out of
-  // a resolve in the same frame was read in the wrong state.
+  // The present blit transitions its own source explicitly, so the image on
+  // screen is correct either way; only textures sampled back out of a resolve
+  // in the same frame depend on this.
   Transition(commands, destination->texture.get(), destination->layout,
              RenderBarrierStage::GRAPHICS, RenderTextureLayout::SHADER_READ);
 
@@ -2230,13 +2190,12 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
 void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t height) {
   if (address == 0)
     return nullptr;
-  // The freshest copy, not the drawing layer's. Preferring the drawing layer is
-  // wrong for the one draw that matters most: the guest ends a field frame with
-  // a fullscreen quad that composites its banded screen, and that quad is after
+  // The freshest copy, not the drawing layer's. The guest ends a field frame
+  // with a fullscreen quad that composites its banded screen. That quad is after
   // the marker, so it draws in the UI layer while the screen it samples was
-  // resolved by the world layer. Once a stale UI layer copy of that address
-  // exists, which a menu frame creates, the preference returns it every frame
-  // and the world stops updating on screen while everything else keeps running.
+  // resolved by the world layer. Preferring the drawing layer would return a
+  // stale UI layer copy of that address once a menu frame has created one, and
+  // the world would stop updating on screen.
   //
   // Freshest by resolve order, not by frame: the main menu resolves the screen
   // into one address from the world layer and then, faded, from the UI layer in
@@ -2320,17 +2279,13 @@ void LogFrameSummary() {
 // moment the guest crosses from the world half of its frame into the UI half.
 //
 // The blit is the readback downscale's pipeline: the same full screen triangle
-// into a kColorFormat attachment, with the viewport doing all the scaling, which
-// is exactly a whole-source to whole-target stretch. The linear sampler is what
-// makes a world rendered below the window's resolution arrive filtered rather
-// than blocky.
+// into a kColorFormat attachment, with the viewport doing all the scaling, a
+// whole source to whole target stretch. The linear sampler filters a world
+// rendered below the window's resolution.
 //
-// The depth attachment is not carried across. The UI is strictly 2D and nothing
-// 3D draws over it, so the composite's depth buffer starts clear: a UI draw that
-// tests depth is testing against an empty buffer, which is what "a fresh 2D
-// layer" means. If something in the UI turns out to depend on the world's depth,
-// that is evidence the marker is in the wrong place, not that the composite
-// needs the world's depth buffer.
+// The depth attachment is not carried across. The UI is strictly 2D, so the
+// composite's depth buffer starts clear and a UI draw that tests depth tests
+// against an empty buffer.
 bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite) {
   if (composite == nullptr || composite->layer != GuestLayer::kComposite || !composite->texture)
     return false;
@@ -2350,18 +2305,16 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
     return false;
   }
 
-  // The world image over the same EDRAM tiles that something actually drew into
-  // most recently. Not the world twin of the bound surface: the guest renders
-  // the scene through a banded 1280x384 surface and composites it into a
-  // 1280x720 one at the end of the frame, so the twin of the surface bound at
-  // the marker is the one the guest's own composite quad writes and the world
-  // layer never touches. Blitting that put an empty image in the margins, which
-  // reads as the letterbox this split exists to remove.
+  // The world image over the same EDRAM tiles that something drew into most
+  // recently. Not the world twin of the bound surface: the guest renders the
+  // scene through a banded 1280x384 surface and composites it into a 1280x720
+  // one at the end of the frame, so the twin of the surface bound at the marker
+  // is the one the guest's own composite quad writes and the world layer never
+  // touches. Blitting that puts an empty image in the margins.
   //
   // By draw order rather than by frame: the scene surface and the banded screen
-  // are both drawn every frame, so a frame-granular test picks whichever comes
-  // first in the target list, which was the 720x720 scene surface and is not the
-  // screen.
+  // are both drawn every frame, so a frame granular test picks whichever comes
+  // first in the target list, which is the 720x720 scene surface.
   GuestTarget* world = BoundColorTarget(0, GuestLayer::kWorld);
   for (auto& candidate : g_targets) {
     if (candidate->depth || candidate->layer != GuestLayer::kWorld ||
@@ -2686,12 +2639,9 @@ void FrameNotifyCommandListBegun() {
 
 // --- The present probe ---
 //
-// A full-screen flicker that persists on a still main menu is not a material
-// bug: it is the frame as a whole differing between one present and the next.
-// The per-swap summary samples this far too rarely to see an alternation, so
-// this logs the identity of the presented image every frame, plus how much work
-// went into the frame that produced it. What to look for is any column that
-// ping-pongs between exactly two values while the scene is static.
+// Logs the identity of the presented image every frame, plus how much work went
+// into the frame that produced it, to find full-screen alternation: any column
+// that ping-pongs between two values while the scene is static.
 //
 // Off unless `ES_PRESENT_PROBE` is set; its value is how many frames to log
 // (default 120), following the ES_DUMP_PS convention.
@@ -2711,10 +2661,8 @@ uint64_t g_present_probe_last_clears = 0;
 
 // --- The present blit ---
 //
-// The guest renders at a fixed 1280x720 and the window is any size at all, so
-// the present is a textured draw rather than a copy: a copy cannot scale, and
-// what it did instead was present the overlapping corner of the two, which read
-// as the image sitting in the top left of a resized window.
+// The guest renders at a fixed 1280x720 and the window is any size, so the
+// present is a textured draw rather than a copy, which cannot scale.
 //
 // The scaling lives entirely in the viewport the draw is issued under, so
 // stretching and letterboxing differ only in that rectangle. `present_letterbox`

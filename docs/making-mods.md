@@ -83,20 +83,6 @@ The guest path is the path as it appears in `index.vmtoc`: lowercase,
 `/`-separated, no `game:\` prefix. Prefer names over ordinals wherever a name
 exists; an ordinal shifts if the container ever changes, a name doesn't.
 
-The planned `es_asset.py` tooling will list and extract them with:
-
-```bash
-python scripts/es_asset.py list "extracted/e/cfdata/adg01.e"
-python scripts/es_asset.py list --kind text --lang ITA "extracted/e/cfdata/*.e"
-python scripts/es_asset.py extract "cfdata/adg01.e#tex:face_alg.tga" -o face.png
-```
-
-`extract` is planned to write the shipped asset out in the same format the
-replacement goes back in, so the intended round trip is: extract, edit, drop
-the result into your mod under the matching name. The planned in-game asset
-browser will do the same thing for assets loaded by the current area, with a
-Reload button that re-reads `assets/`.
-
 ### The folder layout in full
 
 The path under `assets/` *is* the reference, spelled as directories:
@@ -138,8 +124,7 @@ btldata/script/tutorial/t0001.e,0,4,"Premi A per attaccare."
 ```
 
 `blob` is almost always `0` and may be left empty. The text is the game's own
-single-byte encoding, not UTF-8 (see [Text encoding](#text-encoding) below);
-The planned `es_asset.py` validator will check these tables before shipping.
+single-byte encoding, not UTF-8 (see [Text encoding](#text-encoding) below).
 
 `scripts/new_text_mod.py` scaffolds this whole layout with the table already
 filled in: every string of one language from every container and from
@@ -313,9 +298,8 @@ Runtime mods can pass `EternalSonataLipEvent` entries to
 The game's font draws **one glyph per byte**: text is single-byte CP1252 /
 Latin-1, not UTF-8, so `é` written as UTF-8 renders as two garbled glyphs.
 `.txt` and `.csv` files under `assets/text*` are read as UTF-8 and transcoded
-for you, and `es_asset.py` fails loudly on a character with no single-byte
-equivalent rather than emitting mojibake. If you write bytes directly through
-the C API you get no such help; write `"\xE9"`.
+for you. If you write bytes directly through the C API you get no such help;
+write `"\xE9"`.
 
 A newline inside a string is the literal two-character sequence `\` `n`, not
 `0x0A`. Markup tags (`<w>`, `<w1500>`, `<c Allegretto>`, …) pass through

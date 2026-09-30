@@ -2,8 +2,7 @@
 //
 // Public C ABI for observing the game's save system: whether the game would
 // let the player save right now, what is in each save slot, and whether a save
-// is running. The write side (making the game save or load a slot on demand)
-// is deliberately not here yet.
+// is running. It is read only: it cannot make the game save or load a slot.
 //
 // A mod does NOT link against this project. Copy this header into the mod and
 // resolve the entry points at runtime out of the host executable, the same way
