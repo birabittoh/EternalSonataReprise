@@ -35,7 +35,7 @@ extern "C" {
 // Options is two pages, paged between with LB/RB. Page 1 is the Options screen
 // proper: the game's own Subtitles and Voice rows plus this project's Text
 // row. Page 2 is the button-configuration screen, which the recompilation uses
-// for graphics settings (Resolution, Frame Rate). A row registered by a mod
+// for graphics settings (Resolution, Frame Rate) and Quit Game. A row registered by a mod
 // starts on page 2, because page 1 is reserved for the game's own settings;
 // move it with EternalSonataSetOptionRowPage.
 enum {

@@ -538,6 +538,10 @@ constexpr LocalizedLabel kLabelText = {
 // form is the longest of the five and is right at the edge of the label
 // column, so if it ever visibly touches the value column this is the label to
 // shorten first.
+// Lets a controller player close the game without reaching for the window.
+constexpr LocalizedLabel kLabelQuitGame = {
+    {"Quit Game", "Spiel beenden", "Quitter", "Salir", "Esci dal gioco",
+     "ゲーム終了"}};
 constexpr LocalizedLabel kLabelOverworldModel = {
     {"Overworld Model", "Weltmodell", "Mod\xE8le monde", "Modelo mapa",
      "Modello mappa", "フィールドモデル"}};
@@ -656,6 +660,8 @@ struct OptionRow {
   // carries. A row whose values run past 100 (the field of view reaches 200%)
   // has to raise it, or both the bar and the readout clamp.
   int slider_max = 0;
+  // An action row has no values and no bar; A runs this instead.
+  std::function<void(u8*)> action;
   // The cvar this row writes, when that cvar only takes effect on the next
   // launch (rex::cvar::Lifecycle::kRequiresRestart). Non-null means the row
   // draws the restart marker once the cvar has actually been changed this
@@ -745,7 +751,7 @@ int32_t BarWidthFor(const OptionRow& row, int index, int lang) {
 // See SetBarScaleX.
 u32 BarsForRow(const OptionRow& row, int lang) {
   // A slider row has no values to highlight; the gauge is its own indicator.
-  return row.slider ? 0u : 1u;
+  return row.slider || row.action ? 0u : 1u;
 }
 
 // The Frame Rate row draws settings.cpp's own preset list (see
@@ -874,7 +880,7 @@ std::vector<OptionRow>& Rows() {
     // while the guest thread is walking the registry safe: appends only ever
     // touch the tail, and references the guest side already holds stay valid.
     initial.reserve(kMaxOptionRows * kPageCount);
-    initial.resize(7);
+    initial.resize(8);
 
     // Page 2, the graphics page, in the order they are drawn.
     //
@@ -948,6 +954,14 @@ std::vector<OptionRow>& Rows() {
     initial[6].get_index = &AimInvertYGetIndex;
     initial[6].set_index = &AimInvertYSetIndex;
     initial[6].page = kPageButtons;
+    MakeLiteralRow(initial[7], kLabelQuitGame, nullptr, 0);
+    initial[7].action = [](u8*) {
+      REXLOG_INFO("[options] quit requested");
+      eternalsonata::QuitNow();
+    };
+    initial[7].get_index = [] { return 0; };
+    initial[7].set_index = [](u8*, int) {};
+    initial[7].page = kPageButtons;
 
     // Mod-published translations for the labels above, in every language
     // including the ones mods added. The Text row's own *values* stay as they
@@ -959,6 +973,7 @@ std::vector<OptionRow>& Rows() {
     TranslateBuiltinLabel(initial[4], "overworld_model_label");
     TranslateBuiltinLabel(initial[5], "aim_invert_x_label");
     TranslateBuiltinLabel(initial[6], "aim_invert_y_label");
+    TranslateBuiltinLabel(initial[7], "quit_game_label");
     return initial;
   }();
   return rows;
@@ -1772,7 +1787,7 @@ constexpr u32 kVoiceByte = 0x8243FC06u;   // BYTE2(dword_8243FC04): 0 = Japanese
 constexpr int kVoiceStockValues = 2;
 // Synthetic BTX ids for the extra values, past the last id any row can claim so
 // the two ranges cannot collide however many rows are registered.
-constexpr u32 kVoiceSidBase = kRowSidBase + kRowSidStride * kMaxOptionRows;
+constexpr u32 kVoiceSidBase = kRowSidBase + kRowSidStride * kMaxOptionRows * kPageCount;
 
 // One guest string per extra value, allocated on the first build that needs it.
 std::vector<u32> g_voice_addr;
@@ -3618,6 +3633,13 @@ REX_HOOK_RAW(sub_821F62B8) {
     }
     const u32 opt_row = row - pl.stock_rows;
     const OptionRow& def = all[st.rows[opt_row]];
+    if (def.action) {
+      if (fresh & kBtnA) {
+        PlayMenuSfx(base, pl.change_sfx);
+        def.action(base);
+      }
+      return;
+    }
 
     // A slider row's steps stand in for its values, and it takes the repeat
     // mask so holding a direction walks the gauge the way the stock volume

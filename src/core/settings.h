@@ -116,6 +116,9 @@ bool AnyCvarPendingRestart();
 // not run yet.
 bool RestartNow();
 
+// Closes the game, marshalled like RestartNow. False before BindSettingsTargets.
+bool QuitNow();
+
 // Applies the frame-rate cap end to end: updates the frame_rate cvar
 // ("30"/"60"/"adaptive"/"unlocked") and persists. The value itself is applied
 // by the host limiter in eternalsonata_framerate.cpp, which reads the cvar
