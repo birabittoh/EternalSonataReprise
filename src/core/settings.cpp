@@ -1643,6 +1643,15 @@ bool RestartNow() {
   return true;
 }
 
+bool QuitNow() {
+  if (!g_window) {
+    return false;
+  }
+  rex::ui::Window* window = g_window;
+  window->app_context().CallInUIThread([window] { window->RequestClose(); });
+  return true;
+}
+
 void SaveUserSettings() {
   if (g_user_settings_path.empty()) {
     return;
