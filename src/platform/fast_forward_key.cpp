@@ -7,7 +7,7 @@
 #include <rex/ui/window.h>
 #include <rex/ui/window_listener.h>
 
-REXCVAR_DEFINE_STRING(bind_fast_forward, "Tab", "Keybinds",
+REXCVAR_DEFINE_STRING(bind_fast_forward, "Shift", "Keybinds",
                       "Fast forward while held (keyboard key name, or empty for none)");
 
 namespace eternalsonata {

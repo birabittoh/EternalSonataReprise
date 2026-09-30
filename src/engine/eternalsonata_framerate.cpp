@@ -479,7 +479,7 @@ void PreciseSleep(std::chrono::steady_clock::duration d) {
 //
 // Deliberately momentary rather than a toggle: a stuck fast-forward in a
 // cutscene is unrecoverable without noticing what happened.
-// The pad counterpart of Tab, set by the fast_forward_button cvar. The drivers
+// The pad counterpart of the fast forward key, set by the fast_forward_button cvar. The drivers
 // are already gated on window focus, and a suppressed guest means an overlay
 // owns the pad.
 bool TurboPadHeld() {
@@ -544,7 +544,7 @@ bool TurboHeld() {
   if (TurboPadHeld()) {
     return true;
   }
-  // Don't steal Tab from the settings overlay, where it moves between widgets.
+  // Don't fast forward while the settings overlay has the keyboard.
   if (ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureKeyboard) {
     return false;
   }
