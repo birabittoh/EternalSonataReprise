@@ -2317,6 +2317,39 @@ void PatchPageCounter(u8* base, u32 list, u32 bytes, int page) {
   }
 }
 
+// sub_82201620 puts the Voice bar on column `byte ^ 1` in every language, which
+// matches every list but the Japanese one: that list draws Japanese (BTX 43)
+// left of English (BTX 44), so the bar sat on the other label. Restores the
+// English first order the handler and VoiceGuestIndex assume.
+constexpr u32 kVoiceSidJapanese = 43u;
+constexpr u32 kVoiceSidEnglish = 44u;
+
+void FixVoiceValueOrder(u8* base, u32 list, u32 bytes) {
+  u32 ja = 0, en = 0;
+  for (u32 off = 0; off + kTextRecordBytes <= bytes && !(ja && en); off += 4) {
+    const u32 rec = list + off;
+    if (REX_LOAD_U32(rec) != kTextRecord ||
+        static_cast<int32_t>(REX_LOAD_U32(rec + 0x0C)) != kVoiceRecordY) {
+      continue;
+    }
+    const u32 sid = REX_LOAD_U32(rec + 4);
+    if (sid == kVoiceSidJapanese) {
+      ja = rec;
+    } else if (sid == kVoiceSidEnglish) {
+      en = rec;
+    }
+  }
+  if (!ja || !en) {
+    return;
+  }
+  const u32 ja_x = REX_LOAD_U32(ja + 8);
+  const u32 en_x = REX_LOAD_U32(en + 8);
+  if (static_cast<int32_t>(ja_x) < static_cast<int32_t>(en_x)) {
+    REX_STORE_U32(ja + 8, en_x);
+    REX_STORE_U32(en + 8, ja_x);
+  }
+}
+
 // Allocates the guest-side label and value strings for every row registered so
 // far. Page-independent: a row keeps its strings whichever page it is on, and
 // rows that already have theirs are left alone.
@@ -2663,6 +2696,9 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   }
   REX_STORE_U32(at, kListTerminator);
   PatchPageCounter(base, list, at - list, page);
+  if (page == kPageOptions) {
+    FixVoiceValueOrder(base, list, at - list);
+  }
 
   REXLOG_INFO("[options] page {}: {} native rows built (list=0x{:08X})", page,
               row_count, list);
