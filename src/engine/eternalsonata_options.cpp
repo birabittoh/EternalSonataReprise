@@ -560,6 +560,15 @@ constexpr LocalizedLabel kLabelText = {
 constexpr LocalizedLabel kLabelQuitGame = {
     {"Quit Game", "Spiel beenden", "Quitter", "Salir", "Esci dal gioco",
      "ゲーム終了"}};
+// The question the Quit Game row asks first. "\\n" is the BTX line break; the
+// Yes/No choice is appended from the game's own confirm string.
+constexpr LocalizedLabel kLabelQuitPrompt = {
+    {"Quit the game?\\nAll unsaved progress will be lost.",
+     "Spiel beenden?\\nNicht gespeicherter Fortschritt geht verloren.",
+     "Quitter le jeu ?\\nToute progression non sauvegard\xE9" "e sera perdue.",
+     "\xBFSalir del juego?\\nSe perder\xE1 todo el progreso no guardado.",
+     "Uscire dal gioco?\\nI progressi non salvati andranno persi.",
+     "ゲームを終了しますか？\\nセーブしていない進行状況は失われます。"}};
 constexpr LocalizedLabel kLabelOverworldModel = {
     {"Overworld Model", "Weltmodell", "Mod\xE8le monde", "Modelo mapa",
      "Modello mappa", "フィールドモデル"}};
@@ -854,6 +863,11 @@ void MakeBooleanRow(OptionRow& row, const LocalizedLabel& label) {
   row.values.push_back(std::move(off));
 }
 
+// Asks the Quit Game question on the next menu tick; see QuitConfirmTick.
+void RequestQuitConfirm();
+// The question's text while the borrowed dialog is being built, else 0.
+u32 QuitPromptOverride(PPCContext& ctx, u8* base, u32 blob, u32 sid);
+
 // Fills in a built-in row's label for every language a mod published a
 // "settings.native_string" translation for (see settings.h). The rows this
 // project synthesises carry app-authored English/EFIGS labels, so a mod-added
@@ -970,10 +984,7 @@ RowStore& Rows() {
     initial[6].set_index = &AimInvertYSetIndex;
     initial[6].page = kPageButtons;
     MakeLiteralRow(initial[7], kLabelQuitGame, nullptr, 0);
-    initial[7].action = [](u8*) {
-      REXLOG_INFO("[options] quit requested");
-      eternalsonata::QuitNow();
-    };
+    initial[7].action = [](u8*) { RequestQuitConfirm(); };
     initial[7].get_index = [] { return 0; };
     initial[7].set_index = [](u8*, int) {};
     initial[7].page = kPageButtons;
@@ -2852,6 +2863,10 @@ constexpr u32 kMusicLabelSid = 39;
 REX_HOOK_RAW(sub_8223B780) {
   const u32 blob = ctx.r3.u32;
   const u32 sid = ctx.r4.u32;
+  if (const u32 prompt = QuitPromptOverride(ctx, base, blob, sid)) {
+    ctx.r3.u32 = prompt;
+    return;
+  }
   // The status menu's Achievements entry rides a stock string id, so this has
   // to come before anything keyed on the id alone.
   if (const u32 label = option_strip::AchievementsLabelOverride(base, sid)) {
@@ -3544,6 +3559,176 @@ void ResetRowGroup(u8* base, int page) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Quit Game confirmation
+// ---------------------------------------------------------------------------
+//
+// Borrows the photo album's trash dialog. sub_82206028 builds it into the
+// album object: +0 picks the BTX id (0 = 166), +36 is its built flag and
+// +3024/+3028/+3032 the frame, choice box and text ids. sub_822062D0 removes
+// those ids again. The Yes/No itself is markup in the string (<a1>, <a2>,
+// <Q1>), so the text manager runs the choice and the menu only polls it.
+REX_EXTERN(__imp__sub_82206028);
+REX_EXTERN(__imp__sub_822062D0);
+
+constexpr u32 kStockConfirmSid = 166;
+constexpr u32 kAlbumObjectBytes = 3040;
+constexpr u32 kAlbumBuilt = 36;
+constexpr u32 kAlbumTextId = 3032;
+constexpr u32 kQuitPromptBytes = 256;
+// What sub_82206AF8 reads back: the text node's choice record, whose +420 is
+// the answer (0 undecided, 1 the first choice), and the node's cached copy.
+constexpr u32 kTextNodeChoice = 888;
+constexpr u32 kTextNodeAnswerCopy = 896;
+constexpr u32 kChoiceAnswer = 420;
+// sub_82200540 hands the screen no input while +425 is clear. A negative +428
+// holds it off; a positive one counts down by 5 per tick, then input resumes.
+constexpr u32 kMenuInputEnabled = 425;
+constexpr u32 kMenuInputHold = 428;
+// Long enough to swallow the press that answered the dialog.
+constexpr u32 kMenuInputResume = 10;
+constexpr u32 kSfxCancel = 3;
+// Ticks to wait for the text node before calling the dialog lost.
+constexpr int kQuitNodeGrace = 60;
+
+enum class QuitConfirm { kIdle, kRequested, kOpen };
+QuitConfirm g_quit_confirm = QuitConfirm::kIdle;
+bool g_quit_prompt_building = false;
+u32 g_quit_album = 0;
+u32 g_quit_prompt = 0;
+int g_quit_ticks = 0;
+
+void RequestQuitConfirm() {
+  if (g_quit_confirm == QuitConfirm::kIdle) {
+    g_quit_confirm = QuitConfirm::kRequested;
+  }
+}
+
+// Our question followed by the stock string's own Yes/No tail, so the choices
+// stay in the game's words in every language.
+u32 WriteQuitPrompt(u8* base, u32 stock) {
+  std::string tail;
+  if (stock) {
+    std::string text;
+    for (u32 i = 0; i < kQuitPromptBytes; ++i) {
+      const char c = static_cast<char>(REX_LOAD_U8(stock + i));
+      if (!c) {
+        break;
+      }
+      text.push_back(c);
+    }
+    const size_t at = text.find("\\n<l5>");
+    if (at != std::string::npos) {
+      tail = text.substr(at);
+    }
+  }
+  if (tail.empty()) {
+    tail = "\\n<l5><a1>Yes\\n<a2>No<Q1>";
+  }
+  const int lang = DrawLanguage();
+  std::string text = LabelText(kLabelQuitPrompt, kLabelQuitPrompt.text[lang] ? lang : 0);
+  text += tail;
+  text.resize(std::min<size_t>(text.size(), kQuitPromptBytes - 1));
+  WriteGuestString(base, g_quit_prompt, text.c_str());
+  return g_quit_prompt;
+}
+
+// Both album routines name the main menu root outright, while Options opened
+// in game lives on the field root, so the root they see is swapped for the call.
+// Run on the hook's own ctx: the build reaches other hooks that call into the
+// guest themselves.
+void CallAlbumRoutine(PPCContext& ctx, u8* base,
+                      void (*routine)(PPCContext&, u8*)) {
+  const u32 saved_root = REX_LOAD_U32(kUiRootMenu);
+  REX_STORE_U32(kUiRootMenu, REX_LOAD_U32(g_ui_root));
+  const PPCContext saved = ctx;
+  ctx.r3.u64 = g_quit_album;
+  routine(ctx, base);
+  ctx = saved;
+  REX_STORE_U32(kUiRootMenu, saved_root);
+}
+
+// 0 while undecided, 1 for Yes, anything else for No, or -1 with no text node.
+int QuitAnswer(u8* base) {
+  const u32 text_obj = g_resolve_object(REX_LOAD_U32(g_ui_root),
+                                        REX_LOAD_U32(g_quit_album + kAlbumTextId));
+  const u32 node = text_obj ? TextNodeFor(base, text_obj) : 0;
+  if (!node) {
+    return -1;
+  }
+  const u32 choice = REX_LOAD_U32(node + kTextNodeChoice);
+  if (choice && choice != 0xFFFFFFFFu) {
+    REX_STORE_U32(node + kTextNodeAnswerCopy, REX_LOAD_U32(choice + kChoiceAnswer));
+  }
+  return static_cast<int>(REX_LOAD_U32(node + kTextNodeAnswerCopy));
+}
+
+void OpenQuitConfirm(PPCContext& ctx, u8* base, u32 menu) {
+  auto* mem = rex::system::kernel_memory();
+  if (!g_quit_album && mem) {
+    g_quit_album = mem->SystemHeapAlloc(kAlbumObjectBytes, 0x20);
+    g_quit_prompt = mem->SystemHeapAlloc(kQuitPromptBytes, 0x20);
+  }
+  if (!g_quit_album || !g_quit_prompt) {
+    REXLOG_WARN("[options] quit confirm: guest allocation failed");
+    return;
+  }
+  for (u32 i = 0; i < kAlbumObjectBytes; i += 4) {
+    REX_STORE_U32(g_quit_album + i, 0);
+  }
+  g_quit_prompt_building = true;
+  CallAlbumRoutine(ctx, base, __imp__sub_82206028);
+  g_quit_prompt_building = false;
+  if (!REX_LOAD_U8(g_quit_album + kAlbumBuilt)) {
+    REXLOG_WARN("[options] quit confirm: dialog was not built");
+    return;
+  }
+  REX_STORE_U8(menu + kMenuInputEnabled, 0);
+  REX_STORE_U32(menu + kMenuInputHold, 0xFFFFFFFFu);
+  g_quit_ticks = 0;
+  g_quit_confirm = QuitConfirm::kOpen;
+  REXLOG_INFO("[options] quit confirm opened");
+}
+
+u32 QuitPromptOverride(PPCContext& ctx, u8* base, u32 blob, u32 sid) {
+  if (!g_quit_prompt_building || sid != kStockConfirmSid) {
+    return 0;
+  }
+  return WriteQuitPrompt(base, StockBtxLookup(ctx, base, blob, sid));
+}
+
+// Runs once per menu tick. True while the dialog owns the input.
+bool QuitConfirmTick(PPCContext& ctx, u8* base, int page) {
+  const u32 menu = REX_LOAD_U32(kMenuObject);
+  if (g_quit_confirm == QuitConfirm::kRequested) {
+    g_quit_confirm = QuitConfirm::kIdle;
+    if (page >= 0 && GuestPtr(menu)) {
+      OpenQuitConfirm(ctx, base, menu);
+    }
+  }
+  if (g_quit_confirm != QuitConfirm::kOpen) {
+    return false;
+  }
+  ++g_quit_ticks;
+  const int answer = QuitAnswer(base);
+  if (answer == 0 || (answer < 0 && g_quit_ticks < kQuitNodeGrace)) {
+    return true;
+  }
+  CallAlbumRoutine(ctx, base, __imp__sub_822062D0);
+  g_quit_confirm = QuitConfirm::kIdle;
+  if (GuestPtr(menu)) {
+    REX_STORE_U32(menu + kMenuInputHold, kMenuInputResume);
+  }
+  if (answer == 1) {
+    REXLOG_INFO("[options] quit confirmed");
+    eternalsonata::QuitNow();
+  } else {
+    REXLOG_INFO("[options] quit cancelled (answer {})", answer);
+    PlayMenuSfx(base, kSfxCancel);
+  }
+  return true;
+}
+
 }  // namespace
 
 // Every gauge on a menu screen costs one 108 byte element out of the menu
@@ -3623,6 +3808,7 @@ REX_HOOK_RAW(sub_821F62B8) {
   }
 
   const int page = ActivePage(base);
+  const bool confirming = QuitConfirmTick(ctx, base, page);
   static int s_last_active_page = -1;
   if (page < 0) {
     if (s_last_active_page >= 0) {
@@ -3806,6 +3992,9 @@ REX_HOOK_RAW(sub_821F62B8) {
   const u32 repeat_now = REX_LOAD_U32(kPad0 + kPadRepeat);
   const u32 repeat = repeat_now & ~s_prev_repeat;
   s_prev_repeat = repeat_now;
+  if (confirming) {
+    return;
+  }
 
   const u32 active_group = REX_LOAD_U32(menu + 396);
   if (active_group != pl.group_id) {
