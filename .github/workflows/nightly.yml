@@ -49,6 +49,8 @@ jobs:
     with:
       publish_mode: artifact
       artifact_name: eternalsonata-${{ needs.prepare.outputs.tag_name }}
+      # Loose pkg/ payloads would collide once merged into one release.
+      upload_packages: true
     secrets: inherit
 
   publish:
@@ -63,7 +65,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v6
         with:
-          pattern: eternalsonata-${{ needs.prepare.outputs.tag_name }}-*
+          pattern: release-*
           path: release-assets
           merge-multiple: true
 

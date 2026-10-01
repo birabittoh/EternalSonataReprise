@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ""
+      upload_packages:
+        description: "In artifact mode, upload the packaged archives as release-* like a release does"
+        required: false
+        type: boolean
+        default: false
 env:
   ASSETS_REPO: ${{ vars.ASSETS_REPO }}
   ASSET_PATH: default.xex
@@ -338,7 +343,7 @@ jobs:
           echo "ARTIFACT_NAME=${name}" >> "$GITHUB_ENV"
 
       - name: Upload CI artifact
-        if: inputs.publish_mode == 'artifact'
+        if: inputs.publish_mode == 'artifact' && !inputs.upload_packages
         uses: actions/upload-artifact@v6
         with:
           name: ${{ env.ARTIFACT_NAME }}
@@ -346,7 +351,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload release artifact
-        if: inputs.publish_mode == 'release'
+        if: inputs.publish_mode == 'release' || inputs.upload_packages
         uses: actions/upload-artifact@v6
         with:
           name: release-${{ matrix.platform }}
