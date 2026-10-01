@@ -11,6 +11,8 @@ overlays, hooks) so the game runs natively and can be modded like a PC port.
 
 # Get the game on [Goopie](https://goopie.xyz/#/library/eternalsonata)!
 
+Join the community on [Discord](https://discord.gg/DJe2pXMH7S).
+
 ## Using a pre-built release
 
 Get the latest stable build from the [Releases](../../releases/latest) page.
@@ -44,9 +46,7 @@ update_data_root = "update"    # extracted title update files (default: update)
 
 On some Windows systems, SDL's DirectInput device scan can block while Windows
 queries an unresponsive HID device. The window stays black and unresponsive
-for a while and then starts normally after the HID request times out. Any HID
-input device, including a mouse, can be queried during controller discovery
-and delay the entire startup process.
+for a while, then starts normally after the HID request times out.
 
 To bypass the DirectInput scan for one launch, start the game from PowerShell:
 
@@ -63,7 +63,12 @@ This setting disables support for controllers that require DirectInput.
 
 #### Linux (Arch/CachyOS)
 ```bash
-paru -S clang20 cmake ninja vulkan-headers
+paru -S clang20 cmake ninja vulkan-headers wayland libxcb
+```
+
+#### Linux (Debian/Ubuntu)
+```bash
+sudo apt install clang cmake ninja-build libvulkan-dev libwayland-dev libxcb1-dev
 ```
 
 #### Windows
@@ -74,14 +79,20 @@ scoop install llvm cmake ninja extract-xiso
 ### 1. Clone
 
 ```bash
-git clone https://github.com/birabittoh/EternalSonataReprise
+git clone --recursive https://github.com/birabittoh/EternalSonataReprise
 cd EternalSonataReprise
+```
+
+If you already cloned without `--recursive`, fetch the `plume` submodule with:
+
+```bash
+git submodule update --init --recursive
 ```
 
 ### 2. Download the ReXGlue SDK
 
 ```bash
-python scripts/download-sdk.py --pinned
+python scripts/download-sdk.py --pinned # Fetches the Release version
 ```
 
 ### 3. Provide your game
@@ -96,11 +107,26 @@ extract-xiso -d assets "Eternal Sonata.iso"
 
 ### 4. Build
 
-Use this script:
+For an optimized release build:
 
 ```bash
-python scripts/build.py
+python scripts/build.py --release
 ```
+
+Without `--release` the script builds RelWithDebInfo.
+
+## Contribution Policy
+
+AI-assisted contributions will be judged exactly like human-written ones.
+Basically, if I like the code you submitted, and I feel like the PR is in
+line with the project's goals, I will gladly accept it, no matter how that
+code was produced.
+
+Things that make me not like your code are:
+
+* emdashes;
+* comments with useless narrative ("this used to do this, now it does this");
+* Claude/Codex/Jules/whatever as a co-author in commit messages.
 
 ## Credits
 
