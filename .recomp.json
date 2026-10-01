@@ -1,0 +1,38 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Eternal Sonata",
+  "wikidata": "Q1338867",
+  "system": "Xbox 360",
+  "type": "recomp",
+  "project": "EternalSonataReprise",
+  "toolchain": "ReXGlue SDK",
+  "approach": "Static recompilation of the PowerPC executable into native code, featuring a native renderer and mod support.",
+  "status": "released",
+  "targets": [
+    "Windows",
+    "Linux",
+    "macOS",
+    "Android"
+  ],
+  "original": {
+    "region": "Europe",
+    "sha1": "1626bf9c87697a533fc8d1cdaeb8e58e74c7be37"
+  },
+  "maintainers": [
+    {
+      "name": "BiRabittoh",
+      "link": "https://github.com/birabittoh"
+    }
+  ],
+  "links": [
+    {
+      "label": "Goopie",
+      "url": "https://goopie.xyz/#/library/eternalsonata"
+    },
+    {
+      "label": "Discord",
+      "url": "https://discord.gg/DJe2pXMH7S"
+    }
+  ],
+  "notes": "Building from source needs the PAL default.xex; game assets can come from the PAL, USA or Japanese release."
+}
