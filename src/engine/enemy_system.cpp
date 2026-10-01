@@ -41,7 +41,7 @@
 // ---------------------------------------------------------------------------
 // Player multipliers
 //
-// The enemy_*_multiplier cvars scale EXP, gold and max HP for every enemy. They
+// The enemy_*_multiplier cvars scale EXP, gold, max HP and damage for every enemy. They
 // are a separate layer on top of the mod overrides rather than an ANY override,
 // because a type's own rule replaces the ANY one: a player's "x2 EXP" would
 // vanish on any enemy a mod touched. Current HP follows the max through the
@@ -63,6 +63,7 @@
 #include <vector>
 
 #include <rex/cvar.h>
+#include <rex/hook.h>
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
 #include <rex/system/mod_plugin.h>
@@ -87,6 +88,11 @@ REXCVAR_DEFINE_DOUBLE(enemy_gold_multiplier, 1.0, "Eternal Sonata",
 REXCVAR_DEFINE_DOUBLE(enemy_hp_multiplier, 1.0, "Eternal Sonata",
                       "Multiplier on every enemy's max HP, applied on top of any mod rebalance")
     .range(0.1, 10.0);
+
+REXCVAR_DEFINE_DOUBLE(enemy_damage_multiplier, 1.0, "Eternal Sonata",
+                      "Multiplier on the damage every enemy deals, applied on top of any mod "
+                      "rebalance")
+    .range(0.0, 10.0);
 
 namespace eternalsonata {
 namespace {
@@ -168,6 +174,7 @@ enum class Kind {
   kI16,    // signed halfword
   kI32,    // signed word
   kPct,    // float, exposed as a percentage of 1.0
+  kHost,   // no guest field; held in g_host_stats, 100 as shipped
 };
 
 struct StatInfo {
@@ -205,7 +212,26 @@ constexpr StatInfo kStats[ETERNALSONATA_ENEMY_STAT_COUNT] = {
     {"move range", battle::kEnemyMoveRangeOffset, Kind::kPct, false, true, false},
     {"chase range", battle::kEnemyChaseRangeOffset, Kind::kPct, false, true, false},
     {"scale", battle::kEnemyScaleOffset, Kind::kPct, false, true, false},
+    {"damage", 0, Kind::kHost, false, true, false},
 };
+
+// Damage is scaled on the formula's result rather than through attack, which
+// is offset by defense and so would not scale linearly. The game has no field
+// for that, so the host keeps one per part.
+int32_t g_host_stats[ETERNALSONATA_ENEMY_MAX_SLOTS * battle::kEnemyPartCount];
+
+void ResetHostStats() { std::fill(std::begin(g_host_stats), std::end(g_host_stats), 100); }
+
+int32_t* HostStat(uint32_t part) {
+  const uint32_t offset = part - battle::kEnemyArrayBase;
+  const uint32_t slot = offset / battle::kEnemyRecordStride;
+  const uint32_t part_index = (offset % battle::kEnemyRecordStride) / battle::kEnemyPartStride;
+  if (part < battle::kEnemyArrayBase || slot >= ETERNALSONATA_ENEMY_MAX_SLOTS ||
+      part_index >= battle::kEnemyPartCount) {
+    return nullptr;
+  }
+  return &g_host_stats[slot * battle::kEnemyPartCount + part_index];
+}
 
 bool ValidStat(int stat) { return stat >= 0 && stat < ETERNALSONATA_ENEMY_STAT_COUNT; }
 
@@ -229,6 +255,7 @@ int32_t ClampToField(const StatInfo& info, int64_t value) {
       break;
     case Kind::kI32:
     case Kind::kPct:
+    case Kind::kHost:
       lo = INT32_MIN;
       hi = INT32_MAX;
       break;
@@ -250,6 +277,10 @@ int32_t ReadStat(uint32_t part, int stat) {
       return static_cast<int32_t>(ReadGuest<uint32_t>(part + info.offset));
     case Kind::kPct:
       return static_cast<int32_t>(std::lround(ReadGuestFloat(part + info.offset) * 100.0f));
+    case Kind::kHost: {
+      const int32_t* value = HostStat(part);
+      return value ? *value : 100;
+    }
   }
   return 0;
 }
@@ -302,6 +333,11 @@ void WriteStat(uint32_t record, uint32_t part, int stat, int32_t value) {
     case Kind::kPct:
       WriteGuestFloat(part + info.offset, static_cast<float>(clamped) / 100.0f);
       break;
+    case Kind::kHost:
+      if (int32_t* slot = HostStat(part)) {
+        *slot = clamped;
+      }
+      break;
   }
 
   if (stat == ETERNALSONATA_ENEMY_STAT_HP) {
@@ -347,6 +383,7 @@ struct GlobalMultipliers {
   float exp = 1.0f;
   float gold = 1.0f;
   float hp_max = 1.0f;
+  float damage = 1.0f;
 
   bool operator==(const GlobalMultipliers&) const = default;
 };
@@ -358,6 +395,8 @@ GlobalMultipliers ReadGlobalCvars() {
   globals.exp = static_cast<float>(std::clamp(REXCVAR_GET(enemy_exp_multiplier), 0.0, 10.0));
   globals.gold = static_cast<float>(std::clamp(REXCVAR_GET(enemy_gold_multiplier), 0.0, 10.0));
   globals.hp_max = static_cast<float>(std::clamp(REXCVAR_GET(enemy_hp_multiplier), 0.1, 10.0));
+  globals.damage =
+      static_cast<float>(std::clamp(REXCVAR_GET(enemy_damage_multiplier), 0.0, 10.0));
   return globals;
 }
 
@@ -369,6 +408,8 @@ float GlobalFor(const GlobalMultipliers& globals, int stat) {
       return globals.gold;
     case ETERNALSONATA_ENEMY_STAT_HP_MAX:
       return globals.hp_max;
+    case ETERNALSONATA_ENEMY_STAT_DAMAGE_PCT:
+      return globals.damage;
     default:
       return 1.0f;
   }
@@ -453,6 +494,11 @@ void ApplyAllLocked(bool restore_only) {
       auto it = g_snapshots.find(key);
       bool first_seen = false;
       if (it == g_snapshots.end() || it->second.name_id != name_id) {
+        // A new monster in this record must not inherit the last one's
+        // host-held stats.
+        if (int32_t* host = HostStat(part)) {
+          *host = 100;
+        }
         Snapshot fresh;
         fresh.name_id = name_id;
         for (int stat = 0; stat < ETERNALSONATA_ENEMY_STAT_COUNT; ++stat) {
@@ -544,6 +590,7 @@ void BindEnemySystem(rex::Runtime* runtime) {
   std::lock_guard<std::mutex> lock(g_mutex);
   g_runtime = runtime;
   g_snapshots.clear();
+  ResetHostStats();
 }
 
 void EnemySystemTick() {
@@ -555,6 +602,7 @@ void EnemySystemTick() {
     // Between battles the records are stale; start clean for the next one so
     // nothing is measured against a previous encounter's numbers.
     g_snapshots.clear();
+    ResetHostStats();
     return;
   }
   if (g_overrides.empty() && g_snapshots.empty() && globals == GlobalMultipliers{}) {
@@ -568,7 +616,36 @@ void EnemySystemTick() {
   ApplyAllLocked(false);
 }
 
+int32_t ScaleEnemyDamage(uint32_t slot, int32_t damage) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (damage <= 0) {
+    return damage;
+  }
+  const uint32_t part = LivePart(static_cast<int>(slot));
+  const int32_t* pct = part ? HostStat(part) : nullptr;
+  if (!pct || *pct == 100) {
+    return damage;
+  }
+  // 99999 is the game's own cap on the formula.
+  return static_cast<int32_t>(std::min<int64_t>(
+      (static_cast<int64_t>(damage) * *pct + 50) / 100, 99999));
+}
+
 }  // namespace eternalsonata
+
+// sub_821AFF40 is the damage formula for every hit, plain or ability, and
+// returns the final integer the callers apply and display. r4 is the attacker
+// descriptor: a kind word, 1 for an enemy, then the slot byte.
+REX_EXTERN(__imp__sub_821AFF40);
+REX_HOOK_RAW(sub_821AFF40) {
+  const u32 attacker = ctx.r4.u32;
+  const bool enemy = REX_LOAD_U32(attacker) == 1u;
+  const u32 slot = REX_LOAD_U8(attacker + 4);
+  __imp__sub_821AFF40(ctx, base);
+  if (enemy) {
+    ctx.r3.s64 = eternalsonata::ScaleEnemyDamage(slot, ctx.r3.s32);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Public C ABI (see src/eternalsonata_enemy_api.h)
@@ -627,6 +704,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetEnemyStats(
   out->move_range_pct = ReadStat(part, ETERNALSONATA_ENEMY_STAT_MOVE_RANGE_PCT);
   out->chase_range_pct = ReadStat(part, ETERNALSONATA_ENEMY_STAT_CHASE_RANGE_PCT);
   out->scale_pct = ReadStat(part, ETERNALSONATA_ENEMY_STAT_SCALE_PCT);
+  out->damage_pct = ReadStat(part, ETERNALSONATA_ENEMY_STAT_DAMAGE_PCT);
   out->flags = static_cast<int32_t>(ReadGuest<uint32_t>(record + battle::kEnemyFlagsOffset));
   return ETERNALSONATA_ENEMY_OK;
 }

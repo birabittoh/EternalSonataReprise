@@ -301,7 +301,7 @@ constexpr std::array kBasicCvarNames = {
     "camera_fov_scale", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
     "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
-    "enemy_gold_multiplier", "enemy_hp_multiplier", "ui_scale",
+    "enemy_gold_multiplier", "enemy_hp_multiplier", "enemy_damage_multiplier", "ui_scale",
     "save_row_portraits", "force_japanese_font"};
 
 // Steps for the Game tab's multiplier rows. HP stops short of zero, the
@@ -774,6 +774,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
                           "Multiplies the gold every enemy drops.");
         DrawMultiplierRow("Enemy HP", "enemy_hp_multiplier", kHpMultiplierSteps,
                           "Multiplies every enemy's max HP, for longer or shorter fights.");
+        DrawMultiplierRow("Enemy Damage", "enemy_damage_multiplier", kRewardMultiplierSteps,
+                          "Multiplies the damage every enemy deals.");
         ImGui::Separator();
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();

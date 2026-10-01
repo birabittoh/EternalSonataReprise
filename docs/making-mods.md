@@ -1432,13 +1432,14 @@ auto set = reinterpret_cast<EternalSonataSetEnemyTypeStatMultiplierFn>(
                    "EternalSonataSetEnemyTypeStatMultiplier"));
 if (set) {
   // every enemy hits 50% harder, for the rest of the session
-  set(ETERNALSONATA_ENEMY_TYPE_ANY, ETERNALSONATA_ENEMY_STAT_ATTACK, 1.5f);
+  set(ETERNALSONATA_ENEMY_TYPE_ANY, ETERNALSONATA_ENEMY_STAT_DAMAGE_PCT, 1.5f);
 }
 ```
 
 The settable stats are level, current and maximum HP, attack, defense, speed,
 physical and magic resistance, critical rate, EXP, gold, two drop slots with
-their chances, and move range, chase range and model scale as percentages.
+their chances, and move range, chase range, model scale and damage dealt as
+percentages.
 
 Things worth knowing before you use it:
 
@@ -1472,6 +1473,9 @@ Things worth knowing before you use it:
 - **There is no enemy magic attack stat.** An enemy's spell power comes from the
   ability rather than a stat, so `ATTACK` is the only offensive number to touch;
   the two resistances are what separate incoming physical from magical damage.
+- **For "hits harder", prefer `DAMAGE_PCT` to `ATTACK`.** It scales the final
+  damage of every hit, spells included, while attack has defense subtracted
+  from it and so does not scale linearly. It needs ABI version 3.
 
 Changes are published on the shared mod registry bus as
 `eternalsonata.enemy.override.set` and `.cleared`, with the type in the

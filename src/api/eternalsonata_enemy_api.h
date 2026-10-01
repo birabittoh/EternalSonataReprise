@@ -23,7 +23,7 @@
 //                        "EternalSonataSetEnemyTypeStatMultiplier"));
 //     if (set) {
 //       // every enemy hits 50% harder, for the rest of the session
-//       set(ETERNALSONATA_ENEMY_TYPE_ANY, ETERNALSONATA_ENEMY_STAT_ATTACK, 1.5f);
+//       set(ETERNALSONATA_ENEMY_TYPE_ANY, ETERNALSONATA_ENEMY_STAT_DAMAGE_PCT, 1.5f);
 //     }
 //
 // Always null-check: a mod built against a newer host must still load on an
@@ -103,7 +103,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_ENEMY_ABI_VERSION 2u
+#define ETERNALSONATA_ENEMY_ABI_VERSION 3u
 
 // Event names on the mod registry bus. See the note at the top.
 #define ETERNALSONATA_ENEMY_EVENT_OVERRIDE_SET "eternalsonata.enemy.override.set"
@@ -179,8 +179,14 @@ enum {
   ETERNALSONATA_ENEMY_STAT_MOVE_RANGE_PCT = 15,
   ETERNALSONATA_ENEMY_STAT_CHASE_RANGE_PCT = 16,
   ETERNALSONATA_ENEMY_STAT_SCALE_PCT = 17,
+  // Percentage of the damage this enemy deals, 100 meaning unchanged (version
+  // 3). Applied to the final number of every hit it lands, so x2 is twice the
+  // damage, which a multiplier on ATTACK is not: defense is subtracted from
+  // that. The game has no field for it; the host holds it per enemy, and it
+  // resets to 100 when the battle ends.
+  ETERNALSONATA_ENEMY_STAT_DAMAGE_PCT = 18,
 
-  ETERNALSONATA_ENEMY_STAT_COUNT = 18
+  ETERNALSONATA_ENEMY_STAT_COUNT = 19
 };
 
 // Results. Everything >= 0 is success.
@@ -247,7 +253,9 @@ typedef struct EternalSonataEnemyStats {
   // The record's flag bits, as EternalSonataBattleUnit::flags reports them.
   int32_t flags;
 
-  int32_t reserved[6];  // zero-filled; room for later additions
+  int32_t damage_pct;  // version 3; zero from an older host
+
+  int32_t reserved[5];  // zero-filled; room for later additions
 } EternalSonataEnemyStats;
 
 // One per-type override, as EternalSonataGetEnemyTypeOverride reports it.
@@ -360,8 +368,9 @@ typedef int (*EternalSonataGetEnemyOverridesFn)(EternalSonataEnemyOverride* out,
 // Player multipliers (version 2)
 // ---------------------------------------------------------------------------
 //
-// The player can scale EXP, gold and max HP for every enemy through the
-// enemy_exp_multiplier, enemy_gold_multiplier and enemy_hp_multiplier cvars.
+// The player can scale EXP, gold, max HP and (version 3) damage dealt for every
+// enemy through the enemy_exp_multiplier, enemy_gold_multiplier,
+// enemy_hp_multiplier and enemy_damage_multiplier cvars.
 // They are applied after the overrides above, whichever of a type's own rule
 // or an ANY rule wins, and to absolute values too, so a mod's rebalance and the
 // player's setting always stack: final = override(original) * multiplier.
