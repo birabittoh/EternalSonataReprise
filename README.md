@@ -24,22 +24,19 @@ Just extract the archive, run the executable and it will prompt you to extract t
 ## Making it portable
 
 By default saves, options and caches live in your platform user folder. To keep
-everything next to the executable instead, set the root cvars in
-`eternalsonata.toml` (or pass them as `--name=value`). Any root left empty falls
-back to its default.
+them next to the executable instead, create an empty `portable.txt` beside it.
+
+The root cvars in `eternalsonata.toml` (or `--name=value` on the command line)
+override each location. Any root left empty falls back to its default.
 
 ```toml
 game_data_root   = "assets"    # extracted game files (default: assets)
-user_data_root   = "saves"     # saves and profiles (default: Documents/<app name>)
+user_data_root   = "user"      # saves and profiles (default: Documents/eternalsonata)
 cache_root       = "cache"     # shader cache (default: <user_data_root>/cache)
 mods_data_root   = "mods"      # mod folders (default: mods)
 mods_dump_root   = "dumps"     # dumped textures and shaders (default: dumps)
 update_data_root = "update"    # extracted title update files (default: update)
 ```
-
-Use absolute paths if you launch the game from a different working directory,
-and launch it from the folder containing the executable when using relative
-ones.
 
 ## Troubleshooting
 
