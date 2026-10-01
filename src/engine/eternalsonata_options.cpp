@@ -4074,6 +4074,45 @@ REX_HOOK_RAW(sub_821F62B8) {
   }
 }
 
+// sub_82200298 reports where the selected item is, and sub_821F62B8 draws the
+// cursor 50px left of it. An action row has no values, so its cursor goes
+// beside the label instead. Only the reported position moves: navigation pairs
+// items by their own x, so the item itself keeps the value column's.
+REX_EXTERN(__imp__sub_82200298);
+
+REX_HOOK_RAW(sub_82200298) {
+  const u32 out_x = ctx.r4.u32;
+  __imp__sub_82200298(ctx, base);
+
+  const int page = ActivePage(base);
+  if (page < 0) {
+    return;
+  }
+  const PageState& st = Page(page);
+  const PageLayout& pl = Layout(page);
+  const u32 menu = REX_LOAD_U32(kMenuObject);
+  if (!GuestPtr(menu) || !GuestPtr(st.group_items) ||
+      REX_LOAD_U32(menu + 396) != pl.group_id) {
+    return;
+  }
+  for (u32 i = REX_LOAD_U32(menu + 392); GuestPtr(i); i = REX_LOAD_U32(i + 48)) {
+    if (REX_LOAD_U32(i) != pl.group_id) {
+      continue;
+    }
+    const u32 row = REX_LOAD_U8(i + 0x2C);
+    if (row < pl.stock_rows || row - pl.stock_rows >= st.rows.size() ||
+        !Rows()[st.rows[row - pl.stock_rows]].action) {
+      return;
+    }
+    // Keep the gap the stock cursor leaves before its value column.
+    const int32_t value_x =
+        static_cast<int32_t>(REX_LOAD_U32(REX_LOAD_U32(st.group_items) + 4));
+    const int32_t x = value_x - (st.value_base_x - kRowXLabel);
+    REX_STORE_U32(out_x, std::bit_cast<u32>(static_cast<float>(x)));
+    return;
+  }
+}
+
 // sub_82201620: page 1's row input handler, and the owner of the Voice row.
 // Hooked rather than bypassed (it also drives navigation and cancel for the
 // whole screen), so the only thing taken from it is the presses it cannot
