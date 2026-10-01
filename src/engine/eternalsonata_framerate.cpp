@@ -37,6 +37,7 @@
 // cheaply.
 REXCVAR_DECLARE(std::string, frame_rate);
 REXCVAR_DECLARE(std::string, fast_forward_button);
+REXCVAR_DECLARE(double, fast_forward_max_speed);
 REXCVAR_DECLARE(bool, frame_debug);
 
 // Bisection switches for the wall-clock mode, each bit disables one of its
@@ -1385,9 +1386,16 @@ REX_HOOK_RAW(sub_8210AAD8) {
   // Pace after the present, so the wait covers the whole frame. Passing 0 while
   // fast-forwarding skips the wait entirely; LimitFrame also drops its stale
   // deadline and flags the frame unmeasured, so unpaced frames can't be read as
-  // headroom and talk the ladder into stepping up.
+  // headroom and talk the ladder into stepping up. A capped fast forward paces
+  // to a multiple of the declared rate, which is its speed exactly.
   const bool wall = fps == 0 && !turbo;
-  LimitFrame(turbo ? 0.0 : (fps ? double(fps) : kWallCeilingFps));
+  if (turbo) {
+    const double max_speed = REXCVAR_GET(fast_forward_max_speed);
+    LimitFrame(max_speed > 0.0 ? (fps ? fps : g_guest_rate) * max_speed : 0.0);
+    g_frame_measured = false;  // Turbo frames say nothing about the normal rate.
+  } else {
+    LimitFrame(fps ? double(fps) : kWallCeilingFps);
+  }
   if (wall) {
     WallClockTick(base);
   } else if (g_wall_active) {
