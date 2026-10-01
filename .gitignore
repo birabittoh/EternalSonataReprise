@@ -122,3 +122,5 @@ __pycache__/
 /android/app/src/main/res/mipmap-xhdpi/
 /android/app/src/main/res/mipmap-xxhdpi/
 /android/app/src/main/res/mipmap-xxxhdpi/
+/portable.txt
+/user/
