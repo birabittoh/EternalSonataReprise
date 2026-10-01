@@ -4,6 +4,8 @@
 // small internal surface the rest of the exe needs.
 #pragma once
 
+#include <cstdint>
+
 namespace rex {
 class Runtime;
 }  // namespace rex
@@ -20,5 +22,9 @@ void BindEnemySystem(rex::Runtime* runtime);
 // that an override set from a UI takes effect on the next frame. Cheap and a
 // no-op when no battle is running or no override is set.
 void EnemySystemTick();
+
+// Scales one hit's damage by the attacking enemy's DAMAGE_PCT stat, which
+// already folds in mod overrides and the player's multiplier.
+int32_t ScaleEnemyDamage(uint32_t slot, int32_t damage);
 
 }  // namespace eternalsonata
