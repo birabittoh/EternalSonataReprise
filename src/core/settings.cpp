@@ -172,6 +172,12 @@ REXCVAR_DEFINE_STRING(fast_forward_button, "rs", "Eternal Sonata",
     .allowed({"off", "a", "b", "x", "y", "lb", "rb", "lt", "rt", "ls", "rs", "back", "start",
               "dpad_up", "dpad_down", "dpad_left", "dpad_right"});
 
+// Read every frame by the present hook in eternalsonata_framerate.cpp. Unpaced
+// fast forward runs as fast as the host presents, so its speed varies by scene.
+REXCVAR_DEFINE_DOUBLE(fast_forward_max_speed, 3.0, "Eternal Sonata",
+                      "Fast forward speed cap as a multiple of normal speed, 0 for unlimited")
+    .range(0.0, 20.0);
+
 // Which voice bank suffix the game loads. The two the game ships with are
 // selected by its own byte at 0x8243FC06, which this cvar mirrors rather than
 // replaces: while it names "jpn" or "usa" the path hook stands down entirely
@@ -300,6 +306,7 @@ constexpr std::array kBasicCvarNames = {
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
     "camera_fov_scale", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
     "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button",
+    "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
     "enemy_gold_multiplier", "enemy_hp_multiplier", "enemy_damage_multiplier", "ui_scale",
     "save_row_portraits", "force_japanese_font"};
@@ -308,6 +315,7 @@ constexpr std::array kBasicCvarNames = {
 // same floor enemy_hp_multiplier has.
 constexpr std::array kRewardMultiplierSteps = {0.0, 0.25, 0.5, 0.75, 1.0, 1.5,
                                                2.0, 3.0,  4.0, 5.0,  10.0};
+constexpr std::array kFastForwardSpeedSteps = {0.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0};
 constexpr std::array kExpShareSteps = {0.0, 0.25, 0.5, 0.75, 1.0};
 constexpr std::array kUiScaleSteps = {0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0};
 constexpr std::array kHpMultiplierSteps = {0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0};
@@ -741,6 +749,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawCvarRow("Fast Forward", "fast_forward_button",
                     "Controller button that fast forwards the game while held, like Shift "
                     "on the keyboard.");
+        DrawMultiplierRow("Fast Forward Cap", "fast_forward_max_speed", kFastForwardSpeedSteps,
+                          "Highest speed fast forward runs at. Unlimited runs as fast as "
+                          "the PC can manage, which varies by scene.",
+                          "Unlimited");
         ImGui::Separator();
         DrawCvarRow("Gyro Aiming", "gyro_aim");
         if (rex::cvar::GetFlagByName("gyro_aim") == "true") {
@@ -956,7 +968,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // label shows the cvar's real value, which a hand edited config may have
   // put between two steps.
   void DrawMultiplierRow(const char* label, const char* name, std::span<const double> steps,
-                         const char* tooltip) {
+                         const char* tooltip, const char* zero_text = nullptr) {
     const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
@@ -967,7 +979,11 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         idx = i;
     }
     char text[16];
-    std::snprintf(text, sizeof(text), "%gx", value);
+    if (zero_text && value == 0.0) {
+      std::snprintf(text, sizeof(text), "%s", zero_text);
+    } else {
+      std::snprintf(text, sizeof(text), "%gx", value);
+    }
 
     if (DrawRowLabel(label, name)) {
       ImGui::SetTooltip("%s", tooltip);
