@@ -472,6 +472,10 @@ def is_csf(d, o, end):
     return head and total == head + payload and o + total <= end
 
 
+def csl_banks(d, o):
+    return [o + rd32(d, o + 8 + 4 * i) for i in range(rd32(d, o + 4))]
+
+
 def is_csl(d, o, end):
     if d[o:o + 4] != b'CSL ' or o + 8 > end:
         return False
@@ -505,6 +509,8 @@ def convert_region(d, start, end, report, audio=None):
     rb = Rebuild()
     banks = 0
     tables = []
+    # Bank offset -> (directory offset, position, the directory's banks).
+    members = {}
 
     def flush(a, b):
         rb.mark(a)
@@ -542,6 +548,10 @@ def convert_region(d, start, end, report, audio=None):
                 pad(0x1000)
                 rb.mark(o)
                 tables.append(o)
+                offs = csl_banks(d, o)
+                group = [d[b:b + rd32(d, b + 4)] for b in offs]
+                for i, b in enumerate(offs):
+                    members[b] = (o, i, group)
                 copied = o
                 o += 8 + 4 * rd32(d, o + 4)
                 continue
@@ -552,7 +562,7 @@ def convert_region(d, start, end, report, audio=None):
                 # since their clip payloads are aligned from the bank start.
                 pad(0x1000)
                 rb.mark(o)
-                rb.out += audio(banks, d[o:o + size])
+                rb.out += audio(banks, d[o:o + size], members.get(o))
                 banks += 1
                 o = copied = o + size
                 continue
@@ -750,7 +760,7 @@ def convert_file(rel, d, report):
     if low in KEEP_360 or low.endswith(KEEP_360_EXT):
         return None
     if low.endswith('.e') and d[:4] in (b'\0\0\x01\x81', b'\0\0\x01\x80'):
-        audio = (lambda i, bank: embedded_audio(rel, i, bank)) if embedded_audio else None
+        audio = (lambda i, bank, member: embedded_audio(rel, i, bank, member)) if embedded_audio else None
         e = remap_state_symbols(convert_e(d, report, audio), report)
         return rel, ps3_audio.rename_music(e)
     if d[:4] in (b'BMD ', b'CAMP'):
@@ -956,18 +966,30 @@ def main():
     if args.out:
         global embedded_audio
         events = ps3_audio.decoded_360_files(args.base, os.path.join(scratch, 'e'), '.e')
-        twins = {}
+        twins, twin_groups, paired = {}, {}, {}
 
-        def embedded_audio(rel, index, bank):
+        def embedded_audio(rel, index, bank, member):
             low = rel.lower()
             if low not in twins:
-                twins[low] = []
+                twins[low] = twin_groups[low] = []
                 if low in events:
                     with open(events[low], 'rb') as fh:
                         x = fh.read()
                     twins[low] = [x[o:o + rd32(x, o + 4)] for o in range(0, len(x) - 16, 0x1000)
                                   if is_csf(x, o, len(x))]
-            twin = ps3_audio.best_twin(bank, twins[low], index)
+                    twin_groups[low] = [[x[b:b + rd32(x, b + 4)] for b in csl_banks(x, o)]
+                                        for o in range(0, len(x) - 16, 0x1000) if is_csl(x, o, len(x))]
+            twin = None
+            if member:
+                # Each language is a directory of banks, and a bank alone can
+                # match the other language's, so directories are paired whole.
+                at, pos, group = member
+                if (low, at) not in paired:
+                    paired[(low, at)] = ps3_audio.best_group(group, twin_groups[low])
+                x = paired[(low, at)]
+                twin = x[pos] if x and pos < len(x) else None
+            if twin is None:
+                twin = ps3_audio.best_twin(bank, twins[low], index)
             return ps3_audio.convert_csf(f'{rel}#{index}', bank, twin, write_pcm, report)
 
     def emit(out_rel, data):
