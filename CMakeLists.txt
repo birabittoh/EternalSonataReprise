@@ -322,6 +322,7 @@ set(ETERNALSONATA_SOURCES
     src/core/guest_main_thread.cpp
     src/core/guest_profiler.cpp
     src/core/host_timer_resolution.cpp
+    src/core/target.cpp
     src/engine/force_load_area.cpp
     src/engine/field_player_model_override.cpp
     src/platform/fast_forward_key.cpp

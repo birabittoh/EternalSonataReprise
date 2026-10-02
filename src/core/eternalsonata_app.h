@@ -57,6 +57,7 @@
 #include "party_system.h"
 #include "photo_system.h"
 #include "room_presence.h"
+#include "target.h"
 #include "overworld_system.h"
 #include "save_system.h"
 #include "cutscene_system.h"
@@ -210,6 +211,7 @@ class EternalsonataApp : public rex::ReXApp {
       return std::nullopt;
     }
     RefreshPathDefaultsIfCvarsChanged();
+    eternalsonata::DetectTarget(resolved_path_defaults().game_data_root);
     return resolved_path_defaults();
   }
 

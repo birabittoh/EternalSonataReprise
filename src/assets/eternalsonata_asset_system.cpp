@@ -39,6 +39,7 @@
 #include "eternalsonata_asset_texture.h"
 #include "loading_screen.h"
 #include "settings.h"
+#include "target.h"
 
 // The USA and JP to PAL patch bundle, linked in by release-patches.S.
 extern "C" {
@@ -2419,7 +2420,10 @@ void ForEachReleasePatch(Visit&& visit) {
                           uint32_t(bundle[at + 66]) << 16 | uint32_t(bundle[at + 67]) << 24;
     if (at + 68 + size > bundle.size())
       return;
-    visit(std::string_view(rec, strnlen(rec, 64)), bundle.subspan(at + 68, size));
+    const std::string_view path(rec, strnlen(rec, 64));
+    // PS3 data is never a USA or JP container; only the executable converts.
+    if (!IsPs3Target() || path == kXexContainer)
+      visit(path, bundle.subspan(at + 68, size));
     at += 68 + size;
   }
 }

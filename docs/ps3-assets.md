@@ -75,6 +75,19 @@ from the 360 for now: `AppKeep.bmd`, `op.bmd`, `ed1.bmd`, `ed2.bmd`,
 `campdata/scp.bmd` (slot layouts differ, §4), fonts and `.tex`. Audio needs
 `ffmpeg` on `PATH` (§5).
 
+The game runs in PS3 mode when `game_data_root` holds `pcalg_v1.p3obj`, a
+file only the PS3 ships (`src/core/target.cpp`, `IsPs3Target()`). PS3 mode
+skips every USA/JP container patch and registers the PS3 natives; 360 mode
+does neither.
+
+Both modes share saves. `sub_82240AF8` loads a save as raw copies of the
+engine's globals (party block, stats, map state block), and PS3 mode runs the
+same executable, so the bytes are the same layout either way. A 360 save
+continues in PS3 mode. A PS3 save made on a PS3 only map would not load on
+360 data, and twelve slots and costumes do not fit the party block, so that
+state belongs in a host side record saved alongside, which 360 mode can use
+to refuse such a save.
+
 `--verify extracted/e --verify extracted/other` compares converted models
 against the decoded 360 release; without an output directory it only
 converts and reports.
@@ -93,6 +106,19 @@ The `.e` bytecode comes from the same compiler: `bos01_v1.e` differs only in
 its header id and timestamp. What a script means, though, depends on the
 engine's natives, state block and task lists, and those differ. This section
 records the PS3 engine's side; the PS3 VM has to reproduce it.
+
+### Interpreter
+
+`sub_3B0B18` is `sub_820FFE28`: same context layout (`+8` state, `+0xC`
+sleep count, `+0x18` acc, `+0x20` ip, `+0x24` sp, `+0x28` fp), same 0x8A
+opcodes with the same semantics, checked handler by handler (jump table at
+`0x3B0BB8`, 32 bit offsets from its own base). GCC duplicated the bodies the
+360 shares (`03`/`07`, `38`/`39`) without changing them. The running context
+is kept at `G_vm+0xC` (`G_vm = 0x9EA480`, the 360's `dword_824405FC`) and
+`7e` sets the yield flag at `G_vm+0x120`. The one encoding difference is
+`7d`: its patched operand points at an 8 byte function descriptor instead of
+code. So PS3 bytecode runs on the 360 interpreter as is; what the PS3 VM needs
+is its own native tables, task lists and state block.
 
 ### Party natives 5026..5033
 
@@ -129,8 +155,8 @@ Costumes exist only for Allegretto, Polka and Beat (`pcALG_v2`, `pcPLK_v2`,
 `+0x919..+0x91C` and the selected variant at `+0x91D..+0x91F`;
 `sub_1E5840` turns the selection into a model index.
 
-`src/engine/ps3_natives.cpp` currently registers these eight into the 360's
-party table. The roster and HP natives work on the 360's ten character
+In PS3 mode `src/engine/ps3_natives.cpp` currently registers these eight
+into the 360's party table. The roster and HP natives work on the 360's ten character
 arrays (characters 11 and 12 read as absent); costume unlocks live in host
 memory only, the selection is always 1, and the menu flags are dropped. That
 is interim: these natives belong to the PS3 VM, backed by twelve slot and
@@ -146,8 +172,13 @@ Builtins 5 (spawn task, `sub_82102500`) and 7 (spawn child task,
 360 it indexes 16 task lists, `dword_8243D800` (heads) and `dword_8243D840`
 (tails), in `sub_8212DD10`. PS3 scripts pass 17 and 18 where the 360 passes 8
 and 9 (one native 5 call in `lib.e`; 211 native 7 calls in `cfdata` and the
-battle tutorials), so the PS3 engine has more lists; its count and order are
-not traced yet. On the 360 VM an index of 16 or more reads a tail as the head
+battle tutorials), so the PS3 engine has more lists. It has 32 (`sub_30B6B8`, builtin
+7's insert, heads at `T+4`, tails at `T+0x84`, `T` from TOC slot `0x541EFC`),
+run in index order each frame by `sub_30B438`; the task object links at
+`+20`/`+24` and keeps its list at `+28` (the 360's `+24`/`+28`, `+32`). The
+360 list each PS3 list corresponds to is not mapped yet; it needs the engine's
+own spawn sites (callers of `sub_30B580` and `sub_8212DD10` with constant
+priorities) matched function by function. On the 360 VM an index of 16 or more reads a tail as the head
 and writes past the tails: it corrupts memory and faults storing to `0x1C`
 (loading a save in the Ritardando sewers). The PS3 battle AI passes 9 or a
 parameter, as on the 360.
@@ -213,8 +244,8 @@ told in the processor options. Native tables hold pointers to 8 byte
 descriptors (code, TOC), and table pointers are loaded from TOC slots.
 `sub_3B00F8` is `sub_820FF028`. The party block `G` is `0x828EB0` with the
 same leading layout as the 360's `0x8243F3E8` (gold at `+8`); its stat arrays
-sit at `G+0xAD0` (the 360's `G+0x920`), same 48 byte stride. The PS3's script
-interpreter, task list owner and map state block are not identified yet.
+sit at `G+0xAD0` (the 360's `G+0x920`), same 48 byte stride. The map state
+block is not identified yet.
 
 ## 3. Model chunks
 
@@ -402,8 +433,7 @@ endian `.wav`, which scripts ask for by that name.
 
 ## 6. Not done yet
 
-* Detecting a PS3 copy in `game_data_root` and running in PS3 mode, from a
-  PS3 copy alone; moving the conversion into the asset system.
+* Running from a PS3 copy alone; moving the conversion into the asset system.
 * The PS3 script VM: interpreter, natives compared one by one, task lists,
   map state block (§2). Retiring the §2, §4 and §5 stopgaps with it.
 * Twelve party slots, costumes (models, menu, save), the camp menu flags.
