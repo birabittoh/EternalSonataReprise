@@ -1,16 +1,43 @@
-# PS3 assets on the Xbox 360 executable
+# The PS3 release as a second target
 
-The PS3 release (2008) carries more content than the 360 one: two extra
-playable characters (`pc011`, `pc012`), new enemies (`ep198`..`ep209`), new
-bosses and AI scripts, extra battle maps (`lam9x`, `sbi90`) and extra field
-areas. The long term goal is for this recompilation, which runs the PAL 360
-executable, to load that content. This document records what differs between
-the two releases' data and what `scripts/ps3_convert.py` does about it.
+The PS3 release (2008, BLES00444 in Europe) is a later, larger version of the
+game: two extra playable characters (`pc011`, `pc012`, twelve party slots),
+costumes for Allegretto, Polka and Beat, new enemies (`ep198`..`ep209`),
+bosses and AI scripts, extra battle maps (`lam9x`, `sbi90`) and field areas,
+and new events and lines. Its engine differs from the 360's: more script
+natives, a different map state block, more task lists, and slot addressed
+containers in a different order.
+
+The USA and JP 360 releases run the same engine as PAL, so their executable
+and containers are patched into PAL's and their scripts run unchanged
+(`scripts/gen-release-patches.py`). That cannot work for the PS3: its scripts
+and data assume engine behaviour the PAL executable lacks. The PS3 release is
+therefore a **second target** of this executable:
+
+* `game_data_root` may point at a PS3 copy, and the game detects it and runs in
+  PS3 mode. A PS3 copy alone must be enough to play.
+* PS3 scripts run **unmodified** on a PS3 script VM with the PS3's natives,
+  state block and task lists, separate from the 360 VM. PS3 bytecode is never
+  rewritten into 360 bytecode.
+* PS3 engine features (twelve slots, costumes, camp menu flags, PS3 slot
+  layouts, PS3 only maps) are implemented on the host, active only in PS3
+  mode, with their own save state.
+* Formats that carry no game logic (textures, vertex packing, colour byte
+  order, audio) are converted into what the 360 renderer and audio system
+  read. Today `scripts/ps3_convert.py` does that offline; it is meant to move
+  into the asset system so the game can extract or detect either release
+  itself.
+
+Only the format conversion and the party natives exist so far. A few
+conversions in `ps3_convert.py` translate logic instead (§2 task priorities
+and state ids, §4 BattleKeep, the 360 files kept in §1); they are stopgaps
+that made PS3 data run on the 360 VM and go away as the PS3 VM and PS3 slot
+addressing replace them.
 
 The 360 decoded tree (`scripts/unpack_e.exe` output under `extracted/`) is the
-reference throughout: almost every PS3 file has a 360 counterpart, so a
-conversion rule is only trusted once converting the PS3 file reproduces the
-360 bytes. `ps3_convert.py --verify` runs that comparison.
+reference for format work: almost every PS3 file has a 360 counterpart, so a
+format rule is only trusted once converting the PS3 file reproduces the 360
+bytes. `ps3_convert.py --verify` runs that comparison.
 
 ## 1. Getting the files
 
@@ -40,12 +67,12 @@ Then build a game directory and point `game_data_root` in
 python scripts/ps3_convert.py assets-ps3 assets-ps3-360 --base assets
 ```
 
-The directory starts as hard links to the 360 tree (`--base`, which provides
-`default.xex` and every file the PS3 data cannot replace yet), then each
-convertible PS3 file is written over its counterpart, PS3-only files are
-added, and `index.vmtoc` gets a stored record for every converted file. Files
-kept from the 360: `AppKeep.bmd`, `op.bmd`, `ed1.bmd`, `ed2.bmd`,
-`campdata/scp.bmd` (slot layouts differ), fonts and `.tex`. Audio needs
+The offline converter still needs a 360 tree (`--base`, hard linked): it
+provides `default.xex` and every file the conversion does not replace yet.
+Each convertible PS3 file is written over its counterpart, PS3 only files are
+added, and `index.vmtoc` gets a stored record for every converted file. Kept
+from the 360 for now: `AppKeep.bmd`, `op.bmd`, `ed1.bmd`, `ed2.bmd`,
+`campdata/scp.bmd` (slot layouts differ, §4), fonts and `.tex`. Audio needs
 `ffmpeg` on `PATH` (§5).
 
 `--verify extracted/e --verify extracted/other` compares converted models
@@ -56,15 +83,21 @@ converts and reports.
 |---|---|---|
 | `.e`, `.bop`, `.bmd` | same | Same containers, same chunk tree; see §3 |
 | `.p3tex` | `.x3tex` | Map textures: a bare `NTX3` chain vs `NTX2` |
-| `.p3obj` | none | Field character models moved out of `AppKeep.bmd` |
+| `.p3obj` | none | Field character models and costumes, moved out of `AppKeep.bmd` |
 | `.cps` | `.cxs` / `.wav` | Music, PS-ADPCM or PCM; see §5 |
 | `.csf` | `.csf` | Same banks, ATRAC3 clips; see §5 |
 
 ## 2. Scripts
 
-The `.e` bytecode is produced by the same compiler: `bos01_v1.e` differs only
-in its header id and timestamp. Of every native id imported by any PS3 script,
-only seven are missing from the 360 executable's tables (5028 is never imported):
+The `.e` bytecode comes from the same compiler: `bos01_v1.e` differs only in
+its header id and timestamp. What a script means, though, depends on the
+engine's natives, state block and task lists, and those differ. This section
+records the PS3 engine's side; the PS3 VM has to reproduce it.
+
+### Party natives 5026..5033
+
+Of every native id imported by any PS3 script, only seven are missing from
+the 360 executable's tables (5028 is never imported):
 
 | id | used by |
 |---|---|
@@ -74,11 +107,10 @@ only seven are missing from the 360 executable's tables (5028 is never imported)
 | 5030, 5031 | `sbi02.e`..`sbi05.e` |
 | 5033 | `Dld17.e` |
 
-The 5000 range is the party table (`off_8240CA88`, 26 entries on the 360).
-`sub_820FF748`'s range check is inclusive, so an unregistered 5026 silently
-resolves to the first battle native; `src/engine/ps3_natives.cpp` registers
-5026..5033. Their PS3 code (table at `0x7795B8` in the EBOOT, see "PS3
-executable" below) takes a 0 based character in the 360's numbering:
+The 5000 range is the party table (`off_8240CA88`, 26 entries on the 360, 34
+on the PS3). `sub_820FF748`'s range check is inclusive, so an unregistered
+5026 silently resolves to the first battle native. Their PS3 code (table at
+`0x7795B8` in the EBOOT) takes a 0 based character:
 
 | id | PS3 | behaviour | used for |
 |---|---|---|---|
@@ -95,37 +127,51 @@ Costumes exist only for Allegretto, Polka and Beat (`pcALG_v2`, `pcPLK_v2`,
 ... models, a "Costumes" camp menu). The PS3 party block (`G+0x820`, the
 360's `0x8243FC08`, grows from 10 to 12 entries) keeps unlocks at
 `+0x919..+0x91C` and the selected variant at `+0x91D..+0x91F`;
-`sub_1E5840` turns the selection into a model index. The 360 has neither the
-models nor the menu, so the host keeps unlocks in memory (not saved), always
-reports costume 1 and ignores the menu flags.
+`sub_1E5840` turns the selection into a model index.
+
+`src/engine/ps3_natives.cpp` currently registers these eight into the 360's
+party table. The roster and HP natives work on the 360's ten character
+arrays (characters 11 and 12 read as absent); costume unlocks live in host
+memory only, the selection is always 1, and the menu flags are dropped. That
+is interim: these natives belong to the PS3 VM, backed by twelve slot and
+costume state that is saved.
 
 The PS3 also stubs two 360 natives: 5021 (Xbox rich presence) returns 0 and
 5022 (achievement write) returns 1.
 
-Task priorities differ. Builtins 5 (spawn task, `sub_82102500`) and 7
-(spawn child task, `sub_82102538`) take the priority as `args[2]` (the third
-push back), an index into 16 task lists, `dword_8243D800` (heads) and
-`dword_8243D840` (tails), in `sub_8212DD10`. Where the 360 passes 8 and 9,
-the PS3 passes 17 and 18 (one native 5 call in `lib.e`; 211 native 7 calls in
-`cfdata` and the battle tutorials). An index of 16 or more reads a tail as the
-head and writes past the tails, so it corrupts memory and faults storing to
-`0x1C` when the stray head is set and the stray tail is not (loading a save
-in the Ritardando sewers). The PS3 battle AI already passes 9 or a
-parameter, as on the 360. The converter rewrites the `acc=u8` immediates
-17 -> 8 and 18 -> 9, tracking the VM stack, since some calls compute
-`args[0]` with `acc=pop+acc`.
+### Task lists
 
-The 500 series (pointers into the map state block at `dword_8243C230`) is
-shifted too: ids up to 538 match, but from 540 on each PS3 id is the 360's
-plus one (the PS3 block has an extra field there). Only `lib.e` and `Tnt01.e`
-use them. Unconverted, `lib.e`'s skip helper stores the skip handler into
-541, the 360's running skip task slot `dword_8243C350`, so a skipped scene
-suspends the event and then waits forever for it to end. The converter
-renumbers imports 541..548 down by one, which reproduces the 360's usage
-exactly.
+Builtins 5 (spawn task, `sub_82102500`) and 7 (spawn child task,
+`sub_82102538`) take the priority as `args[2]` (the third push back). On the
+360 it indexes 16 task lists, `dword_8243D800` (heads) and `dword_8243D840`
+(tails), in `sub_8212DD10`. PS3 scripts pass 17 and 18 where the 360 passes 8
+and 9 (one native 5 call in `lib.e`; 211 native 7 calls in `cfdata` and the
+battle tutorials), so the PS3 engine has more lists; its count and order are
+not traced yet. On the 360 VM an index of 16 or more reads a tail as the head
+and writes past the tails: it corrupts memory and faults storing to `0x1C`
+(loading a save in the Ritardando sewers). The PS3 battle AI passes 9 or a
+parameter, as on the 360.
 
-Every other native table has the same base and count on both executables,
-and they line up entry for entry:
+Stopgap: `ps3_convert.py` (`remap_task_priority`) rewrites the `acc=u8`
+immediates 17 -> 8 and 18 -> 9, tracking the VM stack, since some calls
+compute `args[0]` with `acc=pop+acc`.
+
+### Map state block (500 series)
+
+The 500 series natives return pointers into the map state block (the 360's
+`dword_8243C230`). Ids up to 538 match, but from 540 on each PS3 id is the
+360's plus one: the PS3 block has an extra field there, not identified yet.
+Only `lib.e` and `Tnt01.e` use them. On the 360 VM, `lib.e`'s skip helper
+stores the skip handler into 541, the 360's running skip task slot
+`dword_8243C350`, so a skipped scene suspends the event and then waits
+forever for it to end.
+
+Stopgap: `ps3_convert.py` (`remap_state_symbols`) renumbers imports 541..548
+down by one. It is not idempotent.
+
+### Other native tables
+
+Every other table has the same base and count on both executables:
 
 | ids | 360 table | PS3 table |
 |---|---|---|
@@ -140,13 +186,23 @@ and they line up entry for entry:
 | 45000..45040 | `off_8240CAF0` | `0x776F48` (`sub_7C750`) |
 | 60000..60101 | `off_822F4260` (`sub_82252430`) | `0x778F88` (`sub_3606F8`) |
 
-Alignment was checked per entry by the argument words each native reads
-(identical in 1, 100, 1000, 5000 and 45000 apart from compiler noise) and by
-floating point use, which matches best at offset 0 in every table, e.g. 100%
-against at most 78% one entry off for 2000, 93% against 81% for 40000. Tables
-whose PS3 natives fetch arguments through out of line accessors (20000, 40000,
-`sub_E5CB0` = `lwz r3, 0(r3)`) rely on the latter. 60016 is a null entry on the
-PS3.
+Same count does not mean same behaviour. Alignment was only checked
+statistically: by the argument words each native reads (identical in 1, 100,
+1000, 5000 and 45000 apart from compiler noise) and by floating point use,
+which matches best at offset 0 in every table (e.g. 100% against at most 78%
+one entry off for 2000, 93% against 81% for 40000). Tables whose PS3 natives
+fetch arguments through out of line accessors (20000, 40000, `sub_E5CB0` =
+`lwz r3, 0(r3)`) rely on the latter. 60016 is a null entry on the PS3. A PS3
+native may still do something different from the 360 entry at the same id
+(events in particular), so each one has to be compared by decompiling it
+before the PS3 VM can forward it to 360 code.
+
+### Script symbols
+
+`lib.e` exports nearly the same symbol ids on both releases (block2 table 2):
+the PS3 one adds 147, 159, 170, 173, 174 and lacks 149, 165, 171, and no other
+PS3 script imports the new ones. PS3 mode runs the whole PS3 script set
+together, so PS3 maps never meet the 360 `lib.e`.
 
 ### PS3 executable
 
@@ -157,12 +213,8 @@ told in the processor options. Native tables hold pointers to 8 byte
 descriptors (code, TOC), and table pointers are loaded from TOC slots.
 `sub_3B00F8` is `sub_820FF028`. The party block `G` is `0x828EB0` with the
 same leading layout as the 360's `0x8243F3E8` (gold at `+8`); its stat arrays
-sit at `G+0xAD0` (the 360's `G+0x920`), same 48 byte stride.
-
-`lib.e` exports nearly the same symbol ids on both releases (block2 table 2):
-the PS3 one adds 147, 159, 170, 173, 174 and lacks 149, 165, 171, and no other
-PS3 script imports the new ones. How cross file symbols resolve has not been
-traced yet, so whether a PS3 map can run against the 360 `lib.e` is open.
+sit at `G+0xAD0` (the 360's `G+0x920`), same 48 byte stride. The PS3's script
+interpreter, task list owner and map state block are not identified yet.
 
 ## 3. Model chunks
 
@@ -210,18 +262,20 @@ Formats shipped: `0x86` DXT1, `0x88` DXT5, their `| 0x20` linear variants for
 non power of two sizes, and eight `0xA5` linear A8R8G8B8. Linear textures keep
 the base level's row pitch on every mip level, so their chain is repacked tight
 for the DDS (the 1280x720 title background is 931,840 bytes on the PS3 and
-614,760 on the 360). The DXT payload is
-byte identical to the 360 `NTEX`'s, so the conversion writes the same DDS
-header the 360 files carry (`flags 0xA1007`, `caps 0x401008`, or `0x81007` /
-`0x1000` with one level) and copies the pixels. `NTEX` is `0x88 + size` and
-`NTX3` is `0x80 + size` rounded up to 128, so an `NTEX` usually fits with an
-`NPAD` filling the rest and nothing after it moves. When it does not, the
-model tree grows instead; a texture inside a `Mefc`, which cannot move, is
-then left unconverted with a warning.
+614,760 on the 360). The DXT payload is byte identical to the 360 `NTEX`'s,
+so the conversion writes the same DDS header the 360 files carry (`flags
+0xA1007`, `caps 0x401008`, or `0x81007` / `0x1000` with one level) and copies
+the pixels. `NTEX` is `0x88 + size` and `NTX3` is `0x80 + size` rounded up to
+128, so an `NTEX` usually fits with an `NPAD` filling the rest and nothing
+after it moves. When it does not, the model tree grows instead; a texture
+inside a `Mefc`, which cannot move, is then left unconverted with a warning.
 
 Map textures (`cfdata/maptex/*.p3tex`) are the external texture list
 `CreateModel` receives as its third argument, which accepts `NTEX` as well as
-`NTX2`, so they convert to a plain `NTEX` chain served as `.x3tex`.
+`NTX2`, so they convert to a plain `NTEX` chain served as `.x3tex`. The 360
+pairs maps with maptex files through a hardcoded table (`off_820166A0`, 332
+entries, searched by `sub_820FA680`); PS3 only maps (`lam*`, `sbi*`, `cbs_b`)
+have no entry there, and the PS3's own table is in the EBOOT.
 
 ### 3.2 Meshes
 
@@ -251,11 +305,12 @@ the 360 supports, so it is left alone.
 
 ### 3.3 Materials and lights
 
-`NMTR` holds 96 byte materials; the colours are at +4, +36, +40 and +44, and +8
-is a flags word. When its bit 0 is set the material is textured and +4 holds
-the texture index (u16) instead of a colour, so it must not be rotated. `NLIT` is 48 byte records from +8 with colours at +20 and +28,
-`NFOG` has one at +12, `NCLC` at +20 and +36, and `NOL2` 32 byte records with
-the colour at +24, or +8 for type 0 records.
+`NMTR` holds 96 byte materials; the colours are at +4, +36, +40 and +44, and
++8 is a flags word. When its bit 0 is set the material is textured and +4
+holds the texture index (u16) instead of a colour, so it must not be rotated.
+`NLIT` is 48 byte records from +8 with colours at +20 and +28, `NFOG` has one
+at +12, `NCLC` at +20 and +36, and `NOL2` 32 byte records with the colour at
++24, or +8 for type 0 records.
 
 ## 4. Containers
 
@@ -271,21 +326,28 @@ Converting a skinned mesh grows its chunk, so offsets into the container move:
 A resized `NMDL` ends with an `NPAD` that keeps the size change a multiple of
 128, so everything after it keeps its PS3 alignment.
 
-`AppKeep.bmd` is addressed by slot, and the PS3 moved the ten field character
-`NOBJ`s out of it into the `pc*_v*.p3obj` files, so it cannot replace the 360
-one as is.
+Some containers are addressed by slot from executable code, and the PS3
+reordered them. In PS3 mode the host has to read them by PS3 slot rather
+than reorder the files into the 360's layout.
 
-`btldata\BattleKeep.bop` is addressed by slot too: 106 entries on the 360, 98
-on the PS3. The PS3 dropped the eight `Mefc`s at 360 slots 26..33 and every
-later entry moved down by eight; tags line up one to one around the gap. Slot
-38 is the battle voice table (`BMD `, read by `sub_821BCC40` through
+`AppKeep.bmd`, the global model, texture and effect store: 412 entries on the
+360, 374 on the PS3, 268 slots hold a different kind of chunk. The ten field
+character `NOBJ`s at 360 slots 0..9 moved into the PS3 only
+`pc{alg,bet,plk}_v*.p3obj` files, together with the costume variants. The
+offline converter keeps the 360 file for now.
+
+`btldata\BattleKeep.bop`: 106 entries on the 360, 98 on the PS3. The PS3
+dropped the eight `Mefc`s at 360 slots 26..33 and every later entry moved
+down by eight; tags line up one to one around the gap. 360 slot 38 (PS3 30)
+is the battle voice table (`BMD `, read by `sub_821BCC40` through
 `unk_824D05D0+324`): per character, a list of categories of 12 byte voice
 candidates. The pre-battle line (battle state 5, `sub_821BB310`) asks it for
-category 35 and waits until that voice ends, so a non `BMD ` chunk in slot 38
-leaves the intro camera circling forever. The PS3 table has twelve character
-rows ahead of the enemies and 61 categories, where the executable expects ten
-and 59. The converter rebuilds the 360 slot order and takes slots 26..33 and
-38 from the 360 file, whose clip ordinals the converted banks keep.
+category 35 and waits until that voice ends, so a non `BMD ` chunk in that
+slot leaves the intro camera circling forever. The PS3 table has twelve
+character rows ahead of the enemies and 61 categories, where the 360
+executable expects ten and 59. Stopgap: the converter
+(`rebuild_battlekeep`) rebuilds the 360 slot order and takes slots 26..33
+and 38 from the 360 file, losing the PS3's table.
 
 ## 5. Audio
 
@@ -318,7 +380,8 @@ payloads to 0x1000 and the header to 0x1000.
 The PS3 appended its new clips: `pc001` keeps all of the 360's 173 in place and
 adds 29. A clip whose 360 twin at the same ordinal has the same flags and a
 length within 3000 samples keeps the 360 `TIM` and XMA; about 1400 MB of PCM
-comes down to about 210 MB. The `BOOK`s differ in a few sequencer timing bytes
+comes down to about 210 MB. That reuse needs a 360 copy; a PS3 only install
+has to decode every clip. The `BOOK`s differ in a few sequencer timing bytes
 and the PS3's are kept.
 
 ### Music (`.cps`)
@@ -326,9 +389,11 @@ and the PS3's are kept.
 `CPS ` header: u32 header size (0x20), channels, data size, rate, loop start
 and end in bytes, and a kind: 3 is PS-ADPCM with channels interleaved per 16
 byte frame, 0 is big endian PCM. Every track both releases share has the same
-sample count, so only names differ: PS3 scripts ask for `MP139.cps`, which the
-converter rewrites to `MP139.cxs` in the `.e` files (the same length, and
-`sub_820F80F8` builds `sound\cxs\<name>` from whatever the script says).
+sample count, so only names differ. PS3 scripts ask for `MP139.cps`, and
+`sub_820F80F8` builds `sound\cxs\<name>` from whatever the script says.
+Stopgap: the converter rewrites `.cps` to `.cxs` inside the `.e` files (same
+length) so the 360 tracks serve; in PS3 mode the name should resolve on the
+host instead, and a PS3 only install needs the `.cps` tracks decoded.
 
 New PS3 tracks: `MP109_us`, `MP166..168` become a 360 `.cxs` of the nearest
 length with a tagged payload plus a PCM sidecar (`smpl` loop); `MP187..189`
@@ -337,9 +402,12 @@ endian `.wav`, which scripts ask for by that name.
 
 ## 6. Not done yet
 
-* `NMR2` and the colours in `NATR`.
-* `Mefc` effects: only their textures are converted.
-* Saving the PS3 costume unlocks, and cross file script symbols (§2).
-* Slot addressed containers (`AppKeep.bmd`, `title.bmd`) and how the PS3 loads
-  `.p3obj`.
-* Runtime validation: none of the converted files has been loaded in game yet.
+* Detecting a PS3 copy in `game_data_root` and running in PS3 mode, from a
+  PS3 copy alone; moving the conversion into the asset system.
+* The PS3 script VM: interpreter, natives compared one by one, task lists,
+  map state block (§2). Retiring the §2, §4 and §5 stopgaps with it.
+* Twelve party slots, costumes (models, menu, save), the camp menu flags.
+* PS3 slot addressing for `AppKeep.bmd`, `BattleKeep.bop`, `title.bmd`,
+  `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`; loading `.p3obj`.
+* PS3 only maps' maptex pairing.
+* `NMR2`, the colours in `NATR`, and `Mefc` effects beyond their textures.
