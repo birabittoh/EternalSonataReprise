@@ -16,4 +16,7 @@ void DetectTarget(const std::filesystem::path& game_data_root);
 
 bool IsPs3Target();
 
+// The directory DetectTarget latched.
+const std::filesystem::path& GameDataRoot();
+
 }  // namespace eternalsonata

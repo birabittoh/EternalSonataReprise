@@ -179,9 +179,16 @@ negative ids, which PS3 events use where the 360 ones pass 1..10:
 | -10, -11, -12 | the worn costume of ALG, PLK, BET: `pc%s_v%1d.p3obj`, loaded per character by `sub_801F0` into 320 byte slots named `WEARALG`, `WEARPLK`, `WEARBET` |
 | -20..-28 | `AppKeep2.bmd` entries 0..8: CRS, SRN, CPN, VOL, SLS, JRB, FST, MCH, CLV (`sub_80C40`) |
 
-Interim: in PS3 mode `ps3_natives.cpp` maps each id to the 360 model of the
-same character, so costumes do not show and Crescendo and Serenade (-20,
--21) return no model.
+Both are raw `NOBJ` pointers, like the 360's (`sub_82162058` stores
+`AppKeep.bmd`'s entry pointers in `dword_82420AFC`), and the PS3 keeps both
+resident. Here the kept 360 `AppKeep.bmd` already holds every character but
+CRS and SRN, and guest physical memory runs out late in a session with the
+whole of `AppKeep2.bmd` and three costume buffers (~48 MB) resident. So PS3
+mode (`src/engine/ps3_models.cpp`) loads only AppKeep2 entries 0 and 1 (7 MB)
+into physical guest memory right after `AppKeep.bmd`, serves -10..-12 and
+-22..-28 from the 360 models, and makes a costume buffer (sized for the
+character's largest variant) only when a non default costume is worn, which
+nothing selects yet.
 
 ### Task lists
 
@@ -546,7 +553,8 @@ endian `.wav`, which scripts ask for by that name.
 * The PS3 script VM: interpreter, natives compared one by one, task lists,
   map state block (§2). Retiring the §2, §4 and §5 stopgaps with it.
 * Twelve party slots, costumes (models, menu, save), the camp menu flags.
-* Loading `AppKeep2.bmd` and the `.p3obj` costumes for native 1141.
+* Costume selection for native 1141 (always variant 1), and `.p3obj` models
+  outside events (field leader, battle).
 * PS3 slot addressing for `AppKeep.bmd`, `BattleKeep.bop`, `title.bmd`,
   `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`; loading `.p3obj`.
 * PS3 only maps' maptex pairing.
