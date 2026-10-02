@@ -6,14 +6,12 @@ the 360 XMA; any other clip gets a stub payload that starts with an RXPcmSub tag
 and its PCM goes to pcm/<token>.wav in the game directory, which the host reads
 and substitutes when the XMA decoder meets the tag.
 
-Music names are the script's business: PS3 scripts ask for MPxxx.cps and the
-shared tracks are sample identical to the 360's .cxs, so only the name changes
-(see rename_music). New tracks get a donor .cxs with a tagged payload, or a
-plain big endian WAV where the scripts ask for .wav. See docs/ps3-assets.md.
+PS3 scripts ask for MPxxx.cps; the shared tracks are sample identical to the
+360's .cxs, which PS3 mode serves under that name. New tracks get a donor .cxs
+with a tagged payload, or a plain big endian WAV where the scripts ask for .wav. See docs/ps3-assets.md.
 """
 import array
 import os
-import re
 import shutil
 import struct
 import subprocess
@@ -285,14 +283,6 @@ def decoded_360_files(base, scratch, suffix):
 # ---------------------------------------------------------------------------
 # Music
 # ---------------------------------------------------------------------------
-MUSIC_REF = re.compile(rb'(MP1\d\d(?:_us)?)\.cps', re.IGNORECASE)
-
-
-def rename_music(d):
-    """Script references MPxxx.cps -> MPxxx.cxs; same length, so .e safe."""
-    return MUSIC_REF.sub(lambda m: m.group(1) + b'.cxs', d)
-
-
 def cxs_info(d):
     return rd32(d, 0x10), rd32(d, 0x18) != 0
 
