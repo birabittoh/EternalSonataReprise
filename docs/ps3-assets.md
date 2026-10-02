@@ -165,6 +165,22 @@ costume state that is saved.
 The PS3 also stubs two 360 natives: 5021 (Xbox rich presence) returns 0 and
 5022 (achievement write) returns 1.
 
+### Character models (1141)
+
+Native 1141 with kind 0 returns a field character model for 1062. On the 360
+it indexes `dword_82420AF8` with 1..10 (ALG, PLK, BET, CPN, VOL, SLS, JRB, FST,
+MCH, CLV). The PS3's (`sub_385D10` -> `sub_80610`) keeps that and adds
+negative ids, which PS3 events use where the 360 ones pass 1..10:
+
+| id | model |
+|---|---|
+| -10, -11, -12 | the worn costume of ALG, PLK, BET: `pc%s_v%1d.p3obj`, loaded per character by `sub_801F0` into 320 byte slots named `WEARALG`, `WEARPLK`, `WEARBET` |
+| -20..-28 | `AppKeep2.bmd` entries 0..8: CRS, SRN, CPN, VOL, SLS, JRB, FST, MCH, CLV (`sub_80C40`) |
+
+Interim: in PS3 mode `ps3_natives.cpp` maps each id to the 360 model of the
+same character, so costumes do not show and Crescendo and Serenade (-20,
+-21) return no model.
+
 ### Task lists
 
 Builtins 5 (spawn task, `sub_82102500`) and 7 (spawn child task,
@@ -523,6 +539,7 @@ endian `.wav`, which scripts ask for by that name.
 * The PS3 script VM: interpreter, natives compared one by one, task lists,
   map state block (§2). Retiring the §2, §4 and §5 stopgaps with it.
 * Twelve party slots, costumes (models, menu, save), the camp menu flags.
+* Loading `AppKeep2.bmd` and the `.p3obj` costumes for native 1141.
 * PS3 slot addressing for `AppKeep.bmd`, `BattleKeep.bop`, `title.bmd`,
   `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`; loading `.p3obj`.
 * PS3 only maps' maptex pairing.
