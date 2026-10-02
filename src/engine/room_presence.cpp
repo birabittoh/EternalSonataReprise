@@ -14,6 +14,7 @@
 #include "area_names.generated.h"
 #include "battle_layout.h"
 #include "cutscene_system.h"
+#include "target.h"
 
 namespace eternalsonata {
 
@@ -128,8 +129,13 @@ void RoomPresence::Tick() {
   } else {
     // Support files without a banner of their own show the raw id.
     const auto& table = AreaNameTable();
-    const auto it = table.find(area_id);
-    details = it != table.end() ? it->second : area_id;
+    const auto& ps3_table = Ps3AreaNameTable();
+    if (const auto it = table.find(area_id); it != table.end())
+      details = it->second;
+    else if (const auto ps3 = ps3_table.find(area_id); IsPs3Target() && ps3 != ps3_table.end())
+      details = ps3->second;
+    else
+      details = area_id;
   }
 
   // Battles keep the field loaded, so they are checked first. Outside a field

@@ -408,7 +408,10 @@ pairs maps with maptex files and `sound\mapSE` banks through a sorted table
 `sub_820FA680`); a map without an entry keeps the previous map's textures.
 The PS3's (`0x516E2C`, 351 entries) is the 360's plus `cbs60`, `lam01..10`,
 `lam14` and `sbi01..07`, which PS3 mode answers when the 360 table has none
-(`src/engine/ps3_maptex.cpp`).
+(`src/engine/ps3_maptex.cpp`). Their area names, and those of every other
+PS3 only cfdata file, are in `docs/cfdata_names_ps3.txt` (`cfdata_names.py
+--cfdata assets-ps3/cfdata --exclude docs/cfdata_names.txt`), which the area
+overlay and the Discord presence use in PS3 mode.
 
 ### 3.2 Meshes
 

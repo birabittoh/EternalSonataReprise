@@ -164,6 +164,7 @@ add_custom_command(
     DEPENDS
         ${CMAKE_SOURCE_DIR}/scripts/gen-area-names.py
         ${CMAKE_SOURCE_DIR}/docs/cfdata_names.txt
+        ${CMAKE_SOURCE_DIR}/docs/cfdata_names_ps3.txt
     COMMENT "Generating src/area_names.generated.h"
     VERBATIM
 )
