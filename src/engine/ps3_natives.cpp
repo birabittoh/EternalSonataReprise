@@ -15,6 +15,7 @@
 // selection stays on the default costume and the menu flags are dropped.
 
 #include "generated/eternalsonata_init.h"
+#include "target.h"
 
 #include <algorithm>
 #include <array>
@@ -173,6 +174,8 @@ REX_EXTERN(__imp__MEMORY_HEAP__Init);
 REX_HOOK_RAW(MEMORY_HEAP__Init) {
   PPCContext call = ctx;
   __imp__MEMORY_HEAP__Init(ctx, base);
+  if (!eternalsonata::IsPs3Target())
+    return;
   if (!g_table && !(g_table = BuildTable())) {
     REXLOG_ERROR("ps3 natives: could not build the native table");
     return;
