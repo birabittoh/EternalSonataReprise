@@ -403,9 +403,12 @@ inside a `Mefc`, which cannot move, is then left unconverted with a warning.
 Map textures (`cfdata/maptex/*.p3tex`) are the external texture list
 `CreateModel` receives as its third argument, which accepts `NTEX` as well as
 `NTX2`, so they convert to a plain `NTEX` chain served as `.x3tex`. The 360
-pairs maps with maptex files through a hardcoded table (`off_820166A0`, 332
-entries, searched by `sub_820FA680`); PS3 only maps (`lam*`, `sbi*`, `cbs_b`)
-have no entry there, and the PS3's own table is in the EBOOT.
+pairs maps with maptex files and `sound\mapSE` banks through a sorted table
+(`off_820166A0`, 332 entries of map, maptex, mapSE, searched by
+`sub_820FA680`); a map without an entry keeps the previous map's textures.
+The PS3's (`0x516E2C`, 351 entries) is the 360's plus `cbs60`, `lam01..10`,
+`lam14` and `sbi01..07`, which PS3 mode answers when the 360 table has none
+(`src/engine/ps3_maptex.cpp`).
 
 ### 3.2 Meshes
 
@@ -602,6 +605,5 @@ endian `.wav`, which scripts ask for by that name.
 * The costumes' camp menu page ([costumes.md](costumes.md)).
 * PS3 slot addressing for `AppKeep.bmd`, `title.bmd`,
   `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`; loading `.p3obj`.
-* PS3 only maps' maptex pairing.
 * `NMR2`, the colours in `NATR`, and the `Mefc`s inside `NLEF` beyond their
   textures (205 PS3 models in 102 files).
