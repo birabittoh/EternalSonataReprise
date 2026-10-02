@@ -9,11 +9,12 @@
 // party arrays, so the roster and HP natives run against those directly.
 // Characters 11 and 12 have no 360 storage and read as absent.
 //
-// The rest is the PS3's costume state (Allegretto, Polka and Beat only) and
-// two flags of its camp menu. The 360 has neither the models nor the menu:
-// unlocks are kept on the host so scripts can read them back (not saved), the
-// selection is the costume system's (costume_system.cpp) and the menu flags
-// are dropped.
+// The rest is the PS3's costumes (Allegretto, Polka and Beat only), which the
+// costume system (costume_system.cpp) keeps with their locks, and two flags of
+// its camp menu, which the 360 lacks, so they go into the save record
+// (save_record.h).
+
+#include "ps3_natives.h"
 
 #include "generated/eternalsonata_init.h"
 #include "costume_system.h"
@@ -22,6 +23,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <mutex>
+#include <string>
 
 #include <rex/hook.h>
 #include <rex/logging.h>
@@ -43,8 +46,9 @@ constexpr uint32_t kStatsStride = 48u;
 constexpr uint32_t kStatHp = 0x0Cu;
 constexpr uint32_t kStatHpMax = 0x10u;
 
-// Unlocked costumes, the PS3 party block's bytes +0x919..+0x91C.
-std::array<uint8_t, 4> g_costumes{};
+// The PS3 party block's camp menu flags at +0x920 and +0x921.
+std::mutex g_mutex;
+std::array<uint8_t, 2> g_menu_flags{};
 
 uint32_t g_table = 0;
 
@@ -71,33 +75,15 @@ int32_t Position(uint8_t* base, int32_t character) {
   return static_cast<int32_t>(Load(base, kPositionsAddr + 4 * character));
 }
 
-// Index into g_costumes, as sub_1E5B78 / sub_1E5BF0 map it.
-int CostumeSlot(int32_t character, int32_t variant) {
-  if (character == 0 && variant == 2) return 0;
-  if (character == 1 && variant == 2) return 1;
-  if (character == 2 && variant == 2) return 2;
-  if (character == 1 && variant == 3) return 3;
-  return -1;
-}
-
 // 5026 (character, variant): unlock a costume.
 void UnlockCostume(PPCContext& ctx, uint8_t* base) {
-  const int slot = CostumeSlot(Arg(ctx, base, 0), Arg(ctx, base, 1));
-  if (slot >= 0)
-    g_costumes[slot] = 1;
+  eternalsonata::Ps3UnlockCostume(Arg(ctx, base, 0), Arg(ctx, base, 1));
   Return(ctx, 0);
 }
 
 // 5027 (character, variant): costume unlocked; variant 1 always is.
 void HasCostume(PPCContext& ctx, uint8_t* base) {
-  const int32_t character = Arg(ctx, base, 0);
-  const int32_t variant = Arg(ctx, base, 1);
-  if (character < 0 || character > 2)
-    return Return(ctx, 0);
-  if (variant == 1)
-    return Return(ctx, 1);
-  const int slot = CostumeSlot(character, variant);
-  Return(ctx, slot >= 0 ? g_costumes[slot] : 0);
+  Return(ctx, eternalsonata::Ps3CostumeUnlocked(Arg(ctx, base, 0), Arg(ctx, base, 1)));
 }
 
 // 5028 (character): selected costume variant.
@@ -105,9 +91,19 @@ void SelectedCostume(PPCContext& ctx, uint8_t* base) {
   Return(ctx, eternalsonata::Ps3WornCostume(Arg(ctx, base, 0)));
 }
 
-// 5029, 5032 (flag): set camp menu gates.
-void SetMenuFlag(PPCContext& ctx, uint8_t* base) {
-  (void)base;
+// 5029 (x): camp menu flag +0x921 = x != 0.
+void SetMenuFlag921(PPCContext& ctx, uint8_t* base) {
+  const bool set = Arg(ctx, base, 0) != 0;
+  std::lock_guard lock(g_mutex);
+  g_menu_flags[1] = set;
+  Return(ctx, 0);
+}
+
+// 5032 (x): camp menu flag +0x920 = x == 0.
+void SetMenuFlag920(PPCContext& ctx, uint8_t* base) {
+  const bool set = Arg(ctx, base, 0) == 0;
+  std::lock_guard lock(g_mutex);
+  g_menu_flags[0] = set;
   Return(ctx, 0);
 }
 
@@ -141,10 +137,10 @@ constexpr std::array<PPCFunc*, kCount> kNatives = {
     &UnlockCostume,    // 5026
     &HasCostume,       // 5027
     &SelectedCostume,  // 5028
-    &SetMenuFlag,      // 5029
+    &SetMenuFlag921,   // 5029
     &HasJoined,        // 5030
     &AddHp,            // 5031
-    &SetMenuFlag,      // 5032
+    &SetMenuFlag920,   // 5032
     &InActiveParty,    // 5033
 };
 
@@ -187,7 +183,42 @@ void TranslateTaskList(const PPCContext& ctx, uint8_t* base, uint32_t index) {
     Store(base, at, kTaskList[list]);
 }
 
+std::string Bits(const uint8_t* bytes, size_t count) {
+  std::string out;
+  for (size_t i = 0; i < count; ++i)
+    out += bytes[i] ? '1' : '0';
+  return out;
+}
+
+void ReadBits(const eternalsonata::SaveRecord& record, const char* key, uint8_t* bytes,
+              size_t count) {
+  const auto it = record.find(key);
+  for (size_t i = 0; i < count; ++i)
+    bytes[i] = it != record.end() && i < it->second.size() && it->second[i] == '1';
+}
+
 }  // namespace
+
+namespace eternalsonata {
+
+void ResetPs3Record() {
+  std::lock_guard lock(g_mutex);
+  g_menu_flags.fill(0);
+}
+
+void SavePs3Record(SaveRecord& record) {
+  if (!IsPs3Target())
+    return;
+  std::lock_guard lock(g_mutex);
+  record["ps3.camp_menu_flags"] = Bits(g_menu_flags.data(), g_menu_flags.size());
+}
+
+void LoadPs3Record(const SaveRecord& record) {
+  std::lock_guard lock(g_mutex);
+  ReadBits(record, "ps3.camp_menu_flags", g_menu_flags.data(), g_menu_flags.size());
+}
+
+}  // namespace eternalsonata
 
 // Builtins 5, 6, 7 and 19 spawn a script task on the list in args[2], or
 // args[3] for 6.

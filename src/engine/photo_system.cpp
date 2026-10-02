@@ -71,6 +71,7 @@
 #include "item_system.h"
 #include "music_system.h"
 #include "piano_music_system.h"
+#include "save_record.h"
 
 namespace eternalsonata {
 namespace {
@@ -545,11 +546,13 @@ REX_HOOK_RAW(sub_82209478) {
 //
 // The same routine also restores the collectible flags the Piano Music menu
 // reads, the inventory and Item Set that item_system.cpp watches, and the
-// equipment that equipment_system.cpp watches, and all of them want the same
+// equipment that equipment_system.cpp watches, and the host save record
+// (save_record.cpp) loads with it. The watchers want the same
 // "adopt, do not announce" treatment. A guest routine can only be hooked once,
 // so this hook forwards to them rather than there being one each.
 REX_EXTERN(__imp__sub_82240AF8);
 REX_HOOK_RAW(sub_82240AF8) {
+  const uint32_t save = ctx.r3.u32;
   __imp__sub_82240AF8(ctx, base);
 
   using namespace eternalsonata;
@@ -564,6 +567,7 @@ REX_HOOK_RAW(sub_82240AF8) {
   NotifyEquipmentSaveLoaded();
   NotifyGameSettingsSaveLoaded();
   NotifyFlagsSaveLoaded();
+  NotifySaveRecordLoaded(save);
 }
 
 // ---------------------------------------------------------------------------

@@ -1188,20 +1188,24 @@ character = "polka"                 # or 1..10, the party numbering
 name = "swimsuit"                   # the id becomes "<mod folder>/swimsuit"
 label = "Swimsuit"
 model = "costumes/plk_swim.nobj"    # relative to the mod folder
+locked = true                       # optional: a new game starts it locked
 ```
 
 From C++, copy `src/api/eternalsonata_costume_api.h` and resolve its entry
 points as with the other APIs: `EternalSonataRegisterCostume` (a model in
 memory) or `EternalSonataRegisterCostumeFile`, then
-`EternalSonataWearCostume` to put one on.
+`EternalSonataWearCostume` to put one on. `EternalSonataUnlockCostume` and
+`EternalSonataLockCostume` gate a costume in the picker for the game in
+progress, for instance to unlock it at some point of the story.
 
 - **The model is one whole `NOBJ` in the Xbox 360 layout**, the same thing
   `AppKeep.bmd` holds for each character. Keep the character's skeleton and
   mesh names: its motions and the field leader's weapon hiding go by name.
 - **Changes show at once in the field**, which respawns the leader outside
   cutscenes; battles and cutscenes pick the costume up when they start.
-- **The choice is not saved yet.** The `costumes` cvar
-  (`--costumes=polka=my_mod/swimsuit`) chooses at boot.
+- **The costume worn and the locks are saved with the game.** A new game
+  starts from the `costumes` cvar (`--costumes=polka=my_mod/swimsuit`) and
+  every costume's starting lock.
 - **Each costume costs its size in guest memory**, about 4 MB, from the first
   time it is worn until the game closes.
 

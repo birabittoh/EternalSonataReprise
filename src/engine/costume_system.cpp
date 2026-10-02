@@ -68,6 +68,8 @@ struct Costume {
   std::filesystem::path path;
   uint32_t guest = 0;          // loaded model, 0 until first worn
   bool failed = false;         // did not load; not retried
+  bool starts_unlocked = true; // in a new game
+  bool unlocked = true;        // in the game in progress
 };
 
 struct State {
@@ -75,6 +77,8 @@ struct State {
   // handed out through the C ABI at stable addresses.
   std::array<std::deque<Costume>, kCharacters> costumes;
   std::array<int, kCharacters> worn{};
+  // What the costumes cvar put on, which a new game starts from.
+  std::array<int, kCharacters> boot{};
   // The slots as AppKeep.bmd filled them; all 0 until the boot hook ran.
   std::array<uint32_t, kCharacters> defaults{};
   bool live = false;
@@ -147,6 +151,7 @@ void EnsureCharacterLists() {
     costume.id = "ps3/" + std::to_string(p.variant);
     costume.label = p.label;
     costume.path = eternalsonata::GameDataRoot() / p.file;
+    costume.starts_unlocked = costume.unlocked = false;
     s.costumes[p.character - 1].push_back(std::move(costume));
   }
 }
@@ -233,7 +238,7 @@ int WearLocked(int character, int index) {
   return ETERNALSONATA_COSTUME_OK;
 }
 
-void Publish(int character, int index) {
+void Publish(const char* event, int character, int index) {
   rex::Runtime* runtime = nullptr;
   {
     std::lock_guard lock(g_mutex);
@@ -245,7 +250,7 @@ void Publish(int character, int index) {
   rex::system::ModRegistry::EventPayload payload;
   payload.u64 = static_cast<uint64_t>(character);
   payload.f64 = index;
-  registry->Publish(ETERNALSONATA_COSTUME_EVENT_CHANGED, payload);
+  registry->Publish(event, payload);
 }
 
 // The costumes cvar: "polka=ps3/3,beat=ps3/2".
@@ -278,10 +283,12 @@ void WearBootCostumes() {
 //   name = "swimsuit"              # id becomes "<mod folder>/swimsuit"
 //   label = "Swimsuit"
 //   model = "costumes/plk_swim.nobj"  # relative to the mod folder
+//   locked = true                  # optional: a new game starts it locked
 //
 // Hand-parsed, like the asset system's [[language]] tables.
 struct DeclaredCostume {
   std::string character, name, label, model;
+  bool locked = false;
 };
 
 std::vector<DeclaredCostume> ReadDeclaredCostumes(const std::filesystem::path& path) {
@@ -330,6 +337,8 @@ std::vector<DeclaredCostume> ReadDeclaredCostumes(const std::filesystem::path& p
       costume.label = value;
     else if (key == "model")
       costume.model = value;
+    else if (key == "locked")
+      costume.locked = value == "true";
   }
   return costumes;
 }
@@ -349,6 +358,7 @@ void ScanModCostumes(rex::Runtime* runtime) {
       }
       Costume costume;
       costume.path = model;
+      costume.starts_unlocked = costume.unlocked = !declared.locked;
       const std::string id = mod.folder_name + "/" + declared.name;
       const std::string label = declared.label.empty() ? declared.name : declared.label;
       std::lock_guard lock(g_mutex);
@@ -412,9 +422,147 @@ int WearCostume(int character, int costume) {
   }
   if (changed) {
     FieldPlayerModelOverride::RequestRespawn();
-    Publish(character, costume);
+    Publish(ETERNALSONATA_COSTUME_EVENT_CHANGED, character, costume);
   }
   return ETERNALSONATA_COSTUME_OK;
+}
+
+int CostumeUnlocked(int character, int costume) {
+  if (!ValidCharacter(character))
+    return ETERNALSONATA_COSTUME_ERR_INVALID_CHARACTER;
+  std::lock_guard lock(g_mutex);
+  EnsureCharacterLists();
+  const auto& list = state().costumes[character - 1];
+  if (costume < 0 || costume >= static_cast<int>(list.size()))
+    return ETERNALSONATA_COSTUME_ERR_INVALID_COSTUME;
+  return list[costume].unlocked ? 1 : 0;
+}
+
+int SetCostumeUnlocked(int character, int costume, bool unlocked) {
+  if (!ValidCharacter(character))
+    return ETERNALSONATA_COSTUME_ERR_INVALID_CHARACTER;
+  bool changed = false, worn = false;
+  {
+    std::lock_guard lock(g_mutex);
+    EnsureCharacterLists();
+    auto& list = state().costumes[character - 1];
+    if (costume < 0 || costume >= static_cast<int>(list.size()))
+      return ETERNALSONATA_COSTUME_ERR_INVALID_COSTUME;
+    if (costume == ETERNALSONATA_COSTUME_DEFAULT)
+      return unlocked ? ETERNALSONATA_COSTUME_OK : ETERNALSONATA_COSTUME_ERR_DEFAULT_LOCK;
+    changed = list[costume].unlocked != unlocked;
+    list[costume].unlocked = unlocked;
+    worn = state().worn[character - 1] == costume;
+  }
+  if (!unlocked && worn)
+    WearCostume(character, ETERNALSONATA_COSTUME_DEFAULT);
+  if (changed) {
+    REXLOG_INFO("costumes: {} {} costume {}", unlocked ? "unlocked" : "locked",
+                kCharacterNames[character - 1], costume);
+    Publish(unlocked ? ETERNALSONATA_COSTUME_EVENT_UNLOCKED : ETERNALSONATA_COSTUME_EVENT_LOCKED,
+            character, costume);
+  }
+  return ETERNALSONATA_COSTUME_OK;
+}
+
+int SetCostumeStartsLocked(int character, int costume, bool locked) {
+  if (!ValidCharacter(character))
+    return ETERNALSONATA_COSTUME_ERR_INVALID_CHARACTER;
+  {
+    std::lock_guard lock(g_mutex);
+    EnsureCharacterLists();
+    auto& list = state().costumes[character - 1];
+    if (costume < 0 || costume >= static_cast<int>(list.size()))
+      return ETERNALSONATA_COSTUME_ERR_INVALID_COSTUME;
+    if (costume == ETERNALSONATA_COSTUME_DEFAULT && locked)
+      return ETERNALSONATA_COSTUME_ERR_DEFAULT_LOCK;
+    list[costume].starts_unlocked = !locked;
+  }
+  return SetCostumeUnlocked(character, costume, !locked);
+}
+
+void ResetCostumeRecord() {
+  std::array<int, kCharacters> boot;
+  {
+    std::lock_guard lock(g_mutex);
+    EnsureCharacterLists();
+    for (auto& list : state().costumes) {
+      for (auto& costume : list)
+        costume.unlocked = costume.starts_unlocked;
+    }
+    boot = state().boot;
+  }
+  for (int c = 1; c <= kCharacters; ++c)
+    WearCostume(c, boot[c - 1]);
+}
+
+// Keys are "costume.<character>" for the costume worn and
+// "unlocked.<character>.<id>" for a lock that differs from a new game's.
+void SaveCostumeRecord(SaveRecord& record) {
+  std::lock_guard lock(g_mutex);
+  EnsureCharacterLists();
+  const State& s = state();
+  for (int c = 0; c < kCharacters; ++c) {
+    const std::string name = kCharacterNames[c];
+    const auto& list = s.costumes[c];
+    if (s.worn[c] != ETERNALSONATA_COSTUME_DEFAULT)
+      record["costume." + name] = list[s.worn[c]].id;
+    for (const auto& costume : list) {
+      if (costume.unlocked != costume.starts_unlocked)
+        record["unlocked." + name + "." + costume.id] = costume.unlocked ? "1" : "0";
+    }
+  }
+}
+
+// A costume the record names that is not registered any more (its mod is
+// gone) is skipped, and leaves the character in the default.
+void LoadCostumeRecord(const SaveRecord& record) {
+  {
+    std::lock_guard lock(g_mutex);
+    EnsureCharacterLists();
+    for (int c = 0; c < kCharacters; ++c) {
+      const std::string prefix = std::string("unlocked.") + kCharacterNames[c] + ".";
+      for (auto& costume : state().costumes[c]) {
+        const auto it = record.find(prefix + costume.id);
+        costume.unlocked = it != record.end() ? it->second == "1" : costume.starts_unlocked;
+      }
+    }
+  }
+  for (int c = 1; c <= kCharacters; ++c) {
+    int index = ETERNALSONATA_COSTUME_DEFAULT;
+    const auto it = record.find(std::string("costume.") + kCharacterNames[c - 1]);
+    if (it != record.end()) {
+      std::lock_guard lock(g_mutex);
+      index = FindLocked(c, it->second);
+      if (index < 0) {
+        REXLOG_WARN("costumes: the save wears '{}', which is not installed", it->second);
+        index = ETERNALSONATA_COSTUME_DEFAULT;
+      }
+    }
+    WearCostume(c, index);
+  }
+}
+
+// The PS3's costumes are "ps3/<variant>"; variant 1 is the default.
+int Ps3CostumeIndex(int32_t character, int32_t variant) {
+  if (character < 0 || character > 2)
+    return ETERNALSONATA_COSTUME_ERR_INVALID_CHARACTER;
+  if (variant == 1)
+    return ETERNALSONATA_COSTUME_DEFAULT;
+  std::lock_guard lock(g_mutex);
+  EnsureCharacterLists();
+  return FindLocked(character + 1, "ps3/" + std::to_string(variant));
+}
+
+bool Ps3CostumeUnlocked(int32_t character, int32_t variant) {
+  const int costume = Ps3CostumeIndex(character, variant);
+  return costume >= 0 && CostumeUnlocked(character + 1, costume) == 1;
+}
+
+void Ps3UnlockCostume(int32_t character, int32_t variant) {
+  const int costume = Ps3CostumeIndex(character, variant);
+  if (costume > 0)
+    SetCostumeUnlocked(character + 1, costume, true);
 }
 
 int32_t Ps3WornCostume(int32_t character) {
@@ -449,6 +597,7 @@ REX_HOOK_RAW(sub_82162058) {
     if (index != ETERNALSONATA_COSTUME_DEFAULT && WearLocked(c, index) < 0)
       s.worn[c - 1] = ETERNALSONATA_COSTUME_DEFAULT;
   }
+  s.boot = s.worn;
 }
 
 // ---------------------------------------------------------------------------
@@ -494,6 +643,23 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetWornCostume(int character) 
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataWearCostume(int character, int costume) {
   return eternalsonata::WearCostume(character, costume);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsCostumeUnlocked(int character, int costume) {
+  return eternalsonata::CostumeUnlocked(character, costume);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataUnlockCostume(int character, int costume) {
+  return eternalsonata::SetCostumeUnlocked(character, costume, true);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataLockCostume(int character, int costume) {
+  return eternalsonata::SetCostumeUnlocked(character, costume, false);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCostumeStartsLocked(int character,
+                                                                         int costume, int locked) {
+  return eternalsonata::SetCostumeStartsLocked(character, costume, locked != 0);
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterCostume(int character, const char* id,

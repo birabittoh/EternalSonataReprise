@@ -7,8 +7,9 @@ ship none. This host keeps the feature on every release, so mods can add
 costumes of their own, for any character.
 
 Costumes are picked in the F11 overlay or by a mod through
-`src/api/eternalsonata_costume_api.h`. The choice is not saved yet: every
-session starts on the defaults, unless the `costumes` cvar says otherwise.
+`src/api/eternalsonata_costume_api.h`. Each save keeps the costumes worn
+(§7); the title screen and a new game start from the defaults, or from what
+the `costumes` cvar says.
 
 ## 1. How the game picks a model
 
@@ -62,6 +63,7 @@ character = "polka"                 # or 1..10, the party numbering
 name = "swimsuit"                   # the id becomes "<mod folder>/swimsuit"
 label = "Swimsuit"                  # what the overlay shows
 model = "costumes/plk_swim.nobj"    # relative to the mod folder
+locked = true                       # optional: a new game starts it locked
 ```
 
 From C++, register a model held in memory or a file the host reads on first
@@ -84,6 +86,23 @@ unique per character. `EternalSonataWearCostume` puts one on from any thread,
 and `eternalsonata.costume.changed` reports every change on the mod registry
 bus.
 
+### Locks
+
+A locked costume is listed in the picker but cannot be chosen. Locks belong to
+the game in progress, like an item would: `EternalSonataUnlockCostume` and
+`EternalSonataLockCostume` change them, they are saved with the game (§7), and
+loading a save or starting a new game puts them back to that game's state.
+Locking the costume worn puts the default back on; the default cannot be
+locked. `eternalsonata.costume.unlocked` and `eternalsonata.costume.locked`
+report each change, with the same payload as `changed`.
+
+What a new game starts with is the costume's own setting: a mod's costumes
+start unlocked unless `assets.toml` says `locked = true` or the mod calls
+`EternalSonataSetCostumeStartsLocked` right after registering. A mod that
+unlocks its costume at some point of the story calls
+`EternalSonataUnlockCostume` then. Wearing through the API or the `costumes`
+cvar ignores locks.
+
 ## 5. Choosing at boot
 
 ```
@@ -104,5 +123,16 @@ costume worn and 1 for anything else, and events use ids -10..-12 for the
 worn costume of Allegretto, Polka and Beat, which native 1141 reads from the
 same slots ([ps3-assets.md](ps3-assets.md) §2).
 
-Not yet: unlocks gating the list (`lib.e` grants them through 5026, kept in
-host memory only), saving the choice, and the camp menu page.
+They start locked, and `lib.e` unlocks them through 5026, which goes through
+the same locks as the API; 5027 reads them back. Not yet: the camp menu page.
+
+## 7. Saving
+
+The guest save has no room for costumes, so the host writes them next to it:
+`reprise.txt` inside the slot's `savecontentNN` container, one `key = value`
+line each (`src/engine/save_record.cpp`). The record is taken when the save
+starts and written once the container is; loading a save puts its costumes
+and locks back. Costumes are saved by id: `costume.polka = ps3/3` for the one
+worn, and `unlocked.polka.ps3/3 = 1` for each lock that differs from a new
+game's. One whose mod is gone falls back to the default. A save without a
+record, from the 360 or from before this, loads as a new game would.

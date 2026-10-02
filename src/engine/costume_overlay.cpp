@@ -1,13 +1,14 @@
 // eternalsonata - F11 overlay choosing the characters' costumes.
 //
-// Stands in for the PS3's camp menu "Costumes" page until that exists. Every
-// registered costume is offered, unlocked or not.
+// Stands in for the PS3's camp menu "Costumes" page until that exists. On PS3
+// data the PS3's costumes are greyed until the game unlocks them.
 
 #include "costume_overlay.h"
 
 #include "costume_system.h"
 
 #include <array>
+#include <string>
 
 #include <rex/ui/imgui_dialog.h>
 #include <rex/ui/keybinds.h>
@@ -65,8 +66,13 @@ class CostumeOverlay final : public rex::ui::ImGuiDialog {
       const int worn = WornCostume(c);
       if (ImGui::BeginCombo("##costume", CostumeLabel(c, worn))) {
         for (int i = 0; i < count; ++i) {
-          if (ImGui::Selectable(CostumeLabel(c, i), i == worn) && i != worn &&
-              WearCostume(c, i) < 0) {
+          const bool unlocked = CostumeUnlocked(c, i) == 1;
+          const std::string label =
+              std::string(CostumeLabel(c, i)) + (unlocked ? "" : " (locked)") + "##" +
+              std::to_string(i);
+          if (ImGui::Selectable(label.c_str(), i == worn,
+                                unlocked ? 0 : ImGuiSelectableFlags_Disabled) &&
+              i != worn && WearCostume(c, i) < 0) {
             failed_ = true;
           }
         }

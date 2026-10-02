@@ -303,6 +303,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/cutscene_system.cpp
     src/engine/enemy_system.cpp
     src/engine/save_system.cpp
+    src/engine/save_record.cpp
     src/engine/achievement_translation.cpp
     src/assets/eternalsonata_asset_container.cpp
     src/assets/eternalsonata_asset_mesh.cpp
