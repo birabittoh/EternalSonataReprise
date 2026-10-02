@@ -46,12 +46,13 @@ std::array<uint8_t, 4> g_costumes{};
 
 uint32_t g_table = 0;
 
+// The VM stack is in the physical heap, so arguments need the host offset.
 uint32_t Load(uint8_t* base, uint32_t addr) {
-  return rex::memory::load_and_swap<uint32_t>(base + addr);
+  return REX_LOAD_U32(addr);
 }
 
 void Store(uint8_t* base, uint32_t addr, uint32_t value) {
-  rex::memory::store_and_swap<uint32_t>(base + addr, value);
+  REX_STORE_U32(addr, value);
 }
 
 int32_t Arg(const PPCContext& ctx, uint8_t* base, uint32_t index) {
