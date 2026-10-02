@@ -1172,6 +1172,41 @@ Things worth knowing before you use it:
 `docs/party-system.md` documents the guest-side structures the API sits on, if
 you need to know what a call actually does.
 
+## Adding costumes
+
+A costume is another model for a party character, worn in the field, in battle
+and in cutscenes, and picked in the F11 overlay. The Xbox 360 releases ship
+none and the PS3 four, so on 360 data every costume comes from a mod. Any of
+the ten characters can have them.
+
+A costume needs no code. Ship the model and declare it in `assets.toml`:
+
+```toml
+# mods/<name>/assets.toml
+[[costume]]
+character = "polka"                 # or 1..10, the party numbering
+name = "swimsuit"                   # the id becomes "<mod folder>/swimsuit"
+label = "Swimsuit"
+model = "costumes/plk_swim.nobj"    # relative to the mod folder
+```
+
+From C++, copy `src/api/eternalsonata_costume_api.h` and resolve its entry
+points as with the other APIs: `EternalSonataRegisterCostume` (a model in
+memory) or `EternalSonataRegisterCostumeFile`, then
+`EternalSonataWearCostume` to put one on.
+
+- **The model is one whole `NOBJ` in the Xbox 360 layout**, the same thing
+  `AppKeep.bmd` holds for each character. Keep the character's skeleton and
+  mesh names: its motions and the field leader's weapon hiding go by name.
+- **Changes show at once in the field**, which respawns the leader outside
+  cutscenes; battles and cutscenes pick the costume up when they start.
+- **The choice is not saved yet.** The `costumes` cvar
+  (`--costumes=polka=my_mod/swimsuit`) chooses at boot.
+- **Each costume costs its size in guest memory**, about 4 MB, from the first
+  time it is worn until the game closes.
+
+`docs/costumes.md` has the details.
+
 ## Reading and changing items and gold
 
 The item API covers inventory stacks, the battle Item Set, score pieces,

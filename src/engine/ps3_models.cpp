@@ -12,11 +12,9 @@
 //
 // The kept 360 AppKeep.bmd already holds every character but CRS and SRN,
 // and guest physical memory runs out late in a session with ~48 MB more
-// resident, so only AppKeep2 entries 0 and 1 load (at boot, after
-// AppKeep.bmd) and a costume buffer is made the first time a non default
-// costume is worn. Everything else is the 360 model of the same character.
-//
-// Until the costume selection is kept, the ps3_costume_* cvars choose it.
+// resident, so only AppKeep2 entries 0 and 1 load, at boot after
+// AppKeep.bmd. Everything else is the model table entry of the same
+// character, which for -10..-12 is the costume worn (costume_system.cpp).
 
 #include "ps3_models.h"
 
@@ -32,24 +30,10 @@
 #include <string>
 #include <vector>
 
-#include <rex/cvar.h>
 #include <rex/hook.h>
 #include <rex/logging.h>
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
-
-REXCVAR_DEFINE_INT32(ps3_costume_alg, 1, "Eternal Sonata",
-                     "PS3 data: Allegretto's costume in events (1 default, 2)")
-    .range(1, 2)
-    .debug_only();
-REXCVAR_DEFINE_INT32(ps3_costume_plk, 1, "Eternal Sonata",
-                     "PS3 data: Polka's costume in events (1 default, 2, 3)")
-    .range(1, 3)
-    .debug_only();
-REXCVAR_DEFINE_INT32(ps3_costume_bet, 1, "Eternal Sonata",
-                     "PS3 data: Beat's costume in events (1 default, 2)")
-    .range(1, 2)
-    .debug_only();
 
 namespace {
 
@@ -58,26 +42,10 @@ constexpr uint32_t kAppKeep2Entries = 9;
 // CRS and SRN, the only characters the 360 AppKeep.bmd lacks.
 constexpr uint32_t kAppKeep2Loaded = 2;
 
-constexpr std::array<const char*, 3> kWearNames = {"alg", "plk", "bet"};
-// Variants each character ships, v1 included.
-constexpr std::array<int32_t, 3> kWearVariants = {2, 3, 2};
-
-struct Wear {
-  uint32_t buffer = 0;
-  uint32_t capacity = 0;
-  int32_t variant = 0;
-};
-
 std::array<uint32_t, kAppKeep2Loaded> g_appkeep2{};
-std::array<Wear, 3> g_wear{};
 
 std::filesystem::path Ps3File(const std::string& name) {
   return eternalsonata::GameDataRoot() / name;
-}
-
-std::filesystem::path WearPath(size_t character, int32_t variant) {
-  return Ps3File("pc" + std::string(kWearNames[character]) + "_v" + std::to_string(variant) +
-                 ".p3obj");
 }
 
 bool ReadFile(const std::filesystem::path& path, std::vector<uint8_t>& out) {
@@ -126,44 +94,7 @@ void LoadAppKeep2(rex::memory::Memory* memory) {
   REXLOG_INFO("ps3 models: AppKeep2.bmd CRS, SRN at {:08X}, {} bytes", at, end - begin);
 }
 
-// Sized for the largest variant, as the PS3's WEAR slots are, so a costume
-// change reuses the buffer.
-bool AllocWear(rex::memory::Memory* memory, size_t character) {
-  uint32_t capacity = 0;
-  for (int32_t v = 1; v <= kWearVariants[character]; ++v) {
-    std::error_code ec;
-    const auto size = std::filesystem::file_size(WearPath(character, v), ec);
-    if (!ec)
-      capacity = std::max(capacity, static_cast<uint32_t>(size));
-  }
-  Wear& wear = g_wear[character];
-  if (!capacity || !(wear.buffer = AllocPhysical(memory, capacity))) {
-    REXLOG_ERROR("ps3 models: no buffer for pc{} costumes", kWearNames[character]);
-    return false;
-  }
-  wear.capacity = capacity;
-  return true;
-}
-
-// sub_801F0: loads a costume into the character's buffer unless it is the
-// one already there.
-bool LoadWear(rex::memory::Memory* memory, size_t character, int32_t variant) {
-  Wear& wear = g_wear[character];
-  if (!wear.buffer && !AllocWear(memory, character))
-    return false;
-  if (wear.variant == variant)
-    return true;
-  std::vector<uint8_t> data;
-  if (!ReadFile(WearPath(character, variant), data) || data.size() > wear.capacity) {
-    REXLOG_ERROR("ps3 models: cannot load pc{}_v{}", kWearNames[character], variant);
-    return false;
-  }
-  std::memcpy(memory->TranslateVirtual(wear.buffer), data.data(), data.size());
-  wear.variant = variant;
-  return true;
-}
-
-// The 360 model of the same character, for when a PS3 one did not load.
+// The dword_82420AF8 slot of the character an id names.
 int32_t FallbackSlot(int32_t id) {
   switch (id) {
     case -10: return 1;   // ALG
@@ -181,15 +112,8 @@ int32_t FallbackSlot(int32_t id) {
 }
 
 uint32_t Ps3Model(uint8_t* base, int32_t id) {
-  auto* memory = rex::Runtime::instance()->memory();
   if (id >= -21 && id <= -20 && g_appkeep2[-20 - id])
     return g_appkeep2[-20 - id];
-  if (id >= -12 && id <= -10) {
-    const size_t character = static_cast<size_t>(-10 - id);
-    const int32_t variant = eternalsonata::Ps3WornCostume(static_cast<int32_t>(character));
-    if (variant != 1 && LoadWear(memory, character, variant))
-      return g_wear[character].buffer;
-  }
   const int32_t slot = FallbackSlot(id);
   return slot < 0 ? 0 : REX_LOAD_U32(kModelTableAddr + 4 * slot);
 }
@@ -198,28 +122,11 @@ uint32_t Ps3Model(uint8_t* base, int32_t id) {
 
 namespace eternalsonata {
 
-int32_t Ps3WornCostume(int32_t character) {
-  int32_t variant = 1;
-  switch (character) {
-    case 0: variant = REXCVAR_GET(ps3_costume_alg); break;
-    case 1: variant = REXCVAR_GET(ps3_costume_plk); break;
-    case 2: variant = REXCVAR_GET(ps3_costume_bet); break;
-    default: return 1;
-  }
-  return std::clamp(variant, 1, kWearVariants[character]);
+void LoadPs3Models() {
+  LoadAppKeep2(rex::Runtime::instance()->memory());
 }
 
 }  // namespace eternalsonata
-
-// sub_82162058 loads AppKeep.bmd into the APPKEEP heap at boot.
-REX_EXTERN(__imp__sub_82162058);
-
-REX_HOOK_RAW(sub_82162058) {
-  __imp__sub_82162058(ctx, base);
-  if (!eternalsonata::IsPs3Target())
-    return;
-  LoadAppKeep2(rex::Runtime::instance()->memory());
-}
 
 REX_EXTERN(__imp__sub_820E8B10);
 
