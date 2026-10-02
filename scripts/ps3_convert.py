@@ -730,6 +730,35 @@ def rebuild_battlekeep(ps3, x360, report):
     return bytes(out)
 
 
+# AppKeep.bmd is kept from the 360 (§4), but its controller button icons
+# should be the PS3's. 360 slot -> PS3 slot: A B X Y LB LT RB RT START BACK
+# become cross circle square triangle L1 L2 R1 R2 START SELECT, then the pad
+# and the A/B pair.
+APPKEEP = 'appkeep.bmd'
+APPKEEP_PS3_TEXTURES = {**{i: i + 5 for i in range(235, 245)}, 290: 299, 295: 304}
+
+
+def bmd_entry(d, i):
+    offsets = sorted(rd32(d, 12 + 4 * j) for j in range(rd32(d, 8))) + [len(d)]
+    o = rd32(d, 12 + 4 * i)
+    return o, offsets[bisect.bisect_right(offsets, o)] - o
+
+
+def ps3_appkeep_textures(ps3, x360, report):
+    """The 360 AppKeep with the PS3's button textures written over its own."""
+    out = bytearray(x360)
+    for x_slot, p_slot in APPKEEP_PS3_TEXTURES.items():
+        xo, room = bmd_entry(x360, x_slot)
+        po, _ = bmd_entry(ps3, p_slot)
+        tex = convert_ntx3(ps3, po, report) if ps3[po:po + 4] == b'NTX3' else None
+        if x360[xo:xo + 4] != b'NTEX' or tex is None or len(tex) != rd32(x360, xo + 4) or len(tex) > room:
+            report.warn(f'AppKeep: PS3 slot {p_slot} does not fit 360 slot {x_slot}; kept')
+            continue
+        out[xo:xo + len(tex)] = tex
+        report.counts['AppKeep textures taken from the PS3'] += 1
+    return bytes(out)
+
+
 def decoded_360_file(base, scratch, rel):
     """One 360 asset decoded with unpack_e.exe; TOC names use backslashes."""
     exe = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unpack_e.exe')
@@ -1026,6 +1055,10 @@ def main():
                     for out_rel, data in ps3_audio.convert_cps(rel, d, args.base, donors,
                                                                 write_pcm, report):
                         emit(out_rel, data)
+                continue
+            if low == APPKEEP and args.out:
+                x360 = decoded_360_file(args.base, os.path.join(scratch, 'bmd'), APPKEEP)
+                emit(rel, ps3_appkeep_textures(d, x360, report))
                 continue
             result = convert_file(rel, d, report)
             if result is None:
