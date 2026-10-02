@@ -28,9 +28,9 @@ therefore a **second target** of this executable:
   into the asset system so the game can extract or detect either release
   itself.
 
-Only the format conversion and the party natives exist so far. A few
-conversions in `ps3_convert.py` translate logic instead (§2 task priorities
-and state ids, §4 BattleKeep, the 360 files kept in §1); they are stopgaps
+Only the format conversion, the party natives and the task list translation
+exist so far. A few conversions in `ps3_convert.py` translate logic instead
+(§2 state ids, §4 BattleKeep, the 360 files kept in §1); they are stopgaps
 that made PS3 data run on the 360 VM and go away as the PS3 VM and PS3 slot
 addressing replace them.
 
@@ -175,17 +175,45 @@ and 9 (one native 5 call in `lib.e`; 211 native 7 calls in `cfdata` and the
 battle tutorials), so the PS3 engine has more lists. It has 32 (`sub_30B6B8`, builtin
 7's insert, heads at `T+4`, tails at `T+0x84`, `T` from TOC slot `0x541EFC`),
 run in index order each frame by `sub_30B438`; the task object links at
-`+20`/`+24` and keeps its list at `+28` (the 360's `+24`/`+28`, `+32`). The
-360 list each PS3 list corresponds to is not mapped yet; it needs the engine's
-own spawn sites (callers of `sub_30B580` and `sub_8212DD10` with constant
-priorities) matched function by function. On the 360 VM an index of 16 or more reads a tail as the head
-and writes past the tails: it corrupts memory and faults storing to `0x1C`
-(loading a save in the Ritardando sewers). The PS3 battle AI passes 9 or a
-parameter, as on the 360.
+`+20`/`+24` and keeps its list at `+28` (the 360's `+24`/`+28`, `+32`). On
+the 360 VM an index of 16 or more reads a tail as the head and writes past the
+tails: it corrupts memory and faults storing to `0x1C` (loading a save in the
+Ritardando sewers).
 
-Stopgap: `ps3_convert.py` (`remap_task_priority`) rewrites the `acc=u8`
-immediates 17 -> 8 and 18 -> 9, tracking the VM stack, since some calls
-compute `args[0]` with `acc=pop+acc`.
+Engine tasks are named, so the lists match by the constant each executable
+spawns the same task with (360 `sub_8212DD10` and the task constructor
+`sub_820E64F0`; PS3 `sub_30B580` and `sub_30B6B8`):
+
+| 360 | PS3 | tasks |
+|---|---|---|
+| 1 | 4 | GetPad, SignalManager |
+| 3 | 8 | FontManager_Task |
+| 4 | 11 | MenuSelect |
+| 5 | 12 | ActionTask, CAMP_TASK |
+| 6 | 15 | btlmanager |
+| 7 | 16 | the constructor's default: most tasks |
+| 8 | 17 | TextMgr Task; `lib.e`'s one native 5 |
+| 9 | 18 | script tasks the engine spawns (`sub_82101D70` / `sub_3B6588`, `sub_82101E08` / `sub_3B6380`) |
+| 9 | 20 | ObjectQueueTask |
+| 10 | 21 | ObjectList TASK |
+| 11 | 24 | BtlEndTask, CF Demo, OP/ED_CREDIT_TASK, NowLoading, SwapEffect |
+| 13 | 28 | ChangeMode |
+| 15 | 31 | DrawSync |
+
+No 360 engine task uses lists 0, 2, 12 or 14. Scripts pass 17 (`lib.e`), 18
+(211 native 7 calls in `cfdata` and the battle tutorials) and, in the battle
+AI, 9 or a parameter of a helper that the AI calls with 9. The AI files are
+the 360's byte for byte, so on the PS3 their child tasks run in list 9, ahead
+of btlmanager, where the 360 ran them in its list 9 after it.
+
+In PS3 mode, builtins 5, 6, 7 and 19 (`sub_82102500`, `sub_82102518`,
+`sub_82102538`, `sub_821029A0`; the list is `args[2]`, `args[3]` for 6)
+translate the list before spawning (`src/engine/ps3_natives.cpp`). A PS3 list
+between two mapped ones goes to the lower 360 list, or to an unused one, so
+every task keeps the PS3's order against every engine task: 0..3 -> 0, 5..7 ->
+2, 9..10 -> 3, 13..14 -> 5, 19 -> 9, 22..23 -> 10, 25..27 -> 12, 29..30 -> 14.
+Engine spawned scripts stay in list 9, which is why 18 maps there too: a
+script and the children it spawns share a list, as on both releases.
 
 ### Map state block (500 series)
 

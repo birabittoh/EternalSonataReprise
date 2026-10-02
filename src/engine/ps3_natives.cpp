@@ -164,7 +164,55 @@ uint32_t BuildTable() {
   return table;
 }
 
+// The PS3 runs 32 task lists where the 360 runs 16, so PS3 scripts name a PS3
+// list when they spawn a task. Each 360 list maps to the PS3 list of the same
+// engine tasks (docs/ps3-assets.md section 2); a PS3 list between two of those
+// goes to the lower one, or to a 360 list no engine task uses, so tasks keep
+// the PS3's run order against every engine task. 18 is where the PS3 engine
+// spawns scripts and 20 its ObjectQueueTask, both in the 360's list 9.
+constexpr std::array<uint8_t, 32> kTaskList = {
+    0, 0, 0, 0, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 5, 6,
+    7, 8, 9, 9, 9, 10, 10, 10, 11, 12, 12, 12, 13, 14, 14, 15,
+};
+
+// Rewrites the priority argument in place; the VM pops it after the call.
+void TranslateTaskList(const PPCContext& ctx, uint8_t* base, uint32_t index) {
+  if (!eternalsonata::IsPs3Target())
+    return;
+  const uint32_t at = ctx.r3.u32 + 4 * index;
+  const uint32_t list = Load(base, at);
+  if (list < kTaskList.size())
+    Store(base, at, kTaskList[list]);
+}
+
 }  // namespace
+
+// Builtins 5, 6, 7 and 19 spawn a script task on the list in args[2], or
+// args[3] for 6.
+REX_EXTERN(__imp__sub_82102500);
+REX_EXTERN(__imp__sub_82102518);
+REX_EXTERN(__imp__sub_82102538);
+REX_EXTERN(__imp__sub_821029A0);
+
+REX_HOOK_RAW(sub_82102500) {
+  TranslateTaskList(ctx, base, 2);
+  __imp__sub_82102500(ctx, base);
+}
+
+REX_HOOK_RAW(sub_82102518) {
+  TranslateTaskList(ctx, base, 3);
+  __imp__sub_82102518(ctx, base);
+}
+
+REX_HOOK_RAW(sub_82102538) {
+  TranslateTaskList(ctx, base, 2);
+  __imp__sub_82102538(ctx, base);
+}
+
+REX_HOOK_RAW(sub_821029A0) {
+  TranslateTaskList(ctx, base, 2);
+  __imp__sub_821029A0(ctx, base);
+}
 
 // sub_820F91A8 (named MEMORY_HEAP__Init in config/rtti_names.toml) registers
 // the field native tables. The extra table is added right after; sub_820FF028
