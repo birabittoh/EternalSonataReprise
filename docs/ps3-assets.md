@@ -72,8 +72,10 @@ provides `default.xex` and every file the conversion does not replace yet.
 Each convertible PS3 file is written over its counterpart, PS3 only files are
 added, and `index.vmtoc` gets a stored record for every converted file. Kept
 from the 360 for now: `AppKeep.bmd`, `op.bmd`, `ed1.bmd`, `ed2.bmd`,
-`campdata/scp.bmd` (slot layouts differ, §4), fonts and `.tex`. Audio needs
-`ffmpeg` on `PATH` (§5).
+`campdata/scp.bmd` (slot layouts differ, §4), fonts and `.tex`. The kept
+`AppKeep.bmd` gets the PS3's controller button textures written over its own
+(360 slots 235..244, 290, 295 from PS3 slots 240..249, 299, 304, same size).
+Audio needs `ffmpeg` on `PATH` (§5).
 
 The game runs in PS3 mode when `game_data_root` holds `pcalg_v1.p3obj`, a
 file only the PS3 ships (`src/core/target.cpp`, `IsPs3Target()`). PS3 mode
