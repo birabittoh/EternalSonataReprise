@@ -12,9 +12,11 @@
 // The rest is the PS3's costume state (Allegretto, Polka and Beat only) and
 // two flags of its camp menu. The 360 has neither the models nor the menu:
 // unlocks are kept on the host so scripts can read them back (not saved), the
-// selection stays on the default costume and the menu flags are dropped.
+// selection comes from the ps3_costume_* debug cvars and the menu flags are
+// dropped.
 
 #include "generated/eternalsonata_init.h"
+#include "ps3_models.h"
 #include "target.h"
 
 #include <algorithm>
@@ -100,8 +102,7 @@ void HasCostume(PPCContext& ctx, uint8_t* base) {
 
 // 5028 (character): selected costume variant.
 void SelectedCostume(PPCContext& ctx, uint8_t* base) {
-  (void)base;
-  Return(ctx, 1);
+  Return(ctx, eternalsonata::Ps3WornCostume(Arg(ctx, base, 0)));
 }
 
 // 5029, 5032 (flag): set camp menu gates.
