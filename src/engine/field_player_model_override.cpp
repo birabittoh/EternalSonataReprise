@@ -296,16 +296,20 @@ bool g_action_model_respawn = false;
 // every frame.
 int g_failed_character = -1;
 
+std::atomic<bool> g_respawn_requested{false};
+
 // Respawns the leader when it wears the wrong model. Skipped during a field
 // action and a map reset, which respawns on its own.
 void ApplySelectedModel(PPCContext& ctx, uint8_t* base) {
   const int character = eternalsonata::FieldPlayerModelOverride::DesiredCharacter();
   const uint32_t object = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
-  if (character == g_applied_character || character == g_failed_character ||
+  const bool requested = g_respawn_requested.load(std::memory_order_relaxed);
+  if ((character == g_applied_character && !requested) || character == g_failed_character ||
       g_default_model_for_action || object == 0 || object == 0xFFFFFFFFu ||
       REX_LOAD_U8(kMapResetFlag) != 0 || !ForcedRespawnIsSafe()) {
     return;
   }
+  g_respawn_requested.store(false, std::memory_order_relaxed);
   RespawnFieldLeaderLive(ctx, base);
   g_failed_character = g_applied_character == character ? -1 : character;
 }
@@ -313,6 +317,10 @@ void ApplySelectedModel(PPCContext& ctx, uint8_t* base) {
 }  // namespace
 
 namespace eternalsonata {
+
+void FieldPlayerModelOverride::RequestRespawn() {
+  g_respawn_requested.store(true, std::memory_order_relaxed);
+}
 
 void FieldPlayerModelOverride::SetSelection(int selection) {
   if (selection < 0 || selection >= kSelectionCount) {
