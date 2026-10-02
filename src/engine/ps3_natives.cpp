@@ -186,7 +186,48 @@ void TranslateTaskList(const PPCContext& ctx, uint8_t* base, uint32_t index) {
     Store(base, at, kTaskList[list]);
 }
 
+// Native 1141 kind 0 returns a field character model. The PS3 adds negative
+// ids (sub_80610 in the EBOOT): -10..-12 are the worn costume of Allegretto,
+// Polka and Beat (pc*_v*.p3obj), -20..-28 the nine entries of AppKeep2.bmd.
+// Until those load, each maps to the 360's model of the same character in
+// dword_82420AF8; Crescendo and Serenade (-20, -21) have none.
+constexpr uint32_t kModelTableAddr = 0x82420AF8u;
+
+int32_t Ps3CharacterModelSlot(int32_t id) {
+  switch (id) {
+    case -10: return 1;   // ALG
+    case -11: return 2;   // PLK
+    case -12: return 3;   // BET
+    case -22: return 4;   // CPN
+    case -23: return 5;   // VOL
+    case -24: return 6;   // SLS
+    case -25: return 7;   // JRB
+    case -26: return 8;   // FST
+    case -27: return 9;   // MCH
+    case -28: return 10;  // CLV
+    default: return -1;
+  }
+}
+
 }  // namespace
+
+REX_EXTERN(__imp__sub_820E8B10);
+
+REX_HOOK_RAW(sub_820E8B10) {
+  const int32_t id = Arg(ctx, base, 1);
+  if (!eternalsonata::IsPs3Target() || Arg(ctx, base, 0) != 0 || id >= 0)
+    return __imp__sub_820E8B10(ctx, base);
+  const int32_t slot = Ps3CharacterModelSlot(id);
+  if (slot < 0) {
+    static bool warned = false;
+    if (!warned) {
+      warned = true;
+      REXLOG_WARN("ps3 natives: no model for character id {} (1141)", id);
+    }
+    return Return(ctx, 0);
+  }
+  Return(ctx, static_cast<int32_t>(Load(base, kModelTableAddr + 4 * slot)));
+}
 
 // Builtins 5, 6, 7 and 19 spawn a script task on the list in args[2], or
 // args[3] for 6.
