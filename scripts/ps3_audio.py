@@ -225,10 +225,34 @@ def convert_csf(rel, ps3, x360, write_pcm, report):
     return bytes(header) + bytes(payload)
 
 
+def clip_shapes(bank):
+    return [(0xFF if t.flags == 1 else t.flags, t.samples())
+            for _, tims in parse_csf(bank)[2] for t in tims]
+
+
+def best_twin(bank, candidates, index):
+    """The 360 bank whose clips line up with the most of this one's, by
+    ordinal as convert_csf reuses them; ties go to the same bank index."""
+    shapes = clip_shapes(bank)
+    best, best_score = None, 0
+    for i, x in enumerate(candidates):
+        score = sum(1 for (f, n), (xf, xn) in zip(shapes, clip_shapes(x))
+                    if f == xf and abs(n - xn) <= SAME_CLIP_SLACK)
+        if score > best_score or (score == best_score and score and i == index):
+            best, best_score = x, score
+    return best
+
+
 def decoded_360_banks(base, scratch):
     """Decodes every 360 .csf with unpack_e.exe; -> lowercase rel -> path."""
+    return decoded_360_files(base, scratch, '.csf')
+
+
+def decoded_360_files(base, scratch, suffix):
+    """Decodes every 360 file ending in suffix with unpack_e.exe; -> lowercase
+    rel -> path."""
     exe = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unpack_e.exe')
-    subprocess.run([exe, base, scratch, '.csf'], check=True, capture_output=True)
+    subprocess.run([exe, base, scratch, suffix], check=True, capture_output=True)
     out = {}
     for root, _, files in os.walk(scratch):
         for f in files:
