@@ -258,9 +258,12 @@ before the PS3 VM can forward it to 360 code.
 
 ### Starting events
 
-`sub_820FEDC0` (a new game is index 0) and `sub_820FEC48` load a map and
-`E%04d.e` from two executable tables, `off_8240C7A4` and `dword_82081BC8`.
-The PS3's (`0x517EBC`, `0x47C1C8`) differ: a new game opens with the PS3 only
+`sub_820FEDC0` preloads a start's `E%04d.e` and `sub_820FEC48` loads its map,
+indexed by start kind (a new game is 0). `dword_82081BC8` (`.rdata`) holds the
+event numbers, which `sub_820FEC48` also reads as the spawn position;
+`off_8240C7A4` holds the maps, but a new game loads a hardcoded `"tnt01.e"`
+(`0x82082C28`). The PS3's tables (`0x517EBC`, `0x47C1C8`) and hardcoded map
+(`sub_3A9AB8`, `sub_3A9F58`) differ: a new game opens with the PS3 only
 prologue `E0005` on `tnt03` instead of `E0010` on `tnt01`.
 
 | index | 360 | PS3 |
@@ -270,7 +273,8 @@ prologue `E0005` on `tnt03` instead of `E0010` on `tnt01`.
 | 2 | `prs01`, 41 | `cbs60`, 2231 |
 | 3 | `tnt03`, 1101 | `agg02`, 1231 |
 
-PS3 mode writes the PS3's values into the 360 tables before the first start
+PS3 mode writes the PS3's values into the 360 tables and rewrites the
+hardcoded name in place before the first start
 (`src/engine/ps3_start_events.cpp`).
 
 ### Script symbols
