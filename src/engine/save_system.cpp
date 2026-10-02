@@ -60,6 +60,7 @@
 #include <rex/system/xam/content_manager.h>
 
 #include "eternalsonata_save_api.h"
+#include "save_record.h"
 #include "save_system.h"
 
 namespace eternalsonata {
@@ -190,6 +191,7 @@ void OnSaveStarted(int slot) {
     g_last_slot = slot;
     g_state = ETERNALSONATA_SAVE_STATE_RUNNING;
   }
+  CaptureSaveRecord();
   PublishSaveEvent(ETERNALSONATA_SAVE_EVENT_STARTED, slot, 0.0);
 }
 
@@ -207,6 +209,9 @@ void OnSaveFinished(bool succeeded, double reason) {
     g_save_running = false;
     slot = g_save_slot;
     g_state = succeeded ? ETERNALSONATA_SAVE_STATE_COMPLETED : ETERNALSONATA_SAVE_STATE_FAILED;
+  }
+  if (succeeded) {
+    CommitSaveRecord(slot);
   }
   PublishSaveEvent(
       succeeded ? ETERNALSONATA_SAVE_EVENT_COMPLETED : ETERNALSONATA_SAVE_EVENT_FAILED, slot,
@@ -432,6 +437,17 @@ bool Bound() {
 void BindSaveSystem(rex::Runtime* runtime) {
   std::lock_guard<std::mutex> lock(g_mutex);
   g_runtime = runtime;
+}
+
+std::filesystem::path SaveContainerDirectory(int slot) {
+  const std::filesystem::path root = SaveContainerRoot();
+  if (root.empty() || slot < 0 || slot >= kSlotCount) {
+    return {};
+  }
+  char name[16];
+  std::snprintf(name, sizeof(name), "%.*s%02d", static_cast<int>(kContainerPrefix.size()),
+                kContainerPrefix.data(), slot);
+  return root / name;
 }
 
 }  // namespace eternalsonata

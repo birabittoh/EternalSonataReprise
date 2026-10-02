@@ -70,6 +70,8 @@ enum {
   ETERNALSONATA_COSTUME_ERR_DUPLICATE_ID = -5,
   // Guest memory for the model ran out.
   ETERNALSONATA_COSTUME_ERR_NO_MEMORY = -6,
+  // The default costume is always unlocked.
+  ETERNALSONATA_COSTUME_ERR_DEFAULT_LOCK = -7,
   ETERNALSONATA_COSTUME_ERR_INVALID_ARGUMENT = -10
 };
 
@@ -77,6 +79,12 @@ enum {
 // mod, the overlay or anything else. Payload u64 is the character, payload f64
 // the new costume index.
 #define ETERNALSONATA_COSTUME_EVENT_CHANGED "eternalsonata.costume.changed"
+
+// Published when a costume is unlocked or locked, by a mod or by the game's
+// own scripts (the PS3's grants), but not when a save or new game resets the
+// locks. Payload u64 is the character, payload f64 the costume index.
+#define ETERNALSONATA_COSTUME_EVENT_UNLOCKED "eternalsonata.costume.unlocked"
+#define ETERNALSONATA_COSTUME_EVENT_LOCKED "eternalsonata.costume.locked"
 
 // Host ABI version, so a mod can tell what it is talking to.
 typedef uint32_t (*EternalSonataCostumeAbiVersionFn)(void);
@@ -106,9 +114,32 @@ typedef int (*EternalSonataGetWornCostumeFn)(int character);
 
 // Puts a costume on. Battles and cutscenes started after this show it, and the
 // field leader is rebuilt on the next field frame outside a cutscene. Loads the
-// model the first time the costume is worn. Not saved: every session starts
-// on the defaults.
+// model the first time the costume is worn. Saved with the game. Wearing does
+// not check the lock (below); only the costume picker does.
 typedef int (*EternalSonataWearCostumeFn)(int character, int costume);
+
+// ---------------------------------------------------------------------------
+// Locks
+// ---------------------------------------------------------------------------
+//
+// A locked costume is listed but cannot be picked. Locks belong to the game in
+// progress: they are saved with it, and loading a save or starting a new game
+// puts every costume back to the state that save or game has. The PS3's
+// costumes start locked and the game's scripts unlock them; a mod's start
+// unlocked unless it says otherwise.
+
+// 1 if unlocked, 0 if locked, or a negative error.
+typedef int (*EternalSonataIsCostumeUnlockedFn)(int character, int costume);
+
+// Unlock or lock a costume in the game in progress. Locking the costume worn
+// puts the default back on. The default cannot be locked.
+typedef int (*EternalSonataUnlockCostumeFn)(int character, int costume);
+typedef int (*EternalSonataLockCostumeFn)(int character, int costume);
+
+// Whether a new game starts with the costume locked (nonzero) or not. Call it
+// right after registering; it also sets the current lock. The same as
+// `locked = true` in an assets.toml [[costume]].
+typedef int (*EternalSonataSetCostumeStartsLockedFn)(int character, int costume, int locked);
 
 // ---------------------------------------------------------------------------
 // Adding costumes

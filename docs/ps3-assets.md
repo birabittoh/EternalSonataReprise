@@ -87,8 +87,10 @@ engine's globals (party block, stats, map state block), and PS3 mode runs the
 same executable, so the bytes are the same layout either way. A 360 save
 continues in PS3 mode. A PS3 save made on a PS3 only map would not load on
 360 data, and twelve slots and costumes do not fit the party block, so that
-state belongs in a host side record saved alongside, which 360 mode can use
-to refuse such a save.
+state goes in a host side record saved alongside (`reprise.txt` in the save
+container, `src/engine/save_record.cpp`), which 360 mode can later use to
+refuse such a save. It holds the costumes worn, the PS3's costume unlocks and
+its camp menu flags so far.
 
 `--verify extracted/e --verify extracted/other` compares converted models
 against the decoded 360 release; without an output directory it only
@@ -159,11 +161,10 @@ Costumes exist only for Allegretto, Polka and Beat (`pcALG_v2`, `pcPLK_v2`,
 
 In PS3 mode `src/engine/ps3_natives.cpp` currently registers these eight
 into the 360's party table. The roster and HP natives work on the 360's ten character
-arrays (characters 11 and 12 read as absent); costume unlocks live in host
-memory only, 5028 answers the costume system's selection, and the menu flags
-are dropped. That
-is interim: these natives belong to the PS3 VM, backed by twelve slot and
-costume state that is saved.
+arrays (characters 11 and 12 read as absent); costume unlocks and the two
+menu flags are host state saved in the save record (§1), and 5028 answers the
+costume system's selection. That is interim: these natives belong to the PS3
+VM, backed by twelve slot state.
 
 The PS3 also stubs two 360 natives: 5021 (Xbox rich presence) returns 0 and
 5022 (achievement write) returns 1.
@@ -553,9 +554,8 @@ endian `.wav`, which scripts ask for by that name.
 * Running from a PS3 copy alone; moving the conversion into the asset system.
 * The PS3 script VM: interpreter, natives compared one by one, task lists,
   map state block (§2). Retiring the §2, §4 and §5 stopgaps with it.
-* Twelve party slots, costumes (models, menu, save), the camp menu flags.
-* Costume unlocks gating the list, a saved selection and the camp menu page
-  ([costumes.md](costumes.md)).
+* Twelve party slots, the camp menu itself and what its flags gate.
+* The costumes' camp menu page ([costumes.md](costumes.md)).
 * PS3 slot addressing for `AppKeep.bmd`, `BattleKeep.bop`, `title.bmd`,
   `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`; loading `.p3obj`.
 * PS3 only maps' maptex pairing.
