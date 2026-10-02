@@ -29,9 +29,9 @@ therefore a **second target** of this executable:
   itself.
 
 Only the format conversion, the party natives, the map state table and the
-task list translation exist so far. A few conversions in `ps3_convert.py`
-translate logic instead (§4 BattleKeep, the 360 files kept in §1); they are
-stopgaps that go away as PS3 slot addressing replaces them.
+task list translation exist so far. The 360 files kept in §1 and the eight
+360 effects appended to BattleKeep (§4) are stopgaps that go away as PS3
+slot addressing replaces them.
 
 The 360 decoded tree (`scripts/unpack_e.exe` output under `extracted/`) is the
 reference for format work: almost every PS3 file has a 360 counterpart, so a
@@ -490,16 +490,34 @@ offline converter keeps the 360 file for now.
 
 `btldata\BattleKeep.bop`: 106 entries on the 360, 98 on the PS3. The PS3
 dropped the eight `Mefc`s at 360 slots 26..33 and every later entry moved
-down by eight; tags line up one to one around the gap. 360 slot 38 (PS3 30)
-is the battle voice table (`BMD `, read by `sub_821BCC40` through
-`unk_824D05D0+324`): per character, a list of categories of 12 byte voice
-candidates. The pre-battle line (battle state 5, `sub_821BB310`) asks it for
-category 35 and waits until that voice ends, so a non `BMD ` chunk in that
-slot leaves the intro camera circling forever. The PS3 table has twelve
-character rows ahead of the enemies and 61 categories, where the 360
-executable expects ten and 59. Stopgap: the converter
-(`rebuild_battlekeep`) rebuilds the 360 slot order and takes slots 26..33
-and 38 from the 360 file, losing the PS3's table.
+down by eight (360 slot s holds the same clips as PS3 slot s-8, matched by
+clip length). `sub_821A0F18` copies the directory into a slot array at
+`0x824FCE30` (its object plus `0x2C9B0`). Executable code reads constant
+slots from it, and battle records name slots by negative id (`-n` is slot
+`n-1`), yet the PS3's battle files carry the 360's ids unchanged. The PS3
+parser (`sub_15ED60`) and record reader (`sub_15EF90`) copy and index the
+array directly, so where the PS3 maps those ids is not found yet.
+
+So the array has to be in the 360's layout. The converter appends the 360's
+eight dropped effects after the PS3's entries (`append_dropped_battlekeep`),
+and in PS3 mode `src/engine/ps3_battlekeep.cpp` reorders the array after the
+parser runs: 360 slots below 26 are the file's, 26..33 the appended eight,
+34 and up the file's slot minus 8. A PS3 only install still needs those
+eight.
+
+360 slot 38 (PS3 30) is the battle voice table (`BMD `), read by
+`sub_821BCC40` (12 byte candidates: delay, clip, cumulative weight) and, for
+categories 8..31, `sub_821BCEA0` (8 byte entries pointing at 32 byte
+records). Rows are the character id minus 1, or the enemy id plus 9 on the
+360 and plus 11 on the PS3 (`sub_1A6A98`), which has twelve character rows:
+131 rows to the 360's 115. The PS3 has 61 categories to the 360's 59; matching every
+caller (`sub_82196248` / `sub_144FD8`) shows categories up to 40 unchanged
+and the 360's 41 and up asked for as 43 and up (`sub_821AB7E0`'s 41..44 are
+`sub_175248`'s 43..46; the 8..31 lookup table is identical). The pre-battle
+line (battle state 5, `sub_821BB310`) asks for category 35 and waits until
+that voice ends, so a wrong table leaves the intro camera circling forever.
+PS3 mode adds 2 to enemy rows (`sub_821ABC68`) and to categories from 41
+(`sub_821BCC40`).
 
 ## 5. Audio
 
@@ -582,7 +600,7 @@ endian `.wav`, which scripts ask for by that name.
 * The PS3 script VM: natives compared one by one (§2).
 * Twelve party slots, the camp menu itself and what its flags gate.
 * The costumes' camp menu page ([costumes.md](costumes.md)).
-* PS3 slot addressing for `AppKeep.bmd`, `BattleKeep.bop`, `title.bmd`,
+* PS3 slot addressing for `AppKeep.bmd`, `title.bmd`,
   `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`; loading `.p3obj`.
 * PS3 only maps' maptex pairing.
 * `NMR2`, the colours in `NATR`, and the `Mefc`s inside `NLEF` beyond their

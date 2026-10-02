@@ -659,15 +659,12 @@ def convert_bop(d, report, audio=None):
     return bytes(head) + body
 
 
-# BattleKeep.bop is addressed by slot, like AppKeep. The PS3 dropped the eight
-# effects at 360 slots 26..33, moving every later slot down by eight, and its
-# voice table (360 slot 38) has rows for twelve characters where the executable
-# indexes ten. The 360 table is kept: every 360 clip keeps its ordinal in the
-# converted banks. A wrong chunk in slot 38 gives the pre-battle line no voice,
-# and the intro waits for it forever.
+# BattleKeep.bop is addressed by slot. The PS3 dropped the effects at 360
+# slots 26..33 and moved every later slot down by eight, but its battle files
+# still name those eight; the game reorders the slots into the 360's layout
+# (ps3_battlekeep.cpp) and finds them appended after the PS3's own.
 BATTLEKEEP = 'btldata/battlekeep.bop'
 BATTLEKEEP_DROPPED = range(26, 34)
-BATTLEKEEP_VOICE_TABLE = 38
 
 
 def bop_entries(d):
@@ -677,33 +674,24 @@ def bop_entries(d):
     return dir_at, [d[o:ends[bisect.bisect_right(ends, o)]] if o else None for o in offsets]
 
 
-def rebuild_battlekeep(ps3, x360, report):
-    """Converted PS3 BattleKeep -> the 360's slot order."""
-    dir_at, have = bop_entries(ps3)
+def append_dropped_battlekeep(ps3, x360, report):
+    """Converted PS3 BattleKeep with the 360's dropped effects at its end."""
+    dir_at, slots = bop_entries(ps3)
     _, want = bop_entries(x360)
-    if len(have) + len(BATTLEKEEP_DROPPED) != len(want):
-        report.warn(f'{BATTLEKEEP}: {len(have)} entries, expected {len(want) - 8}; kept as is')
+    if len(slots) + len(BATTLEKEEP_DROPPED) != len(want):
+        report.warn(f'{BATTLEKEEP}: {len(slots)} entries, expected {len(want) - 8}; kept as is')
         return ps3
-    shift = len(BATTLEKEEP_DROPPED)
-    slots = []
-    for i, x in enumerate(want):
-        if i in BATTLEKEEP_DROPPED or i == BATTLEKEEP_VOICE_TABLE:
-            slots.append(x)
-            continue
-        p = have[i if i < BATTLEKEEP_DROPPED.start else i - shift]
-        if (p or b'')[:4] != (x or b'')[:4]:
-            report.warn(f'{BATTLEKEEP}: slot {i} holds {p[:4]!r}, the 360 {x[:4]!r}')
-        slots.append(p)
+    slots += [want[i] for i in BATTLEKEEP_DROPPED]
     out = bytearray(ps3[:dir_at]) + u32.pack(len(slots)) + bytes(4 * len(slots))
-    for i, s in enumerate(slots):
-        if s is None:
+    for i, e in enumerate(slots):
+        if e is None:
             continue
         out += bytes(-len(out) % 0x80)
         u32.pack_into(out, dir_at + 4 + 4 * i, len(out))
-        out += s
+        out += e
     out += bytes(-len(out) % 0x1000)
     u32.pack_into(out, 4, len(out))
-    report.counts['BattleKeep slots restored from the 360'] += shift + 1
+    report.counts['BattleKeep effects appended from the 360'] += len(BATTLEKEEP_DROPPED)
     return bytes(out)
 
 
@@ -1054,7 +1042,7 @@ def main():
             out_rel, data = result
             report.counts['converted'] += 1
             if low == BATTLEKEEP and args.out:
-                data = rebuild_battlekeep(data, battlekeep, report)
+                data = append_dropped_battlekeep(data, battlekeep, report)
             if args.out:
                 out_rel = emit(out_rel, data)
             for ref_root in args.verify:
