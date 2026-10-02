@@ -464,6 +464,20 @@ comes down to about 210 MB. That reuse needs a 360 copy; a PS3 only install
 has to decode every clip. The `BOOK`s differ in a few sequencer timing bytes
 and the PS3's are kept.
 
+### Banks inside `.e` files
+
+Events carry their voices as `CSF ` banks in the `.e` bulk (293 PS3 files,
+8807 banks, 431 MB of ATRAC3). They come in groups, each led by a `CSL `
+directory: `"CSL "`, u32 count, then u32 offsets from the directory to its
+banks, which follow back to back. The script image references the
+directories, not the banks. On the 360 directories and banks start on 0x1000
+boundaries of the file; on the PS3 they are packed.
+
+The converter converts each bank as a standalone one, against the bank of the
+360 `.e` of the same name whose clips line up best, so shared clips keep the
+360's XMA. Directories and banks are realigned to 0x1000, and the directory
+offsets are rewritten (`convert_region`).
+
 ### Music (`.cps`)
 
 `CPS ` header: u32 header size (0x20), channels, data size, rate, loop start

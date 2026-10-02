@@ -457,16 +457,55 @@ def emit_nobj(rb, d, o, size, report):
     struct.pack_into('>I', rb.out, start + 4, len(rb.out) - start)
 
 
-def convert_region(d, start, end, report):
-    """Converts every NOBJ and loose NTX3 in d[start:end], copying the rest.
+def is_csf(d, o, end):
+    if d[o:o + 4] != b'CSF ' or o + 16 > end:
+        return False
+    total, head, payload = struct.unpack_from('>III', d, o + 4)
+    return head and total == head + payload and o + total <= end
+
+
+def is_csl(d, o, end):
+    if d[o:o + 4] != b'CSL ' or o + 8 > end:
+        return False
+    n = rd32(d, o + 4)
+    return 0 < n <= 64 and all(is_csf(d, o + rd32(d, o + 8 + 4 * i), end) for i in range(n))
+
+
+def convert_region(d, start, end, report, audio=None):
+    """Converts every NOBJ and loose NTX3 in d[start:end], and with audio
+    every sound bank, copying the rest.
 
     Returns the new bytes and a function mapping an old absolute offset in the
     region to its new offset relative to the region start."""
     rb = Rebuild()
     o = start
     copied = start
+    banks = 0
+    tables = []
     while o + 8 <= end:
         tag = d[o:o + 4]
+        if audio and is_csl(d, o, end):
+            # A bank directory: offsets from itself to the banks after it.
+            rb.mark(copied)
+            rb.out += d[copied:o]
+            rb.out += bytes(-(start + len(rb.out)) % 0x1000)
+            rb.mark(o)
+            tables.append(o)
+            copied = o
+            o += 8 + 4 * rd32(d, o + 4)
+            continue
+        if audio and is_csf(d, o, end):
+            size = rd32(d, o + 4)
+            rb.mark(copied)
+            rb.out += d[copied:o]
+            # Banks start on a 0x1000 boundary of the file, as on the 360,
+            # since their clip payloads are aligned from the bank start.
+            rb.out += bytes(-(start + len(rb.out)) % 0x1000)
+            rb.mark(o)
+            rb.out += audio(banks, d[o:o + size])
+            banks += 1
+            o = copied = o + size
+            continue
         if tag == b'NOBJ' and is_nobj(d, o) and o + rd32(d, o + 4) <= end:
             size = rd32(d, o + 4)
             rb.mark(copied)
@@ -492,17 +531,21 @@ def convert_region(d, start, end, report):
         i = bisect.bisect_right(olds, old) - 1
         a, n = rb.anchors[i]
         return n + (old - a)
+    for t in tables:
+        at = remap(t)
+        for i in range(rd32(d, t + 4)):
+            struct.pack_into('>I', rb.out, at + 8 + 4 * i, remap(t + rd32(d, t + 8 + 4 * i)) - at)
     return bytes(rb.out), remap
 
 
 # ---------------------------------------------------------------------------
 # Containers
 # ---------------------------------------------------------------------------
-def convert_e(d, report):
+def convert_e(d, report, audio=None):
     hdr = struct.unpack_from('>6I', d, 0)
     image_end = 0x18 + hdr[4]
     reloc_base = image_end + hdr[5]
-    bulk, remap = convert_region(d, image_end, reloc_base, report)
+    bulk, remap = convert_region(d, image_end, reloc_base, report, audio)
     image = bytearray(d[:image_end])
     # List B: image dwords holding bulk relative offsets.
     na = rd32(d, reloc_base)
@@ -633,13 +676,19 @@ KEEP_360 = {'appkeep.bmd', 'op.bmd', 'ed1.bmd', 'ed2.bmd', 'campdata/scp.bmd'}
 KEEP_360_EXT = ('.fnt', '.tex')
 
 
+# Set by main when building a game directory: (rel, bank index, PS3 bank)
+# -> 360 bank, for the sound banks embedded in .e files.
+embedded_audio = None
+
+
 def convert_file(rel, d, report):
     """Returns (360 relative path, bytes), or None to keep the 360 file."""
     low = rel.lower()
     if low in KEEP_360 or low.endswith(KEEP_360_EXT):
         return None
     if low.endswith('.e') and d[:4] in (b'\0\0\x01\x81', b'\0\0\x01\x80'):
-        e = remap_state_symbols(convert_e(d, report), report)
+        audio = (lambda i, bank: embedded_audio(rel, i, bank)) if embedded_audio else None
+        e = remap_state_symbols(convert_e(d, report, audio), report)
         return rel, ps3_audio.rename_music(e)
     if d[:4] in (b'BMD ', b'CAMP'):
         return rel, convert_bmd(d, report)
@@ -694,9 +743,10 @@ def replace_file(path, data):
         fh.write(data)
 
 
-def link_base(base, out):
-    """Mirrors the 360 tree into out, as hard links where the volume allows.
-    Returns lowercase relative path -> the 360 spelling."""
+def link_base(base, out, keep=False):
+    """Mirrors the 360 tree into out, as hard links where the volume allows;
+    with keep, files already there stay. Returns lowercase relative path ->
+    the 360 spelling."""
     names = {}
     for root, dirs, files in os.walk(base):
         dirs[:] = [x for x in dirs if not x.startswith('.')]
@@ -710,6 +760,8 @@ def link_base(base, out):
             names[rel.lower()] = rel
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             if os.path.lexists(dst):
+                if keep:
+                    continue
                 os.remove(dst)
             try:
                 os.link(src, dst)
@@ -821,9 +873,12 @@ def main():
     banks = donors = scratch = None
     if args.out:
         ps3_audio.require_ffmpeg()
-        with open(os.path.join(args.base, 'index.vmtoc'), 'rb') as fh:
+        # A partial run keeps the records of everything converted before.
+        toc_from = args.out if args.only and os.path.exists(
+            os.path.join(args.out, 'index.vmtoc')) else args.base
+        with open(os.path.join(toc_from, 'index.vmtoc'), 'rb') as fh:
             toc = Toc(fh.read())
-        names = link_base(args.base, args.out)
+        names = link_base(args.base, args.out, keep=bool(args.only))
         pcm_dir = os.path.join(args.out, 'pcm')
         if not args.only and os.path.isdir(pcm_dir):
             shutil.rmtree(pcm_dir)
@@ -834,6 +889,23 @@ def main():
 
     def write_pcm(tok, data):
         replace_file(os.path.join(args.out, 'pcm', tok.hex() + '.wav'), data)
+
+    if args.out:
+        global embedded_audio
+        events = ps3_audio.decoded_360_files(args.base, os.path.join(scratch, 'e'), '.e')
+        twins = {}
+
+        def embedded_audio(rel, index, bank):
+            low = rel.lower()
+            if low not in twins:
+                twins[low] = []
+                if low in events:
+                    with open(events[low], 'rb') as fh:
+                        x = fh.read()
+                    twins[low] = [x[o:o + rd32(x, o + 4)] for o in range(0, len(x) - 16, 0x1000)
+                                  if is_csf(x, o, len(x))]
+            twin = ps3_audio.best_twin(bank, twins[low], index)
+            return ps3_audio.convert_csf(f'{rel}#{index}', bank, twin, write_pcm, report)
 
     def emit(out_rel, data):
         if out_rel.lower() not in names:
