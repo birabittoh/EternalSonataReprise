@@ -322,7 +322,8 @@ Surveyed over the 805 files present on both releases:
 | `NSHP` | RSX vertex packing | yes |
 | `NMTR`, `NLIT`, `NFOG`, `NCLC`, `NOL2` | colours RGBA vs ARGB | yes |
 | `NLOB` | offsets move when children resize | yes |
-| `NLEF` / `Mefc` | contains `NTX3` at directory addressed slots | textures only |
+| `Mefc` | directory addressed sections (§3.4) | yes |
+| `NLEF` | `Mefc`s that cannot move | textures only |
 | `NATR` | colours at irregular offsets | no |
 | `NMR2` | different record layout (28 vs 44 bytes) | no |
 | `NBN2`, `NCAM`, `NLC2`, `NCLS`, `NDYN`, `NMRP`, `NMTN` | float drift from re-export, or identical | nothing to do |
@@ -392,12 +393,34 @@ holds the texture index (u16) instead of a colour, so it must not be rotated.
 at +12, `NCLC` at +20 and +36, and `NOL2` 32 byte records with the colour at
 +24, or +8 for type 0 records.
 
+### 3.4 Effects
+
+A `Mefc` is a directory of sections, each found by offset from the `Mefc`
+tag:
+
+```
++0x00 "Mefc"  u32 size
++0x08 "XB"  ...  u16 directory offset at +0x0C (0x28 or 0x30)
+dir   "CK"  u8 entry size (12)  u8 count, then per entry:
+      char tag[4]  u8 type  u8 pad[3]  u32 offset
+```
+
+Tags seen: `TEXn` (`NTX3`), `CBLn` (`NOBJ`), `SE_0` (a
+`CSF ` bank), `EFCT` (`etbl`), `TRCn`, `COMT`, `MLNn`, `ANMn`. The 360 aligns
+sections to 0x1000, the PS3 to 128. Converting an embedded model or bank
+changes its size, so the converter converts each section and rewrites the
+directory and the `Mefc` size; converting in place without that leaves `SE_0`
+pointing into the model, and the effect loader rejects every instance after
+the first (map objects `80d`, `80e` on `tnt03`). A `Mefc` inside a model's
+`NLEF` cannot move yet and only has its textures converted.
+
 ## 4. Containers
 
 Converting a skinned mesh grows its chunk, so offsets into the container move:
 
-* `.e`: list B dwords in the image hold bulk relative offsets (to `NOBJ` and
-  `BTX ` blobs) and are remapped; the header's total size (+0x0C) and reloc
+* `.e`: list B dwords in the image hold bulk relative offsets (to `NOBJ`,
+  bare `NMDL`, `Mefc` and `BTX ` blobs; native 1062 takes all three model
+  kinds) and are remapped; the header's total size (+0x0C) and reloc
   offset (+0x14) grow by the same delta. The image itself does not change.
 * `.bmd`: the entry table after the 12 byte header holds absolute offsets.
 * `.bop`: +0x0C points at a directory (`u32 count`, absolute offsets) of
@@ -503,4 +526,5 @@ endian `.wav`, which scripts ask for by that name.
 * PS3 slot addressing for `AppKeep.bmd`, `BattleKeep.bop`, `title.bmd`,
   `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`; loading `.p3obj`.
 * PS3 only maps' maptex pairing.
-* `NMR2`, the colours in `NATR`, and `Mefc` effects beyond their textures.
+* `NMR2`, the colours in `NATR`, and the `Mefc`s inside `NLEF` beyond their
+  textures (205 PS3 models in 102 files).
