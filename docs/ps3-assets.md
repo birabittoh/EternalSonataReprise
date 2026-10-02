@@ -256,6 +256,23 @@ native may still do something different from the 360 entry at the same id
 (events in particular), so each one has to be compared by decompiling it
 before the PS3 VM can forward it to 360 code.
 
+### Starting events
+
+`sub_820FEDC0` (a new game is index 0) and `sub_820FEC48` load a map and
+`E%04d.e` from two executable tables, `off_8240C7A4` and `dword_82081BC8`.
+The PS3's (`0x517EBC`, `0x47C1C8`) differ: a new game opens with the PS3 only
+prologue `E0005` on `tnt03` instead of `E0010` on `tnt01`.
+
+| index | 360 | PS3 |
+|---|---|---|
+| 0 | `tnt01`, 10 | `tnt03`, 5 |
+| 1 | `kts01`, 1141 | `kts01`, 1141 |
+| 2 | `prs01`, 41 | `cbs60`, 2231 |
+| 3 | `tnt03`, 1101 | `agg02`, 1231 |
+
+PS3 mode writes the PS3's values into the 360 tables before the first start
+(`src/engine/ps3_start_events.cpp`).
+
 ### Script symbols
 
 `lib.e` exports nearly the same symbol ids on both releases (block2 table 2):
