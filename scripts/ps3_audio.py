@@ -119,6 +119,10 @@ class Tim:
 
     def samples(self):
         if self.xma_off:
+            # ep171 and ep186 each hold a 20 byte header without a sample
+            # count; a length no clip can be within the slack of never pairs.
+            if self.xma_len < 0x18:
+                return -1 << 40
             return rd32(self.raw, self.xma_off + 0x14)
         return self.size // ATRAC3_FRAME * ATRAC3_SAMPLES
 
