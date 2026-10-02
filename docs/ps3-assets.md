@@ -533,6 +533,11 @@ best; one line banks alone fit either language within the slack, and pairing
 them one by one gave each event's first line in the other language. Directories and banks are realigned to 0x1000, and the directory
 offsets are rewritten (`convert_region`).
 
+Battle `.bop` files (an `SE_0` bank in each attack's `Mefc`) and `title.bmd`
+carry banks the same way and are converted against the 360 file of the same
+name. One ATRAC3 clip left anywhere reaches the XMA decoder, which stalls,
+and the game plays no sound again until it restarts.
+
 ### Music (`.cps`)
 
 `CPS ` header: u32 header size (0x20), channels, data size, rate, loop start

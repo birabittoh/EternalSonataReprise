@@ -654,10 +654,10 @@ def remap_state_symbols(d, report):
     return bytes(out)
 
 
-def convert_bmd(d, report):
+def convert_bmd(d, report, audio=None):
     count = rd32(d, 8)
     table_end = 12 + 4 * count
-    body, remap = convert_region(d, table_end, len(d), report)
+    body, remap = convert_region(d, table_end, len(d), report, audio)
     head = bytearray(d[:table_end])
     for i in range(count):
         v = rd32(head, 12 + 4 * i)
@@ -667,11 +667,11 @@ def convert_bmd(d, report):
     return bytes(head) + body
 
 
-def convert_bop(d, report):
+def convert_bop(d, report, audio=None):
     dir_at = rd32(d, 12)
     count = rd32(d, dir_at)
     head_end = dir_at + 4 + 4 * count
-    body, remap = convert_region(d, head_end, len(d), report)
+    body, remap = convert_region(d, head_end, len(d), report, audio)
     head = bytearray(d[:head_end])
     for i in range(count):
         at = dir_at + 4 + 4 * i
@@ -788,14 +788,16 @@ def convert_file(rel, d, report):
     low = rel.lower()
     if low in KEEP_360 or low.endswith(KEEP_360_EXT):
         return None
+    # Battle effects and title.bmd carry banks too: one ATRAC3 clip left in
+    # them stalls the XMA decoder and silences all audio after it.
+    audio = (lambda i, bank, member: embedded_audio(rel, i, bank, member)) if embedded_audio else None
     if low.endswith('.e') and d[:4] in (b'\0\0\x01\x81', b'\0\0\x01\x80'):
-        audio = (lambda i, bank, member: embedded_audio(rel, i, bank, member)) if embedded_audio else None
         e = remap_state_symbols(convert_e(d, report, audio), report)
         return rel, ps3_audio.rename_music(e)
     if d[:4] in (b'BMD ', b'CAMP'):
-        return rel, convert_bmd(d, report)
+        return rel, convert_bmd(d, report, audio)
     if d[:4] == b'BOP ':
-        return rel, convert_bop(d, report)
+        return rel, convert_bop(d, report, audio)
     if low.endswith('.p3tex'):
         return rel[:-6] + '.x3tex', convert_bare(d, report)
     if low.endswith('.p3obj'):
@@ -994,15 +996,24 @@ def main():
 
     if args.out:
         global embedded_audio
-        events = ps3_audio.decoded_360_files(args.base, os.path.join(scratch, 'e'), '.e')
+        decoded = {}
+
+        def decoded_twin(low):
+            suffix = os.path.splitext(low)[1]
+            if suffix not in decoded:
+                decoded[suffix] = ps3_audio.decoded_360_files(
+                    args.base, os.path.join(scratch, 'twin' + suffix), suffix)
+            return decoded[suffix].get(low)
+
         twins, twin_groups, paired = {}, {}, {}
 
         def embedded_audio(rel, index, bank, member):
             low = rel.lower()
             if low not in twins:
                 twins[low] = twin_groups[low] = []
-                if low in events:
-                    with open(events[low], 'rb') as fh:
+                twin_path = decoded_twin(low)
+                if twin_path:
+                    with open(twin_path, 'rb') as fh:
                         x = fh.read()
                     twins[low] = [x[o:o + rd32(x, o + 4)] for o in range(0, len(x) - 16, 0x1000)
                                   if is_csf(x, o, len(x))]
