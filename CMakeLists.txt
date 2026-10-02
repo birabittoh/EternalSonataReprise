@@ -330,6 +330,7 @@ set(ETERNALSONATA_SOURCES
     src/platform/input_overlay.cpp
     src/engine/dlc_auto_install.cpp
     src/engine/ps3_natives.cpp
+    src/engine/ps3_start_events.cpp
     src/gpu/guest_shaders.cpp
     src/gpu/native_renderer.cpp
     src/gpu/native_renderer_batch.cpp
