@@ -1,0 +1,51 @@
+ags60	
+bqf61	
+bqj61	
+bqj62	
+bqj63	
+cbs60	
+e0005	
+e1231	
+e2230	
+e2231	
+e4101	
+e4102	
+e4103	
+e4104	
+e4105	
+e4105_010	
+e5135	
+e6011	
+e6012	
+e6013	
+e6014	
+e6015	
+e6016	
+e6052	
+e6054	
+e7100_010	
+e8021	
+e8022	
+e8023	
+e8029	
+e8042	
+e9040	
+e9999	
+lam01	Lament: Mirror's Depths
+lam02	Lament: Mirror's Flipside
+lam03	Lament: Mirror's Maze
+lam04	Lament: Mirror's Edge
+lam05	Lament: Mirror's Surface
+lam06	Lament: First Eve - New Moon
+lam07	Lament: Second Eve - Crescent Moon
+lam08	Lament: Third Eve - Half Moon
+lam09	Lament: Fourth Eve - Gibbous Moon
+lam10	Lament: Fifth Eve - Full Moon
+lam14	Lament: Mirror's Edge
+sbi01	Sharp Mountains: Cave
+sbi02	Church of EZI: Path to Peace
+sbi03	Church of EZI: Passion Proving Passage
+sbi04	Church of EZI: Courage Checking Chamber
+sbi05	Church of EZI: Placid Parish
+sbi06	Church of EZI: Wonder Way
+sbi07	Church of EZI: Awesome Altar

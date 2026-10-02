@@ -25,6 +25,7 @@
 #include "force_load_area.h"
 #include "guest_main_thread.h"
 #include "room_presence.h"
+#include "target.h"
 #include "generated/eternalsonata_init.h"
 
 namespace eternalsonata {
@@ -553,7 +554,8 @@ bool IsCutsceneCameraControlled() {
 }  // namespace eternalsonata
 
 // Public C ABI (see eternalsonata_overworld_api.h). AreaNameTable() is an
-// unordered_map; sort once for a stable, readable enumeration order.
+// unordered_map; sort once for a stable, readable enumeration order. The
+// target is latched before the runtime starts, so caching it is safe.
 namespace {
 
 const std::vector<std::pair<std::string, std::string>>& SortedAreas() {
@@ -561,6 +563,11 @@ const std::vector<std::pair<std::string, std::string>>& SortedAreas() {
     std::vector<std::pair<std::string, std::string>> v;
     for (const auto& [id, name] : eternalsonata::AreaNameTable()) {
       v.emplace_back(id, name);
+    }
+    if (eternalsonata::IsPs3Target()) {
+      for (const auto& [id, name] : eternalsonata::Ps3AreaNameTable()) {
+        v.emplace_back(id, name);
+      }
     }
     std::sort(v.begin(), v.end());
     return v;

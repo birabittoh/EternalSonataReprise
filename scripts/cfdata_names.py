@@ -10,6 +10,7 @@ took the first section's string 0, which for multi-section files is the shared
 usage:
     python scripts/cfdata_names.py                 # print id<TAB>name
     python scripts/cfdata_names.py --out docs/cfdata_names.txt
+    python scripts/cfdata_names.py --cfdata assets-ps3/cfdata         --exclude docs/cfdata_names.txt --out docs/cfdata_names_ps3.txt
 """
 import argparse
 import glob
@@ -28,6 +29,7 @@ LANG = "USA "
 # section (a dialogue/UI section follows it). Commented with the true name.
 OVERRIDES = {
     "bqm46": "Baroque City: Warp Room",  # last section is the teleport UI
+    "bqj63": None,  # PS3: string 0 is the "Warp Room Key" prompt
 }
 
 # Every id with no name in the table is an event/scene file, not a field
@@ -69,11 +71,21 @@ def is_garbled(s):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", help="write id<TAB>name lines to this file")
+    ap.add_argument("--cfdata", help="decoded cfdata directory (default: extracted/e/cfdata)")
+    ap.add_argument("--exclude", help="skip ids already listed in this id<TAB>name file")
     args = ap.parse_args(argv)
 
+    pattern = os.path.join(args.cfdata, "*.e") if args.cfdata else CFDATA_GLOB
+    known = set()
+    if args.exclude:
+        with open(args.exclude, encoding="utf-8") as f:
+            known = {line.split("	", 1)[0] for line in f if "	" in line}
+
     rows = []
-    for path in sorted(glob.glob(CFDATA_GLOB)):
-        aid = os.path.basename(path)[:-2]
+    for path in sorted(glob.glob(pattern), key=lambda p: os.path.basename(p).lower()):
+        aid = os.path.basename(path)[:-2].lower()
+        if aid in known:
+            continue
         data = open(path, "rb").read()
         blobs = btx.find_btx(data)
         if not blobs:
