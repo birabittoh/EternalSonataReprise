@@ -18,3 +18,23 @@ after_instruction = true
 address = 0x821D6B8C
 name = "EternalSonataPs3IconColour"
 registers = ["r10", "r27", "r31"]
+
+# Enemy records (ps3_enemies.cpp): the three readers of off_82024100 take the
+# PS3's table, which has the new enemies.
+[[midasm_hook]]
+address = 0x821A0678
+name = "EternalSonataPs3EnemyTable"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821BD4E4
+name = "EternalSonataPs3EnemyTable"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821BD7C4
+name = "EternalSonataPs3EnemyTable"
+registers = ["r11"]
+after_instruction = true

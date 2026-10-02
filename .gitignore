@@ -50,6 +50,9 @@ guest_shaders_debug.bin
 # by scripts/gen-area-names.py
 /src/area_names.generated.h
 
+# PS3 tables, rebuilt from the PS3 EBOOT by scripts/ps3_*_table.py
+/src/engine/ps3_*.generated.inc
+
 # Embedded overlay font, rebuilt from src/fonts/*.ttf by scripts/gen-fonts.py
 /src/fonts.generated.h
 
