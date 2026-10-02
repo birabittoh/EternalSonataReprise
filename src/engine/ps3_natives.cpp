@@ -1,4 +1,5 @@
-// eternalsonata - Script natives only the PS3 executable has.
+// eternalsonata - Script natives only the PS3 executable has, and the PS3's
+// task list, state table and music naming its scripts assume.
 //
 // PS3 scripts import party natives 5026..5033 that the 360's 5000 table (26
 // entries) lacks; docs/ps3-assets.md section 2 has their PS3 addresses.
@@ -23,6 +24,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <mutex>
 #include <string>
 
@@ -183,6 +185,48 @@ void TranslateTaskList(const PPCContext& ctx, uint8_t* base, uint32_t index) {
     Store(base, at, kTaskList[list]);
 }
 
+// The PS3's 500 table (0x779910) as offsets into its block (0x9E8340); 501
+// is empty on both.
+constexpr uint32_t kStateTable360 = 0x8240C6E0u;
+constexpr uint32_t kStateBlock360 = 0x8243C230u;
+constexpr uint32_t kNoState = ~0u;
+constexpr std::array<uint32_t, 50> kStateOffsets = {
+    0x939, kNoState, 0x00,  0x04,  0x08,  0x0C,  0x10,  0x14,  0x18,  0x1C,   // 500
+    0x20,  0x24,     0x28,  0x2C,  0x30,  0x34,  0x38,  0x3C,  0x40,  0x44,   // 510
+    0x48,  0x4C,     0x50,  0x54,  0x58,  0x5C,  0x60,  0x64,  0x65,  0x66,   // 520
+    0x68,  0x6C,     0x70,  0x71,  0x74,  0x8C,  0x114, 0x115, 0x116, 0x117,  // 530
+    0x118, 0x11C,    0x120, 0x124, 0x128, 0x130, 0x134, 0x138, 0x139, 0x939,  // 540
+};
+
+uint32_t g_state_table = 0;
+
+uint32_t BuildStateTable() {
+  auto* runtime = rex::Runtime::instance();
+  auto* memory = runtime ? runtime->memory() : nullptr;
+  if (!memory)
+    return 0;
+  const uint32_t table = memory->SystemHeapAlloc(4 * kStateOffsets.size(), 0x20);
+  if (!table)
+    return 0;
+  for (size_t i = 0; i < kStateOffsets.size(); ++i) {
+    const uint32_t addr = kStateOffsets[i] == kNoState ? 0 : kStateBlock360 + kStateOffsets[i];
+    rex::memory::store_and_swap<uint32_t>(memory->TranslateVirtual(table + 4 * i), addr);
+  }
+  return table;
+}
+
+// Same length, so the caller's buffer is rewritten in place.
+void Ps3MusicPath(const PPCContext& ctx) {
+  auto* runtime = rex::Runtime::instance();
+  if (!eternalsonata::IsPs3Target() || !ctx.r4.u32 || !runtime || !runtime->memory())
+    return;
+  auto* path = runtime->memory()->TranslateVirtual<char*>(ctx.r4.u32);
+  const size_t length = strnlen(path, 256);
+  if (length < 4 || _strnicmp(path + length - 4, ".cps", 4) != 0)
+    return;
+  path[length - 2] = path[length - 2] == 'P' ? 'X' : 'x';
+}
+
 std::string Bits(const uint8_t* bytes, size_t count) {
   std::string out;
   for (size_t i = 0; i < count; ++i)
@@ -245,6 +289,39 @@ REX_HOOK_RAW(sub_82102538) {
 REX_HOOK_RAW(sub_821029A0) {
   TranslateTaskList(ctx, base, 2);
   __imp__sub_821029A0(ctx, base);
+}
+
+// The 500 series are pointers into the map state block. The PS3 block has the
+// 360's layout and size plus one exported word at +0x118 (id 540) that no 360
+// code touches, so every later id is one higher. PS3 mode registers the PS3's
+// table, pointed at the 360 block, in place of the 360's.
+REX_EXTERN(__imp__sub_820FF028);
+
+REX_HOOK_RAW(sub_820FF028) {
+  if (eternalsonata::IsPs3Target() && ctx.r3.u32 == kStateTable360) {
+    if (!g_state_table)
+      g_state_table = BuildStateTable();
+    if (g_state_table) {
+      ctx.r3.u64 = g_state_table;
+      ctx.r4.u64 = kStateOffsets.size() - 1;
+    }
+  }
+  __imp__sub_820FF028(ctx, base);
+}
+
+// PS3 scripts name music .cps, which the 360 tracks serve as .cxs. Both
+// stream starts take the full path in r4.
+REX_EXTERN(__imp__sub_82142070);
+REX_EXTERN(__imp__sub_82142360);
+
+REX_HOOK_RAW(sub_82142070) {
+  Ps3MusicPath(ctx);
+  __imp__sub_82142070(ctx, base);
+}
+
+REX_HOOK_RAW(sub_82142360) {
+  Ps3MusicPath(ctx);
+  __imp__sub_82142360(ctx, base);
 }
 
 // sub_820F91A8 (named MEMORY_HEAP__Init in config/rtti_names.toml) registers

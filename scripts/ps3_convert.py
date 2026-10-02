@@ -14,8 +14,7 @@ Converted:
   NSHP  RSX vertex packing -> Xenos (normals, colours, skin weights)
   NMTR, NLIT, NFOG, NCLC, NOL2  RGBA colours -> ARGB
   NLOB  offsets of the placed objects it holds
-  .e    list B bulk offsets, header size, reloc offset, task priorities,
-        state global ids
+  .e    list B bulk offsets, header size, reloc offset
   .bmd / CAMP  entry table; .bop  entry directory
   .p3tex  -> .x3tex (a bare texture chain)
   .csf / .cps  audio, see ps3_audio.py; needs ffmpeg on PATH
@@ -632,28 +631,6 @@ def convert_e(d, report, audio=None):
     return bytes(image) + bulk + d[reloc_base:]
 
 
-# The 500 series are pointers into the map state block at dword_8243C230;
-# the PS3's block has an extra field before the skip handler, so 541.. is 540..
-STATE_SYMBOL_SHIFT = range(541, 549)
-
-
-def remap_state_symbols(d, report):
-    """Renumbers block2 imports of the shifted state globals, in place."""
-    out = bytearray(d)
-    o = 0x18 + rd32(d, 0x10) + rd32(d, 0x14)
-    for _ in range(2):  # list A, list B
-        o += 4 + 4 * rd32(d, o)
-    for _ in range(4):
-        n = rd32(d, o)
-        for i in range(n):
-            at = o + 4 + 8 * i
-            if rd32(out, at) in STATE_SYMBOL_SHIFT:
-                struct.pack_into('>I', out, at, rd32(out, at) - 1)
-                report.counts['state symbol remapped'] += 1
-        o += 4 + 8 * n
-    return bytes(out)
-
-
 def convert_bmd(d, report, audio=None):
     count = rd32(d, 8)
     table_end = 12 + 4 * count
@@ -792,8 +769,7 @@ def convert_file(rel, d, report):
     # them stalls the XMA decoder and silences all audio after it.
     audio = (lambda i, bank, member: embedded_audio(rel, i, bank, member)) if embedded_audio else None
     if low.endswith('.e') and d[:4] in (b'\0\0\x01\x81', b'\0\0\x01\x80'):
-        e = remap_state_symbols(convert_e(d, report, audio), report)
-        return rel, ps3_audio.rename_music(e)
+        return rel, convert_e(d, report, audio)
     if d[:4] in (b'BMD ', b'CAMP'):
         return rel, convert_bmd(d, report, audio)
     if d[:4] == b'BOP ':

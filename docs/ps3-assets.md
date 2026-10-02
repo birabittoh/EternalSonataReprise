@@ -28,11 +28,10 @@ therefore a **second target** of this executable:
   into the asset system so the game can extract or detect either release
   itself.
 
-Only the format conversion, the party natives and the task list translation
-exist so far. A few conversions in `ps3_convert.py` translate logic instead
-(§2 state ids, §4 BattleKeep, the 360 files kept in §1); they are stopgaps
-that made PS3 data run on the 360 VM and go away as the PS3 VM and PS3 slot
-addressing replace them.
+Only the format conversion, the party natives, the map state table and the
+task list translation exist so far. A few conversions in `ps3_convert.py`
+translate logic instead (§4 BattleKeep, the 360 files kept in §1); they are
+stopgaps that go away as PS3 slot addressing replaces them.
 
 The 360 decoded tree (`scripts/unpack_e.exe` output under `extracted/`) is the
 reference for format work: almost every PS3 file has a 360 counterpart, so a
@@ -245,15 +244,19 @@ script and the children it spawns share a list, as on both releases.
 ### Map state block (500 series)
 
 The 500 series natives return pointers into the map state block (the 360's
-`dword_8243C230`). Ids up to 538 match, but from 540 on each PS3 id is the
-360's plus one: the PS3 block has an extra field there, not identified yet.
-Only `lib.e` and `Tnt01.e` use them. On the 360 VM, `lib.e`'s skip helper
-stores the skip handler into 541, the 360's running skip task slot
-`dword_8243C350`, so a skipped scene suspends the event and then waits
-forever for it to end.
+`dword_8243C230`, the PS3's `0x9E8340`, 4412 bytes on both). The two tables
+(`off_8240C6E0`, `0x779910`) give the same offsets up to 539; the PS3 then
+exports one more word at `+0x118` as 540, which no 360 code touches, so each
+later PS3 id is the 360's plus one (541, `+0x120`, is the running skip task
+slot `dword_8243C350`). Both registrations pass one id more than the table
+holds: the 360's 549 and the PS3's 550 read the next table's first word.
+Only `lib.e` and `Tnt01.e` use the shifted ids. On the 360 table, `lib.e`'s
+skip helper would store the skip handler into the 360's 541, so a skipped
+scene suspends the event and then waits forever for it to end.
 
-Stopgap: `ps3_convert.py` (`remap_state_symbols`) renumbers imports 541..548
-down by one. It is not idempotent.
+PS3 mode registers the PS3's table, with its offsets applied to the 360
+block, in place of the 360's (`src/engine/ps3_natives.cpp`, a hook on
+`sub_820FF028`, which `sub_820FDFC0` and `sub_82240D40` call with it).
 
 ### Other native tables
 
@@ -563,10 +566,10 @@ and the game plays no sound again until it restarts.
 and end in bytes, and a kind: 3 is PS-ADPCM with channels interleaved per 16
 byte frame, 0 is big endian PCM. Every track both releases share has the same
 sample count, so only names differ. PS3 scripts ask for `MP139.cps`, and
-`sub_820F80F8` builds `sound\cxs\<name>` from whatever the script says.
-Stopgap: the converter rewrites `.cps` to `.cxs` inside the `.e` files (same
-length) so the 360 tracks serve; in PS3 mode the name should resolve on the
-host instead, and a PS3 only install needs the `.cps` tracks decoded.
+`sub_820F80F8` builds `sound\cxs\<name>` from whatever the script says. PS3
+mode turns `.cps` into `.cxs` where the stream starts (`sub_82142070`,
+`sub_82142360`, path in `r4`), so the 360 tracks serve; a PS3 only install
+needs the `.cps` tracks decoded.
 
 New PS3 tracks: `MP109_us`, `MP166..168` become a 360 `.cxs` of the nearest
 length with a tagged payload plus a PCM sidecar (`smpl` loop); `MP187..189`
@@ -576,8 +579,7 @@ endian `.wav`, which scripts ask for by that name.
 ## 6. Not done yet
 
 * Running from a PS3 copy alone; moving the conversion into the asset system.
-* The PS3 script VM: interpreter, natives compared one by one, task lists,
-  map state block (§2). Retiring the §2, §4 and §5 stopgaps with it.
+* The PS3 script VM: natives compared one by one (§2).
 * Twelve party slots, the camp menu itself and what its flags gate.
 * The costumes' camp menu page ([costumes.md](costumes.md)).
 * PS3 slot addressing for `AppKeep.bmd`, `BattleKeep.bop`, `title.bmd`,
