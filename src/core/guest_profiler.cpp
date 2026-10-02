@@ -412,6 +412,17 @@ int WalkFrom(CONTEXT& ctx, uint64_t* out, int max_frames) {
   return n;
 }
 
+// A bogus frame can send RtlVirtualUnwind or the leaf read to an unmapped
+// address, which would take the whole process down from the sampler thread.
+int WalkFromGuarded(CONTEXT& ctx, uint64_t* out, int max_frames) {
+  __try {
+    return WalkFrom(ctx, out, max_frames);
+  } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER
+                                                               : EXCEPTION_CONTINUE_SEARCH) {
+    return 0;
+  }
+}
+
 int CaptureStack(HANDLE thread, uint64_t* out, int max_frames) {
   CONTEXT ctx;
   std::memset(&ctx, 0, sizeof(ctx));
@@ -419,7 +430,7 @@ int CaptureStack(HANDLE thread, uint64_t* out, int max_frames) {
   if (!GetThreadContext(thread, &ctx)) {
     return 0;
   }
-  return WalkFrom(ctx, out, max_frames);
+  return WalkFromGuarded(ctx, out, max_frames);
 }
 
 int CaptureStackSelf(uint64_t* out, int max_frames) {
