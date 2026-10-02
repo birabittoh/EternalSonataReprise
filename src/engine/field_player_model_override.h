@@ -56,6 +56,10 @@ class FieldPlayerModelOverride {
 
   // Display name for a character number, or "?" if out of range.
   static const char* CharacterName(int character);
+
+  // Respawns the leader on the next field tick outside a cutscene, so a model
+  // whose data changed under the same character is rebuilt. Thread safe.
+  static void RequestRespawn();
 };
 
 }  // namespace eternalsonata
