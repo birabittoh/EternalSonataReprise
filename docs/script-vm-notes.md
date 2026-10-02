@@ -520,7 +520,7 @@ stack.
 1c..21 acc=*acc   as u8,u16,u32,f64,s8,s16
 22..25 *pop=acc   as u8,u16,u32,f64       26 memcpy(pop,acc,u32)   27 memcpy(pop,acc,u8)
 28..2f conversions int->f32,int->f64,uint->f32,uint->f64,f32->int,f32->f64,f64->int,f64->f32
-30 acc=!acc      31 acc=(f64acc==0)
+30 acc=(acc!=0)  31 acc=(f64acc!=0)
 32/33/34 acc=pop+acc  (int/f32/f64)       35/36/37 pop-acc      38,39/3a/3b pop*acc
 3c udiv  3d sdiv  3e f32 div  3f f64 div  40 umod  41 smod
 42 srl   43 sra   44 shl   45 and   46 xor   47 or   48 neg   49 fneg   4a dneg   4b not

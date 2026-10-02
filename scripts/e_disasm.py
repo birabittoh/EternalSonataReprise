@@ -38,7 +38,7 @@ OPS = {
     0x2a: ('acc=f32(uint)', 0, ''), 0x2b: ('acc=f64(uint)', 0, ''),
     0x2c: ('acc=int(f32)', 0, ''), 0x2d: ('acc=f64(f32)', 0, ''),
     0x2e: ('acc=int(f64)', 0, ''), 0x2f: ('acc=f32(f64)', 0, ''),
-    0x30: ('acc=!acc', 0, ''), 0x31: ('acc=(f64acc==0)', 0, ''),
+    0x30: ('acc=(acc!=0)', 0, ''), 0x31: ('acc=(f64acc!=0)', 0, ''),
     0x32: ('acc=pop+acc', 0, ''), 0x33: ('acc=pop+acc f32', 0, ''), 0x34: ('acc=pop+acc f64', 0, ''),
     0x35: ('acc=pop-acc', 0, ''), 0x36: ('acc=pop-acc f32', 0, ''), 0x37: ('acc=pop-acc f64', 0, ''),
     0x38: ('acc=pop*acc', 0, ''), 0x39: ('acc=pop*acc', 0, ''),
