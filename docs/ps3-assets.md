@@ -512,9 +512,14 @@ banks, which follow back to back. The script image references the
 directories, not the banks. On the 360 directories and banks start on 0x1000
 boundaries of the file; on the PS3 they are packed.
 
-The converter converts each bank as a standalone one, against the bank of the
-360 `.e` of the same name whose clips line up best, so shared clips keep the
-360's XMA. Directories and banks are realigned to 0x1000, and the directory
+A voiced event has one directory per voice language, in the opposite order
+on the two releases (`t0001.e`: two of 24 one line banks).
+
+The converter converts each bank as a standalone one, against a bank of the
+360 `.e` of the same name, so shared clips keep the 360's XMA. Banks in a
+directory take the same position in the 360 directory whose clips line up
+best; one line banks alone fit either language within the slack, and pairing
+them one by one gave each event's first line in the other language. Directories and banks are realigned to 0x1000, and the directory
 offsets are rewritten (`convert_region`).
 
 ### Music (`.cps`)

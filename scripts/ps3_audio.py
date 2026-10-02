@@ -243,6 +243,23 @@ def best_twin(bank, candidates, index):
     return best
 
 
+def best_group(group, candidates):
+    """The 360 bank directory whose banks line up with the most of this
+    one's clips, position by position; ties go to the closest durations."""
+    shapes = [clip_shapes(b) for b in group]
+    best, best_key = None, (0, 0)
+    for x in candidates:
+        score = distance = 0
+        for mine, theirs in zip(shapes, (clip_shapes(b) for b in x)):
+            for (f, n), (xf, xn) in zip(mine, theirs):
+                if f == xf and abs(n - xn) <= SAME_CLIP_SLACK:
+                    score += 1
+                    distance += abs(n - xn)
+        if score and (score, -distance) > best_key:
+            best, best_key = x, (score, -distance)
+    return best
+
+
 def decoded_360_banks(base, scratch):
     """Decodes every 360 .csf with unpack_e.exe; -> lowercase rel -> path."""
     return decoded_360_files(base, scratch, '.csf')
