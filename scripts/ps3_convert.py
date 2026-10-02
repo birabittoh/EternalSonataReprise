@@ -335,6 +335,14 @@ def is_nobj(d, o):
     return 16 <= size <= len(d) - o and size % 4 == 0 and chain_ok(d, o + 8, o + size)
 
 
+def is_nmdl(d, o, end):
+    if o + 64 > end or d[o:o + 4] != b'NMDL' or d[o + 8] != 0x83:
+        return False
+    size = rd32(d, o + 4)
+    hdr = nmdl_header(d, o)
+    return hdr < size <= end - o and size % 4 == 0 and chain_ok(d, o + hdr, o + size)
+
+
 def is_ntx3(d, o, end):
     return (d[o:o + 4] == b'NTX3' and o + 0x30 <= end and rd32(d, o + 8) == 1
             and rd32(d, o + 16) == 0x80 and o + rd32(d, o + 4) <= end)
@@ -471,58 +479,113 @@ def is_csl(d, o, end):
     return 0 < n <= 64 and all(is_csf(d, o + rd32(d, o + 8 + 4 * i), end) for i in range(n))
 
 
+def mefc_entries(d, o, end):
+    """Directory entry positions of an effect, or None. Header u16 +0x0C
+    points at "CK", entry size, count; each entry is a tag, a type and a u32
+    offset from the effect start to its section."""
+    if d[o:o + 4] != b'Mefc' or d[o + 8:o + 10] != b'XB' or o + 0x30 > end:
+        return None
+    size = rd32(d, o + 4)
+    at = o + rd16(d, o + 12)
+    if o + size > end or d[at:at + 2] != b'CK' or d[at + 2] < 12:
+        return None
+    entries = [at + 4 + d[at + 2] * i for i in range(d[at + 3])]
+    first = at + 4 + d[at + 2] * d[at + 3] - o
+    if not entries or any(not first <= rd32(d, e + 8) < size for e in entries):
+        return None
+    return entries
+
+
 def convert_region(d, start, end, report, audio=None):
-    """Converts every NOBJ and loose NTX3 in d[start:end], and with audio
-    every sound bank, copying the rest.
+    """Converts every NOBJ, loose NMDL, loose NTX3 and effect in d[start:end],
+    and with audio every sound bank, copying the rest.
 
     Returns the new bytes and a function mapping an old absolute offset in the
     region to its new offset relative to the region start."""
     rb = Rebuild()
-    o = start
-    copied = start
     banks = 0
     tables = []
-    while o + 8 <= end:
-        tag = d[o:o + 4]
-        if audio and is_csl(d, o, end):
-            # A bank directory: offsets from itself to the banks after it.
-            rb.mark(copied)
-            rb.out += d[copied:o]
-            rb.out += bytes(-(start + len(rb.out)) % 0x1000)
-            rb.mark(o)
-            tables.append(o)
-            copied = o
-            o += 8 + 4 * rd32(d, o + 4)
-            continue
-        if audio and is_csf(d, o, end):
-            size = rd32(d, o + 4)
-            rb.mark(copied)
-            rb.out += d[copied:o]
-            # Banks start on a 0x1000 boundary of the file, as on the 360,
-            # since their clip payloads are aligned from the bank start.
-            rb.out += bytes(-(start + len(rb.out)) % 0x1000)
-            rb.mark(o)
-            rb.out += audio(banks, d[o:o + size])
-            banks += 1
-            o = copied = o + size
-            continue
-        if tag == b'NOBJ' and is_nobj(d, o) and o + rd32(d, o + 4) <= end:
-            size = rd32(d, o + 4)
-            rb.mark(copied)
-            rb.out += d[copied:o]
-            emit_nobj(rb, d, o, size, report)
-            o = copied = o + size
-            continue
-        if tag == b'NTX3' and is_ntx3(d, o, end):
-            size = rd32(d, o + 4)
-            rb.mark(copied)
-            rb.out += d[copied:o]
-            emit_leaf(rb, d, o, tag, size, report)
-            o = copied = o + size
-            continue
-        o += 4
-    rb.mark(copied)
-    rb.out += d[copied:end]
+
+    def flush(a, b):
+        rb.mark(a)
+        rb.out += d[a:b]
+
+    def pad(n):
+        rb.out += bytes(-(start + len(rb.out)) % n)
+
+    def emit_mefc(o, size, entries):
+        # Sections are addressed through the directory, so they may move as
+        # long as it is rewritten.
+        nonlocal banks
+        cuts = sorted({rd32(d, e + 8) for e in entries}) + [size]
+        flush(o, o + cuts[0])
+        begin = len(rb.out) - cuts[0]
+        new = {}
+        for a, b in zip(cuts, cuts[1:]):
+            pad(128)
+            first = len(rb.anchors)
+            scan(o + a, o + b)
+            new[a] = max(n for old, n in rb.anchors[first:] if old == o + a) - begin
+        for e in entries:
+            struct.pack_into('>I', rb.out, begin + e - o + 8, new[rd32(d, e + 8)])
+        struct.pack_into('>I', rb.out, begin + 4, len(rb.out) - begin)
+        report.counts['Mefc'] += 1
+
+    def scan(o, end):
+        nonlocal banks
+        copied = o
+        while o + 8 <= end:
+            tag = d[o:o + 4]
+            if audio and is_csl(d, o, end):
+                # A bank directory: offsets from itself to the banks after it.
+                flush(copied, o)
+                pad(0x1000)
+                rb.mark(o)
+                tables.append(o)
+                copied = o
+                o += 8 + 4 * rd32(d, o + 4)
+                continue
+            if audio and is_csf(d, o, end):
+                size = rd32(d, o + 4)
+                flush(copied, o)
+                # Banks start on a 0x1000 boundary of the file, as on the 360,
+                # since their clip payloads are aligned from the bank start.
+                pad(0x1000)
+                rb.mark(o)
+                rb.out += audio(banks, d[o:o + size])
+                banks += 1
+                o = copied = o + size
+                continue
+            if tag == b'NOBJ' and is_nobj(d, o) and o + rd32(d, o + 4) <= end:
+                size = rd32(d, o + 4)
+                flush(copied, o)
+                emit_nobj(rb, d, o, size, report)
+                o = copied = o + size
+                continue
+            # Events also hand bare models to native 1062.
+            if tag == b'NMDL' and is_nmdl(d, o, end):
+                size = rd32(d, o + 4)
+                flush(copied, o)
+                emit_nmdl(rb, d, o, size, report)
+                o = copied = o + size
+                continue
+            if tag == b'NTX3' and is_ntx3(d, o, end):
+                size = rd32(d, o + 4)
+                flush(copied, o)
+                emit_leaf(rb, d, o, tag, size, report)
+                o = copied = o + size
+                continue
+            entries = mefc_entries(d, o, end) if tag == b'Mefc' else None
+            if entries:
+                size = rd32(d, o + 4)
+                flush(copied, o)
+                emit_mefc(o, size, entries)
+                o = copied = o + size
+                continue
+            o += 4
+        flush(copied, end)
+
+    scan(start, end)
     rb.mark(end)
 
     olds = [a for a, _ in rb.anchors]
