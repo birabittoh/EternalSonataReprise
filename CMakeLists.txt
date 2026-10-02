@@ -334,6 +334,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/costume_system.cpp
     src/engine/ps3_battlekeep.cpp
     src/engine/ps3_buttons.cpp
+    src/engine/ps3_maptex.cpp
     src/engine/ps3_models.cpp
     src/engine/ps3_natives.cpp
     src/engine/ps3_start_events.cpp
