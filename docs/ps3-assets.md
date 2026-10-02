@@ -160,7 +160,8 @@ Costumes exist only for Allegretto, Polka and Beat (`pcALG_v2`, `pcPLK_v2`,
 In PS3 mode `src/engine/ps3_natives.cpp` currently registers these eight
 into the 360's party table. The roster and HP natives work on the 360's ten character
 arrays (characters 11 and 12 read as absent); costume unlocks live in host
-memory only, the selection is always 1, and the menu flags are dropped. That
+memory only, 5028 answers the costume system's selection, and the menu flags
+are dropped. That
 is interim: these natives belong to the PS3 VM, backed by twelve slot and
 costume state that is saved.
 
@@ -185,10 +186,10 @@ resident. Here the kept 360 `AppKeep.bmd` already holds every character but
 CRS and SRN, and guest physical memory runs out late in a session with the
 whole of `AppKeep2.bmd` and three costume buffers (~48 MB) resident. So PS3
 mode (`src/engine/ps3_models.cpp`) loads only AppKeep2 entries 0 and 1 (7 MB)
-into physical guest memory right after `AppKeep.bmd`, serves -10..-12 and
--22..-28 from the 360 models, and makes a costume buffer (sized for the
-character's largest variant) only when a non default costume is worn, which
-nothing selects yet.
+into physical guest memory right after `AppKeep.bmd`, and serves every other
+id from the model table slot of the same character. The costumes are the
+costume system's ([costumes.md](costumes.md)), which writes the worn one into
+that slot, so -10..-12 follow it like the field and battle do.
 
 ### Task lists
 
@@ -553,8 +554,8 @@ endian `.wav`, which scripts ask for by that name.
 * The PS3 script VM: interpreter, natives compared one by one, task lists,
   map state block (§2). Retiring the §2, §4 and §5 stopgaps with it.
 * Twelve party slots, costumes (models, menu, save), the camp menu flags.
-* Costume selection for native 1141 (always variant 1), and `.p3obj` models
-  outside events (field leader, battle).
+* Costume unlocks gating the list, a saved selection and the camp menu page
+  ([costumes.md](costumes.md)).
 * PS3 slot addressing for `AppKeep.bmd`, `BattleKeep.bop`, `title.bmd`,
   `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`; loading `.p3obj`.
 * PS3 only maps' maptex pairing.

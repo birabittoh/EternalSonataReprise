@@ -1,0 +1,134 @@
+// eternalsonata - ReXGlue Recompiled Project
+//
+// Public C ABI for character costumes: alternative models a character wears
+// in the field, in battle and in cutscenes.
+//
+// Every character has its default model, and may have more. The PS3 release
+// ships four (Allegretto, Polka twice, Beat), which this host offers when it
+// runs from PS3 data; the Xbox 360 releases ship none, so on them every
+// costume comes from a mod. A mod adds one either from C++ through this
+// header or with no code at all, from a [[costume]] table in its assets.toml
+// (docs/costumes.md).
+//
+// A costume is a whole field character model: one NOBJ in the Xbox 360
+// layout, the same thing AppKeep.bmd holds for each character. It replaces
+// the character's model everywhere the game builds one from then on.
+//
+// A mod does NOT link against this project. Copy this header into the mod and
+// resolve the entry points at runtime out of the host executable:
+//
+//     auto wear = reinterpret_cast<EternalSonataWearCostumeFn>(
+//         GetProcAddress(GetModuleHandle(nullptr), "EternalSonataWearCostume"));
+//     if (wear) { wear(ETERNALSONATA_COSTUME_CHAR_POLKA, 1); }
+//
+// Always null-check, and check EternalSonataCostumeAbiVersion() before using
+// anything added after version 1.
+//
+// Threading: every entry point can be called from any thread, the ImGui draw
+// thread included, and before the game has booted. A costume worn before the
+// boot goes on as the game loads its models.
+
+#pragma once
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Bumped whenever anything below changes meaning. Additive changes bump the
+// version; existing entry points keep their signature.
+#define ETERNALSONATA_COSTUME_ABI_VERSION 1u
+
+// Characters, 1 based, the same numbering as eternalsonata_party_api.h.
+enum {
+  ETERNALSONATA_COSTUME_CHAR_ALLEGRETTO = 1,
+  ETERNALSONATA_COSTUME_CHAR_POLKA = 2,
+  ETERNALSONATA_COSTUME_CHAR_BEAT = 3,
+  ETERNALSONATA_COSTUME_CHAR_FREDERIC = 4,
+  ETERNALSONATA_COSTUME_CHAR_VIOLA = 5,
+  ETERNALSONATA_COSTUME_CHAR_SALSA = 6,
+  ETERNALSONATA_COSTUME_CHAR_JAZZ = 7,
+  ETERNALSONATA_COSTUME_CHAR_FALSETTO = 8,
+  ETERNALSONATA_COSTUME_CHAR_CLAVES = 9,
+  ETERNALSONATA_COSTUME_CHAR_MARCH = 10,
+  ETERNALSONATA_COSTUME_CHARACTER_COUNT = 10
+};
+
+// Costume 0 of every character is its default model, id "default".
+#define ETERNALSONATA_COSTUME_DEFAULT 0
+
+// Results. Everything >= 0 is success.
+enum {
+  ETERNALSONATA_COSTUME_OK = 0,
+  ETERNALSONATA_COSTUME_ERR_INVALID_CHARACTER = -2,
+  // No costume with that index or id.
+  ETERNALSONATA_COSTUME_ERR_INVALID_COSTUME = -3,
+  // Not a NOBJ, truncated, or the file could not be read.
+  ETERNALSONATA_COSTUME_ERR_INVALID_MODEL = -4,
+  // The character already has a costume with that id.
+  ETERNALSONATA_COSTUME_ERR_DUPLICATE_ID = -5,
+  // Guest memory for the model ran out.
+  ETERNALSONATA_COSTUME_ERR_NO_MEMORY = -6,
+  ETERNALSONATA_COSTUME_ERR_INVALID_ARGUMENT = -10
+};
+
+// Published on the mod registry bus when a character changes costume, by a
+// mod, the overlay or anything else. Payload u64 is the character, payload f64
+// the new costume index.
+#define ETERNALSONATA_COSTUME_EVENT_CHANGED "eternalsonata.costume.changed"
+
+// Host ABI version, so a mod can tell what it is talking to.
+typedef uint32_t (*EternalSonataCostumeAbiVersionFn)(void);
+
+// ---------------------------------------------------------------------------
+// Reading
+// ---------------------------------------------------------------------------
+
+// How many costumes `character` has, its default included, so at least 1; or
+// a negative error.
+typedef int (*EternalSonataGetCostumeCountFn)(int character);
+
+// A costume's id and its display label (UTF-8). "" for an unknown costume.
+// The pointers stay valid for the rest of the session.
+typedef const char* (*EternalSonataGetCostumeIdFn)(int character, int costume);
+typedef const char* (*EternalSonataGetCostumeLabelFn)(int character, int costume);
+
+// The index of the costume with this id, or a negative error.
+typedef int (*EternalSonataFindCostumeFn)(int character, const char* id);
+
+// The costume `character` wears now, or a negative error.
+typedef int (*EternalSonataGetWornCostumeFn)(int character);
+
+// ---------------------------------------------------------------------------
+// Wearing
+// ---------------------------------------------------------------------------
+
+// Puts a costume on. Battles and cutscenes started after this show it, and the
+// field leader is rebuilt on the next field frame outside a cutscene. Loads the
+// model the first time the costume is worn. Not saved: every session starts
+// on the defaults.
+typedef int (*EternalSonataWearCostumeFn)(int character, int costume);
+
+// ---------------------------------------------------------------------------
+// Adding costumes
+// ---------------------------------------------------------------------------
+//
+// `id` names the costume for EternalSonataFindCostume and must be unique per
+// character; prefix it with your mod's name ("my_mod/swimsuit"). `label` is
+// what menus show. Both are copied. Costumes keep their registration order
+// and cannot be removed. Each returns the new costume's index, or a negative
+// error.
+
+// From memory: `model` is a complete NOBJ, `size` bytes long, and is copied.
+typedef int (*EternalSonataRegisterCostumeFn)(int character, const char* id, const char* label,
+                                              const uint8_t* model, uint32_t size);
+
+// From a file (UTF-8 path, absolute or relative to the working directory),
+// read the first time the costume is worn. Only checked for existence here.
+typedef int (*EternalSonataRegisterCostumeFileFn)(int character, const char* id,
+                                                  const char* label, const char* path);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif

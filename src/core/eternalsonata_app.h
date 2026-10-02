@@ -51,6 +51,8 @@
 #include "native_renderer.h"
 #include "native_renderer_overlay.h"
 #include "input_overlay.h"
+#include "costume_overlay.h"
+#include "costume_system.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_profile.h"
 #include "native_renderer_shader_debug.h"
@@ -541,6 +543,10 @@ class EternalsonataApp : public rex::ReXApp {
     // "unavailable" and publishes no event until this runs.
     eternalsonata::BindFlagSystem(runtime());
 
+    // Costumes for mods (src/api/eternalsonata_costume_api.h), and the ones
+    // mods declare in assets.toml. Before the guest, which puts them on.
+    eternalsonata::BindCostumeSystem(runtime());
+
     // Debug tool: force-loads a field area via the F4 settings overlay's
     // "Force Load Area..." button. See force_load_area.h.
     eternalsonata::GetForceLoadArea().Bind(runtime());
@@ -567,6 +573,8 @@ class EternalsonataApp : public rex::ReXApp {
                                                            cache_root());
 
     fast_forward_key_ = eternalsonata::CreateFastForwardKey(window());
+
+    costume_overlay_ = eternalsonata::CreateCostumeOverlay(imgui_drawer());
 
     // On-screen pad. The SDK's touch driver reports no device until a layout
     // is installed, so this is what turns the touch controls on for this game;
@@ -648,6 +656,8 @@ class EternalsonataApp : public rex::ReXApp {
 
   // F8 device list, backed by the SDK's generic input snapshot API.
   std::unique_ptr<rex::ui::ImGuiDialog> input_overlay_;
+  // F11 costume picker.
+  std::unique_ptr<rex::ui::ImGuiDialog> costume_overlay_;
   std::unique_ptr<rex::ui::ImGuiDialog> ui_scale_applier_;
 
   // Back-button entry point into the F-key overlays on touch-only devices.
