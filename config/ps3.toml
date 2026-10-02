@@ -1,0 +1,20 @@
+# Guest logic the PS3 target needs (ps3_buttons.cpp).
+
+# Layout pass sub_821D5CC0 lays out PS3 button icons (code 25) as the code
+# 24 arrows are, as part of the line's glyphs.
+[[midasm_hook]]
+address = 0x821D6BB8
+name = "EternalSonataPs3IconCase"
+registers = ["r25", "r31"]
+jump_address_on_true = 0x821D6A68
+
+[[midasm_hook]]
+address = 0x821D6AEC
+name = "EternalSonataPs3IconTexture"
+registers = ["r4", "r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821D6B8C
+name = "EternalSonataPs3IconColour"
+registers = ["r10", "r27", "r31"]

@@ -283,6 +283,25 @@ native may still do something different from the 360 entry at the same id
 (events in particular), so each one has to be compared by decompiling it
 before the PS3 VM can forward it to 360 code.
 
+### Button prompts
+
+PS3 text names buttons with icons: `<ibN>` is icon N + 54 and `<ib>` the
+decide button (circle when the pad's decide mask is 0x20, else cross), both
+the 360's `<iN>` control code 25. The PS3 icon table (`0x46B1C8`) maps
+`<ib1>`..`<ib3>` to circle, cross and triangle; the 360's (`0x82074AC0`, AppKeep
+slot + 1) has only 44 entries. No 360 text uses code 25, and its layout case
+places a sprite that never shows; the PS3 adds the icon to the line's glyphs
+instead, as both releases do for the code 24 arrows.
+
+Native 45039 reads the same config byte on both (`byte_8243FC01 == 0`), but
+the PS3 battle tutorial treats it as "attack on circle" and highlights circle,
+where the 360 one means A.
+
+PS3 mode (`src/engine/ps3_buttons.cpp`, `config/ps3.toml`) rewrites the tags
+to `<i55>`.. and `<i0>` before the preprocessor, lays those icons out through
+the code 24 case with the AppKeep button texture, untinted, and answers 45039
+with "attack is on B".
+
 ### Starting events
 
 `sub_820FEDC0` preloads a start's `E%04d.e` and `sub_820FEC48` loads its map,

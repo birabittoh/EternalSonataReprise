@@ -12,6 +12,7 @@ includes = [
   "config/crt.toml",
   "config/framerate_fixes.toml",
   "config/language.toml",
+  "config/ps3.toml",
 ]
 
 # The game's image loader (sub_82279EC8) probes formats using setjmp/longjmp:
