@@ -169,6 +169,32 @@ add_custom_command(
     VERBATIM
 )
 
+# PS3 tables read from the decrypted PS3 EBOOT, which is not redistributed:
+# CI fetches it into assets/ with default.xex. Without it they are empty and
+# PS3 mode keeps the 360's.
+set(ETERNALSONATA_PS3_EBOOT ${CMAKE_SOURCE_DIR}/assets/EBOOT.elf)
+if(NOT EXISTS ${ETERNALSONATA_PS3_EBOOT}
+   AND EXISTS ${CMAKE_SOURCE_DIR}/assets-ps3-raw/eboot-decrypt/EBOOT.elf)
+    set(ETERNALSONATA_PS3_EBOOT ${CMAKE_SOURCE_DIR}/assets-ps3-raw/eboot-decrypt/EBOOT.elf)
+endif()
+set(ETERNALSONATA_PS3_EBOOT_DEPENDS)
+if(EXISTS ${ETERNALSONATA_PS3_EBOOT})
+    set(ETERNALSONATA_PS3_EBOOT_DEPENDS ${ETERNALSONATA_PS3_EBOOT})
+endif()
+set(ETERNALSONATA_PS3_TABLES)
+foreach(table ps3_enemy_table)
+    set(output ${CMAKE_SOURCE_DIR}/src/engine/${table}.generated.inc)
+    add_custom_command(
+        OUTPUT ${output}
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/${table}.py
+                ${ETERNALSONATA_PS3_EBOOT} ${output}
+        DEPENDS ${CMAKE_SOURCE_DIR}/scripts/${table}.py ${ETERNALSONATA_PS3_EBOOT_DEPENDS}
+        COMMENT "Generating src/engine/${table}.generated.inc"
+        VERBATIM
+    )
+    list(APPEND ETERNALSONATA_PS3_TABLES ${output})
+endforeach()
+
 # Plume's shader helper, used both for the overlay shaders below and for the
 # DXC it fetches -- the Windows SDK's DXC has no SPIR-V backend, so it cannot
 # produce the Vulkan half. Initialised here rather than next to the overlay
@@ -335,6 +361,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/costume_system.cpp
     src/engine/ps3_battlekeep.cpp
     src/engine/ps3_buttons.cpp
+    src/engine/ps3_enemies.cpp
     src/engine/ps3_maptex.cpp
     src/engine/ps3_models.cpp
     src/engine/ps3_natives.cpp
@@ -357,6 +384,7 @@ set(ETERNALSONATA_SOURCES
     ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM}
     ${ETERNALSONATA_RELEASE_PATCHES_ASM}
     ${ETERNALSONATA_AREA_NAMES_HEADER}
+    ${ETERNALSONATA_PS3_TABLES}
     ${ETERNALSONATA_ICON_HEADER}
     ${ETERNALSONATA_FONTS_HEADER}
     ${ETERNALSONATA_IMAGES_HEADER}

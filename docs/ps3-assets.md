@@ -511,6 +511,19 @@ parser runs: 360 slots below 26 are the file's, 26..33 the appended eight,
 34 and up the file's slot minus 8. A PS3 only install still needs those
 eight.
 
+Enemy n (1 based) is the 80 byte record n - 1 of `off_82024100`: word 0
+holds n and a kind, words 1..6 model name pointers, the u16 at +40 the
+`btldata\enemy\ep%03d.bop` number (most enemies have no such file), the rest
+plain values. The 360 has 281, the PS3 336 (`0x51052C`): its new enemies
+are appended (`em27`, `bos11`, `bos13`, `_v4`/`_v5` variants, ...) and 25
+shared records differ. An encounter on a PS3 only map reads past the 360
+table and never starts (`ep771.bop`). PS3 mode points the three readers
+(`sub_821A0628`, `sub_821BD480`, `sub_821BD778`) at a guest copy of the
+PS3's (`src/engine/ps3_enemies.cpp`). The EBOOT is not redistributed, so
+the build reads that table from `assets/EBOOT.elf` (`scripts/ps3_enemy_table.py`;
+CI fetches it with `default.xex`); built without it, PS3 mode keeps the 360
+table.
+
 360 slot 38 (PS3 30) is the battle voice table (`BMD `), read by
 `sub_821BCC40` (12 byte candidates: delay, clip, cumulative weight) and, for
 categories 8..31, `sub_821BCEA0` (8 byte entries pointing at 32 byte
