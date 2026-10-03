@@ -260,6 +260,38 @@ def convert_nshp(d, o, report):
     return bytes(out)
 
 
+def convert_nmr2(d, o, nvs, report):
+    """A morph stream (sub_82117018): per NSHP of the model, in order, one
+    record per vertex, then a u16 bone count, the u16 bone ids and a u16 pad
+    when the count is even. 360 records are float3 normal, float3 position,
+    DEC3N normal, float3 weights, UBYTE4 indices (44 bytes); the PS3 packs the
+    normals and weights into CMP dwords (28 bytes)."""
+    size = rd32(d, o + 4)
+    out = bytearray(d[o:o + 8])
+    p = o + 8
+    for nv in nvs:
+        if p + 28 * nv + 2 > o + size:
+            report.warn(f'NMR2 at {o:#x}: records overrun the chunk')
+            return None
+        for _ in range(nv):
+            out += struct.pack('>3f', *cmp_unpack(rd32(d, p)))
+            out += d[p + 4:p + 16]
+            out += u32.pack(dec3n(*cmp_unpack(rd32(d, p + 16))))
+            out += struct.pack('>3f', *skin_weights(rd32(d, p + 20)))
+            out += d[p + 24:p + 28]
+            p += 28
+        bones = rd16(d, p)
+        tail = 2 + 2 * bones + (2 if bones % 2 == 0 else 0)
+        out += d[p:p + tail]
+        p += tail
+    if p != o + size:
+        report.warn(f'NMR2 at {o:#x}: {o + size - p} bytes left over')
+        return None
+    struct.pack_into('>I', out, 4, len(out))
+    report.counts['NMR2'] += 1
+    return bytes(out)
+
+
 # ---------------------------------------------------------------------------
 # Small chunks whose only difference is colour byte order.
 # ---------------------------------------------------------------------------
@@ -435,9 +467,16 @@ def emit_nmdl(rb, d, o, size, report):
     if rb.out[start + 8] == 0x83:
         rb.out[start + 8] = 0x82
     report.counts['NMDL'] += 1
+    nvs = [rd16(d, co + 0x1A) for co, tag, _ in children(d, o + hdr, o + size) if tag == b'NSHP']
     for co, tag, cs in children(d, o + hdr, o + size):
         if tag == b'NLOB':
             emit_nlob(rb, d, co, cs, report)
+        elif tag == b'NMR2':
+            rb.mark(co)
+            converted = convert_nmr2(d, co, nvs, report)
+            if converted is None:
+                report.counts['unconverted NMR2'] += 1
+            rb.out += converted or d[co:co + cs]
         else:
             emit_leaf(rb, d, co, tag, cs, report)
     # Keep everything after this model on its PS3 alignment: the RSX layout
