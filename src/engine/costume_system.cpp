@@ -15,7 +15,7 @@
 
 #include "field_player_model_override.h"
 #include "generated/eternalsonata_init.h"
-#include "ps3_models.h"
+#include "ps3_appkeep.h"
 #include "target.h"
 
 #include <algorithm>
@@ -578,13 +578,14 @@ int32_t Ps3WornCostume(int32_t character) {
 }  // namespace eternalsonata
 
 // sub_82162058 loads AppKeep.bmd into the APPKEEP heap at boot and fills the
-// model table, so it is where the costumes chosen so far go on.
+// model table (on PS3 data, from the PS3's files), so it is where the
+// costumes chosen so far go on.
 REX_EXTERN(__imp__sub_82162058);
 
 REX_HOOK_RAW(sub_82162058) {
   __imp__sub_82162058(ctx, base);
   if (eternalsonata::IsPs3Target())
-    eternalsonata::LoadPs3Models();
+    eternalsonata::BuildPs3AppKeep(ctx, base);
   std::lock_guard lock(g_mutex);
   EnsureCharacterLists();
   State& s = state();
