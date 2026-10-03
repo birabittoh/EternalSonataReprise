@@ -28,8 +28,8 @@ therefore a **second target** of this executable:
   into the asset system so the game can extract or detect either release
   itself.
 
-The 360 files kept in §1 and the eight 360 effects appended to BattleKeep
-(§4) are stopgaps that go away as PS3 slot addressing replaces them.
+The 360 fonts and `.tex` files kept in §1 and the eight 360 effects appended
+to BattleKeep (§4) are stopgaps that go away as PS3 slot addressing replaces them.
 
 The 360 decoded tree (`scripts/unpack_e.exe` output under `extracted/`) is the
 reference for format work: almost every PS3 file has a 360 counterpart, so a
@@ -68,8 +68,7 @@ The offline converter still needs a 360 tree (`--base`, hard linked): it
 provides `default.xex` and every file the conversion does not replace yet.
 Each convertible PS3 file is written over its counterpart, PS3 only files are
 added, and `index.vmtoc` gets a stored record for every converted file. Kept
-from the 360 for now: `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`
-(slot layouts differ, §4), fonts and `.tex`. Audio needs `ffmpeg` on `PATH`
+from the 360 for now: fonts and `.tex`. Audio needs `ffmpeg` on `PATH`
 (§5).
 
 The game runs in PS3 mode when `game_data_root` holds `pcalg_v1.p3obj`, a
@@ -582,6 +581,26 @@ that voice ends, so a wrong table leaves the intro camera circling forever.
 PS3 mode adds 2 to enemy rows (`sub_821ABC68`) and to categories from 41
 (`sub_821BCC40`).
 
+`title.bmd` holds six entries but its count says five: the title screen
+picks one of three effects with a counter cycling 1..3 (`dword_8238EBD0`,
+`TITLE_TASK__Init`), and the third is the uncounted sixth word. The converter
+therefore remaps every offset between the count and the first entry.
+
+The credits (`op.bmd`, `ed1.bmd`, `ed2.bmd`) are a `BMD ` header with ten
+list offsets, then 16 byte records whose text pointers are file offsets.
+Both executables read list 0, 1 or 2 by the language
+(`dword_8243D36C`: Japanese, English, any other; `sub_82131E18`, PS3
+`0x32287C`); the PS3 fills lists 3..9 too, and the 360 leaves them empty.
+The PS3 files ship as they are.
+
+`campdata/scp.bmd` holds the score pieces: `"SCP "`, total size, offset of
+a `CSL ` directory of 68 banks, the texture count (64), then one 1120x128
+DXT5 per piece. Both releases order the pieces alike (the PS3 restyled piece
+51). The camp menu reads it whole into a 0x12A0000 byte buffer
+(`sub_8222BDE8`), which the PS3 file overflows with its pitched textures, so
+the converter lays it out as the 360 does: textures 16 byte aligned, banks
+from the next 0x1000.
+
 ## 5. Audio
 
 No XMA encoder exists, so audio the 360 does not already have is shipped as
@@ -663,7 +682,5 @@ endian `.wav`, which scripts ask for by that name.
 * The PS3 script VM: natives compared one by one (§2).
 * Twelve party slots, the camp menu itself and what its flags gate.
 * The costumes' camp menu page ([costumes.md](costumes.md)).
-* PS3 slot addressing for `title.bmd`, `op.bmd`, `ed1.bmd`, `ed2.bmd`,
-  `campdata/scp.bmd`.
 * The colours in `NATR`, and the `Mefc`s inside `NLEF` beyond their
   textures (205 PS3 models in 102 files).

@@ -16,6 +16,7 @@ Converted:
   NLOB  offsets of the placed objects it holds
   .e    list B bulk offsets, header size, reloc offset
   .bmd / CAMP  entry table; .bop  entry directory
+  scp.bmd  score piece textures and banks, in the 360's layout
   .p3tex  -> .x3tex (a bare texture chain)
   .csf / .cps  audio, see ps3_audio.py; needs ffmpeg on PATH
 
@@ -518,7 +519,7 @@ def is_csl(d, o, end):
     if d[o:o + 4] != b'CSL ' or o + 8 > end:
         return False
     n = rd32(d, o + 4)
-    return 0 < n <= 64 and all(is_csf(d, o + rd32(d, o + 8 + 4 * i), end) for i in range(n))
+    return 0 < n <= 256 and all(is_csf(d, o + rd32(d, o + 8 + 4 * i), end) for i in range(n))
 
 
 def mefc_entries(d, o, end):
@@ -672,13 +673,17 @@ def convert_e(d, report, audio=None):
 
 def convert_bmd(d, report, audio=None):
     count = rd32(d, 8)
+    # title.bmd has one entry past its count, which the title screen reads,
+    # so the table runs up to the first entry.
     table_end = 12 + 4 * count
+    table_end = min([v for v in (rd32(d, o) for o in range(12, table_end, 4)) if v >= table_end]
+                    + [len(d)]) & ~3
     body, remap = convert_region(d, table_end, len(d), report, audio)
     head = bytearray(d[:table_end])
-    for i in range(count):
-        v = rd32(head, 12 + 4 * i)
+    for at in range(12, table_end, 4):
+        v = rd32(head, at)
         if table_end <= v < len(d):
-            struct.pack_into('>I', head, 12 + 4 * i, table_end + remap(v))
+            struct.pack_into('>I', head, at, table_end + remap(v))
     struct.pack_into('>I', head, 4, len(head) + len(body))
     return bytes(head) + body
 
@@ -696,6 +701,34 @@ def convert_bop(d, report, audio=None):
             struct.pack_into('>I', head, at, head_end + remap(v))
     struct.pack_into('>I', head, 4, len(head) + len(body))
     return bytes(head) + body
+
+
+# The camp menu loads scp.bmd whole into a buffer of this size (sub_8222BDE8).
+SCP_BUFFER = 0x12A0000
+
+
+def convert_scp(d, report, audio=None):
+    """Score piece strips: "SCP ", total size, offset of the bank directory,
+    texture count, then one NTX3 per piece. Laid out as the 360's: textures
+    16 byte aligned, banks from the next 0x1000."""
+    banks_at = rd32(d, 8)
+    count = rd32(d, 12)
+    out = bytearray(d[:16 + 4 * count])
+    for i in range(count):
+        o = rd32(d, 16 + 4 * i)
+        tex = convert_ntx3(d, o, report) or d[o:o + rd32(d, o + 4)]
+        out += bytes(-len(out) % 16)
+        u32.pack_into(out, 16 + 4 * i, len(out))
+        out += tex
+    out += bytes(-len(out) % 0x1000)
+    u32.pack_into(out, 8, len(out))
+    body, _ = convert_region(d, banks_at, len(d), report, audio)
+    out += body
+    out += bytes(-len(out) % 0x1000)
+    u32.pack_into(out, 4, len(out))
+    if len(out) > SCP_BUFFER:
+        report.warn(f'scp.bmd: {len(out):#x} bytes overflows its {SCP_BUFFER:#x} byte buffer')
+    return bytes(out)
 
 
 # BattleKeep.bop is addressed by slot. The PS3 dropped the effects at 360
@@ -747,10 +780,12 @@ def convert_bare(d, report):
     return body
 
 
-# Slot addressed containers whose PS3 layout differs from the 360's, and
-# formats nothing converts yet. The 360 file is kept for these.
-KEEP_360 = {'op.bmd', 'ed1.bmd', 'ed2.bmd', 'campdata/scp.bmd'}
+# Formats nothing converts yet. The 360 file is kept for these.
 KEEP_360_EXT = ('.fnt', '.tex')
+
+# Credits: same records on both releases, read through the same three of
+# its ten lists (sub_82131E18, PS3 0x32287C), and nothing to convert.
+AS_IS = {'op.bmd', 'ed1.bmd', 'ed2.bmd'}
 
 
 # Set by main when building a game directory: (rel, bank index, PS3 bank)
@@ -761,8 +796,10 @@ embedded_audio = None
 def convert_file(rel, d, report):
     """Returns (360 relative path, bytes), or None to keep the 360 file."""
     low = rel.lower()
-    if low in KEEP_360 or low.endswith(KEEP_360_EXT):
+    if low.endswith(KEEP_360_EXT):
         return None
+    if low in AS_IS:
+        return rel, d
     # Battle effects and title.bmd carry banks too: one ATRAC3 clip left in
     # them stalls the XMA decoder and silences all audio after it.
     audio = (lambda i, bank, member: embedded_audio(rel, i, bank, member)) if embedded_audio else None
@@ -770,6 +807,8 @@ def convert_file(rel, d, report):
         return rel, convert_e(d, report, audio)
     if d[:4] in (b'BMD ', b'CAMP'):
         return rel, convert_bmd(d, report, audio)
+    if d[:4] == b'SCP ':
+        return rel, convert_scp(d, report, audio)
     if d[:4] == b'BOP ':
         return rel, convert_bop(d, report, audio)
     if low.endswith('.p3tex'):
