@@ -38,3 +38,23 @@ address = 0x821BD7C4
 name = "EternalSonataPs3EnemyTable"
 registers = ["r11"]
 after_instruction = true
+
+# Hit effects (ps3_hit_effects.cpp): the readers of unk_82078B00 take the
+# PS3's table, which has records for the new enemies.
+[[midasm_hook]]
+address = 0x8218E490
+name = "EternalSonataPs3HitEffectsR10"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8218E52C
+name = "EternalSonataPs3HitEffectsR11"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8218E6CC
+name = "EternalSonataPs3HitEffectsR10"
+registers = ["r10"]
+after_instruction = true

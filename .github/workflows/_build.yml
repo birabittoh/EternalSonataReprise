@@ -196,7 +196,7 @@ jobs:
           }
           fetch "${{ env.ASSET_PATH }}" 1048576
           fetch "${{ env.RELEASE_ASSET_PATH }}" 65536 || echo "::warning::${{ env.RELEASE_ASSET_PATH }} unavailable; this build will refuse USA and JP copies"
-          fetch "${{ env.PS3_ASSET_PATH }}" 1048576 || echo "::warning::${{ env.PS3_ASSET_PATH }} unavailable; PS3 mode will lack the PS3's enemy table"
+          fetch "${{ env.PS3_ASSET_PATH }}" 1048576 || echo "::warning::${{ env.PS3_ASSET_PATH }} unavailable; PS3 mode will lack the PS3's enemy and hit effect tables"
 
       - name: Build (desktop)
         if: matrix.platform != 'android-arm64'
