@@ -28,10 +28,8 @@ therefore a **second target** of this executable:
   into the asset system so the game can extract or detect either release
   itself.
 
-Only the format conversion, the party natives, the map state table and the
-task list translation exist so far. The 360 files kept in §1 and the eight
-360 effects appended to BattleKeep (§4) are stopgaps that go away as PS3
-slot addressing replaces them.
+The 360 files kept in §1 and the eight 360 effects appended to BattleKeep
+(§4) are stopgaps that go away as PS3 slot addressing replaces them.
 
 The 360 decoded tree (`scripts/unpack_e.exe` output under `extracted/`) is the
 reference for format work: almost every PS3 file has a 360 counterpart, so a
@@ -70,11 +68,9 @@ The offline converter still needs a 360 tree (`--base`, hard linked): it
 provides `default.xex` and every file the conversion does not replace yet.
 Each convertible PS3 file is written over its counterpart, PS3 only files are
 added, and `index.vmtoc` gets a stored record for every converted file. Kept
-from the 360 for now: `AppKeep.bmd`, `op.bmd`, `ed1.bmd`, `ed2.bmd`,
-`campdata/scp.bmd` (slot layouts differ, §4), fonts and `.tex`. The kept
-`AppKeep.bmd` gets the PS3's controller button textures written over its own
-(360 slots 235..244, 290, 295 from PS3 slots 240..249, 299, 304, same size).
-Audio needs `ffmpeg` on `PATH` (§5).
+from the 360 for now: `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`
+(slot layouts differ, §4), fonts and `.tex`. Audio needs `ffmpeg` on `PATH`
+(§5).
 
 The game runs in PS3 mode when `game_data_root` holds `pcalg_v1.p3obj`, a
 file only the PS3 ships (`src/core/target.cpp`, `IsPs3Target()`). PS3 mode
@@ -182,12 +178,12 @@ negative ids, which PS3 events use where the 360 ones pass 1..10:
 
 Both are raw `NOBJ` pointers, like the 360's (`sub_82162058` stores
 `AppKeep.bmd`'s entry pointers in `dword_82420AFC`), and the PS3 keeps both
-resident. Here the kept 360 `AppKeep.bmd` already holds every character but
-CRS and SRN, and guest physical memory runs out late in a session with the
-whole of `AppKeep2.bmd` and three costume buffers (~48 MB) resident. So PS3
-mode (`src/engine/ps3_models.cpp`) loads only AppKeep2 entries 0 and 1 (7 MB)
-into physical guest memory right after `AppKeep.bmd`, and serves every other
-id from the model table slot of the same character. The costumes are the
+resident. PS3 mode loads them with the rest of `AppKeep.bmd` (§4): the
+model table gets `pc*_v1.p3obj` and AppKeep2 entries 2..8, and CRS and SRN
+are loaded after them, into physical memory when the `APPKEEP` heap is full;
+guest physical memory once ran out late in a session with ~48 MB more
+resident. `src/engine/ps3_models.cpp` serves -20 and -21 from those and
+every other id from the model table slot of the same character. The costumes are the
 costume system's ([costumes.md](costumes.md)), which writes the worn one into
 that slot, so -10..-12 follow it like the field and battle do.
 
@@ -499,10 +495,35 @@ reordered them. In PS3 mode the host has to read them by PS3 slot rather
 than reorder the files into the 360's layout.
 
 `AppKeep.bmd`, the global model, texture and effect store: 412 entries on the
-360, 374 on the PS3, 268 slots hold a different kind of chunk. The ten field
-character `NOBJ`s at 360 slots 0..9 moved into the PS3 only
-`pc{alg,bet,plk}_v*.p3obj` files, together with the costume variants. The
-offline converter keeps the 360 file for now.
+360, 374 on the PS3. `sub_82162058` loads it into the 58 MB `APPKEEP` heap
+(`unk_82420948`) and copies its entry pointers into `dword_82420AFC` (room
+for 512), which code reads at constant slots, through the item icon table
+`word_8202C9C8` and native 1052 (`sub_820EA260`, slot + 1, from scripts).
+Matching every entry by content (effects by their sections, textures by
+their decoded image) gives the PS3 layout:
+
+| 360 slots | PS3 source |
+|---|---|
+| 0..2 | `pcalg_v1.p3obj`, `pcplk_v1.p3obj`, `pcbet_v1.p3obj` |
+| 3..9 | `appkeep2.bmd` 2..8 |
+| 205..229, 283..289, 307..309, 346 | `campdata/camp_char.bmd` (portraits, skill icons, gems, three effects, a menu bar) |
+| everything else | `AppKeep.bmd`, the 360 slot minus 1 up to 204, then plus 5, 7 or 9 |
+
+The PS3 fills the 360's empty slots 93..100 with eight new effects, restyles
+the save/load, clef, pad and controller icons in place, and inserts art for
+CRS and SRN after each ten character block. 360 slots 164, 165, 194 and 245
+(three Japanese labels and a frame) have no PS3 counterpart, and nothing in
+the executable names them. `camp_char.bmd` (a `CAMP` header, `.bmd` layout)
+also holds costume portraits and the CRS and SRN camp portraits, which the
+360 has no slots for.
+
+In PS3 mode `src/engine/ps3_appkeep.cpp` rebuilds the array in the 360's
+numbering after the load, placing the characters and the camp entries in the
+same heap (SRN spills into physical memory), and appends the 14 PS3 only
+entries from slot 412. Native 1052 translates the PS3 slot scripts pass. The
+achievements screen's texture patches address the PS3 file's ordinals. Asset
+API ordinals (`appkeep.bmd#tex:N`) follow the file, so they differ per
+release.
 
 `btldata\BattleKeep.bop`: 106 entries on the 360, 98 on the PS3. The PS3
 dropped the eight `Mefc`s at 360 slots 26..33 and every later entry moved
@@ -642,7 +663,7 @@ endian `.wav`, which scripts ask for by that name.
 * The PS3 script VM: natives compared one by one (§2).
 * Twelve party slots, the camp menu itself and what its flags gate.
 * The costumes' camp menu page ([costumes.md](costumes.md)).
-* PS3 slot addressing for `AppKeep.bmd`, `title.bmd`,
-  `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`; loading `.p3obj`.
+* PS3 slot addressing for `title.bmd`, `op.bmd`, `ed1.bmd`, `ed2.bmd`,
+  `campdata/scp.bmd`.
 * The colours in `NATR`, and the `Mefc`s inside `NLEF` beyond their
   textures (205 PS3 models in 102 files).

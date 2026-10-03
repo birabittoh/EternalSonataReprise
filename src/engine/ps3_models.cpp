@@ -1,98 +1,32 @@
 // eternalsonata - Field character models only the PS3 release ships.
 //
 // Native 1141 kind 0 returns a field character model as a raw NOBJ pointer,
-// which 1062 then builds. The 360 serves ids 1..10 from AppKeep.bmd entries
-// 0..9 (dword_82420AF8). The PS3 (sub_80610 in the EBOOT) adds negative ids,
-// which its events use for the party:
+// which 1062 then builds. The 360 serves ids 1..10 from the model table
+// (dword_82420AF8, AppKeep.bmd entries 0..9). The PS3 (sub_80610 in the
+// EBOOT) adds negative ids, which its events use for the party:
 //
 //   -10..-12  worn costume of ALG, PLK, BET: pc%s_v%d.p3obj, one buffer per
 //             character that sub_801F0 reloads when the selection changes
-//   -20..-28  AppKeep2.bmd entries 0..8: CRS, SRN, CPN, VOL, SLS, JRB, FST,
+//   -20..-28  appkeep2.bmd entries 0..8: CRS, SRN, CPN, VOL, SLS, JRB, FST,
 //             MCH, CLV, loaded whole at boot by sub_80C40
 //
-// The kept 360 AppKeep.bmd already holds every character but CRS and SRN,
-// and guest physical memory runs out late in a session with ~48 MB more
-// resident, so only AppKeep2 entries 0 and 1 load, at boot after
-// AppKeep.bmd. Everything else is the model table entry of the same
-// character, which for -10..-12 is the costume worn (costume_system.cpp).
+// ps3_appkeep.cpp loads all of these. Every id but CRS and SRN is the model
+// table entry of the same character, which for -10..-12 is the costume worn
+// (costume_system.cpp).
 
-#include "ps3_models.h"
+#include "ps3_appkeep.h"
 
 #include "generated/eternalsonata_init.h"
 #include "target.h"
 
-#include <algorithm>
-#include <array>
 #include <cstdint>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <string>
-#include <vector>
 
 #include <rex/hook.h>
 #include <rex/logging.h>
-#include <rex/memory/utils.h>
-#include <rex/runtime.h>
 
 namespace {
 
 constexpr uint32_t kModelTableAddr = 0x82420AF8u;
-constexpr uint32_t kAppKeep2Entries = 9;
-// CRS and SRN, the only characters the 360 AppKeep.bmd lacks.
-constexpr uint32_t kAppKeep2Loaded = 2;
-
-std::array<uint32_t, kAppKeep2Loaded> g_appkeep2{};
-
-std::filesystem::path Ps3File(const std::string& name) {
-  return eternalsonata::GameDataRoot() / name;
-}
-
-bool ReadFile(const std::filesystem::path& path, std::vector<uint8_t>& out) {
-  std::ifstream in(path, std::ios::binary);
-  if (!in)
-    return false;
-  out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-  return true;
-}
-
-uint32_t AllocPhysical(rex::memory::Memory* memory, uint32_t size) {
-  return memory->SystemHeapAlloc(size, 0x1000, rex::memory::kSystemHeapPhysical);
-}
-
-uint32_t ReadBe32(const std::vector<uint8_t>& data, size_t at) {
-  return (uint32_t(data[at]) << 24) | (uint32_t(data[at + 1]) << 16) |
-         (uint32_t(data[at + 2]) << 8) | uint32_t(data[at + 3]);
-}
-
-void LoadAppKeep2(rex::memory::Memory* memory) {
-  std::vector<uint8_t> data;
-  if (!ReadFile(Ps3File("AppKeep2.bmd"), data) || data.size() < 12 ||
-      std::memcmp(data.data(), "BMD ", 4) != 0) {
-    REXLOG_ERROR("ps3 models: AppKeep2.bmd missing or not a BMD");
-    return;
-  }
-  const uint32_t count = ReadBe32(data, 8);
-  if (count != kAppKeep2Entries || data.size() < 12 + 4 * count) {
-    REXLOG_ERROR("ps3 models: AppKeep2.bmd has {} entries, not {}", count, kAppKeep2Entries);
-    return;
-  }
-  const uint32_t begin = ReadBe32(data, 12);
-  const uint32_t end = ReadBe32(data, 12 + 4 * kAppKeep2Loaded);
-  if (begin >= end || end > data.size()) {
-    REXLOG_ERROR("ps3 models: AppKeep2.bmd entry table out of range");
-    return;
-  }
-  const uint32_t at = AllocPhysical(memory, end - begin);
-  if (!at) {
-    REXLOG_ERROR("ps3 models: no guest memory for AppKeep2.bmd ({} bytes)", end - begin);
-    return;
-  }
-  std::memcpy(memory->TranslateVirtual(at), data.data() + begin, end - begin);
-  for (uint32_t i = 0; i < kAppKeep2Loaded; ++i)
-    g_appkeep2[i] = at + ReadBe32(data, 12 + 4 * i) - begin;
-  REXLOG_INFO("ps3 models: AppKeep2.bmd CRS, SRN at {:08X}, {} bytes", at, end - begin);
-}
 
 // The dword_82420AF8 slot of the character an id names.
 int32_t FallbackSlot(int32_t id) {
@@ -112,21 +46,13 @@ int32_t FallbackSlot(int32_t id) {
 }
 
 uint32_t Ps3Model(uint8_t* base, int32_t id) {
-  if (id >= -21 && id <= -20 && g_appkeep2[-20 - id])
-    return g_appkeep2[-20 - id];
+  if (id >= -21 && id <= -20 && eternalsonata::Ps3AppKeep2Model(-20 - id))
+    return eternalsonata::Ps3AppKeep2Model(-20 - id);
   const int32_t slot = FallbackSlot(id);
   return slot < 0 ? 0 : REX_LOAD_U32(kModelTableAddr + 4 * slot);
 }
 
 }  // namespace
-
-namespace eternalsonata {
-
-void LoadPs3Models() {
-  LoadAppKeep2(rex::Runtime::instance()->memory());
-}
-
-}  // namespace eternalsonata
 
 REX_EXTERN(__imp__sub_820E8B10);
 

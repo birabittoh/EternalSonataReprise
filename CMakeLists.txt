@@ -359,6 +359,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/dlc_auto_install.cpp
     src/engine/costume_overlay.cpp
     src/engine/costume_system.cpp
+    src/engine/ps3_appkeep.cpp
     src/engine/ps3_battlekeep.cpp
     src/engine/ps3_buttons.cpp
     src/engine/ps3_enemies.cpp
