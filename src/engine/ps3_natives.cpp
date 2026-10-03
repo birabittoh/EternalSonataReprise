@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -222,7 +223,10 @@ void Ps3MusicPath(const PPCContext& ctx) {
     return;
   auto* path = runtime->memory()->TranslateVirtual<char*>(ctx.r4.u32);
   const size_t length = strnlen(path, 256);
-  if (length < 4 || _strnicmp(path + length - 4, ".cps", 4) != 0)
+  const auto same = [](char a, char b) {
+    return std::tolower(uint8_t(a)) == std::tolower(uint8_t(b));
+  };
+  if (length < 4 || !std::equal(path + length - 4, path + length, ".cps", same))
     return;
   path[length - 2] = path[length - 2] == 'P' ? 'X' : 'x';
 }
