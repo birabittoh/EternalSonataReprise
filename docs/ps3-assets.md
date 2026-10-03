@@ -534,6 +534,19 @@ the build reads that table from `assets/EBOOT.elf` (`scripts/ps3_enemy_table.py`
 CI fetches it with `default.xex`); built without it, PS3 mode keeps the 360
 table.
 
+The effects a hit shows come from record n of `unk_82078B00`
+(`sub_8218E480`; `sub_8218E558` reads its two trailing floats): 25 entries
+of {u8 kind, u8 kind, u16 pad, s32 slot, s32 slot}, kind 0 an `AppKeep.bmd`
+slot, kind 1 a `BattleKeep.bop` slot, -2 the current default. The 360 has
+111 records, the PS3 119 (`0x410F00`), so a new enemy's hit read past the
+table and indexed the `AppKeep` model table with a float. Pairing the 111
+shared records gives the slot maps this table needs: `BattleKeep` 360 = PS3
++ 8 from slot 26, and fourteen `AppKeep` slots in PS3 65..92, each 360 =
+PS3 + 1; translated, 105 records are the 360's byte for byte. PS3 mode
+reads a guest copy in 360 numbering (`src/engine/ps3_hit_effects.cpp`),
+generated from the EBOOT at build time like the enemy table
+(`scripts/ps3_hit_effect_table.py`).
+
 360 slot 38 (PS3 30) is the battle voice table (`BMD `), read by
 `sub_821BCC40` (12 byte candidates: delay, clip, cumulative weight) and, for
 categories 8..31, `sub_821BCEA0` (8 byte entries pointing at 32 byte
