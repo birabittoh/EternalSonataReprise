@@ -374,7 +374,7 @@ Surveyed over the 805 files present on both releases:
 | `Mefc` | directory addressed sections (§3.4) | yes |
 | `NLEF` | `Mefc`s that cannot move | textures only |
 | `NATR` | colours at irregular offsets | no |
-| `NMR2` | different record layout (28 vs 44 bytes) | no |
+| `NMR2` | morph vertex records, CMP packed (§3.2) | yes |
 | `NBN2`, `NCAM`, `NLC2`, `NCLS`, `NDYN`, `NMRP`, `NMTN` | float drift from re-export, or identical | nothing to do |
 
 ### 3.1 Textures
@@ -434,6 +434,16 @@ of the 360 value, never further. Skin weights are snapped to thousandths and
 the last one recomputed as `1 - rest` in float32, which is how the 360 files
 were built; about 80% of converted weights are then bit exact and the rest
 within 1e-3. Index data and section tables are identical.
+
+`NMR2` is a model's morph stream, which `sub_82116988` reads through
+`sub_82117018` to blend one model instance into another (an enemy changing
+form). For each `NSHP` of the model in order it holds one record per vertex,
+then a u16 bone count, the u16 bone ids and a u16 pad when the count is
+even. A 360 record is float3 normal, float3 position, DEC3N normal, float3
+weights and UBYTE4 indices (44 bytes); the PS3 packs both normals and the
+weights into CMP dwords (28 bytes) and is converted like `NSHP`. Read
+unconverted, the morph objects get garbage bone lists and the battle faults
+in `sub_821178D8` (`ep209.bop`, `lam01`).
 
 Bit 15 of the flags word (+0x18) is set on every PS3 mesh and on most 360
 ones; it selects the synchronous vertex buffer path in `sub_821147B0`, which
@@ -621,5 +631,5 @@ endian `.wav`, which scripts ask for by that name.
 * The costumes' camp menu page ([costumes.md](costumes.md)).
 * PS3 slot addressing for `AppKeep.bmd`, `title.bmd`,
   `op.bmd`, `ed1.bmd`, `ed2.bmd`, `campdata/scp.bmd`; loading `.p3obj`.
-* `NMR2`, the colours in `NATR`, and the `Mefc`s inside `NLEF` beyond their
+* The colours in `NATR`, and the `Mefc`s inside `NLEF` beyond their
   textures (205 PS3 models in 102 files).
