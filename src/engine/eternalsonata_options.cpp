@@ -2899,6 +2899,10 @@ constexpr u32 kMusicLabelSid = 39;
 REX_HOOK_RAW(sub_8223B780) {
   const u32 blob = ctx.r3.u32;
   const u32 sid = ctx.r4.u32;
+  if (const u32 name = eternalsonata::PartyNameTextFor(blob, sid)) {
+    ctx.r3.u32 = name;
+    return;
+  }
   if (const u32 prompt = QuitPromptOverride(ctx, base, blob, sid)) {
     ctx.r3.u32 = prompt;
     return;

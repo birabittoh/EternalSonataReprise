@@ -83,6 +83,15 @@ template's entries 10 and 11 are the PS3's Crescendo and Serenade records
 (`0x479A98` in the EBOOT, same 136 byte layout), generated at build time by
 `scripts/ps3_party_template.py`.
 
+The camp menu's member panels (`src/engine/party_camp_menu.cpp`) name a
+character by text id: `c` for the plain name, `c + 10` for the `<r>` one. The
+executable's menu block holds ten of each, followed by the menu labels, so 11
+and 12 would read "Main Menu" and "Items"; they get synthetic ids 860..863
+instead, answered by the text lookup hook with the PS3's spellings. The PS3
+gives both the `<r>` name in the wider panels, and Crescendo and Serenade the
+one to three member layouts of Viola and Salsa. Image ids in these builders
+are the AppKeep slot plus one.
+
 Note the ordering: Polka is 2, Beat 3, Frederic 4. An earlier revision of the
 overlay had 2/3/4 as Beat/Frederic/Polka because it validated names against max
 HP while misreading the position table; the binary's own order is the one

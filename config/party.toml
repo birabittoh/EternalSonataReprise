@@ -434,3 +434,260 @@ name = "PartyCompareLimit"
 registers = ["cr6", "r11"]
 after_instruction = true
 
+# Camp member panels, characters 11 and 12 (src/engine/party_camp_menu.cpp)
+# sub_821DDD00, one to three members: portrait, then the name per language
+[[midasm_hook]]
+address = 0x821DDDB0
+name = "PartyPanelPortraitCrs"
+registers = ["r4", "r10"]
+jump_address_on_true = 0x821DDEE4
+[[midasm_hook]]
+address = 0x821DDEE8
+name = "PartyPanelTextType"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DDDB4
+name = "PartyPanelPortraitSrn"
+registers = ["r4", "r3", "r30"]
+jump_address_on_true = 0x821DDEC0
+[[midasm_hook]]
+address = 0x821DDFB0
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DE298
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DE4F8
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DE68C
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DE820
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DE9B8
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+
+# sub_821DED50 (four to six members) and sub_821E1608 (seven to nine): the
+# ruby name for 11 and 12, per language
+[[midasm_hook]]
+address = 0x821DEEA4
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DF2B4
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DF5F4
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DF9FC
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DFD3C
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E0134
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E0468
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E0700
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E09BC
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E0C50
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E0F98
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E12A8
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E1770
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E1D94
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E23EC
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E2860
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E2BB4
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E2F6C
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DEEC8
+name = "PartyRubyNameSid"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DF2CC
+name = "PartyRubyNameSid"
+registers = ["r9"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DF618
+name = "PartyRubyNameSid"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DFA14
+name = "PartyRubyNameSid"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DFD60
+name = "PartyRubyNameSid"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E014C
+name = "PartyRubyNameSid"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E048C
+name = "PartyRubyNameSid"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E0718
+name = "PartyRubyNameSid"
+registers = ["r9"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E09E0
+name = "PartyRubyNameSid"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E0C74
+name = "PartyRubyNameSid"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E0FBC
+name = "PartyRubyNameSid"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E12CC
+name = "PartyRubyNameSid"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E1788
+name = "PartyRubyNameSid"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E1DAC
+name = "PartyRubyNameSid"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E2404
+name = "PartyRubyNameSid"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E2878
+name = "PartyRubyNameSid"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E2BC8
+name = "PartyRubyNameSid"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E2F80
+name = "PartyRubyNameSid"
+registers = ["r10"]
+after_instruction = true
+
+# sub_821E1608's lower rows store the plain name with no ruby branch, in six
+# variants
+[[midasm_hook]]
+address = 0x821E1B5C
+name = "PartyPlainNameSid"
+registers = ["r10"]
+[[midasm_hook]]
+address = 0x821E2168
+name = "PartyPlainNameSid"
+registers = ["r10"]
+[[midasm_hook]]
+address = 0x821E31B0
+name = "PartyPlainNameSid"
+registers = ["r10"]
+[[midasm_hook]]
+address = 0x821E26EC
+name = "PartyPlainNameSid"
+registers = ["r10"]
+[[midasm_hook]]
+address = 0x821E2A38
+name = "PartyPlainNameSid"
+registers = ["r10"]
+[[midasm_hook]]
+address = 0x821E2DFC
+name = "PartyPlainNameSid"
+registers = ["r10"]

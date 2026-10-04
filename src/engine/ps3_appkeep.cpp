@@ -74,6 +74,7 @@ constexpr Run kRuns[] = {
 // (204, 205, 268, 269, 290, 291) and the costume menu's icons (366..373).
 constexpr uint16_t kPs3Only[] = {204, 205, 268, 269, 290, 291, 366,
                                  367, 368, 369, 370, 371, 372, 373};
+static_assert(kSlots360 == eternalsonata::kPs3MenuPortraitSlot && kPs3Only[0] == 204);
 // CRS and SRN's two camp portraits, after the ten of each set (camp_char 32..38
 // and 41..47 hold characters 3..9), at kPs3PortraitSlot on.
 constexpr uint16_t kCampPortraits[] = {39, 40, 48, 49};

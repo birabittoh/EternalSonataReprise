@@ -672,6 +672,54 @@ uint32_t PartyNameOverrideFor(uint32_t text_address) {
   return 0;
 }
 
+uint32_t PartyNameSid(int character, bool ruby) {
+  return kPartyNameSidBase + (ruby ? 2u : 0u) + static_cast<uint32_t>(character - 11);
+}
+
+uint32_t PartyNameTextFor(uint32_t blob, uint32_t sid) {
+  // Only the executable's own blocks: script blobs live on the heap and may
+  // well use these ids.
+  if (sid < kPartyNameSidBase || sid >= kPartyNameSidBase + 4 || blob < 0x82000000u ||
+      blob >= 0x82600000u) {
+    return 0;
+  }
+  const int slot = 11 + static_cast<int>((sid - kPartyNameSidBase) % 2);
+  const bool ruby = sid - kPartyNameSidBase >= 2;
+  std::lock_guard<std::mutex> lock(g_mutex);
+  auto* memory = Mem();
+  if (!memory) {
+    return 0;
+  }
+  if (!g_names[slot].empty()) {
+    return ruby ? g_name_guest_ruby[slot] : g_name_guest[slot];
+  }
+  // The PS3's own spellings (its EBOOT's menu block, ids 11, 12, 23, 24), in
+  // dword_8243D370's order: JPN (Shift JIS), USA, GBR, FRA, ITA, DEU, ESP.
+  static constexpr const char* kPs3Names[2][7] = {
+      {"\x83N\x83\x8c\x83" "b\x83V\x83" "F\x83\x93\x83h", "Crescendo", "Crescendo",
+       "Crescendo", "Crescendo", "Crescendo", "Crescendo"},
+      {"\x83Z\x83\x8c\x83i\x81[\x83" "f", "Serenade", "Serenade", "S\xe9r\xe9nade",
+       "Serenata", "Serenade", "Serenata"},
+  };
+  static std::array<std::array<uint32_t, 2>, 2> guest{};
+  uint32_t& at = guest[slot - 11][ruby];
+  if (!at) {
+    at = memory->SystemHeapAlloc(64, 0x20);
+    if (!at) {
+      return 0;
+    }
+  }
+  // A vacant 360 slot gets an empty name rather than a null the caller would
+  // dereference.
+  std::string text;
+  if (IsPs3Target()) {
+    const uint32_t language = std::min(ReadGuest<uint32_t>(0x8243D370u), 6u);
+    text = kPs3Names[slot - 11][language];
+  }
+  WriteGuestString(at, ruby ? "<r>" + text : text);
+  return at;
+}
+
 }  // namespace eternalsonata
 
 // Let the game's result state process an incapacitated active member normally,
