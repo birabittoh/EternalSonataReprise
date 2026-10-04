@@ -14,10 +14,10 @@
 //   * Stats live in two parallel arrays of 48-byte structs: the character's own
 //     stats at 0x8243FEE8, and the equipment-adjusted copy the screens draw at
 //     0x8243FD08. sub_821E7898(c, live) recomputes the second from the first.
-//   * Joining runs sub_821FBFC0 (own the character) then sub_821E6740 (roster
-//     + party-level budget) then sub_820E78B8 (display position + battle party).
-//     Leaving is sub_820E7948 (close the gap in the display order + battle
-//     party). Both of the latter end in sub_821E6428, the battle-party rebuild.
+//   * Joining is sub_820E78B8 (display position + battle party), the same
+//     routine script native 5006 runs. Leaving is sub_820E7948 (close the gap
+//     in the display order + battle party). Both end in sub_821E6428, the
+//     battle-party rebuild.
 //
 // Threading: the exported entry points are called from mods, i.e. usually from
 // the ImGui draw thread, where there is no guest ThreadState and a guest call
@@ -48,6 +48,7 @@
 #include "guest_main_thread.h"
 #include "party_system.h"
 #include "room_presence.h"
+#include "target.h"
 
 REXCVAR_DEFINE_DOUBLE(benched_exp_multiplier, 0.5, "Eternal Sonata",
                       "Share of battle EXP awarded to party members outside the active three")
@@ -109,21 +110,8 @@ constexpr uint32_t kStatMax = 999u;
 constexpr int32_t kExpMax = ETERNALSONATA_EXP_MAX;
 constexpr int32_t kLevelMax = ETERNALSONATA_LEVEL_MAX;
 
-// The owned-entity table sub_821FBFC0 fills and sub_821FBF20 queries: 512
-// records of {u16 id, u8 count, u8 spoken for}, keyed by the same id space the
-// characters live in, which is why a character has to be "owned" before it can
-// join. dword_8255EED8 is the object that owns it and is what both routines
-// take as their first argument.
-constexpr uint32_t kOwnedTableObject = 0x8255EED8u;
-
 // Guest routines. All are called through the typed imports below, never by
 // address, so the recompiler resolves them at link time.
-//   sub_821FBFC0(db, id, count, refresh)  give N of an entity (a character is
-//                                         an entity) - the eligibility gate
-//   sub_821E6740(id)                      roster add: validates against the
-//                                         master table, charges the party-level
-//                                         budget. 0 ok / 1 roster full /
-//                                         2 budget / 3 not owned
 //   sub_820E78B8(&index)                  give a character the next free
 //                                         display position, then resync
 //   sub_820E7948(&index)                  drop a character's position, closing
@@ -132,11 +120,9 @@ constexpr uint32_t kOwnedTableObject = 0x8255EED8u;
 //                                         position table
 //   sub_821E7898(c, live)                 recompute live stats from own stats
 //                                         plus equipment
-REX_IMPORT(__imp__sub_821FBFC0, g_own_entity, u32(u32, u32, u32, u32));
-REX_IMPORT(__imp__sub_821E6740, g_roster_add, u32(u32));
-REX_IMPORT(__imp__sub_820E78B8, g_place_member, u32(u32));
-REX_IMPORT(__imp__sub_820E7948, g_unplace_member, u32(u32));
-REX_IMPORT(__imp__sub_821E6428, g_rebuild_battle_party, u32());
+REX_IMPORT(sub_820E78B8, g_place_member, u32(u32));
+REX_IMPORT(sub_820E7948, g_unplace_member, u32(u32));
+REX_IMPORT(sub_821E6428, g_rebuild_battle_party, u32());
 REX_IMPORT(__imp__sub_821E7898, g_refresh_stats, u32(u32, u32));
 
 // Battle results award the three active positions in states 2, 8 and 11,
@@ -157,12 +143,14 @@ int32_t ScaleBattleExp(int32_t total, double multiplier) {
 }
 
 constexpr int kCharacterCount = ETERNALSONATA_CHARACTER_COUNT;
+// The game's own name blocks list the ten 360 characters.
+constexpr int kNamedCount = 10;
 
 // The cast in character-number order, as the game's own text blocks store it.
 // Note Polka is 2, Beat 3, Frederic 4.
 constexpr const char* kDefaultNames[kCharacterCount + 1] = {
     "",     "Allegretto", "Polka",  "Beat",   "Frederic", "Viola",
-    "Salsa", "Jazz",      "Falsetto", "Claves", "March"};
+    "Salsa", "Jazz",      "Falsetto", "Claves", "March", "Crescendo", "Serenade"};
 
 // ---------------------------------------------------------------------------
 // Host state
@@ -387,9 +375,9 @@ void DiscoverNameStringsLocked() {
       // what it says, and refuse anything that does not look like a name so a
       // coincidental match cannot lead the patcher into unrelated bytes.
       uint32_t address = page + i;
-      NameString found[kCharacterCount];
+      NameString found[kNamedCount];
       int count = 0;
-      for (int slot = 1; slot <= kCharacterCount; ++slot) {
+      for (int slot = 1; slot <= kNamedCount; ++slot) {
         const auto* text = memory->TranslateVirtual<const char*>(address);
         if (!text) {
           break;
@@ -401,7 +389,7 @@ void DiscoverNameStringsLocked() {
         found[count++] = NameString{address, slot, ruby, std::string(text, length)};
         address += static_cast<uint32_t>(length) + 1;
       }
-      if (count != kCharacterCount) {
+      if (count != kNamedCount) {
         continue;
       }
       for (const NameString& name : found) {
@@ -484,26 +472,6 @@ uint32_t ScratchArg(uint32_t value) {
 
 // The join sequence, on the guest thread. `slot` is a character number.
 int JoinOnGuestThread(int slot) {
-  // Own the character. Characters share the entity id space with items, so the
-  // roster add's eligibility gate (sub_821FBF20) is really "do you have one of
-  // these" - which is false for anyone the story has not handed you yet.
-  g_own_entity(kOwnedTableObject, static_cast<u32>(slot), 1, 0);
-
-  const u32 result = g_roster_add(static_cast<u32>(slot));
-  switch (result) {
-    case 1:
-      return ETERNALSONATA_PARTY_ERR_ROSTER_FULL;
-    case 2:
-      return ETERNALSONATA_PARTY_ERR_PARTY_LEVEL;
-    case 3:
-      return ETERNALSONATA_PARTY_ERR_NOT_ELIGIBLE;
-    default:
-      break;
-  }
-
-  // sub_821E6740 fills the roster and the budget but knows nothing about the
-  // display order, so the position comes from the party menu's own routine -
-  // which also rebuilds the battle party.
   const uint32_t arg = ScratchArg(static_cast<uint32_t>(slot - 1));
   if (!arg) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
@@ -802,7 +770,10 @@ extern "C" REX_MOD_PLUGIN_EXPORT const char* EternalSonataGetCharacterName(int c
     return "";
   }
   const std::string& name = NameForSlotLocked(slot);
-  return name.empty() ? kDefaultNames[slot] : name.c_str();
+  if (!name.empty())
+    return name.c_str();
+  // On 360 data the last two are vacant until a mod names them.
+  return slot <= kNamedCount || IsPs3Target() ? kDefaultNames[slot] : "";
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPartySize(void) {

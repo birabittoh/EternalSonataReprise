@@ -59,7 +59,10 @@ enum {
   ETERNALSONATA_CHAR_FALSETTO = 8,
   ETERNALSONATA_CHAR_CLAVES = 9,
   ETERNALSONATA_CHAR_MARCH = 10,
-  ETERNALSONATA_CHARACTER_COUNT = 10
+  // The PS3's two; on 360 data, free slots for modded characters.
+  ETERNALSONATA_CHAR_CRESCENDO = 11,
+  ETERNALSONATA_CHAR_SERENADE = 12,
+  ETERNALSONATA_CHARACTER_COUNT = 12
 };
 
 // The party's first three display positions are the ones that walk the field
@@ -86,12 +89,9 @@ enum {
   // battle-model math that expects a character set up by the battle loader, so
   // party edits are refused for the duration (see docs/party-system.md).
   ETERNALSONATA_PARTY_ERR_IN_BATTLE = -3,
-  // The game's roster (32 entries) is full.
+  // -4..-6 are no longer returned: the join they came from was the Item Set's.
   ETERNALSONATA_PARTY_ERR_ROSTER_FULL = -4,
-  // The character costs more party-level budget than is left.
   ETERNALSONATA_PARTY_ERR_PARTY_LEVEL = -5,
-  // The story has not made this character recruitable, and the host could not
-  // make it eligible.
   ETERNALSONATA_PARTY_ERR_NOT_ELIGIBLE = -6,
   ETERNALSONATA_PARTY_ERR_ALREADY_IN_PARTY = -7,
   ETERNALSONATA_PARTY_ERR_NOT_IN_PARTY = -8,

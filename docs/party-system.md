@@ -11,7 +11,8 @@ it is here so the next person can check the implementation against the binary.
 
 ## Ten slots, and only ten
 
-The cast is ten characters, numbered 1..10 in the game's own order:
+The 360 cast is ten characters, numbered 1..10 in the game's own order (the
+PS3 adds Crescendo 11 and Serenade 12):
 
 | # | Character | # | Character |
 |---|---|---|---|
@@ -50,20 +51,37 @@ The arrays no longer live at those addresses at run time.
 `src/engine/party_arrays.cpp` keeps twelve wide copies of the seven per
 character arrays (position, slotbytes, charflags, both stat arrays, charwords
 and the template table), and `config/party.toml` turns on the SDK's
-`[address_remap]`: every guest load or store landing in a retail array is sent
-to the same entry of its copy, whatever way the code formed the address. The
-native CRT `memcpy`/`memset` family remaps the same ranges, which the save
-loader needs: it restores position, slotbytes and both stat arrays with
-`memcpy`. Host code reaches the arrays through `PartyArrayAddress`.
+`[address_remap]` for every function: each guest load or store landing in a
+retail array, or up to two entries past its end, goes through
+`EternalSonataPartyRemap`. Host code reaches the arrays through
+`PartyArrayAddress`.
 
-That only moves storage; the game still counts to ten. What is left for
-characters 11 and 12 is the per function work: id gates (`sub_820E78B8`
-rejects an index above 9, `sub_821E7898` anything outside 1..10), loops
-bounded by an array's retail end address, the 1 based aliases
-(`dword_8243FC04[c]`, `byte_8243FC2F[c]`) whose index 11 lands in the next
-array, and the ten slot UI layouts. The PS3 EBOOT has every one of these at
-twelve: its party block keeps position at `G+0x820` (twelve dwords), slotbytes
-at `G+0x850` (twelve bytes), and the three active bytes at `G+0x85C`.
+Entries 10 and 11 of one array sit at the retail address of the next
+(`position[10]` is `slotbytes[0]`, `stats_live[10]` is `stats_base[0]`), so
+the address alone is ambiguous. The handler also gets the guest PC of the
+access. Each instruction learns its array from its first access, which is
+unambiguous while only ten characters exist, and from then on an access just
+past that array's end is its entry 10 or 11. An instruction seen reaching two
+arrays is mapped by address only, with a warning. The native CRT
+`memcpy`/`memset` family remaps the same ranges, keyed by the call's LR: a
+span inside one array learns and extends the same way, and a span crossing
+arrays (the save loader restores position and slotbytes with one `memcpy`)
+keeps every byte in its own retail array.
+
+What remains is the game's own bounds, raised at each site by a mid asm hook
+listed in `config/party.toml` (`src/engine/party_bounds.cpp`): loop counts,
+end addresses (`< 0x8243FC30` for position) and id gates. Menus with ten slot
+elements get their position searches widened but their member count capped
+at ten, so a member past position ten is not shown yet. The position table
+routines (`sub_820E78B8`, `sub_820E7948`, `sub_821E61D0`, `sub_821E6240`,
+`sub_821E6428`) are rewritten on the host instead
+(`src/engine/party_positions.cpp`), after their PS3 twins.
+
+Entries 10 and 11 are kept in each slot's save record (`party.<array>` keys);
+a save without them gets what the last new game set up. On PS3 data the
+template's entries 10 and 11 are the PS3's Crescendo and Serenade records
+(`0x479A98` in the EBOOT, same 136 byte layout), generated at build time by
+`scripts/ps3_party_template.py`.
 
 Note the ordering: Polka is 2, Beat 3, Frederic 4. An earlier revision of the
 overlay had 2/3/4 as Beat/Frederic/Polka because it validated names against max
@@ -98,12 +116,8 @@ fixed set of slots. `byte_8243FC3A[3]` looks like the natural place to find the
 active set, but nothing in the binary ever writes real values into it, which is
 why `sub_821E6428` always takes its fallback path and searches FC08 instead.
 
-`word_8243FC3E` (`u16[32]`, party base +0x856) looks like a menu roster of
-recruited ids, and `sub_821E6740` does append to it, but it is only ever
-written by a live join during the current run and never restored from a save
-(the reset paths `sub_821E5D68` / `sub_821E5A38` just zero it). After loading a
-save where everyone was recruited in a past session it holds whatever the heap
-left there. Do not read it to answer "who is in the party"; read FC08.
+`word_8243FC3E` (`u16[32]`, party base +0x856) is not a party roster: it is
+the Item Set, the items carried into battle. See "Party level" below.
 
 ## Stats
 
@@ -116,7 +130,7 @@ Two parallel arrays of 48-byte structs, both indexed by character number - 1:
 
 `sub_821E7898(c, 0x8243FD08 + 48*(c-1))` recomputes the second from the first:
 it copies the struct across, walks the character's four equipment ids through
-the master entity table at `0x82017630` (stride 100, id at +0, party-level cost
+the master entity table at `0x82017630` (stride 100, id at +0, Item Set cost
 at +0x36, table ends at `0x82023DCC`) adding each item's bonuses, clamps, and
 finally rescales current HP by however much maximum HP moved.
 
@@ -188,32 +202,29 @@ each cost to an integer. Level 99 and total EXP 99999999 are the two caps.
 | `0x8243FCC4` | u8 budget left |
 | `0x8243FCC5` | u8 budget spent |
 
-Each character costs a fixed amount (master table +0x36) and can only join
-while the remainder covers it; `sub_821E6740` keeps the two bytes summing to
-the level's cap.
+The budget limits the **Item Set**, not the party. Each item costs a fixed
+amount (master table +0x36); `sub_821E6740(id)` registers one in the Item Set
+(`word_8243FC3E`, 32 entries) while the remainder covers it and keeps the two
+bytes summing to the level's cap. It returns 0 added, 1 set full, 2 budget
+insufficient, 3 none held (`sub_821FBF20`). Its callers are the Item Set menu
+(`sub_82225FE0`) and the two reset paths.
 
 ## Joining and leaving
 
-Joining is three steps, and the first is the one that is easy to miss:
+Characters are not entities: master table id 1 is "Hunting Knife", and nothing
+in the join touches the inventory. A character is only its number, 1..10 here
+and 1..12 on the PS3 (Crescendo 11, Serenade 12; `sub_1E88E0` takes the number
+and rejects anything above 12).
 
-1. `sub_821FBFC0(&dword_8255EED8, id, 1, 0)` - **own** the character.
-   Characters share an id space with items in the owned-entity table at
-   `0x8255EF08` (512 records of `{u16 id, u8 count, u8 spoken for}`, count at
-   `word_8255FF08`), and the roster add's gate `sub_821FBF20` is really "do you
-   have one of these". Anyone the story has not handed you yet fails it with
-   code 3. This table is the "party-member DB" an early version of the overlay
-   displayed raw; it is an inventory, and showing its bytes was never
-   meaningful.
-2. `sub_821E6740(id)` - the roster add: validates against the master table,
-   charges the party-level budget, updates the counters. Returns 0 added,
-   1 roster full, 2 budget insufficient, 3 not owned.
-3. `sub_820E78B8(&index)` - gives the character the next free display position
-   and rebuilds the battle party. `sub_821E6740` does *not* do this; a join
-   that stops after step 2 leaves a member the status screen cannot see.
+Joining is `sub_820E78B8(&index)`, script native 5006: it gives the character
+the next free display position and rebuilds the battle party. An earlier
+revision of `party_system.cpp` also ran `sub_821FBFC0` and `sub_821E6740` with
+the character number, which gave the player a weapon and filled an Item Set
+slot.
 
 Leaving is `sub_820E7948(&index)`: it shifts everyone behind the leaver down a
-position, clears the leaver's own, and rebuilds the battle party. It does not
-touch the roster or the budget, so a removed character can be added back.
+position, clears the leaver's own, and rebuilds the battle party. A removed character
+can be added back.
 
 Both take a **pointer** to the character index (id - 1), not the index, which
 is why `party_system.cpp` keeps a small guest scratch buffer.

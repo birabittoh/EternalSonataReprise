@@ -8,6 +8,7 @@
 #include "save_record.h"
 
 #include "costume_system.h"
+#include "party_arrays.h"
 #include "generated/eternalsonata_init.h"
 #include "ps3_natives.h"
 #include "save_system.h"
@@ -74,6 +75,7 @@ void CaptureSaveRecord() {
   record["version"] = "1";
   SaveCostumeRecord(record);
   SavePs3Record(record);
+  SavePartyRecord(record);
   std::lock_guard lock(g_mutex);
   g_captured = std::move(record);
 }
@@ -122,6 +124,7 @@ void NotifySaveRecordLoaded(uint32_t save) {
   ResetPs3Record();
   LoadPs3Record(record);
   LoadCostumeRecord(record);
+  LoadPartyRecord(record);
   REXLOG_INFO("save record: slot {} loaded, {} entries", slot, record.size());
 }
 

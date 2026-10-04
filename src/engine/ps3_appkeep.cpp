@@ -74,7 +74,12 @@ constexpr Run kRuns[] = {
 // (204, 205, 268, 269, 290, 291) and the costume menu's icons (366..373).
 constexpr uint16_t kPs3Only[] = {204, 205, 268, 269, 290, 291, 366,
                                  367, 368, 369, 370, 371, 372, 373};
-static_assert(kSlots360 + std::size(kPs3Only) <= 512, "the loader's array holds 512");
+// CRS and SRN's two camp portraits, after the ten of each set (camp_char 32..38
+// and 41..47 hold characters 3..9), at kPs3PortraitSlot on.
+constexpr uint16_t kCampPortraits[] = {39, 40, 48, 49};
+static_assert(kSlots360 + std::size(kPs3Only) == eternalsonata::kPs3PortraitSlot);
+static_assert(eternalsonata::kPs3PortraitSlot + std::size(kCampPortraits) <= 512,
+              "the loader's array holds 512");
 
 constexpr const char* kCharacterFiles[] = {"pcalg_v1.p3obj", "pcplk_v1.p3obj",
                                            "pcbet_v1.p3obj"};
@@ -204,7 +209,7 @@ void BuildPs3AppKeep(PPCContext& ctx, uint8_t* base) {
         REXLOG_ERROR("ps3 appkeep: {} missing or not a NOBJ", kCharacterFiles[i]);
     }
 
-    std::array<uint32_t, kSlots360 + std::size(kPs3Only)> slots{};
+    std::array<uint32_t, kPs3PortraitSlot + std::size(kCampPortraits)> slots{};
     for (const Run& run : kRuns) {
       for (uint32_t k = 0; k < run.count; ++k) {
         const uint32_t i = run.first + k;
@@ -224,6 +229,8 @@ void BuildPs3AppKeep(PPCContext& ctx, uint8_t* base) {
       slots[kSlots360 + k] = file[kPs3Only[k]];
       g_ps3_to_360[kPs3Only[k]] = static_cast<uint16_t>(kSlots360 + k);
     }
+    for (size_t k = 0; k < std::size(kCampPortraits); ++k)
+      slots[kPs3PortraitSlot + k] = loader.Place(camp, kCampPortraits[k]);
     for (uint32_t i = 0; i < slots.size(); ++i)
       REX_STORE_U32(kSlotArray + 4 * i, slots[i]);
   }

@@ -1,16 +1,436 @@
-# Twelve party slots (src/engine/party_arrays.cpp): the per-character arrays
-# move to twelve wide copies, and the functions below reach them through
-# EternalSonataPartyRemap.
+# Twelve party slots: the per character arrays move to twelve wide copies
+# (src/engine/party_arrays.cpp), reached through EternalSonataPartyRemap.
 
 [address_remap]
 handler = "EternalSonataPartyRemap"
+# Each array out to its twelfth entry; keep in sync with kRanges.
 ranges = [
-  [0x8243FC08, 0x8243FC3A],  # position, slotbytes
-  [0x8243FCFC, 0x8243FD06],  # charflags
-  [0x8243FD08, 0x824400DC],  # stats_live, stats_base, charwords
-  [0x82016150, 0x820166A0],  # template
+  [0x8243FC08, 0x8243FC3C],  # position, slotbytes
+  [0x8243FCFC, 0x8243FD08],  # charflags
+  [0x8243FD08, 0x82440128],  # stats_live, stats_base, charwords
+  [0x82016150, 0x820167B0],  # template
+  [0x8202CA28, 0x8202CA54],  # camp portraits, two sets
 ]
-# Checks every function and logs the ones missing from the list below.
+# Every function: the handler tells arrays apart by instruction, so none
+# needs listing; unlisted hits are only logged.
 all_functions = true
 functions = [
 ]
+
+# Ten character bounds raised to twelve (src/engine/party_bounds.cpp)
+# Resets: clear position[10..11] after position[9], widen the slotbytes clear
+[[midasm_hook]]
+address = 0x821E5AA0
+name = "PartyClearExtraPositions"
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E5C10
+name = "PartyCount"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E5DB4
+name = "PartyClearExtraPositions"
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E5DCC
+name = "PartyCount"
+registers = ["r11"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E5FE4
+name = "PartyClearExtraPositions"
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E60BC
+name = "PartyCount"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x820FE084
+name = "PartyClearExtraPositions"
+after_instruction = true
+[[midasm_hook]]
+address = 0x820FE020
+name = "PartyCount"
+registers = ["r11"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x820FE1A0
+name = "PartyCount"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DD5E8
+name = "PartyClearExtraPositions"
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DD70C
+name = "PartyCount"
+registers = ["r10"]
+after_instruction = true
+
+# sub_821E7138: initial stats for every character
+[[midasm_hook]]
+address = 0x821E7190
+name = "PartyCount"
+registers = ["r21"]
+after_instruction = true
+# sub_821E7358: clears the award queues
+[[midasm_hook]]
+address = 0x821E7628
+name = "PartyCount"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E7648
+name = "PartyCount"
+registers = ["r10"]
+after_instruction = true
+# sub_821E7668: award queue scan, then a character id gate
+[[midasm_hook]]
+address = 0x821E7690
+name = "PartyCompareCount"
+registers = ["cr6", "r31"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E76F4
+name = "PartyCompareCount"
+registers = ["cr6", "r11"]
+after_instruction = true
+# sub_821E7898: stats recompute gate
+[[midasm_hook]]
+address = 0x821E78AC
+name = "PartyCompareCount"
+registers = ["cr6", "r11"]
+after_instruction = true
+# sub_821E7D88: award queue append
+[[midasm_hook]]
+address = 0x821E7EB0
+name = "PartyCompareCount"
+registers = ["cr6", "r30"]
+after_instruction = true
+# sub_821E7F18: bench EXP, member count and position search
+[[midasm_hook]]
+address = 0x821E7F4C
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E7FB0
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+
+# Script natives
+[[midasm_hook]]
+address = 0x820E7A64
+name = "PartyCount"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x820E7AAC
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x820E7B20
+name = "PartyCompareLimit"
+registers = ["cr6", "r6"]
+after_instruction = true
+
+# sub_821DD808: camp party layout, member count and position searches
+[[midasm_hook]]
+address = 0x821DD864
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DD97C
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DD9DC
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DDA3C
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DDA8C
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DDAF4
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DDB64
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DDBE4
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DDC4C
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821DDCC0
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+# sub_821DD808: past ten members, the ten member layout (shows positions 1..10)
+[[midasm_hook]]
+address = 0x821DD940
+name = "PartyLayoutTen"
+registers = ["cr6", "r27"]
+after_instruction = true
+
+# sub_821F9128: item gauge layout by member count (11+ take its fallback)
+[[midasm_hook]]
+address = 0x821F9160
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+# sub_822148C8: field item target, position search
+[[midasm_hook]]
+address = 0x822149BC
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+
+# UI functions: position searches widen, member counts widen but stop at ten
+# (the menus have ten slot elements)
+# sub_82236FA8: status menu
+[[midasm_hook]]
+address = 0x82236FFC
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x8223710C
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82237118
+name = "PartyClampCount"
+registers = ["r25"]
+[[midasm_hook]]
+address = 0x82237154
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+# sub_822372B0: status menu
+[[midasm_hook]]
+address = 0x8223737C
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82237388
+name = "PartyClampCount"
+registers = ["r27"]
+[[midasm_hook]]
+address = 0x822373BC
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+# sub_82237448: status menu
+[[midasm_hook]]
+address = 0x82237550
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x8223755C
+name = "PartyClampCount"
+registers = ["r27"]
+[[midasm_hook]]
+address = 0x82237588
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82237664
+name = "PartyEndU32"
+registers = ["r6"]
+after_instruction = true
+# sub_82237880: line-up page by rows of three
+[[midasm_hook]]
+address = 0x822378F0
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x822378FC
+name = "PartyClampCount"
+registers = ["r9"]
+[[midasm_hook]]
+address = 0x822379F0
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x822379FC
+name = "PartyClampCount"
+registers = ["r9"]
+# sub_82237A68, sub_822388D8, sub_822391F8, sub_822399A8: line-up pages, position searches
+[[midasm_hook]]
+address = 0x82237B08
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82237B38
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82238948
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82238978
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82239268
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82239298
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82239A18
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82239A48
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+# sub_8223A838: line-up page by member count
+[[midasm_hook]]
+address = 0x8223A93C
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x8223A948
+name = "PartyClampCount"
+registers = ["r9"]
+[[midasm_hook]]
+address = 0x8223AB90
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x8223AB9C
+name = "PartyClampCount"
+registers = ["r9"]
+[[midasm_hook]]
+address = 0x8223AD98
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x8223ADA4
+name = "PartyClampCount"
+registers = ["r9"]
+[[midasm_hook]]
+address = 0x8223AF74
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x8223AF80
+name = "PartyClampCount"
+registers = ["r9"]
+# sub_82230658: status page, cycling through members
+[[midasm_hook]]
+address = 0x82230768
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x822307A8
+name = "PartyEndU32"
+registers = ["r7"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x822308E8
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82230940
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+# sub_82236810: single member check
+[[midasm_hook]]
+address = 0x82236A10
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+# sub_82241190, sub_822028C8, sub_8221B5A0: position searches
+[[midasm_hook]]
+address = 0x822413EC
+name = "PartyEndU32"
+registers = ["r8"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x822029E4
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x8221B680
+name = "PartyEndU32"
+registers = ["r24"]
+after_instruction = true
+# sub_8221B460: member list for the item target menu
+[[midasm_hook]]
+address = 0x8221B4AC
+name = "PartyEndU32"
+registers = ["r6"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x8221B4BC
+name = "PartyClampCount"
+registers = ["r31"]
+# sub_82222438: item target highlight over menu slots
+[[midasm_hook]]
+address = 0x822224C8
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x822224D4
+name = "PartyClampCount"
+registers = ["r26"]
+# Script native: character gate 1..10
+[[midasm_hook]]
+address = 0x820E7CB4
+name = "PartyCompareLimit"
+registers = ["cr6", "r11"]
+after_instruction = true
+

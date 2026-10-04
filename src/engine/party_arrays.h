@@ -9,6 +9,8 @@
 
 #include <cstdint>
 
+#include "save_record.h"
+
 namespace rex {
 class Runtime;
 }
@@ -26,6 +28,8 @@ enum class PartyArray : uint8_t {
   kStatsBase,  // 48 byte stats, what a save holds
   kCharWords,  // u16, pending award queue
   kTemplate,   // 136 byte starting stats, read only image data
+  kPortraitA,  // u16 AppKeep slot of each camp portrait, two sets
+  kPortraitB,
   kCount,
 };
 
@@ -37,5 +41,10 @@ uint32_t PartyArrayAddress(PartyArray array, uint32_t index = 0);
 // Makes the native memcpy, memmove and memset family remap the same ranges.
 // Call before the guest runs (OnPostSetup).
 void InitPartyArrays(rex::Runtime* runtime);
+
+// The guest save holds ten entries; the rest live in the slot's save record.
+// A save without them gets the values a new game starts from.
+void SavePartyRecord(SaveRecord& record);
+void LoadPartyRecord(const SaveRecord& record);
 
 }  // namespace eternalsonata

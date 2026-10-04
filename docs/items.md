@@ -72,10 +72,8 @@ Worked example, id 209 "Floral Powder": icon 16, category 0, buy 100, sell 25,
 cost 2. Id 1 is "Hunting Knife" (category 1, cost 0), id 141 "Handmade
 Clothes" (2), id 281 "Brisingamen" (3).
 
-Note that `docs/party-system.md` has the party's join path calling
-`sub_821E6740` with a character number 1..10, i.e. into the same id space,
-where this table holds weapons. The two readings have not been reconciled; the
-item API deliberately does not depend on the answer.
+Characters are not in this id space; `sub_821E6740` is the Item Set register
+(see `docs/party-system.md`, "Party level and its budget").
 
 ## Names and descriptions
 
