@@ -92,6 +92,11 @@ gives both the `<r>` name in the wider panels, and Crescendo and Serenade the
 one to three member layouts of Viola and Salsa. Image ids in these builders
 are the AppKeep slot plus one.
 
+The ten member layout stops at position ten; the grid's last row gets
+positions 11 and 12 the way the PS3 places them. Their `1100` record is left
+out: `sub_821F09A0` keeps those elements in a ten entry list inside the
+screen's layout object (the PS3's holds twelve) and fails the eleventh.
+
 Note the ordering: Polka is 2, Beat 3, Frederic 4. An earlier revision of the
 overlay had 2/3/4 as Beat/Frederic/Polka because it validated names against max
 HP while misreading the position table; the binary's own order is the one
