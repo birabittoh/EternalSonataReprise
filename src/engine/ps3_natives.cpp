@@ -18,6 +18,7 @@
 #include "ps3_natives.h"
 
 #include "generated/eternalsonata_init.h"
+#include "party_arrays.h"
 #include "costume_system.h"
 #include "target.h"
 
@@ -42,9 +43,15 @@ constexpr uint32_t kCount = 8;
 
 // Same layout as party_system.cpp.
 constexpr uint32_t kCharacters = 10;
-constexpr uint32_t kPositionsAddr = 0x8243FC08u;
-constexpr uint32_t kBaseStatsAddr = 0x8243FEE8u;
-constexpr uint32_t kLiveStatsAddr = 0x8243FD08u;
+uint32_t PositionsAddr() {
+  return eternalsonata::PartyArrayAddress(eternalsonata::PartyArray::kPosition);
+}
+uint32_t BaseStatsAddr() {
+  return eternalsonata::PartyArrayAddress(eternalsonata::PartyArray::kStatsBase);
+}
+uint32_t LiveStatsAddr() {
+  return eternalsonata::PartyArrayAddress(eternalsonata::PartyArray::kStatsLive);
+}
 constexpr uint32_t kStatsStride = 48u;
 constexpr uint32_t kStatHp = 0x0Cu;
 constexpr uint32_t kStatHpMax = 0x10u;
@@ -75,7 +82,7 @@ void Return(PPCContext& ctx, int32_t value) {
 int32_t Position(uint8_t* base, int32_t character) {
   if (character < 0 || character >= static_cast<int32_t>(kCharacters))
     return 0;
-  return static_cast<int32_t>(Load(base, kPositionsAddr + 4 * character));
+  return static_cast<int32_t>(Load(base, PositionsAddr() + 4 * character));
 }
 
 // 5026 (character, variant): unlock a costume.
@@ -122,11 +129,11 @@ void AddHp(PPCContext& ctx, uint8_t* base) {
   const int32_t delta = Arg(ctx, base, 1);
   if (character < 0 || character >= static_cast<int32_t>(kCharacters))
     return Return(ctx, 0);
-  const uint32_t live = kLiveStatsAddr + kStatsStride * character;
+  const uint32_t live = LiveStatsAddr() + kStatsStride * character;
   const int32_t max = static_cast<int32_t>(Load(base, live + kStatHpMax));
   const int32_t hp = std::min(std::max(static_cast<int32_t>(Load(base, live + kStatHp)) + delta, 1), max);
   Store(base, live + kStatHp, hp);
-  Store(base, kBaseStatsAddr + kStatsStride * character + kStatHp, hp);
+  Store(base, BaseStatsAddr() + kStatsStride * character + kStatHp, hp);
   Return(ctx, hp);
 }
 
