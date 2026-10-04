@@ -26,4 +26,14 @@ void BindPartySystem(rex::Runtime* runtime);
 // eternalsonata_options.cpp (there can only be one hook per guest function).
 uint32_t PartyNameOverrideFor(uint32_t text_address);
 
+// Characters 11 and 12 have no strings in the executable's text blocks, whose
+// ids run from the ten ruby names straight into the menu labels, so the menu
+// builders are pointed at these synthetic ids instead.
+inline constexpr uint32_t kPartyNameSidBase = 860;
+uint32_t PartyNameSid(int character, bool ruby);
+
+// The text for a synthetic name id looked up in `blob`, or 0 if it is not one.
+// Called from the same hook.
+uint32_t PartyNameTextFor(uint32_t blob, uint32_t sid);
+
 }  // namespace eternalsonata
