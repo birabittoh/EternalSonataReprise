@@ -8,6 +8,10 @@
 
 namespace eternalsonata {
 
+// Where CRS and SRN's camp portraits go: CRS and SRN of the first set, then of
+// the second (0x8202CA28 and 0x8202CA3C name the ten of each).
+inline constexpr uint32_t kPs3PortraitSlot = 426;
+
 // Rebuilds the AppKeep slot array in the 360's numbering and loads the
 // characters and camp entries the PS3 keeps in other files. Call from the
 // AppKeep.bmd load, PS3 data only.
