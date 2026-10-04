@@ -46,6 +46,7 @@
 // - no guest routine is called, so there is no queued-write path - and the
 // events are published from the mod registry's frame tick.
 
+#include "party_arrays.h"
 #include "generated/eternalsonata_init.h"
 
 #include <algorithm>
@@ -104,7 +105,7 @@ constexpr uint32_t kClockAddr = 0x82565780u;
 // The party's per-character stat blocks. The development formula uses the
 // highest level in the party as its "how far has the player got" term, which
 // is the first u32 of each 48-byte block. Same table party_system.cpp reads.
-constexpr uint32_t kStatsAddr = 0x8243FEE8u;
+uint32_t StatsAddr() { return PartyArrayAddress(PartyArray::kStatsBase); }
 constexpr uint32_t kStatsStride = 48u;
 constexpr int kStatsCount = 10;
 
@@ -272,7 +273,7 @@ int32_t PartyProgress() {
   int32_t best = 0;
   for (int i = 0; i < kStatsCount; ++i) {
     const auto level =
-        ReadGuest<int32_t>(kStatsAddr + static_cast<uint32_t>(i) * kStatsStride);
+        ReadGuest<int32_t>(StatsAddr() + static_cast<uint32_t>(i) * kStatsStride);
     best = std::max(best, level);
   }
   return best;

@@ -25,6 +25,7 @@
 // loads and answer immediately; anything that has to run guest code is queued
 // onto the guest main thread and reports ETERNALSONATA_PARTY_QUEUED.
 
+#include "party_arrays.h"
 #include "generated/eternalsonata_init.h"
 
 #include <algorithm>
@@ -78,14 +79,14 @@ constexpr uint32_t kBudgetUsedAddr = 0x8243FCC5u;
 constexpr uint32_t kBudgetCapTableAddr = 0x8202CA70u;
 
 // u32[10]: display position of character c at index c-1 (0 = not in party).
-constexpr uint32_t kPositionsAddr = 0x8243FC08u;
+uint32_t PositionsAddr() { return PartyArrayAddress(PartyArray::kPosition); }
 
 // 48-byte stat structs, indexed by character number - 1:
-//   kBaseStatsAddr  the character's own stats (what a save holds)
-//   kLiveStatsAddr  the same with equipment folded in - what the status and
-//                   equipment screens draw
-constexpr uint32_t kBaseStatsAddr = 0x8243FEE8u;
-constexpr uint32_t kLiveStatsAddr = 0x8243FD08u;
+//   BaseStatsAddr()  the character's own stats (what a save holds)
+//   LiveStatsAddr()  the same with equipment folded in - what the status and
+//                    equipment screens draw
+uint32_t BaseStatsAddr() { return PartyArrayAddress(PartyArray::kStatsBase); }
+uint32_t LiveStatsAddr() { return PartyArrayAddress(PartyArray::kStatsLive); }
 constexpr uint32_t kStatsStride = 48u;
 
 // Offsets within a stat struct, all confirmed against the equipment screen's
@@ -263,7 +264,7 @@ void WriteGuestString(uint32_t address, const std::string& text) {
 // Party queries (guest memory only, safe from any thread)
 // ---------------------------------------------------------------------------
 
-uint32_t PositionAddr(int slot) { return kPositionsAddr + 4u * (slot - 1); }
+uint32_t PositionAddr(int slot) { return PositionsAddr() + 4u * (slot - 1); }
 
 int PositionOf(int slot) {
   return static_cast<int>(ReadGuest<uint32_t>(PositionAddr(slot)));
@@ -284,7 +285,7 @@ int PartySize() {
 // blank party state, so an empty party counts as unavailable rather than as an
 // empty one: a loaded save always has at least the leader in it.
 bool Available() {
-  return Readable(kPartyBase, 8) && Readable(kLiveStatsAddr, kStatsStride * kCharacterCount) &&
+  return Readable(kPartyBase, 8) && Readable(LiveStatsAddr(), kStatsStride * kCharacterCount) &&
          PartySize() > 0;
 }
 
@@ -521,7 +522,7 @@ int LeaveOnGuestThread(int slot) {
 }
 
 int RefreshStatsOnGuestThread(int slot) {
-  g_refresh_stats(static_cast<u32>(slot), kLiveStatsAddr + kStatsStride * (slot - 1));
+  g_refresh_stats(static_cast<u32>(slot), LiveStatsAddr() + kStatsStride * (slot - 1));
   return ETERNALSONATA_PARTY_OK;
 }
 
@@ -634,14 +635,14 @@ void WriteStats(uint32_t base_address, int slot, const EternalSonataCharacterSta
 // the live struct first makes that ratio exactly 1, so the recompute only adds
 // the equipment bonus back.
 void ApplyStats(int slot, const EternalSonataCharacterStats& stats) {
-  WriteStats(kBaseStatsAddr, slot, stats);
-  WriteStats(kLiveStatsAddr, slot, stats);
+  WriteStats(BaseStatsAddr(), slot, stats);
+  WriteStats(LiveStatsAddr(), slot, stats);
   RunOnGuestThread([slot] { return RefreshStatsOnGuestThread(slot); });
 }
 
 int32_t ReadExp(int slot) {
   return static_cast<int32_t>(
-      ReadGuest<uint32_t>(kBaseStatsAddr + kStatsStride * (slot - 1) + kStatExp));
+      ReadGuest<uint32_t>(BaseStatsAddr() + kStatsStride * (slot - 1) + kStatExp));
 }
 
 // Both stat structs carry the total, and sub_821E7F18 keeps them equal, so a
@@ -650,7 +651,7 @@ int32_t ReadExp(int slot) {
 int32_t WriteExp(int slot, int32_t exp) {
   const int32_t clamped = ClampExp(exp);
   const auto level = static_cast<uint32_t>(LevelForExp(clamped));
-  for (uint32_t base : {kBaseStatsAddr, kLiveStatsAddr}) {
+  for (uint32_t base : {BaseStatsAddr(), LiveStatsAddr()}) {
     const uint32_t at = base + kStatsStride * (slot - 1);
     WriteGuest<uint32_t>(at + kStatExp, static_cast<uint32_t>(clamped));
     WriteGuest<uint32_t>(at + kStatLevel, level);
@@ -915,7 +916,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetCharacterStats(
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
   }
-  ReadStats(kLiveStatsAddr, slot, out);
+  ReadStats(LiveStatsAddr(), slot, out);
   return ETERNALSONATA_PARTY_OK;
 }
 
@@ -932,7 +933,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetCharacterBaseStats(
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
   }
-  ReadStats(kBaseStatsAddr, slot, out);
+  ReadStats(BaseStatsAddr(), slot, out);
   return ETERNALSONATA_PARTY_OK;
 }
 
@@ -975,7 +976,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetCharacterExpToNextLevel(int
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
   }
   const auto level =
-      static_cast<int32_t>(ReadGuest<uint32_t>(kBaseStatsAddr + kStatsStride * (slot - 1)));
+      static_cast<int32_t>(ReadGuest<uint32_t>(BaseStatsAddr() + kStatsStride * (slot - 1)));
   return ExpToNextLevel(ReadExp(slot), level);
 }
 
@@ -1027,7 +1028,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataHealCharacter(int character) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
   }
   EternalSonataCharacterStats stats{};
-  ReadStats(kBaseStatsAddr, slot, &stats);
+  ReadStats(BaseStatsAddr(), slot, &stats);
   stats.hp = stats.hp_max;
   ApplyStats(slot, stats);
   return ETERNALSONATA_PARTY_OK;
@@ -1043,7 +1044,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataHealParty(void) {
       continue;
     }
     EternalSonataCharacterStats stats{};
-    ReadStats(kBaseStatsAddr, slot, &stats);
+    ReadStats(BaseStatsAddr(), slot, &stats);
     stats.hp = stats.hp_max;
     ApplyStats(slot, stats);
   }

@@ -44,6 +44,27 @@ The bound checks (`sub_821E7898` rejecting anything outside 1..10,
 `sub_821A03D0` rejecting `id - 1 > 9`) are the least of it; the data layout is
 the wall.
 
+### Twelve wide storage (in progress)
+
+The arrays no longer live at those addresses at run time.
+`src/engine/party_arrays.cpp` keeps twelve wide copies of the seven per
+character arrays (position, slotbytes, charflags, both stat arrays, charwords
+and the template table), and `config/party.toml` turns on the SDK's
+`[address_remap]`: every guest load or store landing in a retail array is sent
+to the same entry of its copy, whatever way the code formed the address. The
+native CRT `memcpy`/`memset` family remaps the same ranges, which the save
+loader needs: it restores position, slotbytes and both stat arrays with
+`memcpy`. Host code reaches the arrays through `PartyArrayAddress`.
+
+That only moves storage; the game still counts to ten. What is left for
+characters 11 and 12 is the per function work: id gates (`sub_820E78B8`
+rejects an index above 9, `sub_821E7898` anything outside 1..10), loops
+bounded by an array's retail end address, the 1 based aliases
+(`dword_8243FC04[c]`, `byte_8243FC2F[c]`) whose index 11 lands in the next
+array, and the ten slot UI layouts. The PS3 EBOOT has every one of these at
+twelve: its party block keeps position at `G+0x820` (twelve dwords), slotbytes
+at `G+0x850` (twelve bytes), and the three active bytes at `G+0x85C`.
+
 Note the ordering: Polka is 2, Beat 3, Frederic 4. An earlier revision of the
 overlay had 2/3/4 as Beat/Frederic/Polka because it validated names against max
 HP while misreading the position table; the binary's own order is the one
@@ -258,7 +279,7 @@ scan runs once, and only after some mod has actually renamed somebody.
 
 ## What is deliberately not modelled
 
-* **An eleventh character.** See "Ten slots, and only ten": the tables cannot
-  be widened in place and the API does not pretend otherwise.
+* **An eleventh character, yet.** The storage is twelve wide ("Twelve wide
+  storage"), but the game still counts to ten, so the API does too.
 * **Field models.** Who walks the overworld is a separate mechanism entirely;
   see `src/engine/field_player_model_override.h`.

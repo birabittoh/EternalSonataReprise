@@ -56,6 +56,7 @@
 #include "native_renderer_plume.h"
 #include "native_renderer_profile.h"
 #include "native_renderer_shader_debug.h"
+#include "party_arrays.h"
 #include "party_system.h"
 #include "photo_system.h"
 #include "room_presence.h"
@@ -378,6 +379,10 @@ class EternalsonataApp : public rex::ReXApp {
     // language registered after the latch would not be selectable this run.
     // Mods that publish the event instead already ran, back in OnCreateDialogs.
     eternalsonata::ScanModLanguages(runtime());
+
+    // Twelve party slots: the CRT copies the save path uses run natively and
+    // have to see the relocated arrays too.
+    eternalsonata::InitPartyArrays(runtime());
 
     // Seed the GPU plugin/Vulkan device lists once here rather than every
     // time the F4 settings overlay is opened (see settings.cpp).

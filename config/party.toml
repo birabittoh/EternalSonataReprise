@@ -1,0 +1,16 @@
+# Twelve party slots (src/engine/party_arrays.cpp): the per-character arrays
+# move to twelve wide copies, and the functions below reach them through
+# EternalSonataPartyRemap.
+
+[address_remap]
+handler = "EternalSonataPartyRemap"
+ranges = [
+  [0x8243FC08, 0x8243FC3A],  # position, slotbytes
+  [0x8243FCFC, 0x8243FD06],  # charflags
+  [0x8243FD08, 0x824400DC],  # stats_live, stats_base, charwords
+  [0x82016150, 0x820166A0],  # template
+]
+# Checks every function and logs the ones missing from the list below.
+all_functions = true
+functions = [
+]

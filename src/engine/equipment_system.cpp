@@ -69,6 +69,7 @@
 // loads and answer immediately; anything that has to run guest code is queued
 // onto the guest main thread and reports ETERNALSONATA_EQUIPMENT_QUEUED.
 
+#include "party_arrays.h"
 #include "generated/eternalsonata_init.h"
 
 #include <algorithm>
@@ -107,8 +108,8 @@ namespace {
 
 // The two parallel 48-byte stat arrays, indexed by character number - 1. See
 // docs/party-system.md; party_system.cpp names the same two.
-constexpr uint32_t kBaseStatsAddr = 0x8243FEE8u;
-constexpr uint32_t kLiveStatsAddr = 0x8243FD08u;
+uint32_t BaseStatsAddr() { return PartyArrayAddress(PartyArray::kStatsBase); }
+uint32_t LiveStatsAddr() { return PartyArrayAddress(PartyArray::kStatsLive); }
 constexpr uint32_t kStatsStride = 48u;
 
 // Offsets within a stat struct, all confirmed against sub_821E7898.
@@ -288,11 +289,11 @@ float ReadGuestFloat(uint32_t address) {
 bool Bound() { return g_runtime != nullptr; }
 
 uint32_t BaseStruct(int character) {
-  return kBaseStatsAddr + kStatsStride * static_cast<uint32_t>(character - 1);
+  return BaseStatsAddr() + kStatsStride * static_cast<uint32_t>(character - 1);
 }
 
 uint32_t LiveStruct(int character) {
-  return kLiveStatsAddr + kStatsStride * static_cast<uint32_t>(character - 1);
+  return LiveStatsAddr() + kStatsStride * static_cast<uint32_t>(character - 1);
 }
 
 uint32_t MasterRecord(int item_id) {
@@ -307,8 +308,8 @@ uint32_t InventoryRecord(uint32_t slot) {
 // makes: the tables are mapped but blank at the title screen, and a loaded
 // save always has a level on the first character.
 bool Available() {
-  return Bound() && Readable(kBaseStatsAddr, kStatsStride * kCharacterMax) &&
-         Readable(kLiveStatsAddr, kStatsStride * kCharacterMax) &&
+  return Bound() && Readable(BaseStatsAddr(), kStatsStride * kCharacterMax) &&
+         Readable(LiveStatsAddr(), kStatsStride * kCharacterMax) &&
          Readable(kMasterTableAddr, kMasterBytes) && Readable(kInventoryAddr, kInventoryBytes) &&
          ReadGuest<uint32_t>(BaseStruct(1)) != 0;
 }

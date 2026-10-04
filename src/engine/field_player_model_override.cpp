@@ -1,6 +1,7 @@
 #include "field_player_model_override.h"
 
 #include "force_load_area.h"
+#include "party_arrays.h"
 #include "generated/eternalsonata_init.h"
 
 #include "settings.h"
@@ -44,7 +45,9 @@ constexpr const char* kCharacterNames[11] = {
 
 // dword_8243FC08[c - 1]: character c's 1-based status screen position, 0 when
 // not in the party. The party leader holds position 1.
-constexpr uint32_t kStatusMemberList = 0x8243FC08u;
+uint32_t StatusMemberList() {
+  return eternalsonata::PartyArrayAddress(eternalsonata::PartyArray::kPosition);
+}
 constexpr uint32_t kStatusMemberCount = 10u;
 constexpr uint32_t kPartyLeaderPosition = 1u;
 
@@ -360,7 +363,7 @@ const char* FieldPlayerModelOverride::CharacterName(int character) {
 int FieldPlayerModelOverride::PartyLeaderCharacter() {
   uint8_t* base = rex::system::kernel_state()->memory()->virtual_membase();
   for (uint32_t i = 0; i < kStatusMemberCount; ++i) {
-    if (REX_LOAD_U32(kStatusMemberList + i * 4u) == kPartyLeaderPosition) {
+    if (REX_LOAD_U32(StatusMemberList() + i * 4u) == kPartyLeaderPosition) {
       return static_cast<int>(i) + 1;
     }
   }
