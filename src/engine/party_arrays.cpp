@@ -149,6 +149,14 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
       (hit.extension == static_cast<int>(PartyArray::kStatsLive) ||
        hit.extension == static_cast<int>(PartyArray::kTemplate)))
     return hit.extension;
+  // Status option text always comes from the selected character's live stats.
+  if (pc >= 0x82234290u && pc < 0x82234404u &&
+      hit.extension == static_cast<int>(PartyArray::kStatsLive))
+    return hit.extension;
+  // Closing the status page restores the camp cursor from position[c - 1];
+  // for 11 and 12 that lands on slotbytes[0], which it would otherwise learn.
+  if (pc == 0x822367DCu && hit.extension == static_cast<int>(PartyArray::kPosition))
+    return hit.extension;
   return -1;
 }
 
