@@ -363,6 +363,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/party_positions.cpp
     src/engine/party_bounds.cpp
     src/engine/party_camp_menu.cpp
+    src/engine/party_status_menu.cpp
     src/engine/ps3_appkeep.cpp
     src/engine/ps3_battlekeep.cpp
     src/engine/ps3_buttons.cpp
