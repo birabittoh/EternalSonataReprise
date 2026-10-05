@@ -397,6 +397,32 @@ address = 0x82230940
 name = "PartyEndU32"
 registers = ["r8"]
 after_instruction = true
+
+# sub_82232C10: status page content for one character
+[[midasm_hook]]
+address = 0x82232C64
+name = "PartyCompareCount"
+registers = ["cr6", "r20"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82232D2C
+name = "PartyStatusPortrait"
+registers = ["r4", "r20"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82232DE8
+name = "PartyStatusPortrait"
+registers = ["r4", "r20"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x822333B4
+name = "PartyStatusNameSid"
+registers = ["r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82230418
+name = "PartyStatusSelection"
+registers = ["r3"]
 # sub_82236810: single member check
 [[midasm_hook]]
 address = 0x82236A10

@@ -139,6 +139,19 @@ struct Hit {
   uint32_t extension_offset = 0;
 };
 
+int StaticOwner(uint32_t pc, const Hit& hit) {
+  // The status page can first touch live stats while showing character 11 or
+  // 12, where their extension overlaps the base stats array.
+  if (pc >= 0x8222FFE8u && pc < 0x82230560u &&
+      hit.extension == static_cast<int>(PartyArray::kStatsLive))
+    return hit.extension;
+  if (pc >= 0x82232C10u && pc < 0x82233B38u &&
+      (hit.extension == static_cast<int>(PartyArray::kStatsLive) ||
+       hit.extension == static_cast<int>(PartyArray::kTemplate)))
+    return hit.extension;
+  return -1;
+}
+
 Hit Classify(uint32_t ea) {
   Hit hit;
   for (size_t i = 0; i < kArrays.size(); ++i) {
@@ -186,6 +199,9 @@ uint32_t Resolve(uint32_t ea, uint32_t pc, const Hit& hit) {
   const auto by_address = [&] {
     return hit.retail >= 0 ? Relocated(hit.retail, hit.retail_offset, ea) : ea;
   };
+  const int static_owner = StaticOwner(pc, hit);
+  if (static_owner >= 0)
+    return Relocated(static_owner, hit.extension_offset, ea);
   std::atomic<uint64_t>* slot = pc ? OwnerSlot(pc) : nullptr;
   if (!slot)
     return by_address();
