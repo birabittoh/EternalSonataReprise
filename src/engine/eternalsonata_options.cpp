@@ -27,6 +27,7 @@
 #include "item_system.h"
 #include "achievements_menu.h"
 #include "option_strip.h"
+#include "party_status_menu.h"
 #include "party_system.h"
 #include "ps3_item_tables.h"
 #include "settings.h"
@@ -2908,6 +2909,11 @@ REX_HOOK_RAW(sub_8223B780) {
     ctx.r3.u32 = prompt;
     return;
   }
+  if (const u32 costume =
+          party_status_menu::CostumePromptText(base, blob, sid)) {
+    ctx.r3.u32 = costume;
+    return;
+  }
   // The status menu's Achievements entry rides a stock string id, so this has
   // to come before anything keyed on the id alone.
   if (const u32 label = option_strip::AchievementsLabelOverride(base, sid)) {
@@ -3021,6 +3027,10 @@ REX_HOOK_RAW(sub_821F2F38) {
   // interpreter an edited copy rather than the shipped, read-only one.
   if (const u32 swapped =
           achievements_menu::MaybeSwapScreenList(base, ctx.r4.u32)) {
+    ctx.r4.u32 = swapped;
+  }
+  if (const u32 swapped =
+          party_status_menu::MaybeSwapStatusList(base, ctx.r4.u32)) {
     ctx.r4.u32 = swapped;
   }
 

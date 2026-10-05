@@ -7,7 +7,9 @@ ship none. This host keeps the feature on every release, so mods can add
 costumes of their own, for any character.
 
 On the status page, X puts on the shown character's next unlocked costume,
-and the portrait follows the costume worn. A mod can pick any costume through
+and the portrait follows the costume worn. Its X Costume prompt replaces the
+LB / RB Switch Character one, and shows only while X would change something;
+the shoulder buttons still switch. A mod can pick any costume through
 `src/api/eternalsonata_costume_api.h`; the `costume_overlay` mod in
 EternalSonataReprise-Mods (F11) does that, and locks or unlocks them. Each save keeps the costumes worn
 (§7); the title screen and a new game start from the defaults, or from what
