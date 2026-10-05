@@ -38,7 +38,7 @@ REX_EXTERN(sub_821125A0);
 namespace {
 
 constexpr uint32_t kHeap = 0x82420948u;
-constexpr uint32_t kSlotArray = 0x82420AFCu;
+constexpr uint32_t kSlotArray = eternalsonata::kAppKeepSlotArray;
 constexpr uint32_t kSlots360 = 412;
 constexpr uint32_t kSlotsPs3 = 374;
 constexpr uint32_t kAlign = 0x1000;
@@ -80,8 +80,14 @@ static_assert(kSlots360 == eternalsonata::kPs3MenuPortraitSlot && kPs3Only[0] ==
 // and 41..47 hold characters 3..9), at kPs3PortraitSlot on.
 constexpr uint16_t kCampPortraits[] = {39, 40, 48, 49};
 static_assert(kSlots360 + std::size(kPs3Only) == eternalsonata::kPs3PortraitSlot);
-static_assert(eternalsonata::kPs3PortraitSlot + std::size(kCampPortraits) <= 512,
-              "the loader's array holds 512");
+// The costumes' status portraits (camp_char 3 * kind + character + 11, kind 3,
+// and 27 for PLK v3), in costume_system's order.
+constexpr uint16_t kCostumePortraits[] = {21, 22, 27, 23};
+static_assert(eternalsonata::kPs3PortraitSlot + std::size(kCampPortraits) ==
+              eternalsonata::kPs3CostumePortraitSlot);
+static_assert(eternalsonata::kPs3CostumePortraitSlot + std::size(kCostumePortraits) ==
+              eternalsonata::kFirstFreeAppKeepSlot);
+static_assert(eternalsonata::kFirstFreeAppKeepSlot <= eternalsonata::kAppKeepSlotCount);
 
 constexpr const char* kCharacterFiles[] = {"pcalg_v1.p3obj", "pcplk_v1.p3obj",
                                            "pcbet_v1.p3obj"};
@@ -189,6 +195,7 @@ void BuildPs3AppKeep(PPCContext& ctx, uint8_t* base) {
   }
 
   std::array<uint32_t, kSlotsPs3> file{};
+  Bmd camp;
   // The PS3 file's last entry is its slot 373; the 360's are null from 365.
   if (REX_LOAD_U32(kSlotArray + 4 * (kSlotsPs3 - 1)) == 0 ||
       REX_LOAD_U32(kSlotArray + 4 * kSlotsPs3) != 0) {
@@ -198,7 +205,6 @@ void BuildPs3AppKeep(PPCContext& ctx, uint8_t* base) {
       file[i] = REX_LOAD_U32(kSlotArray + 4 * i);
     for (uint32_t i = 2; i < appkeep2.entries.size(); ++i)
       g_appkeep2[i] = loader.Place(appkeep2, i);
-    Bmd camp;
     if (!camp.Load("campdata/camp_char.bmd"))
       REXLOG_ERROR("ps3 appkeep: campdata/camp_char.bmd missing");
     std::array<uint32_t, std::size(kCharacterFiles)> characters{};
@@ -241,6 +247,10 @@ void BuildPs3AppKeep(PPCContext& ctx, uint8_t* base) {
   // are the ones to spill if the heap is full.
   for (uint32_t i = 0; i < 2 && i < appkeep2.entries.size(); ++i)
     g_appkeep2[i] = loader.Place(appkeep2, i);
+  // Only the status page shows these, so they spill after CRS and SRN.
+  for (size_t k = 0; k < std::size(kCostumePortraits) && !camp.entries.empty(); ++k)
+    REX_STORE_U32(kSlotArray + 4 * (kPs3CostumePortraitSlot + k),
+                  loader.Place(camp, kCostumePortraits[k]));
   if (loader.overflow())
     REXLOG_INFO("ps3 appkeep: {} bytes past the APPKEEP heap", loader.overflow());
 }
