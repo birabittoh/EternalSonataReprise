@@ -10,6 +10,8 @@ The PS3 keeps the 360's layouts, filled for twelve characters:
   and 14.
 * magic records (12 bytes, 0x47A598): 119..132 belong to 11 and 12.
 * magic display order (u16[11] per character, 0x468DA8), twelve rows.
+* item icons (u16 image ids, 0x468CDC, read at icon - 1): the PS3 inserts
+  its new ones at 48, where the 360's table runs into the camp portraits.
 * the item and magic name and description BTX blocks. Their British English
   strings are empty for everything new, so those fall back to the US ones.
 
@@ -38,6 +40,8 @@ MAGIC_COUNT = 132
 ORDER_VA = 0x468DA8
 ORDER_ROW = 22
 CHARACTERS = 12
+ICONS_VA = 0x468CDC
+ICONS_FIRST = 48
 # PS3 block, 360 block it replaces, what it holds.
 BLOCKS = [
     (0x759470, 0x82376400, "item names"),
@@ -161,6 +165,11 @@ def main():
     lines += array("kPs3MasterRecords", master)
     lines += array("kPs3MagicRecords", magic)
     lines += array("kPs3MagicOrder", order)
+    last = max(master[MASTER_RECORD * k + 2] for k in range(MASTER_COUNT))
+    icons = elf[file_offset(ICONS_VA) + 2 * ICONS_FIRST:file_offset(ICONS_VA) + 2 * last]
+    lines.append("constexpr uint32_t kPs3ItemIconFirst = %d;" % ICONS_FIRST)
+    lines.append("constexpr uint16_t kPs3ItemIcons[] = {%s};"
+                 % ", ".join(str(v) for v in struct.unpack(">%dH" % (len(icons) // 2), icons)))
     names = []
     for i, (ps3, x360, what) in enumerate(BLOCKS):
         langs = read_btx(elf, file_offset(ps3))

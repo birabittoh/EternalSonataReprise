@@ -13,6 +13,10 @@ void ApplyPs3ItemTables();
 // block, or 0. Guest thread only.
 uint32_t Ps3TextBlockFor(uint32_t block);
 
+// Where an item icon reader at `pc` should read `address` from, or 0. The
+// icons the PS3 adds sit where the 360's table runs into the camp portraits.
+uint32_t Ps3ItemIconAddress(uint32_t address, uint32_t pc);
+
 // The highest item id the loaded master table names.
 int BaseItemIdMax();
 

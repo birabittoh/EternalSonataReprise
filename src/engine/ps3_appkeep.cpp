@@ -71,7 +71,8 @@ constexpr Run kRuns[] = {
 };
 
 // PS3 entries with no 360 slot, at 360 slot 412 on: art for CRS and SRN
-// (204, 205, 268, 269, 290, 291) and the costume menu's icons (366..373).
+// (204, 205, 268, 269, 290, 291), the costume menu's icons (366, 367, 372, 373)
+// and their equipment icons (368..371).
 constexpr uint16_t kPs3Only[] = {204, 205, 268, 269, 290, 291, 366,
                                  367, 368, 369, 370, 371, 372, 373};
 static_assert(kSlots360 == eternalsonata::kPs3MenuPortraitSlot && kPs3Only[0] == 204);
@@ -242,6 +243,12 @@ void BuildPs3AppKeep(PPCContext& ctx, uint8_t* base) {
     g_appkeep2[i] = loader.Place(appkeep2, i);
   if (loader.overflow())
     REXLOG_INFO("ps3 appkeep: {} bytes past the APPKEEP heap", loader.overflow());
+}
+
+uint32_t Ps3AppKeepImageId(uint32_t ps3_id) {
+  if (ps3_id == 0 || ps3_id > kSlotsPs3 || g_ps3_to_360[ps3_id - 1] == 0xFFFF)
+    return 0;
+  return g_ps3_to_360[ps3_id - 1] + 1u;
 }
 
 uint32_t Ps3AppKeep2Model(uint32_t index) {
