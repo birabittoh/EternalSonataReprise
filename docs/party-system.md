@@ -93,9 +93,13 @@ one to three member layouts of Viola and Salsa. Image ids in these builders
 are the AppKeep slot plus one.
 
 The ten member layout stops at position ten; the grid's last row gets
-positions 11 and 12 the way the PS3 places them. Their `1100` record is left
-out: `sub_821F09A0` keeps those elements in a ten entry list inside the
-screen's layout object (the PS3's holds twelve) and fails the eleventh.
+positions 11 and 12 the way the PS3 places them. Their `1100` health fill uses
+sidecar ownership slots because `sub_821F09A0` keeps those elements in a ten
+entry list inside the screen's layout object, while the PS3's holds twelve.
+The screen heap is also exhausted after ten fills, so the two extras fall back
+to its parent heap. At teardown their saved ids are appended to the original
+list after its following field has been released, letting the original cleanup
+loop unregister and destroy them.
 
 Note the ordering: Polka is 2, Beat 3, Frederic 4. An earlier revision of the
 overlay had 2/3/4 as Beat/Frederic/Polka because it validated names against max
