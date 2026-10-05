@@ -5,9 +5,14 @@
 // follow the PS3's sub_163010 (its twin of sub_821A2B38): Crescendo is model
 // -20 named bCRS with a manto01_sp chain, Serenade -21 named bSRN.
 
+#include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <string>
 
 #include <rex/hook.h>
+#include <rex/logging.h>
+#include <rex/memory/utils.h>
 #include <rex/ppc/context.h>
 #include <rex/runtime.h>
 #include <rex/system/xmemory.h>
@@ -189,6 +194,79 @@ extern "C++" void PartyBattlePortraitGroup(PPCRegister& r) {
   if (r.u32 == kCrescendo + kPortraitBase || r.u32 == kSerenade + kPortraitBase) {
     if (const uint32_t group = g_lending.group[r.u32 - kCrescendo - kPortraitBase])
       r.u64 = group;
+  }
+}
+
+namespace {
+
+// Particle rotation: integrated angles at +0x88, drawn angles at +0x94.
+constexpr uint32_t kParticleRotations[] = {0x88, 0x8C, 0x90, 0x94, 0x98, 0x9C};
+
+std::string HexBytes(const uint8_t* p, uint32_t n) {
+  std::string s;
+  char b[4];
+  for (uint32_t i = 0; i < n; ++i) {
+    std::snprintf(b, sizeof(b), "%02x", p[i]);
+    s += b;
+    if (i % 4 == 3)
+      s += ' ';
+  }
+  return s;
+}
+
+// An angle the wrap below cannot bring into range: NaN, infinite, or so large
+// a 2 pi step no longer changes it. Tested on the bits, not with isfinite.
+bool BadAngle(float angle) {
+  uint32_t bits;
+  std::memcpy(&bits, &angle, sizeof(bits));
+  return (bits & 0x7F800000u) == 0x7F800000u || (bits & 0x7FFFFFFFu) >= 0x461C4000u;  // 1e4
+}
+
+float SafeAngle(float angle) {
+  uint32_t bits;
+  std::memcpy(&bits, &angle, sizeof(bits));
+  return (bits & 0x7F800000u) == 0x7F800000u ? 0.0f : std::fmod(angle, 6.2831855f);
+}
+
+}  // namespace
+
+// sub_820C1238 entry, f1 = angle. Its wrap loops are fcmpu + blt / bge, and
+// bge is taken on an unordered compare, so a NaN angle never leaves them.
+extern "C++" void PartyEffectAngleWrap(PPCRegister& f1) {
+  const float angle = static_cast<float>(f1.f64);
+  if (!BadAngle(angle))
+    return;
+  static int reports = 0;
+  if (reports < 8) {
+    ++reports;
+    REXLOG_WARN("effect guard: sub_820C1238 angle {}", angle);
+  }
+  f1.f64 = SafeAngle(angle);
+}
+
+// sub_820C9550 before it reads the particle's emitter, r31 = particle: logs
+// the first particles that arrive with a bad rotation.
+extern "C++" void PartyEffectAngleGuard(PPCRegister& r31) {
+  auto* runtime = rex::Runtime::instance();
+  auto* memory = runtime ? runtime->memory() : nullptr;
+  if (!memory || !r31.u32)
+    return;
+  auto* particle = memory->TranslateVirtual<uint8_t*>(r31.u32);
+  static int reports = 0;
+  for (uint32_t offset : kParticleRotations) {
+    const float angle = rex::memory::load_and_swap<float>(particle + offset);
+    if (!BadAngle(angle))
+      continue;
+    if (reports < 4) {
+      ++reports;
+      const uint32_t emitter = rex::memory::load_and_swap<uint32_t>(particle + 8);
+      REXLOG_WARN("effect guard: particle {:08X} +{:X} angle {} emitter {:08X}", r31.u32, offset,
+                  angle, emitter);
+      REXLOG_WARN("effect guard: particle {}", HexBytes(particle, 0x180));
+      if (emitter)
+        REXLOG_WARN("effect guard: emitter {}",
+                    HexBytes(memory->TranslateVirtual<uint8_t*>(emitter), 0x80));
+    }
   }
 }
 
