@@ -16,6 +16,15 @@ inline constexpr uint32_t kPs3PortraitSlot = 426;
 // 204 and 205: the first PS3 only slots.
 inline constexpr uint32_t kPs3MenuPortraitSlot = 412;
 
+// The PS3 costumes' status portraits: ALG v2, PLK v2, PLK v3, BET v2.
+inline constexpr uint32_t kPs3CostumePortraitSlot = 430;
+
+// dword_82420AFC, the loader's slot array, and the first slot nothing uses
+// on either release; mods' costume portraits go there.
+inline constexpr uint32_t kAppKeepSlotArray = 0x82420AFCu;
+inline constexpr uint32_t kAppKeepSlotCount = 512;
+inline constexpr uint32_t kFirstFreeAppKeepSlot = 434;
+
 // Rebuilds the AppKeep slot array in the 360's numbering and loads the
 // characters and camp entries the PS3 keeps in other files. Call from the
 // AppKeep.bmd load, PS3 data only.

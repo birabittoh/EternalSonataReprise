@@ -6,8 +6,10 @@ two of Polka's, Beat's) behind a "Costumes" camp menu; the Xbox 360 releases
 ship none. This host keeps the feature on every release, so mods can add
 costumes of their own, for any character.
 
-Costumes are picked in the F11 overlay or by a mod through
-`src/api/eternalsonata_costume_api.h`. Each save keeps the costumes worn
+On the status page, X puts on the shown character's next unlocked costume,
+and the portrait follows the costume worn. A mod can pick any costume through
+`src/api/eternalsonata_costume_api.h`; the `costume_overlay` mod in
+EternalSonataReprise-Mods (F11) does that, and locks or unlocks them. Each save keeps the costumes worn
 (§7); the title screen and a new game start from the defaults, or from what
 the `costumes` cvar says.
 
@@ -61,10 +63,17 @@ With no code, from `mods/<name>/assets.toml`:
 [[costume]]
 character = "polka"                 # or 1..10, the party numbering
 name = "swimsuit"                   # the id becomes "<mod folder>/swimsuit"
-label = "Swimsuit"                  # what the overlay shows
+label = "Swimsuit"                  # what menus show
 model = "costumes/plk_swim.nobj"    # relative to the mod folder
 locked = true                       # optional: a new game starts it locked
+portrait = "costumes/plk_swim.dds"  # optional: the status page portrait
 ```
+
+A portrait is a DDS file (or an `NTEX` chunk, which is the same DDS behind an
+8 byte header) the size of the character's own; without one the character's
+own portrait stays. Portraits load the first time the status page shows them,
+into the AppKeep image slots from 434 on. From C++,
+`EternalSonataSetCostumePortraitFile` sets one (ABI version 2).
 
 From C++, register a model held in memory or a file the host reads on first
 wear:
@@ -88,7 +97,7 @@ bus.
 
 ### Locks
 
-A locked costume is listed in the picker but cannot be chosen. Locks belong to
+A locked costume is skipped by the status page's X and cannot be picked. Locks belong to
 the game in progress, like an item would: `EternalSonataUnlockCostume` and
 `EternalSonataLockCostume` change them, they are saved with the game (§7), and
 loading a save or starting a new game puts them back to that game's state.
@@ -124,7 +133,11 @@ worn costume of Allegretto, Polka and Beat, which native 1141 reads from the
 same slots ([ps3-assets.md](ps3-assets.md) §2).
 
 They start locked, and `lib.e` unlocks them through 5026, which goes through
-the same locks as the API; 5027 reads them back. Not yet: the camp menu page.
+the same locks as the API; 5027 reads them back. The PS3 changes them on a
+camp menu page of its own; here X on the status page does, and is off while
+the camp menu flag `+0x920` (5032) is, as that page is on the PS3. Their
+status portraits are `campdata/camp_char.bmd` entries 21, 22, 27 and 23,
+placed in AppKeep slots 430..433.
 
 ## 7. Saving
 

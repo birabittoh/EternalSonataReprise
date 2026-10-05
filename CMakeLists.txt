@@ -357,7 +357,6 @@ set(ETERNALSONATA_SOURCES
     src/platform/host_menu.cpp
     src/platform/input_overlay.cpp
     src/engine/dlc_auto_install.cpp
-    src/engine/costume_overlay.cpp
     src/engine/costume_system.cpp
     src/engine/party_arrays.cpp
     src/engine/party_positions.cpp

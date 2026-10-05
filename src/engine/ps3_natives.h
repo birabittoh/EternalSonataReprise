@@ -12,4 +12,7 @@ void ResetPs3Record();
 void SavePs3Record(SaveRecord& record);
 void LoadPs3Record(const SaveRecord& record);
 
+// Camp menu flag +0x920: the story has costume changes off for now.
+bool Ps3CostumesBlocked();
+
 }  // namespace eternalsonata

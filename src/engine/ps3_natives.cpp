@@ -256,6 +256,11 @@ void ReadBits(const eternalsonata::SaveRecord& record, const char* key, uint8_t*
 
 namespace eternalsonata {
 
+bool Ps3CostumesBlocked() {
+  std::lock_guard lock(g_mutex);
+  return g_menu_flags[0] != 0;
+}
+
 void ResetPs3Record() {
   std::lock_guard lock(g_mutex);
   g_menu_flags.fill(0);

@@ -38,7 +38,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_COSTUME_ABI_VERSION 1u
+#define ETERNALSONATA_COSTUME_ABI_VERSION 2u
 
 // Characters, 1 based, the same numbering as eternalsonata_party_api.h.
 enum {
@@ -159,6 +159,13 @@ typedef int (*EternalSonataRegisterCostumeFn)(int character, const char* id, con
 // read the first time the costume is worn. Only checked for existence here.
 typedef int (*EternalSonataRegisterCostumeFileFn)(int character, const char* id,
                                                   const char* label, const char* path);
+
+// Version 2. The portrait the status page shows while the costume is worn:
+// a DDS file or an NTEX chunk, the size of the character's own portrait (512
+// by 512 on PS3 data), read the first time it is shown. Without one the
+// character's own portrait stays. Once per costume, and not for the default.
+typedef int (*EternalSonataSetCostumePortraitFileFn)(int character, int costume,
+                                                     const char* path);
 
 #ifdef __cplusplus
 }  // extern "C"

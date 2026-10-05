@@ -52,7 +52,6 @@
 #include "native_renderer.h"
 #include "native_renderer_overlay.h"
 #include "input_overlay.h"
-#include "costume_overlay.h"
 #include "costume_system.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_profile.h"
@@ -581,8 +580,6 @@ class EternalsonataApp : public rex::ReXApp {
 
     fast_forward_key_ = eternalsonata::CreateFastForwardKey(window());
 
-    costume_overlay_ = eternalsonata::CreateCostumeOverlay(imgui_drawer());
-
     // On-screen pad. The SDK's touch driver reports no device until a layout
     // is installed, so this is what turns the touch controls on for this game;
     // the touch_controls cvar (on by default only on Android) still decides
@@ -663,8 +660,6 @@ class EternalsonataApp : public rex::ReXApp {
 
   // F8 device list, backed by the SDK's generic input snapshot API.
   std::unique_ptr<rex::ui::ImGuiDialog> input_overlay_;
-  // F11 costume picker.
-  std::unique_ptr<rex::ui::ImGuiDialog> costume_overlay_;
   std::unique_ptr<rex::ui::ImGuiDialog> ui_scale_applier_;
 
   // Back-button entry point into the F-key overlays on touch-only devices.
