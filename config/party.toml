@@ -197,6 +197,18 @@ name = "PartyLayoutTen"
 registers = ["cr6", "r27"]
 after_instruction = true
 
+# sub_821ED900: return sidecar health fills to the retail teardown loop
+[[midasm_hook]]
+address = 0x821EDFE4
+name = "PartyAppendExtraHealthBars"
+registers = ["r11"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821EE0CC
+name = "PartyExtraHealthBarTeardownLimit"
+registers = ["cr6", "r28"]
+after_instruction = true
+
 # sub_821F9128: item gauge layout by member count (11+ take its fallback)
 [[midasm_hook]]
 address = 0x821F9160
