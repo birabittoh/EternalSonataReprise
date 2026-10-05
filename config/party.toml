@@ -729,3 +729,46 @@ registers = ["r10"]
 address = 0x821E2DFC
 name = "PartyPlainNameSid"
 registers = ["r10"]
+
+# Battle (party_battle.cpp): id gates, then the per character cases
+# sub_821A03D0: battle party load, pc%03d.bop
+[[midasm_hook]]
+address = 0x821A0528
+name = "PartyCompareIndexLogical"
+registers = ["cr6", "r11"]
+after_instruction = true
+# sub_8218AA20: battle HUD members
+[[midasm_hook]]
+address = 0x8218AB30
+name = "PartyCompareIndexLogical"
+registers = ["cr6", "r4"]
+after_instruction = true
+# sub_821A9F68: per member battle controllers
+[[midasm_hook]]
+address = 0x821A9FB0
+name = "PartyCompareIndexLogical"
+registers = ["cr6", "r11"]
+after_instruction = true
+# sub_821BD0D0: battle voice bank, pc%03d.csf
+[[midasm_hook]]
+address = 0x821BD0F0
+name = "PartyCompareIndexLogical"
+registers = ["cr6", "r10"]
+after_instruction = true
+# sub_821A2B38: battle model and its cloth chains
+[[midasm_hook]]
+address = 0x821A2C88
+name = "PartyBattleModel"
+registers = ["r11", "r4", "r28"]
+jump_address_on_true = 0x821A2DA4
+[[midasm_hook]]
+address = 0x821A303C
+name = "PartyBattleCloth"
+registers = ["r11", "r4"]
+jump_address_on_true = 0x821A319C
+# sub_820DB398: battle HUD name
+[[midasm_hook]]
+address = 0x820DB630
+name = "PartyBattleNameSid"
+registers = ["r4"]
+after_instruction = true
