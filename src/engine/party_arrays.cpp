@@ -15,6 +15,7 @@
 
 #include "party_arrays.h"
 #include "ps3_appkeep.h"
+#include "ps3_item_tables.h"
 #include "target.h"
 
 #include <array>
@@ -366,6 +367,8 @@ void InitPartyArrays(rex::Runtime* runtime) {
 
 uint32_t EternalSonataPartyRemap(uint32_t ea, const char* function, bool listed, uint32_t pc) {
   using namespace eternalsonata;
+  if (const uint32_t icon = Ps3ItemIconAddress(ea, pc))
+    return icon;
   const Hit hit = Classify(ea);
   if (hit.retail < 0 && hit.extension < 0)
     return ea;

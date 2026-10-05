@@ -21,6 +21,10 @@ inline constexpr uint32_t kPs3MenuPortraitSlot = 412;
 // AppKeep.bmd load, PS3 data only.
 void BuildPs3AppKeep(PPCContext& ctx, uint8_t* base);
 
+// The 360 image id (slot + 1) the rebuilt array holds a PS3 one at; 0 if
+// that entry was not placed.
+uint32_t Ps3AppKeepImageId(uint32_t ps3_id);
+
 // appkeep2.bmd entry: CRS, SRN, CPN, VOL, SLS, JRB, FST, MCH, CLV; 0 if not
 // loaded.
 uint32_t Ps3AppKeep2Model(uint32_t index);

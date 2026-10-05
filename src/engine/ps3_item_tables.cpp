@@ -6,13 +6,16 @@
 // shared records. PS3 mode writes its records over the 360's in place, so
 // every reader sees them. The magic display order and the four item and magic
 // text blocks have room for ten characters only, so their readers are pointed
-// at guest copies instead.
+// at guest copies instead. So are the item icon readers, for the icons the
+// PS3 inserts where the 360's icon table runs into the camp portraits.
 
 #include "ps3_item_tables.h"
 
+#include "ps3_appkeep.h"
 #include "generated/eternalsonata_init.h"
 #include "target.h"
 
+#include <algorithm>
 #include <cstring>
 #include <iterator>
 #include <mutex>
@@ -35,6 +38,7 @@ struct Ps3TextBlock {
 
 constexpr uint32_t kMasterTable = 0x82017630u;
 constexpr uint32_t kMagicTable = 0x82015380u;
+constexpr uint32_t kIconTable = 0x8202C9C8u;  // word_8202C9C8
 constexpr int kRetailBaseItemMax = 402;
 constexpr int kPs3BaseItemMax = 431;
 constexpr uint32_t kPs3MagicCount = 132;
@@ -45,7 +49,17 @@ constexpr bool kHaveTables = true;
 constexpr bool kHaveTables = false;
 constexpr uint8_t kPs3MagicOrder[1] = {};
 constexpr Ps3TextBlock kPs3TextBlocks[1] = {};
+constexpr uint32_t kPs3ItemIconFirst = 0;
+constexpr uint16_t kPs3ItemIcons[1] = {};
 #endif
+
+// The lhz of every item icon lookup, word_8202C9C8[icon - 1].
+constexpr uint32_t kIconReaders[] = {
+    0x821DA8F0u, 0x821DB594u, 0x821FDEC4u, 0x821FE6E8u, 0x821FEA0Cu, 0x8220EB88u,
+    0x8220EF30u, 0x8222E64Cu, 0x82232114u, 0x822321A8u, 0x82232220u, 0x82232298u,
+    0x82232F4Cu, 0x82232FB8u, 0x82233078u, 0x822330E4u, 0x822331A4u, 0x82233210u,
+    0x822332D0u, 0x8223333Cu,
+};
 
 bool g_applied = false;
 
@@ -69,6 +83,8 @@ rex::memory::Memory* Memory() {
 std::once_flag g_copies_once;
 uint32_t g_order = 0;
 uint32_t g_text[std::size(kPs3TextBlocks)] = {};
+std::once_flag g_icons_once;
+uint32_t g_icons = 0;
 
 uint32_t Copy(rex::memory::Memory* memory, const uint8_t* data, uint32_t size) {
   const uint32_t guest = memory->SystemHeapAlloc(size, 16);
@@ -118,6 +134,24 @@ uint32_t Ps3TextBlockFor(uint32_t block) {
     if (kPs3TextBlocks[i].block == block)
       return g_text[i];
   return 0;
+}
+
+uint32_t Ps3ItemIconAddress(uint32_t address, uint32_t pc) {
+  const uint32_t first = kIconTable + 2 * kPs3ItemIconFirst;
+  if (!g_applied || address - first >= sizeof(kPs3ItemIcons) ||
+      std::find(std::begin(kIconReaders), std::end(kIconReaders), pc) == std::end(kIconReaders))
+    return 0;
+  // AppKeep is in place long before any menu draws an item.
+  std::call_once(g_icons_once, [] {
+    auto* memory = Memory();
+    if (!memory || !(g_icons = memory->SystemHeapAlloc(sizeof(kPs3ItemIcons), 16)))
+      return;
+    for (size_t i = 0; i < std::size(kPs3ItemIcons); ++i)
+      rex::memory::store_and_swap<uint16_t>(
+          memory->TranslateVirtual<uint8_t*>(g_icons + 2 * static_cast<uint32_t>(i)),
+          static_cast<uint16_t>(Ps3AppKeepImageId(kPs3ItemIcons[i])));
+  });
+  return g_icons ? g_icons + (address - first) : 0;
 }
 
 int BaseItemIdMax() {
