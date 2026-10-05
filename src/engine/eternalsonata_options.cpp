@@ -28,6 +28,7 @@
 #include "achievements_menu.h"
 #include "option_strip.h"
 #include "party_system.h"
+#include "ps3_item_tables.h"
 #include "settings.h"
 
 // Cvars read below. Defined (and persisted) in settings.cpp. The rows' own
@@ -2935,6 +2936,11 @@ REX_HOOK_RAW(sub_8223B780) {
   if (const u32 custom = eternalsonata::CustomItemTextOverrideFor(ctx.r3.u32, sid)) {
     ctx.r3.u32 = custom;
     return;
+  }
+  // PS3 mode reads Crescendo's and Serenade's items and magic from the PS3's
+  // own text blocks.
+  if (const u32 ps3 = eternalsonata::Ps3TextBlockFor(ctx.r3.u32)) {
+    ctx.r3.u32 = ps3;
   }
   // Checked before the row range: the voice ids sit above it, so a plain
   // `>= kRowSidBase` test would divide them into a row index past the end.
