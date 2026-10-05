@@ -766,6 +766,17 @@ address = 0x821A303C
 name = "PartyBattleCloth"
 registers = ["r11", "r4"]
 jump_address_on_true = 0x821A319C
+# sub_821C91F0, sub_821C9E78: per character motion tables
+[[midasm_hook]]
+address = 0x821C92C0
+name = "PartyMotionBlendTable"
+registers = ["r11"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821C9ED8
+name = "PartyMotionStopTable"
+registers = ["r11"]
+after_instruction = true
 # sub_820C1238: angle wrap that a NaN never leaves
 [[midasm_hook]]
 address = 0x820C1238

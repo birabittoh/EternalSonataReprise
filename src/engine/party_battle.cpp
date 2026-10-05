@@ -281,3 +281,52 @@ REX_HOOK_RAW(sub_820DEC20) {
   if (eternalsonata::IsPs3Target() && REX_LOAD_U8(hud + kHudLoaded))
     LendPortraits(ctx, base, hud);
 }
+
+
+namespace {
+
+// Per character motion tables of sub_821C91F0 and sub_821C9E78, ten rows on
+// the 360. The PS3's rows 11 and 12 repeat row 10 in the first and hold 40
+// in the second.
+constexpr uint32_t kMotionBlendTable = 0x82074BA0;  // u16[10][38]
+constexpr uint32_t kMotionBlendRow = 38 * 2;
+constexpr uint32_t kMotionStopTable = 0x82074E98;   // u32[10]
+constexpr uint32_t kMotionStop = 40;
+
+uint32_t TwelveRowCopy(uint32_t source, uint32_t row, uint32_t tail_value) {
+  auto* runtime = rex::Runtime::instance();
+  auto* memory = runtime ? runtime->memory() : nullptr;
+  if (!memory)
+    return 0;
+  const uint32_t copy = memory->SystemHeapAlloc(row * kSerenade, 0x10);
+  if (!copy)
+    return 0;
+  auto* out = memory->TranslateVirtual<uint8_t*>(copy);
+  std::memcpy(out, memory->TranslateVirtual<uint8_t*>(source), row * 10);
+  for (uint32_t c = kCrescendo; c <= kSerenade; ++c) {
+    uint8_t* dest = out + row * (c - 1);
+    if (tail_value)
+      rex::memory::store_and_swap<uint32_t>(dest, tail_value);
+    else
+      std::memcpy(dest, out + row * 9, row);
+  }
+  return copy;
+}
+
+}  // namespace
+
+// After sub_821C91F0 forms word_82074BA0, indexed by character: the blend
+// time of the motion it starts. Past row 10 it read float data, thousands of
+// frames, so Crescendo's specials never left his previous pose.
+extern "C++" void PartyMotionBlendTable(PPCRegister& r11) {
+  static const uint32_t copy = TwelveRowCopy(kMotionBlendTable, kMotionBlendRow, 0);
+  if (copy)
+    r11.u64 = copy;
+}
+
+// After sub_821C9E78 forms its per character u32 table.
+extern "C++" void PartyMotionStopTable(PPCRegister& r11) {
+  static const uint32_t copy = TwelveRowCopy(kMotionStopTable, 4, kMotionStop);
+  if (copy)
+    r11.u64 = copy;
+}
