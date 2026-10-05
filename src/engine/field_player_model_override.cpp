@@ -2,6 +2,8 @@
 
 #include "force_load_area.h"
 #include "party_arrays.h"
+#include "ps3_appkeep.h"
+#include "target.h"
 #include "generated/eternalsonata_init.h"
 
 #include "settings.h"
@@ -38,17 +40,34 @@ constexpr uint32_t kCharacterSlotAddr[10] = {
     0x82420B1Cu,  // 10 bMCH  March
 };
 
-constexpr const char* kCharacterNames[11] = {
-    "(none)", "Allegretto", "Polka",    "Beat",   "Frederic", "Viola",
-    "Salsa",  "Jazz",       "Falsetto", "Claves", "March",
+constexpr const char* kCharacterNames[13] = {
+    "(none)", "Allegretto", "Polka",    "Beat",   "Frederic", "Viola",     "Salsa",
+    "Jazz",   "Falsetto",   "Claves",   "March",  "Crescendo", "Serenade",
 };
+
+// Crescendo and Serenade exist only on PS3 data, where appkeep2.bmd holds
+// their field models.
+constexpr int kRetailCharacters = 10;
+constexpr int kCharacters = 12;
+
+int CharacterCount() {
+  return eternalsonata::IsPs3Target() ? kCharacters : kRetailCharacters;
+}
+
+// The model handle of character c (1 based), 0 if none.
+uint32_t CharacterModel(uint8_t* base, int c) {
+  if (c >= 1 && c <= kRetailCharacters)
+    return REX_LOAD_U32(kCharacterSlotAddr[c - 1]);
+  if (c <= CharacterCount())
+    return eternalsonata::Ps3AppKeep2Model(static_cast<uint32_t>(c - kRetailCharacters - 1));
+  return 0;
+}
 
 // dword_8243FC08[c - 1]: character c's 1-based status screen position, 0 when
 // not in the party. The party leader holds position 1.
 uint32_t StatusMemberList() {
   return eternalsonata::PartyArrayAddress(eternalsonata::PartyArray::kPosition);
 }
-constexpr uint32_t kStatusMemberCount = 10u;
 constexpr uint32_t kPartyLeaderPosition = 1u;
 
 // Object kind at object+8; 1 is the field leader.
@@ -273,13 +292,14 @@ void RespawnFieldLeaderLive(PPCContext& ctx, uint8_t* base) {
 
 // Persisted cvar tokens, in combo order (see settings.cpp).
 constexpr const char* kSelectionTokens[] = {
-    "default", "party", "allegretto", "polka",    "beat",   "frederic",
-    "viola",   "salsa", "jazz",       "falsetto", "claves", "march",
+    "default", "party",    "allegretto", "polka",  "beat",      "frederic", "viola",
+    "salsa",   "jazz",     "falsetto",   "claves", "march",     "crescendo", "serenade",
 };
 
 constexpr const char* kSelectionNames[] = {
-    "Default", "Party Leader", "Allegretto", "Polka",    "Beat",   "Frederic",
-    "Viola",   "Salsa",        "Jazz",       "Falsetto", "Claves", "March",
+    "Default", "Party Leader", "Allegretto", "Polka",     "Beat",
+    "Frederic", "Viola",       "Salsa",      "Jazz",      "Falsetto",
+    "Claves",  "March",        "Crescendo",  "Serenade",
 };
 static_assert(sizeof(kSelectionNames) / sizeof(kSelectionNames[0]) ==
                   eternalsonata::FieldPlayerModelOverride::kSelectionCount,
@@ -326,7 +346,7 @@ void FieldPlayerModelOverride::RequestRespawn() {
 }
 
 void FieldPlayerModelOverride::SetSelection(int selection) {
-  if (selection < 0 || selection >= kSelectionCount) {
+  if (selection < 0 || selection >= SelectionCount()) {
     return;
   }
   g_selection.store(selection, std::memory_order_relaxed);
@@ -342,6 +362,10 @@ const char* const* FieldPlayerModelOverride::SelectionNames() {
   return kSelectionNames;
 }
 
+int FieldPlayerModelOverride::SelectionCount() {
+  return kSelectionFirstCharacter + CharacterCount();
+}
+
 int FieldPlayerModelOverride::DesiredCharacter() {
   const int selection = g_selection.load(std::memory_order_relaxed);
   if (selection == kSelectionDefault) {
@@ -354,7 +378,7 @@ int FieldPlayerModelOverride::DesiredCharacter() {
 }
 
 const char* FieldPlayerModelOverride::CharacterName(int character) {
-  if (character < 0 || character > 10) {
+  if (character < 0 || character > kCharacters) {
     return "?";
   }
   return kCharacterNames[character];
@@ -362,7 +386,7 @@ const char* FieldPlayerModelOverride::CharacterName(int character) {
 
 int FieldPlayerModelOverride::PartyLeaderCharacter() {
   uint8_t* base = rex::system::kernel_state()->memory()->virtual_membase();
-  for (uint32_t i = 0; i < kStatusMemberCount; ++i) {
+  for (uint32_t i = 0; i < static_cast<uint32_t>(CharacterCount()); ++i) {
     if (REX_LOAD_U32(StatusMemberList() + i * 4u) == kPartyLeaderPosition) {
       return static_cast<int>(i) + 1;
     }
@@ -376,7 +400,7 @@ void FieldPlayerModelOverride::Bind(rex::Runtime* runtime) {
   // Unknown tokens fall back to default.
   const std::string value = rex::cvar::GetFlagByName("field_leader_model");
   int selection = kSelectionDefault;
-  for (int i = 0; i < kSelectionCount; ++i) {
+  for (int i = 0; i < SelectionCount(); ++i) {
     if (value == kSelectionTokens[i]) {
       selection = i;
       break;
@@ -474,8 +498,8 @@ REX_HOOK_RAW(sub_820EE7D8) {
     const int character = eternalsonata::FieldPlayerModelOverride::DesiredCharacter();
     if (character == 0 || g_default_model_for_action) {
       g_applied_character = 0;
-    } else if (character >= 1 && character <= 10) {
-      const u32 handle = REX_LOAD_U32(kCharacterSlotAddr[character - 1]);
+    } else if (character >= 1) {
+      const u32 handle = CharacterModel(base, character);
       // An uncached slot would instantiate a null resource.
       if (handle != 0 && handle != 0xFFFFFFFFu) {
         ctx.r4.u32 = handle;

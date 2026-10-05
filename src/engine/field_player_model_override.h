@@ -34,11 +34,15 @@ class FieldPlayerModelOverride {
   // Selection, as indexed by the settings overlay's Overworld Model combo:
   //   0      -- default, use the game's own model (Allegretto)
   //   1      -- follow the active party's first member
-  //   2..11  -- force character 1..10
+  //   2..13  -- force character 1..12 (11 and 12 on PS3 data only)
   static constexpr int kSelectionDefault = 0;
   static constexpr int kSelectionFollowParty = 1;
   static constexpr int kSelectionFirstCharacter = 2;
-  static constexpr int kSelectionCount = 12;
+  static constexpr int kSelectionCount = 14;
+
+  // Selections the current target offers: the first SelectionCount() of
+  // SelectionNames().
+  static int SelectionCount();
 
   static void SetSelection(int selection);
   static int Selection();
@@ -46,11 +50,11 @@ class FieldPlayerModelOverride {
   // Labels for the combo, kSelectionCount entries.
   static const char* const* SelectionNames();
 
-  // Character number (1..10) the override currently resolves to, or 0 for
+  // Character number (1..12) the override currently resolves to, or 0 for
   // "leave the game's own model alone".
   static int DesiredCharacter();
 
-  // Character number (1..10) of the active party's first member, or 0 if it
+  // Character number (1..12) of the active party's first member, or 0 if it
   // cannot be determined. Shown by the overlay.
   static int PartyLeaderCharacter();
 

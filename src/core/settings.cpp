@@ -149,7 +149,7 @@ REXCVAR_DEFINE_STRING(field_leader_model, "default", "Eternal Sonata",
                       "Model used by the overworld leader: default (the game's own), party (the "
                       "active party's first member), or a specific character")
     .allowed({"default", "party", "allegretto", "polka", "beat", "frederic", "viola", "salsa",
-              "jazz", "falsetto", "claves", "march"});
+              "jazz", "falsetto", "claves", "march", "crescendo", "serenade"});
 
 REXCVAR_DEFINE_BOOL(field_action_default_model, true, "Eternal Sonata",
                     "Use the story character model for field interaction animations");
@@ -1316,7 +1316,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PushID("field_leader_model");
     if (ImGui::Combo("##v", &selection,
                      eternalsonata::FieldPlayerModelOverride::SelectionNames(),
-                     eternalsonata::FieldPlayerModelOverride::kSelectionCount)) {
+                     eternalsonata::FieldPlayerModelOverride::SelectionCount())) {
       // SetSelection persists via SaveUserSettings itself.
       eternalsonata::FieldPlayerModelOverride::SetSelection(selection);
     }
