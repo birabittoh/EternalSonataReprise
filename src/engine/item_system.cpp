@@ -72,6 +72,7 @@
 #include "eternalsonata_item_api.h"
 #include "guest_main_thread.h"
 #include "item_system.h"
+#include "ps3_item_tables.h"
 
 namespace eternalsonata {
 namespace {
@@ -110,9 +111,9 @@ constexpr uint32_t kMasterCost = 0x36u;       // u16
 constexpr int kCharacterIdMin = 1;
 constexpr int kCharacterIdMax = 10;
 
-// Base game items: 11..402. Item 402 is the last named entry ("Empty").
+// Base game items run from 11 to BaseItemIdMax(): 402 ("Empty") on the 360,
+// 431 with the PS3's tables.
 constexpr int kBaseItemMin = 11;
-constexpr int kBaseItemMax = 402;
 
 // Custom items registered by mods take the master table's blank tail. Records
 // 403..510 already carry their own id at +0x00 and nothing else, so the game
@@ -563,7 +564,7 @@ bool IsCharacterIdLocked(int item_id) {
 }
 
 bool IsCustomItemId(int item_id) {
-  return item_id >= kCustomItemIdMin && item_id <= kCustomItemIdMax;
+  return item_id >= kCustomItemIdMin && item_id > BaseItemIdMax() && item_id <= kCustomItemIdMax;
 }
 
 bool IsRealItemLocked(int item_id) {
@@ -573,8 +574,7 @@ bool IsRealItemLocked(int item_id) {
   if (IsCharacterIdLocked(item_id)) {
     return false;
   }
-  // Base game items: 11..402
-  if (item_id >= kBaseItemMin && item_id <= kBaseItemMax) {
+  if (item_id >= kBaseItemMin && item_id <= BaseItemIdMax()) {
     return true;
   }
   // Custom items registered by mods
@@ -1249,7 +1249,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterCustomItem(
       return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
     }
     // Lowest free slot, so unregistering hands the id back.
-    for (int id = kCustomItemIdMin; id <= kCustomItemIdMax; ++id) {
+    for (int id = std::max(kCustomItemIdMin, BaseItemIdMax() + 1); id <= kCustomItemIdMax; ++id) {
       if (g_custom_items.find(id) == g_custom_items.end()) {
         item_id = id;
         break;

@@ -36,6 +36,7 @@
 #include "field_player_model_override.h"
 #include "fonts.generated.h"
 #include "force_load_area.h"
+#include "ps3_item_tables.h"
 #include "guest_profiler.h"
 #include "fast_forward_key.h"
 #include "host_menu.h"
@@ -383,6 +384,7 @@ class EternalsonataApp : public rex::ReXApp {
     // Twelve party slots: the CRT copies the save path uses run natively and
     // have to see the relocated arrays too.
     eternalsonata::InitPartyArrays(runtime());
+    eternalsonata::ApplyPs3ItemTables();
 
     // Seed the GPU plugin/Vulkan device lists once here rather than every
     // time the F4 settings overlay is opened (see settings.cpp).

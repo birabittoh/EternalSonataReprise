@@ -58,3 +58,16 @@ address = 0x8218E6CC
 name = "EternalSonataPs3HitEffectsR10"
 registers = ["r10"]
 after_instruction = true
+
+# The PS3's magic records and display order (ps3_item_tables.cpp)
+[[midasm_hook]]
+address = 0x821E5350
+name = "EternalSonataPs3MagicCount"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821E948C
+name = "EternalSonataPs3MagicOrder"
+registers = ["r6"]
+after_instruction = true
