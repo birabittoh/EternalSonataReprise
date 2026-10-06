@@ -782,6 +782,11 @@ after_instruction = true
 address = 0x820C1238
 name = "PartyEffectAngleWrap"
 registers = ["f1"]
+# sub_820C8378: drawn Z angle loaded from an undefined stack word
+[[midasm_hook]]
+address = 0x820C9040
+name = "PartyParticleDrawnZ"
+registers = ["r31", "f31"]
 # sub_820C9550: effect particle draw, before it reads the emitter
 [[midasm_hook]]
 address = 0x820C9578
