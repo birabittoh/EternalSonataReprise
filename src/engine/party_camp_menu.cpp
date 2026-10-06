@@ -67,6 +67,19 @@ extern "C++" void PartyPlainNameSid(PPCRegister& sid) {
     sid.u64 = eternalsonata::PartyNameSid(static_cast<int>(sid.u32), false);
 }
 
+// Save rows draw the party from the ten entry face table at 0x822FF530, read
+// at `c << 2`. The PS3 appends CRS and SRN's faces to that set (its 290, 291);
+// a vacant 360 slot gets Allegretto's.
+extern "C++" void PartySaveRowPortrait(PPCRegister& offset, PPCRegister& image) {
+  const uint32_t c = offset.u32 >> 2;
+  if (c <= 10 || c > 12)
+    return;
+  uint32_t id = 0;
+  if (eternalsonata::IsPs3Target())
+    id = eternalsonata::Ps3AppKeepImageId(291 + c - 11);
+  image.u64 = id ? id : 0x112u;
+}
+
 // After `cmpwi cr, c, 8` choosing between a plain and a ruby name: the PS3
 // gives 11 and 12 the ruby one, with its offset.
 extern "C++" void PartyRubyNameCompare(PPCCRRegister& cr, PPCRegister& c) {
