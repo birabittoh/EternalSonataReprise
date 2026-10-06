@@ -465,6 +465,18 @@ after_instruction = true
 address = 0x822224D4
 name = "PartyClampCount"
 registers = ["r26"]
+# sub_821FAF08, the shop's stats preview (party_shop_menu.cpp): list entries
+# past ten, then the previewed character's name
+[[midasm_hook]]
+address = 0x821FAFDC
+name = "PartyShopListEntry"
+registers = ["r28", "r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821FAFEC
+name = "PartyPlainNameSid"
+registers = ["r4"]
+after_instruction = true
 # Script native: character gate 1..10
 [[midasm_hook]]
 address = 0x820E7CB4

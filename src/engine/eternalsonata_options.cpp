@@ -27,6 +27,7 @@
 #include "item_system.h"
 #include "achievements_menu.h"
 #include "option_strip.h"
+#include "party_shop_menu.h"
 #include "party_status_menu.h"
 #include "party_system.h"
 #include "ps3_item_tables.h"
@@ -3031,6 +3032,9 @@ REX_HOOK_RAW(sub_821F2F38) {
   }
   if (const u32 swapped =
           party_status_menu::MaybeSwapStatusList(base, ctx.r4.u32)) {
+    ctx.r4.u32 = swapped;
+  }
+  if (const u32 swapped = party_shop_menu::MaybeSwapShopList(base, ctx.r4.u32)) {
     ctx.r4.u32 = swapped;
   }
 
