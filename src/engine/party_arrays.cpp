@@ -194,6 +194,13 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
       case 0x821E0430u:
       case 0x821E0984u:
       case 0x821E0F68u:
+      // sub_8221B5A0's four to six member rows, the same loads
+      case 0x8221EEA8u:
+      case 0x8221F624u:
+      case 0x8221FCA4u:
+      case 0x82220330u:
+      case 0x82220804u:
+      case 0x82220CD8u:
         return hit.extension;
     }
   }

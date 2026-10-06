@@ -115,7 +115,11 @@ each position's panel handle at `4 * (pos + 2)` and its fill handle at
 is the panel's child 7.
 
 The item target list (`sub_8221B5A0`) has the camp grid's layout and runs its
-ten member loop on to 11 and 12, which land beside position ten. A heal-all
+ten member loop on to 11 and 12, which land beside position ten. Its shorter
+layouts copy the camp's panel builders inline (one to three, four to six and
+seven to nine members, each unrolled per language) and get the same 11 and 12
+fixes at their own addresses: widened position searches, the ruby name, and
+`sub_821DDD00`'s portrait switch. A heal-all
 item's yellow flash over each panel is created by `sub_82222438` (through
 `sub_821EED00`, falling back to the parent heap once the screen heap is full)
 and pulsed by `sub_822226E0`, whose loop is widened from ten handles. Only
