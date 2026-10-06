@@ -15,6 +15,7 @@
 
 #include "field_player_model_override.h"
 #include "generated/eternalsonata_init.h"
+#include "party_arrays.h"
 #include "ps3_appkeep.h"
 #include "target.h"
 
@@ -38,6 +39,7 @@
 #include <rex/runtime.h>
 #include <rex/system/mod_plugin.h>
 #include <rex/system/mod_registry.h>
+#include <rex/system/xmemory.h>
 
 #include "eternalsonata_costume_api.h"
 
@@ -49,6 +51,16 @@ namespace {
 
 constexpr int kCharacters = ETERNALSONATA_COSTUME_CHARACTER_COUNT;
 constexpr uint32_t kModelTableAddr = 0x82420AF8u;
+constexpr int kPortraitKinds = ETERNALSONATA_COSTUME_PORTRAIT_KIND_COUNT;
+
+// The camp's image ids per character, AppKeep slot plus one: the one to
+// three member panel's (sub_821DDD00 reads it for characters 1..4 only) and
+// the two face sets.
+constexpr uint32_t kPanelTable = 0x8202C9B4u;
+constexpr uint32_t kFaceTables[] = {0x8202CA28u, 0x8202CA3Cu};
+constexpr eternalsonata::PartyArray kFaceArrays[] = {eternalsonata::PartyArray::kPortraitA,
+                                                     eternalsonata::PartyArray::kPortraitB};
+constexpr int kPanelCharacters = 4;
 
 // dword_82420AF8 slot of each character. The table follows AppKeep.bmd, where
 // March comes before Claves; the party numbering has them the other way.
@@ -70,10 +82,10 @@ struct Costume {
   bool failed = false;         // did not load; not retried
   bool starts_unlocked = true; // in a new game
   bool unlocked = true;        // in the game in progress
-  // Status page portrait: an AppKeep image id, or a .dds / NTEX file placed
-  // in a free AppKeep slot the first time it is shown.
-  uint32_t portrait = 0;
-  std::filesystem::path portrait_path;
+  // Portraits by ETERNALSONATA_COSTUME_PORTRAIT_* kind: AppKeep image ids, or
+  // .dds / NTEX files placed in free AppKeep slots the first time they show.
+  std::array<uint32_t, kPortraitKinds> portrait{};
+  std::array<std::filesystem::path, kPortraitKinds> portrait_path;
 };
 
 struct State {
@@ -86,6 +98,9 @@ struct State {
   // The slots as AppKeep.bmd filled them; all 0 until the boot hook ran.
   std::array<uint32_t, kCharacters> defaults{};
   uint32_t next_portrait_slot = eternalsonata::kFirstFreeAppKeepSlot;
+  // Characters whose camp images a costume replaced, so taking it off puts
+  // the retail ones back.
+  std::array<bool, kCharacters> camp_art{};
   bool live = false;
   bool builtins = false;
   rex::Runtime* runtime = nullptr;
@@ -158,7 +173,11 @@ void EnsureCharacterLists() {
     costume.id = "ps3/" + std::to_string(p.variant);
     costume.label = p.label;
     costume.path = eternalsonata::GameDataRoot() / p.file;
-    costume.portrait = eternalsonata::kPs3CostumePortraitSlot + static_cast<uint32_t>(k) + 1;
+    costume.portrait[ETERNALSONATA_COSTUME_PORTRAIT_STATUS] =
+        eternalsonata::kPs3CostumePortraitSlot + static_cast<uint32_t>(k) + 1;
+    for (int kind = ETERNALSONATA_COSTUME_PORTRAIT_PANEL; kind < kPortraitKinds; ++kind)
+      costume.portrait[kind] =
+          eternalsonata::kPs3CostumeArtSlot + 3 * static_cast<uint32_t>(k) + kind;
     costume.starts_unlocked = costume.unlocked = false;
     s.costumes[p.character - 1].push_back(std::move(costume));
   }
@@ -249,12 +268,12 @@ bool ReadPortrait(const std::filesystem::path& path, std::vector<uint8_t>& out) 
 
 // The image id of a costume's portrait, placing its file the first time;
 // 0 for the character's own.
-uint32_t PortraitImage(Costume& costume) {
+uint32_t PortraitImage(Costume& costume, int kind) {
   State& s = state();
-  if (costume.portrait || costume.portrait_path.empty())
-    return costume.portrait;
-  const std::filesystem::path path = std::move(costume.portrait_path);
-  costume.portrait_path.clear();
+  if (costume.portrait[kind] || costume.portrait_path[kind].empty())
+    return costume.portrait[kind];
+  const std::filesystem::path path = std::move(costume.portrait_path[kind]);
+  costume.portrait_path[kind].clear();
   std::vector<uint8_t> chunk;
   if (!ReadPortrait(path, chunk)) {
     REXLOG_ERROR("costumes: {} is not a .dds or NTEX portrait", path.string());
@@ -275,8 +294,53 @@ uint32_t PortraitImage(Costume& costume) {
   const uint32_t slot = s.next_portrait_slot++;
   rex::memory::store_and_swap<uint32_t>(
       memory->TranslateVirtual(eternalsonata::kAppKeepSlotArray + 4 * slot), at);
-  costume.portrait = slot + 1;
-  return costume.portrait;
+  costume.portrait[kind] = slot + 1;
+  return costume.portrait[kind];
+}
+
+void StoreU16(rex::memory::Memory* memory, uint32_t address, uint16_t value) {
+  rex::memory::store_and_swap<uint16_t>(memory->TranslateVirtual(address), value);
+}
+
+uint16_t LoadU16(rex::memory::Memory* memory, uint32_t address) {
+  return rex::memory::load_and_swap<uint16_t>(memory->TranslateVirtual(address));
+}
+
+// Points the camp's tables at the worn costume's images, or back at the
+// character's own. The panel table is .rdata; the face tables are read from
+// their twelve wide copies, so the retail ones keep the defaults.
+void ApplyCampPortraits(int character) {
+  State& s = state();
+  Costume& costume = s.costumes[character - 1][s.worn[character - 1]];
+  std::array<uint32_t, kPortraitKinds> ids{};
+  bool any = false;
+  for (int kind = ETERNALSONATA_COSTUME_PORTRAIT_PANEL; kind < kPortraitKinds; ++kind)
+    any |= (ids[kind] = PortraitImage(costume, kind)) != 0;
+  if (!any && !s.camp_art[character - 1])
+    return;
+  s.camp_art[character - 1] = any;
+  auto* memory = s.runtime ? s.runtime->memory() : rex::Runtime::instance()->memory();
+  const uint32_t i = static_cast<uint32_t>(character - 1);
+  if (character <= kPanelCharacters) {
+    const uint32_t at = kPanelTable + 2 * i;
+    uint32_t& panel = ids[ETERNALSONATA_COSTUME_PORTRAIT_PANEL];
+    if (!panel)
+      panel = 0xCE + i;
+    auto* heap = memory->LookupHeap(at);
+    uint32_t old_protect = 0;
+    if (heap && heap->Protect(at, 2,
+                              rex::memory::kMemoryProtectRead | rex::memory::kMemoryProtectWrite,
+                              &old_protect)) {
+      StoreU16(memory, at, static_cast<uint16_t>(panel));
+      heap->Protect(at, 2, old_protect, nullptr);
+    }
+  }
+  for (int set = 0; set < 2; ++set) {
+    const int kind = ETERNALSONATA_COSTUME_PORTRAIT_FACE + set;
+    const uint32_t id = ids[kind] ? ids[kind] : LoadU16(memory, kFaceTables[set] + 2 * i);
+    StoreU16(memory, eternalsonata::PartyArrayAddress(kFaceArrays[set], i),
+             static_cast<uint16_t>(id));
+  }
 }
 
 // Puts the costume in the table. Before the boot hook there is no table yet,
@@ -293,6 +357,8 @@ int WearLocked(int character, int index) {
         memory->TranslateVirtual(kModelTableAddr + 4 * kModelSlot[character - 1]), model);
   }
   s.worn[character - 1] = index;
+  if (s.live)
+    ApplyCampPortraits(character);
   return ETERNALSONATA_COSTUME_OK;
 }
 
@@ -343,10 +409,12 @@ void WearBootCostumes() {
 //   model = "costumes/plk_swim.nobj"  # relative to the mod folder
 //   locked = true                  # optional: a new game starts it locked
 //   portrait = "costumes/plk_swim.dds"  # optional: status page portrait
+//   panel_portrait, face_portrait, small_face_portrait  # optional: camp art
 //
 // Hand-parsed, like the asset system's [[language]] tables.
 struct DeclaredCostume {
-  std::string character, name, label, model, portrait;
+  std::string character, name, label, model;
+  std::array<std::string, kPortraitKinds> portraits;
   bool locked = false;
 };
 
@@ -397,7 +465,13 @@ std::vector<DeclaredCostume> ReadDeclaredCostumes(const std::filesystem::path& p
     else if (key == "model")
       costume.model = value;
     else if (key == "portrait")
-      costume.portrait = value;
+      costume.portraits[ETERNALSONATA_COSTUME_PORTRAIT_STATUS] = value;
+    else if (key == "panel_portrait")
+      costume.portraits[ETERNALSONATA_COSTUME_PORTRAIT_PANEL] = value;
+    else if (key == "face_portrait")
+      costume.portraits[ETERNALSONATA_COSTUME_PORTRAIT_FACE] = value;
+    else if (key == "small_face_portrait")
+      costume.portraits[ETERNALSONATA_COSTUME_PORTRAIT_SMALL_FACE] = value;
     else if (key == "locked")
       costume.locked = value == "true";
   }
@@ -419,8 +493,10 @@ void ScanModCostumes(rex::Runtime* runtime) {
       }
       Costume costume;
       costume.path = model;
-      if (!declared.portrait.empty())
-        costume.portrait_path = mod.mod_root / std::filesystem::u8path(declared.portrait);
+      for (int kind = 0; kind < kPortraitKinds; ++kind)
+        if (!declared.portraits[kind].empty())
+          costume.portrait_path[kind] =
+              mod.mod_root / std::filesystem::u8path(declared.portraits[kind]);
       costume.starts_unlocked = costume.unlocked = !declared.locked;
       const std::string id = mod.folder_name + "/" + declared.name;
       const std::string label = declared.label.empty() ? declared.name : declared.label;
@@ -493,13 +569,14 @@ uint32_t WornCostumePortrait(int character) {
   State& s = state();
   if (!s.live)
     return 0;
-  return PortraitImage(s.costumes[character - 1][s.worn[character - 1]]);
+  return PortraitImage(s.costumes[character - 1][s.worn[character - 1]],
+                       ETERNALSONATA_COSTUME_PORTRAIT_STATUS);
 }
 
-int SetCostumePortrait(int character, int costume, const char* path) {
+int SetCostumePortrait(int character, int costume, int kind, const char* path) {
   if (!ValidCharacter(character))
     return ETERNALSONATA_COSTUME_ERR_INVALID_CHARACTER;
-  if (!path || !*path)
+  if (!path || !*path || kind < 0 || kind >= kPortraitKinds)
     return ETERNALSONATA_COSTUME_ERR_INVALID_ARGUMENT;
   std::filesystem::path file = std::filesystem::u8path(path);
   std::error_code ec;
@@ -510,9 +587,9 @@ int SetCostumePortrait(int character, int costume, const char* path) {
   auto& list = state().costumes[character - 1];
   if (costume <= ETERNALSONATA_COSTUME_DEFAULT || costume >= static_cast<int>(list.size()))
     return ETERNALSONATA_COSTUME_ERR_INVALID_COSTUME;
-  if (list[costume].portrait)
+  if (list[costume].portrait[kind] || !list[costume].portrait_path[kind].empty())
     return ETERNALSONATA_COSTUME_ERR_INVALID_ARGUMENT;
-  list[costume].portrait_path = std::move(file);
+  list[costume].portrait_path[kind] = std::move(file);
   return ETERNALSONATA_COSTUME_OK;
 }
 
@@ -803,7 +880,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterCostumeFile(int charac
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCostumePortraitFile(int character,
-                                                                         int costume,
+                                                                         int costume, int kind,
                                                                          const char* path) {
-  return eternalsonata::SetCostumePortrait(character, costume, path);
+  return eternalsonata::SetCostumePortrait(character, costume, kind, path);
 }

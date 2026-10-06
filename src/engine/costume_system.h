@@ -30,7 +30,7 @@ int NextUnlockedCostume(int character);
 // The AppKeep image id of the worn costume's status portrait, loading a
 // mod's on first use; 0 for the character's own.
 uint32_t WornCostumePortrait(int character);
-int SetCostumePortrait(int character, int costume, const char* path);
+int SetCostumePortrait(int character, int costume, int kind, const char* path);
 
 // The PS3 variant number of the costume a 0 based PS3 character (ALG, PLK,
 // BET) wears, as native 5028 answers it: 1 unless a PS3 costume is on.
