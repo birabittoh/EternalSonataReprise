@@ -248,10 +248,17 @@ constexpr uint32_t kGroundFlagsMask = 0xC0000u;
 constexpr uint32_t kSceneLightOffset = 0x5E0u;
 constexpr uint32_t kSceneLightWords = 8u;
 
+// The camera follows the leader's world matrix (sub_820F9C98), which a new
+// scene object only gets on its first scene update; until then the camera
+// keeps its last placement.
+constexpr int kCameraHoldUpdates = 2;
+int g_camera_hold = 0;
+
 // Forced sub_820FCF80 on the hook's own context: an isolated import leaves
 // nested hooks calling from a stale stack pointer. The respawn resets ground
 // state, shade and pad control, so those are carried over.
 void RespawnFieldLeaderLive(PPCContext& ctx, uint8_t* base) {
+  g_camera_hold = kCameraHoldUpdates;
   const uint32_t leader = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
   const bool live = leader != 0 && leader != 0xFFFFFFFFu;
   const uint32_t flags = live ? REX_LOAD_U32(leader + kObjectFlagsOffset) : 0;
@@ -519,6 +526,16 @@ REX_HOOK_RAW(sub_820FE7F8) {
     ApplySelectedModel(ctx, base);
   }
   __imp__sub_820FE7F8(ctx, base);
+}
+
+REX_EXTERN(__imp__sub_820F9C98);
+
+REX_HOOK_RAW(sub_820F9C98) {
+  if (g_camera_hold > 0) {
+    --g_camera_hold;
+    return;
+  }
+  __imp__sub_820F9C98(ctx, base);
 }
 
 // sub_820EFE38(object, name, visible) writes out of bounds for a mesh the model
