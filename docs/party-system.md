@@ -90,7 +90,11 @@ and 12 would read "Main Menu" and "Items"; they get synthetic ids 860..863
 instead, answered by the text lookup hook with the PS3's spellings. The PS3
 gives both the `<r>` name in the wider panels, and Crescendo and Serenade the
 one to three member layouts of Viola and Salsa. Image ids in these builders
-are the AppKeep slot plus one.
+are the AppKeep slot plus one. A swap renames both panels in place, with its
+own function per layout (`sub_82237880` picks one by `(members - 1) / 3`; the
+ten member grid's is `sub_822399A8`), so each needs the same name fixes, its
+stat reads pinned to their arrays, and in the one to three member swap the
+portrait switch's Viola and Salsa cases.
 
 The ten member layout stops at position ten; the grid's last row gets
 positions 11 and 12 the way the PS3 places them. Their `1100` health fill uses

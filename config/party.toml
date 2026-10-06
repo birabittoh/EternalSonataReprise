@@ -1122,6 +1122,87 @@ address = 0x82238E4C
 name = "PartyRubyNameSid"
 registers = ["r4"]
 after_instruction = true
+# sub_82237A68, the one to three member swap: per half (second argument's
+# character, then the first's) the portrait switch and the ruby name
+[[midasm_hook]]
+address = 0x82237C58
+name = "PartySwapAsViola"
+registers = ["r18"]
+jump_address_on_true = 0x82237E0C
+[[midasm_hook]]
+address = 0x82237C60
+name = "PartySwapAsSalsa"
+registers = ["r18"]
+jump_address_on_true = 0x82237DE4
+[[midasm_hook]]
+address = 0x82237E10
+name = "PartySwapPortrait"
+registers = ["r18", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82237DE4
+name = "PartySwapPortrait"
+registers = ["r18", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82237FE4
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82238250
+name = "PartySwapAsViola"
+registers = ["r23"]
+jump_address_on_true = 0x822383DC
+[[midasm_hook]]
+address = 0x82238258
+name = "PartySwapAsSalsa"
+registers = ["r23"]
+jump_address_on_true = 0x822383BC
+[[midasm_hook]]
+address = 0x822383DC
+name = "PartySwapPortrait"
+registers = ["r23", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x822383BC
+name = "PartySwapPortrait"
+registers = ["r23", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82238588
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+# sub_822391F8, the seven to nine member swap: top row as in sub_822388D8,
+# lower rows the plain name
+[[midasm_hook]]
+address = 0x82239438
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r29"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82239474
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x8223967C
+name = "PartyPlainNameSid"
+registers = ["r4"]
+after_instruction = true
+# sub_822399A8, the ten member grid's swap: the plain name, top row then
+# lower rows
+[[midasm_hook]]
+address = 0x82239B70
+name = "PartyPlainNameSid"
+registers = ["r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82239D08
+name = "PartyPlainNameSid"
+registers = ["r4"]
+after_instruction = true
 
 # sub_82245638, a save row: the leader's name is the character id
 [[midasm_hook]]

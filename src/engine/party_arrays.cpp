@@ -167,6 +167,15 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
       case 0x82238BC8u:
       case 0x82238C70u:
       case 0x82238EACu:
+      // and the other layouts' swaps
+      case 0x82238038u:
+      case 0x822380E8u:
+      case 0x822385C8u:
+      case 0x82238670u:
+      case 0x822394D4u:
+      case 0x822396BCu:
+      case 0x82239BB0u:
+      case 0x82239D48u:
         return hit.extension;
     }
   }
@@ -180,6 +189,30 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
       case 0x82238F1Cu:
       case 0x82238F3Cu:
       case 0x82238F40u:
+      case 0x82238078u:
+      case 0x822380B0u:
+      case 0x8223813Cu:
+      case 0x82238140u:
+      case 0x82238600u:
+      case 0x82238638u:
+      case 0x822386C0u:
+      case 0x822386CCu:
+      case 0x8223950Cu:
+      case 0x82239544u:
+      case 0x82239598u:
+      case 0x8223959Cu:
+      case 0x822396F4u:
+      case 0x8223972Cu:
+      case 0x8223974Cu:
+      case 0x82239750u:
+      case 0x82239BE8u:
+      case 0x82239C20u:
+      case 0x82239C40u:
+      case 0x82239C44u:
+      case 0x82239D80u:
+      case 0x82239DB8u:
+      case 0x82239DD8u:
+      case 0x82239DDCu:
         return hit.extension;
     }
   }
