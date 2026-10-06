@@ -4,6 +4,7 @@
 // and switches sized for ten. config/party.toml hooks them with these, which
 // follow the PS3's own builders (sub_1E0B88 is sub_821DDD00's twin).
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 
@@ -241,4 +242,38 @@ REX_HOOK_RAW(sub_821DD808) {
     end = ctx.r3.u32;
   }
   ctx = saved;
+}
+
+// sub_821F8F78 after a heal-all item is spent: its target list and effect
+// slots hold ten, so members at positions 11 and 12 are healed here, by the
+// same amount sub_821F9600 gives the others.
+extern "C++" void PartyHealAllExtra(PPCRegister& used) {
+  if (!(used.u32 & 0xFF))
+    return;
+  uint8_t* base = rex::system::kernel_state()->memory()->virtual_membase();
+  const uint32_t use = REX_LOAD_U32(0x824400F8u);
+  if (!use || REX_LOAD_U32(use + 24) != 2)
+    return;
+  const int32_t item = static_cast<int16_t>(REX_LOAD_U16(use + 28));
+  const uint32_t record = 0x82017630u + 100 * (item - 1);
+  const int32_t flat = static_cast<int32_t>(REX_LOAD_U32(record + 0x3C));
+  const int32_t percent = static_cast<int32_t>(REX_LOAD_U32(record + 0x40));
+  using eternalsonata::PartyArray;
+  using eternalsonata::PartyArrayAddress;
+  for (uint32_t i = 0; i < eternalsonata::kPartyCharacterCount; ++i) {
+    if (REX_LOAD_U32(PartyArrayAddress(PartyArray::kPosition, i)) <=
+        eternalsonata::kRetailCharacterCount)
+      continue;
+    const uint32_t live = PartyArrayAddress(PartyArray::kStatsLive, i);
+    const int32_t hp = static_cast<int32_t>(REX_LOAD_U32(live + 0x0C));
+    const int32_t max = static_cast<int32_t>(REX_LOAD_U32(live + 0x10));
+    if (hp >= max)
+      continue;
+    const int32_t amount =
+        static_cast<int32_t>(static_cast<float>(max) * 0.0099999998f * static_cast<float>(percent)) +
+        flat;
+    const int32_t healed = std::min(std::max(hp + amount, 1), max);
+    REX_STORE_U32(live + 0x0C, healed);
+    REX_STORE_U32(PartyArrayAddress(PartyArray::kStatsBase, i) + 0x0C, healed);
+  }
 }

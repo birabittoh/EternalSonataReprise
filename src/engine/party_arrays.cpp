@@ -197,6 +197,16 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
         return hit.extension;
     }
   }
+  // Camp item use (sub_821F8F78..sub_821F9600) and its HP add (sub_821E8C78)
+  // can first touch 11 or 12; their entries overlap the next array.
+  if (pc >= 0x821F8F78u && pc < 0x821F9BD8u &&
+      (hit.extension == static_cast<int>(PartyArray::kPosition) ||
+       hit.extension == static_cast<int>(PartyArray::kStatsLive)))
+    return hit.extension;
+  if (pc >= 0x821E8C78u && pc < 0x821E8CECu &&
+      (hit.extension == static_cast<int>(PartyArray::kStatsLive) ||
+       hit.extension == static_cast<int>(PartyArray::kStatsBase)))
+    return hit.extension;
   // Closing the status page restores the camp cursor from position[c - 1];
   // for 11 and 12 that lands on slotbytes[0], which it would otherwise learn.
   if (pc == 0x822367DCu && hit.extension == static_cast<int>(PartyArray::kPosition))

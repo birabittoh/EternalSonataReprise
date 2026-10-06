@@ -101,6 +101,15 @@ to its parent heap. At teardown their saved ids are appended to the original
 list after its following field has been released, letting the original cleanup
 loop unregister and destroy them.
 
+A heal-all item used from the camp (`sub_821F8F78` picks the targets,
+`sub_821F9600` heals them with a number popup each) keeps its targets in a 264
+byte struct at `dword_824400F8` with ten slots: u16 characters at +0, timers
+at +40, popup tasks at +100, its heap at +144. Its member counts and position
+searches are widened to twelve, but targets stop at position ten, which is the
+ten member layout the popups follow; when the item is spent,
+`PartyHealAllExtra` heals positions 11 and 12 by the same amount without a
+popup.
+
 The shop's equip panel (screen 23, `src/engine/party_shop_menu.cpp`) shows who
 can wear an item as a grid of icons from the shop's display list: ten dims
 (glyphs 0..9), the cursor (12), one icon per character (13..22) and ten
