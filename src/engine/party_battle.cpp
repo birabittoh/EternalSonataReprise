@@ -73,6 +73,14 @@ extern "C++" bool PartyBattleCloth(PPCRegister& r11, PPCRegister& r4) {
   return true;
 }
 
+// sub_82190028(character, motion): whether the character's bop has its own
+// hit motion, else sub_821C8C98 plays the generic flinch. The PS3's twin
+// (sub_139068) gives Crescendo and Serenade Allegretto's motion set.
+extern "C++" void PartyHitMotionCharacter(PPCRegister& r3) {
+  if (eternalsonata::IsPs3Target() && (r3.u32 == kCrescendo || r3.u32 == kSerenade))
+    r3.u64 = 1;
+}
+
 // The battle HUD's name, r4 = character - 1 into a ten entry text block.
 extern "C++" void PartyBattleNameSid(PPCRegister& r4) {
   if (r4.u32 == kCrescendo - 1 || r4.u32 == kSerenade - 1)
