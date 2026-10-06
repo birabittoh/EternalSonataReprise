@@ -154,6 +154,12 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
   if (pc >= 0x82234290u && pc < 0x82234404u &&
       hit.extension == static_cast<int>(PartyArray::kStatsLive))
     return hit.extension;
+  // The battle member copy reads only live stats and the template; for 11 and
+  // 12 live stats overlap base stats, so it would take Allegretto's magic.
+  if (pc >= 0x821E7358u && pc < 0x821E7664u &&
+      (hit.extension == static_cast<int>(PartyArray::kStatsLive) ||
+       hit.extension == static_cast<int>(PartyArray::kTemplate)))
+    return hit.extension;
   // Closing the status page restores the camp cursor from position[c - 1];
   // for 11 and 12 that lands on slotbytes[0], which it would otherwise learn.
   if (pc == 0x822367DCu && hit.extension == static_cast<int>(PartyArray::kPosition))
