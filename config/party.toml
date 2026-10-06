@@ -777,16 +777,16 @@ address = 0x821C9ED8
 name = "PartyMotionStopTable"
 registers = ["r11"]
 after_instruction = true
-# sub_820C1238: angle wrap that a NaN never leaves
-[[midasm_hook]]
-address = 0x820C1238
-name = "PartyEffectAngleWrap"
-registers = ["f1"]
 # sub_820C8378: drawn Z angle loaded from an undefined stack word
 [[midasm_hook]]
 address = 0x820C9040
 name = "PartyParticleDrawnZ"
 registers = ["r31", "f31"]
+# sub_820C9550: same undefined word, second load site
+[[midasm_hook]]
+address = 0x820C9BC0
+name = "PartyParticleDrawZ"
+registers = ["r31", "f0"]
 # sub_820C9550: effect particle draw, before it reads the emitter
 [[midasm_hook]]
 address = 0x820C9578

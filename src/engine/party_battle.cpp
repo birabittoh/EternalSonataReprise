@@ -230,33 +230,51 @@ float SafeAngle(float angle) {
 
 }  // namespace
 
-// sub_820C1238 entry, f1 = angle. Its wrap loops are fcmpu + blt / bge, and
-// bge is taken on an unordered compare, so a NaN angle never leaves them.
-extern "C++" void PartyEffectAngleWrap(PPCRegister& f1) {
-  const float angle = static_cast<float>(f1.f64);
-  if (!BadAngle(angle))
-    return;
-  static int reports = 0;
-  if (reports < 8) {
-    ++reports;
-    REXLOG_WARN("effect guard: sub_820C1238 angle {}", angle);
+REX_EXTERN(__imp__sub_820C1238);
+
+// sub_820C1238, f1 = angle. Its wrap loops are fcmpu + blt / bge, and bge is
+// taken on an unordered compare, so a NaN angle never leaves them.
+REX_HOOK_RAW(sub_820C1238) {
+  const float angle = static_cast<float>(ctx.f1.f64);
+  if (BadAngle(angle)) {
+    static int reports = 0;
+    if (reports < 8) {
+      ++reports;
+      REXLOG_WARN("effect guard: sub_820C1238 angle {} from {:08X}", angle, static_cast<uint32_t>(ctx.lr));
+    }
+    ctx.f1.f64 = SafeAngle(angle);
   }
-  f1.f64 = SafeAngle(angle);
+  __imp__sub_820C1238(ctx, base);
 }
 
-// sub_820C8378 at 0x820C9040, r31 = particle, f31 = the drawn Z angle about to
-// be stored at +0x9C. One path loads it with lfs from the upper word of an
-// fctiwz result, which only the lower word defines, so it comes out as
-// 0xFFFFFFFF. Every other path draws the integrated Z at +0x90.
-extern "C++" void PartyParticleDrawnZ(PPCRegister& r31, PPCRegister& f31) {
-  if (!BadAngle(static_cast<float>(f31.f64)))
+// The drawn Z angle at particle +0x9C is loaded in two places from an
+// fctiwz scratch slot whose upper word nothing writes, which comes out as
+// 0xFFFFFFFF here. Elsewhere it is the integrated Z at +0x90.
+namespace {
+void FixDrawnZ(uint32_t particle, PPCRegister& angle, bool integrated) {
+  if (!BadAngle(static_cast<float>(angle.f64)))
     return;
   auto* runtime = rex::Runtime::instance();
   auto* memory = runtime ? runtime->memory() : nullptr;
-  if (!memory || !r31.u32)
-    return;
-  const float z = rex::memory::load_and_swap<float>(memory->TranslateVirtual<uint8_t*>(r31.u32) + 0x90);
-  f31.f64 = BadAngle(z) ? 0.0 : z;
+  float z = 0.0f;
+  if (memory && particle && integrated) {
+    z = rex::memory::load_and_swap<float>(memory->TranslateVirtual<uint8_t*>(particle) + 0x90);
+    if (BadAngle(z))
+      z = 0.0f;
+  }
+  angle.f64 = z;
+}
+}  // namespace
+
+// sub_820C8378 at 0x820C9040.
+extern "C++" void PartyParticleDrawnZ(PPCRegister& r31, PPCRegister& f31) {
+  FixDrawnZ(r31.u32, f31, true);
+}
+
+// sub_820C9550 at 0x820C9BC0, before the store. The particle is not being
+// integrated here, so there is no Z to fall back on.
+extern "C++" void PartyParticleDrawZ(PPCRegister& r31, PPCRegister& f0) {
+  FixDrawnZ(r31.u32, f0, false);
 }
 
 // sub_820C9550 before it reads the particle's emitter, r31 = particle: logs
