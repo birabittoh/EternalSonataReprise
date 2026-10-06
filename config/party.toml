@@ -215,6 +215,38 @@ address = 0x821F9160
 name = "PartyEndU32"
 registers = ["r9"]
 after_instruction = true
+# sub_821F8F78, sub_821F9600: heal-all item; members counted twelve wide but
+# targeted ten wide (the use struct has ten slots), PartyHealAllExtra heals
+# positions 11 and 12
+[[midasm_hook]]
+address = 0x821F9020
+name = "PartyClampCount"
+registers = ["r30"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821F9028
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821F9084
+name = "PartyEndU32"
+registers = ["r9"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821F911C
+name = "PartyHealAllExtra"
+registers = ["r29"]
+[[midasm_hook]]
+address = 0x821F9650
+name = "PartyClampCount"
+registers = ["r10"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821F9660
+name = "PartyEndU32"
+registers = ["r10"]
+after_instruction = true
 # sub_822148C8: field item target, position search
 [[midasm_hook]]
 address = 0x822149BC
