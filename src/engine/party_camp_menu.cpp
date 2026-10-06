@@ -147,6 +147,21 @@ extern "C++" bool PartyPanelPortraitSrn(PPCRegister& c, PPCRegister& image,
   return true;
 }
 
+// sub_82237A68, the one to three member swap, picks each panel's portrait by
+// a switch on the character; as in sub_821DDD00, Crescendo takes Viola's case
+// and Serenade Salsa's, then their own image after the case loads its id.
+extern "C++" bool PartySwapAsViola(PPCRegister& c) {
+  return c.u32 == 11 && eternalsonata::IsPs3Target();
+}
+
+extern "C++" bool PartySwapAsSalsa(PPCRegister& c) {
+  return c.u32 == 12 && eternalsonata::IsPs3Target();
+}
+
+extern "C++" void PartySwapPortrait(PPCRegister& c, PPCRegister& image) {
+  if ((c.u32 == 11 || c.u32 == 12) && eternalsonata::IsPs3Target())
+    image.u64 = kPortraitId + c.u32 - 11;
+}
 
 REX_EXTERN(__imp__sub_821E3408);
 REX_EXTERN(__imp__sub_821DD808);
