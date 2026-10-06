@@ -321,6 +321,54 @@ int g_failed_character = -1;
 
 std::atomic<bool> g_respawn_requested{false};
 
+// sub_8217C118: scene handle id -> motion playing.
+REX_IMPORT(__imp__sub_8217C118, CurrentMotion, u32(u32, u32));
+
+constexpr uint32_t kFirstActionMotion = 16u;
+
+// A motion only shows once the scene updates, and the tick can run between the
+// action's motion call and that update, so the swap back waits for it.
+constexpr int kActionMotionGraceFrames = 10;
+int g_action_motion_grace = 0;
+
+// True while the action motion may still be pending.
+bool ActionMotionPending(uint32_t motion) {
+  if (g_action_motion_grace <= 0) {
+    return false;
+  }
+  if (motion >= kFirstActionMotion) {
+    g_action_motion_grace = 0;
+    return false;
+  }
+  --g_action_motion_grace;
+  return true;
+}
+
+// Ends the action model once the leader plays locomotion again. That is played
+// by the scene's movement controller (sub_8216ABE0), not through a field object
+// call, so only the motion itself tells.
+void EndActionModel(PPCContext& ctx, uint8_t* base) {
+  const uint32_t object = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
+  if (!g_default_model_for_action || object == 0 || object == 0xFFFFFFFFu ||
+      REX_LOAD_U8(object + kObjectHandleLiveOffset) != kObjectHandleLive) {
+    return;
+  }
+  const bool enabled = REXCVAR_GET(field_action_default_model) &&
+                       eternalsonata::FieldPlayerModelOverride::DesiredCharacter() >= 1;
+  const uint32_t motion =
+      CurrentMotion(kSceneHandleTable, REX_LOAD_U32(object + kObjectHandleIdOffset));
+  if (enabled && (ActionMotionPending(motion) || motion >= kFirstActionMotion)) {
+    return;
+  }
+  if (REX_LOAD_U8(kMapResetFlag) != 0 || !ForcedRespawnIsSafe()) {
+    return;
+  }
+  g_default_model_for_action = false;
+  g_action_model_respawn = true;
+  RespawnFieldLeaderLive(ctx, base);
+  g_action_model_respawn = false;
+}
+
 // Respawns the leader when it wears the wrong model. Skipped during a field
 // action and a map reset, which respawns on its own.
 void ApplySelectedModel(PPCContext& ctx, uint8_t* base) {
@@ -467,6 +515,7 @@ REX_HOOK_RAW(sub_820FE7F8) {
     return;
   }
   if (!eternalsonata::IsCutsceneActive()) {
+    EndActionModel(ctx, base);
     ApplySelectedModel(ctx, base);
   }
   __imp__sub_820FE7F8(ctx, base);
@@ -511,28 +560,35 @@ REX_HOOK_RAW(sub_820EE7D8) {
 }
 
 // Field action motions (16..35) only fit the retail rigs: swap to the retail
-// model for them and back when locomotion resumes.
+// model when one starts. The swap back is in the tick (EndActionModel).
+bool IsActionMotion(int32_t motion) {
+  return motion >= static_cast<int32_t>(kFirstActionMotion) && motion <= 35;
+}
+
+void StartActionModel(PPCContext& ctx, uint8_t* base, uint32_t object) {
+  if (g_action_model_respawn || g_default_model_for_action ||
+      !REXCVAR_GET(field_action_default_model) ||
+      object != REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset) ||
+      eternalsonata::FieldPlayerModelOverride::DesiredCharacter() < 1) {
+    return;
+  }
+  g_default_model_for_action = true;
+  g_action_model_respawn = true;
+  RespawnFieldLeaderLive(ctx, base);
+  g_action_model_respawn = false;
+  g_action_motion_grace = kActionMotionGraceFrames;
+}
+
 REX_EXTERN(__imp__sub_820F1490);
 
 REX_HOOK_RAW(sub_820F1490) {
   const uint32_t object = ctx.r3.u32;
   const int32_t animation = ctx.r4.s32;
   eternalsonata::NotifyOverworldFieldAction(object, animation);
-  const uint32_t leader = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
-  if (!g_action_model_respawn && object == leader &&
-      eternalsonata::FieldPlayerModelOverride::DesiredCharacter() >= 1) {
-    const bool enabled = REXCVAR_GET(field_action_default_model);
-    const bool starts_action = enabled && animation >= 16 && animation <= 35;
-    const bool resumes_normal = g_default_model_for_action &&
-                                (!enabled || (animation >= 0 && animation < 16));
-    if ((starts_action && !g_default_model_for_action) ||
-        (resumes_normal && g_default_model_for_action)) {
-      g_default_model_for_action = starts_action;
-      g_action_model_respawn = true;
-      RespawnFieldLeaderLive(ctx, base);
-      g_action_model_respawn = false;
-      ctx.r3.u32 = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
-    }
+  if (IsActionMotion(animation) &&
+      object == REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset)) {
+    StartActionModel(ctx, base, object);
+    ctx.r3.u32 = REX_LOAD_U32(kMapManager + kFieldObjectPtrOffset);
   }
   __imp__sub_820F1490(ctx, base);
 }
