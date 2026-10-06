@@ -1170,6 +1170,11 @@ address = 0x821A303C
 name = "PartyBattleCloth"
 registers = ["r11", "r4"]
 jump_address_on_true = 0x821A319C
+# sub_82190028: per character hit motion set
+[[midasm_hook]]
+address = 0x82190028
+name = "PartyHitMotionCharacter"
+registers = ["r3"]
 # sub_821C91F0, sub_821C9E78: per character motion tables
 [[midasm_hook]]
 address = 0x821C92C0
