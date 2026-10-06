@@ -86,6 +86,11 @@ constexpr uint16_t kCostumePortraits[] = {21, 22, 27, 23};
 static_assert(eternalsonata::kPs3PortraitSlot + std::size(kCampPortraits) ==
               eternalsonata::kPs3CostumePortraitSlot);
 static_assert(eternalsonata::kPs3CostumePortraitSlot + std::size(kCostumePortraits) ==
+              eternalsonata::kPs3CostumeArtSlot);
+// Their camp art, as sub_1E5840 picks it: kind n of variant v is camp_char
+// 3n + 12v + character - 13 (PLK v3: n + 24), kinds 0..2 here.
+constexpr uint16_t kCostumeArt[] = {12, 15, 18, 13, 16, 19, 24, 25, 26, 14, 17, 20};
+static_assert(eternalsonata::kPs3CostumeArtSlot + std::size(kCostumeArt) ==
               eternalsonata::kFirstFreeAppKeepSlot);
 static_assert(eternalsonata::kFirstFreeAppKeepSlot <= eternalsonata::kAppKeepSlotCount);
 
@@ -247,10 +252,12 @@ void BuildPs3AppKeep(PPCContext& ctx, uint8_t* base) {
   // are the ones to spill if the heap is full.
   for (uint32_t i = 0; i < 2 && i < appkeep2.entries.size(); ++i)
     g_appkeep2[i] = loader.Place(appkeep2, i);
-  // Only the status page shows these, so they spill after CRS and SRN.
+  // Only a worn costume shows these, so they spill after CRS and SRN.
   for (size_t k = 0; k < std::size(kCostumePortraits) && !camp.entries.empty(); ++k)
     REX_STORE_U32(kSlotArray + 4 * (kPs3CostumePortraitSlot + k),
                   loader.Place(camp, kCostumePortraits[k]));
+  for (size_t k = 0; k < std::size(kCostumeArt) && !camp.entries.empty(); ++k)
+    REX_STORE_U32(kSlotArray + 4 * (kPs3CostumeArtSlot + k), loader.Place(camp, kCostumeArt[k]));
   if (loader.overflow())
     REXLOG_INFO("ps3 appkeep: {} bytes past the APPKEEP heap", loader.overflow());
 }

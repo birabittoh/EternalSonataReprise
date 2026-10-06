@@ -7,7 +7,9 @@ ship none. This host keeps the feature on every release, so mods can add
 costumes of their own, for any character.
 
 On the status page, X puts on the shown character's next unlocked costume,
-and the portrait follows the costume worn. Its X Costume prompt replaces the
+and every camp portrait follows the costume worn: the status page's, the one
+to three member panel's and the faces of the larger layouts, the swaps and
+the item target list. Its X Costume prompt replaces the
 LB / RB Switch Character one, and shows only while X would change something;
 the shoulder buttons still switch. A mod can pick any costume through
 `src/api/eternalsonata_costume_api.h`; the `costume_overlay` mod in
@@ -69,13 +71,28 @@ label = "Swimsuit"                  # what menus show
 model = "costumes/plk_swim.nobj"    # relative to the mod folder
 locked = true                       # optional: a new game starts it locked
 portrait = "costumes/plk_swim.dds"  # optional: the status page portrait
+panel_portrait = "costumes/plk_swim_panel.dds"      # optional, see below
+face_portrait = "costumes/plk_swim_face.dds"        # optional
+small_face_portrait = "costumes/plk_swim_face2.dds" # optional
 ```
 
-A portrait is a DDS file (or an `NTEX` chunk, which is the same DDS behind an
-8 byte header) the size of the character's own; without one the character's
-own portrait stays. Portraits load the first time the status page shows them,
-into the AppKeep image slots from 434 on. From C++,
-`EternalSonataSetCostumePortraitFile` sets one (ABI version 2).
+Each portrait is a DDS file (or an `NTEX` chunk, which is the same DDS behind
+an 8 byte header) the size of the character's own; a kind left out keeps the
+character's own. From C++, `EternalSonataSetCostumePortraitFile` sets one by
+kind (ABI version 2):
+
+| kind | key | where | size |
+|---|---|---|---|
+| `STATUS` | `portrait` | the status page | 512 x 512 on PS3 data |
+| `PANEL` | `panel_portrait` | the one to three member panel; only Allegretto, Polka, Beat and Frederic, whose panels share one layout | 512 x 512 (Allegretto's own: 256 x 512) |
+| `FACE` | `face_portrait` | the four or more member layouts, the swaps and the item target list pick one face set or the other | 256 x 256, a bust filling the image |
+| `SMALL_FACE` | `small_face_portrait` | as above | 256 x 256, a smaller head |
+
+The status portrait loads the first time the status page shows it, the others
+when the costume is put on, into the AppKeep image slots from 446 on. Wearing
+points `word_8202C9B4` (the panel's ids) and the twelve wide copies of the
+face tables `0x8202CA28` / `0x8202CA3C` at them, and taking the costume off
+puts the character's own back.
 
 From C++, register a model held in memory or a file the host reads on first
 wear:
@@ -138,8 +155,11 @@ They start locked, and `lib.e` unlocks them through 5026, which goes through
 the same locks as the API; 5027 reads them back. The PS3 changes them on a
 camp menu page of its own; here X on the status page does, and is off while
 the camp menu flag `+0x920` (5032) is, as that page is on the PS3. Their
-status portraits are `campdata/camp_char.bmd` entries 21, 22, 27 and 23,
-placed in AppKeep slots 430..433.
+portraits are `campdata/camp_char.bmd` entries, which the PS3 picks with
+`sub_1E5840(character, kind)`: kind n of variant v is entry 3n + 12v +
+character - 13 (Polka's v3: n + 24), kind 0 the panel, 1 and 2 the face sets,
+3 the status page. The status portraits (21, 22, 27, 23) are placed in AppKeep
+slots 430..433, the panels and faces in 434..445.
 
 ## 7. Saving
 

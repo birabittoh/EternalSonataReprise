@@ -160,11 +160,27 @@ typedef int (*EternalSonataRegisterCostumeFn)(int character, const char* id, con
 typedef int (*EternalSonataRegisterCostumeFileFn)(int character, const char* id,
                                                   const char* label, const char* path);
 
-// Version 2. The portrait the status page shows while the costume is worn:
-// a DDS file or an NTEX chunk, the size of the character's own portrait (512
-// by 512 on PS3 data), read the first time it is shown. Without one the
-// character's own portrait stays. Once per costume, and not for the default.
-typedef int (*EternalSonataSetCostumePortraitFileFn)(int character, int costume,
+// Portraits the camp menu shows while the costume is worn, by kind.
+enum {
+  // The status page; 512 by 512 on PS3 data.
+  ETERNALSONATA_COSTUME_PORTRAIT_STATUS = 0,
+  // The one to three member panel's full body art; 512 by 512 (Allegretto's
+  // own is 256 by 512). Only Allegretto, Polka, Beat and Frederic show it:
+  // the others' panels are laid out for their own art.
+  ETERNALSONATA_COSTUME_PORTRAIT_PANEL = 1,
+  // The faces of the four or more member layouts, the member swaps and the
+  // item target list, which pick one set or the other per layout. Both 256
+  // by 256: a bust filling the image, and a smaller head with room around it.
+  ETERNALSONATA_COSTUME_PORTRAIT_FACE = 2,
+  ETERNALSONATA_COSTUME_PORTRAIT_SMALL_FACE = 3,
+  ETERNALSONATA_COSTUME_PORTRAIT_KIND_COUNT = 4
+};
+
+// Version 2. One portrait of a costume: a DDS file or an NTEX chunk, the size
+// of the character's own, read the first time the costume is worn (the status
+// portrait: shown). Without one the character's own stays. Once per kind and
+// costume, and not for the default.
+typedef int (*EternalSonataSetCostumePortraitFileFn)(int character, int costume, int kind,
                                                      const char* path);
 
 #ifdef __cplusplus
