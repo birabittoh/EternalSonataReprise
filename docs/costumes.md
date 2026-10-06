@@ -1,9 +1,10 @@
 # Costumes
 
-A costume is another model for one of the ten party characters, worn in the
-field, in battle and in cutscenes. The PS3 release ships four (Allegretto's,
-two of Polka's, Beat's) behind a "Costumes" camp menu; the Xbox 360 releases
-ship none. This host keeps the feature on every release, so mods can add
+A costume is another model for a party character, worn in the field, in
+battle and in cutscenes, or only other camp portraits for it. All twelve can
+have them on PS3 data; on the Xbox 360's, the ten it has. The PS3 release
+ships four (Allegretto's, two of Polka's, Beat's) behind a "Costumes" camp
+menu; the Xbox 360 releases ship none. This host keeps the feature on every release, so mods can add
 costumes of their own, for any character.
 
 On the status page, X puts on the shown character's next unlocked costume,
@@ -28,7 +29,8 @@ models, so `dword_82420AF8[1..10]` reads as one model per character:
 | model | ALG | PLK | BET | CPN | VOL | SLS | JRB | FST | MCH | CLV |
 
 March and Claves are the other way round from the party numbering (Claves is
-character 9, March 10). Every place that builds a party member reads this
+character 9, March 10). Crescendo and Serenade (11, 12) have no slot: on PS3
+data their models are `appkeep2.bmd` entries 0 and 1. Every place that builds a party member reads this
 table and builds the model in place from the raw `NOBJ` it points at: the
 field leader (`sub_820F9828`, `sub_820FCF80`), battle (`sub_8218E558`,
 `sub_8218E7F0`) and events through native 1141 (`sub_820E8B10`).
@@ -38,7 +40,10 @@ field leader (`sub_820F9828`, `sub_820FCF80`), battle (`sub_8218E558`,
 `src/engine/costume_system.cpp` keeps a list per character, the default first.
 Wearing a costume writes its model's guest address into the character's slot,
 so whatever reads the slot next builds it, exactly what the PS3 does with its
-`WEAR*` slots. Battles and events build their models when they start; the
+`WEAR*` slots. For Crescendo and Serenade the host keeps the model worn, and
+their readers (the field leader, the battle model switch and native 1141's
+-20 and -21) ask `CostumeModel` for it. A costume without a model wears the
+character's own. Battles and events build their models when they start; the
 field leader is the one model that lives across a change, so it is respawned
 on the next field frame outside a cutscene (`FieldPlayerModelOverride::
 RequestRespawn`, which keeps pad control, ground state and shade).
@@ -65,10 +70,10 @@ With no code, from `mods/<name>/assets.toml`:
 
 ```toml
 [[costume]]
-character = "polka"                 # or 1..10, the party numbering
+character = "polka"                 # or 1..12, the party numbering
 name = "swimsuit"                   # the id becomes "<mod folder>/swimsuit"
 label = "Swimsuit"                  # what menus show
-model = "costumes/plk_swim.nobj"    # relative to the mod folder
+model = "costumes/plk_swim.nobj"    # optional, relative to the mod folder
 locked = true                       # optional: a new game starts it locked
 portrait = "costumes/plk_swim.dds"  # optional: the status page portrait
 panel_portrait = "costumes/plk_swim_panel.dds"      # optional, see below
@@ -78,21 +83,49 @@ small_face_portrait = "costumes/plk_swim_face2.dds" # optional
 
 Each portrait is a DDS file (or an `NTEX` chunk, which is the same DDS behind
 an 8 byte header) the size of the character's own; a kind left out keeps the
-character's own. From C++, `EternalSonataSetCostumePortraitFile` sets one by
-kind (ABI version 2):
+character's own. A costume with no `model` keeps the character's model and
+changes only these. `[[costume]]` tables for Crescendo or Serenade are
+skipped on Xbox 360 data. From C++, `EternalSonataSetCostumePortraitFile` sets
+one by kind:
 
-| kind | key | where | size |
+| kind | key | where |
+|---|---|---|
+| `STATUS` | `portrait` | the status page |
+| `PANEL` | `panel_portrait` | the one to three member panel, in the camp, its swap and the item target list |
+| `FACE` | `face_portrait` | the four or more member layouts, the swaps and the item target list pick one face set or the other; a bust filling the image |
+| `SMALL_FACE` | `small_face_portrait` | as above; a smaller head |
+
+Each character's layouts are made for its own art, so sizes differ (width x
+height, PS3 data, all DXT5 with mipmaps):
+
+| character | `STATUS` | `PANEL` | faces |
 |---|---|---|---|
-| `STATUS` | `portrait` | the status page | 512 x 512 on PS3 data |
-| `PANEL` | `panel_portrait` | the one to three member panel; only Allegretto, Polka, Beat and Frederic, whose panels share one layout | 512 x 512 (Allegretto's own: 256 x 512) |
-| `FACE` | `face_portrait` | the four or more member layouts, the swaps and the item target list pick one face set or the other | 256 x 256, a bust filling the image |
-| `SMALL_FACE` | `small_face_portrait` | as above | 256 x 256, a smaller head |
+| Allegretto | 512 x 512 | 256 x 512 | 256 x 256 |
+| Polka, Beat | 512 x 512 | 512 x 512 | 256 x 256 |
+| Frederic | 512 x 512 | 256 x 512 | 256 x 256 |
+| Viola, Jazz, Crescendo | 1024 x 512 | as status | 256 x 256 |
+| Salsa, Falsetto, Claves, March, Serenade | 512 x 512 | as status | 256 x 256 |
+
+From Viola on, the game's panel shows the status page's art, so a costume of
+theirs without a `PANEL` portrait shows its `STATUS` one there.
 
 The status portrait loads the first time the status page shows it, the others
 when the costume is put on, into the AppKeep image slots from 446 on. Wearing
-points `word_8202C9B4` (the panel's ids) and the twelve wide copies of the
-face tables `0x8202CA28` / `0x8202CA3C` at them, and taking the costume off
-puts the character's own back.
+points the twelve wide copies of the face tables `0x8202CA28` / `0x8202CA3C`
+at the faces, and taking the costume off puts back what they held at boot.
+The panel is swapped where it is built: after `sub_821DDD00` (its image
+record at `list + 48`), after each case of the item target list's copy in
+`sub_8221B5A0`, and before each case's `sub_821E8F58` in the swap
+`sub_82237A68` (`party_camp_menu.cpp`).
+
+Not covered: the save rows, which draw each save's own party from
+`0x822FF530` and would need that save's costumes, and the battle HUD, whose
+portraits are layout groups of BattleKeep slot 41 (the PS3 adds its costumes
+as groups 18..21).
+
+`mods/costume_test` in EternalSonataReprise-Mods dresses all twelve in a
+costume that keeps each model and captions every portrait with its
+character and kind; its art is generated from PS3 data at build time.
 
 From C++, register a model held in memory or a file the host reads on first
 wear:
@@ -137,8 +170,8 @@ cvar ignores locks.
 --costumes=polka=ps3/3,allegretto=my_mod/swimsuit
 ```
 
-Character names are the lowercase English ones (`allegretto` .. `march`) or
-their numbers. The ids are those `EternalSonataGetCostumeId` reports:
+Character names are the lowercase English ones (`allegretto` .. `serenade`)
+or their numbers. The ids are those `EternalSonataGetCostumeId` reports:
 `default`, `ps3/2` and `ps3/3` for the PS3's, `<mod folder>/<name>` for an
 `assets.toml` costume.
 

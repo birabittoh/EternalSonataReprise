@@ -1,4 +1,5 @@
-// eternalsonata - Characters 11 and 12 in the camp menu's member panels.
+// eternalsonata - Characters 11 and 12 in the camp menu's member panels, and
+// the worn costume's panel art for everyone.
 //
 // The panel builders pick a name id and a portrait per character from tables
 // and switches sized for ten. config/party.toml hooks them with these, which
@@ -13,6 +14,8 @@
 #include <rex/ppc/context.h>
 #include <rex/system/kernel_state.h>
 
+#include "costume_system.h"
+#include "eternalsonata_costume_api.h"
 #include "party_arrays.h"
 #include "party_system.h"
 #include "ps3_appkeep.h"
@@ -41,6 +44,17 @@ uint32_t g_extra_health_bar_teardown_end = 0;
 uint32_t g_pending_extra_health_bars = 0;
 // Set while a failed screen heap allocation may come from its parent heap.
 thread_local bool g_screen_heap_fallback = false;
+
+// The worn costume's one to three member panel art, 0 for the character's own.
+// From Viola on the panel shows the status page's art, so a costume without
+// panel art shows its status portrait there.
+uint32_t CostumePanel(uint32_t c) {
+  const int character = static_cast<int>(c);
+  uint32_t id = eternalsonata::CostumePortrait(character, ETERNALSONATA_COSTUME_PORTRAIT_PANEL);
+  if (!id && c > 4)
+    id = eternalsonata::CostumePortrait(character, ETERNALSONATA_COSTUME_PORTRAIT_STATUS);
+  return id;
+}
 
 uint32_t CurrentLayout(uint8_t* base, uint32_t owner) {
   const uint32_t menu = REX_LOAD_U8(owner + kMenuIndexOffset);
@@ -159,8 +173,31 @@ extern "C++" bool PartySwapAsSalsa(PPCRegister& c) {
 }
 
 extern "C++" void PartySwapPortrait(PPCRegister& c, PPCRegister& image) {
-  if ((c.u32 == 11 || c.u32 == 12) && eternalsonata::IsPs3Target())
+  if (const uint32_t costume = CostumePanel(c.u32))
+    image.u64 = costume;
+  else if ((c.u32 == 11 || c.u32 == 12) && eternalsonata::IsPs3Target())
     image.u64 = kPortraitId + c.u32 - 11;
+}
+
+// The item target list's one to three member panel, once a case has stored
+// the image record at `record`.
+extern "C++" void PartyTargetPanelCostume(PPCRegister& index, PPCRegister& record) {
+  if (const uint32_t costume = CostumePanel(index.u32 + 1)) {
+    uint8_t* base = rex::system::kernel_state()->memory()->virtual_membase();
+    REX_STORE_U32(record.u32 + 4, costume);
+  }
+}
+
+REX_EXTERN(__imp__sub_821DDD00);
+
+// sub_821DDD00(list, c, ...): every case leaves the panel art in the record at
+// list + 48, {100, image, ...}.
+REX_HOOK_RAW(sub_821DDD00) {
+  const uint32_t list = ctx.r3.u32;
+  const uint32_t c = ctx.r4.u32;
+  __imp__sub_821DDD00(ctx, base);
+  if (const uint32_t costume = CostumePanel(c))
+    REX_STORE_U32(list + 52, costume);
 }
 
 REX_EXTERN(__imp__sub_821E3408);

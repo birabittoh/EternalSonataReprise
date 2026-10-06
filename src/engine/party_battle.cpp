@@ -18,8 +18,8 @@
 #include <rex/system/xmemory.h>
 
 #include "generated/eternalsonata_init.h"
+#include "costume_system.h"
 #include "party_system.h"
-#include "ps3_appkeep.h"
 #include "target.h"
 
 namespace {
@@ -51,7 +51,7 @@ extern "C++" bool PartyBattleModel(PPCRegister& r11, PPCRegister& r4, PPCRegiste
   if (!eternalsonata::IsPs3Target() || (r11.u32 != kCrescendo - 1 && r11.u32 != kSerenade - 1))
     return false;
   const uint32_t index = r11.u32 - (kCrescendo - 1);
-  const uint32_t model = eternalsonata::Ps3AppKeep2Model(index);
+  const uint32_t model = eternalsonata::CostumeModel(static_cast<int>(kCrescendo + index));
   static uint32_t names[2];
   const uint32_t name = GuestString(names[index], index ? "bSRN" : "bCRS");
   if (!model || !name)

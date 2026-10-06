@@ -15,6 +15,7 @@
 #include <rex/system/kernel_state.h>
 
 #include "costume_system.h"
+#include "eternalsonata_costume_api.h"
 #include "eternalsonata_asset_container.h"
 #include "generated/eternalsonata_init.h"
 #include "party_system.h"
@@ -25,11 +26,11 @@
 // AppKeep image ids are the slot plus one.
 extern "C++" void PartyStatusPortrait(PPCRegister &image,
                                       PPCRegister &character) {
-  if (character.u32 > 10 && character.u32 <= 12 && eternalsonata::IsPs3Target()) {
-    image.u64 = eternalsonata::kPs3MenuPortraitSlot + character.u32 - 10;
-  } else if (const uint32_t portrait = eternalsonata::WornCostumePortrait(
-                 static_cast<int>(character.u32))) {
+  if (const uint32_t portrait = eternalsonata::CostumePortrait(
+          static_cast<int>(character.u32), ETERNALSONATA_COSTUME_PORTRAIT_STATUS)) {
     image.u64 = portrait;
+  } else if (character.u32 > 10 && character.u32 <= 12 && eternalsonata::IsPs3Target()) {
+    image.u64 = eternalsonata::kPs3MenuPortraitSlot + character.u32 - 10;
   }
 }
 
