@@ -730,6 +730,29 @@ address = 0x821E2DFC
 name = "PartyPlainNameSid"
 registers = ["r10"]
 
+# sub_822388D8, the camp swap, renames both panels in place: the ruby name for
+# 11 and 12, top row then lower rows
+[[midasm_hook]]
+address = 0x82238B2C
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r29"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82238B68
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82238E10
+name = "PartyRubyNameCompare"
+registers = ["cr6", "r29"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x82238E4C
+name = "PartyRubyNameSid"
+registers = ["r4"]
+after_instruction = true
+
 # sub_82245638, a save row: the leader's name is the character id
 [[midasm_hook]]
 address = 0x82245724

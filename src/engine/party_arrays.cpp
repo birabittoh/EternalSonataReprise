@@ -160,6 +160,43 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
       (hit.extension == static_cast<int>(PartyArray::kStatsLive) ||
        hit.extension == static_cast<int>(PartyArray::kTemplate)))
     return hit.extension;
+  // The camp swap redraws level and EXP from base stats and HP from live
+  // stats; for 11 and 12 those land on charwords and on Allegretto's base.
+  if (hit.extension == static_cast<int>(PartyArray::kStatsBase)) {
+    switch (pc) {
+      case 0x82238BC8u:
+      case 0x82238C70u:
+      case 0x82238EACu:
+        return hit.extension;
+    }
+  }
+  if (hit.extension == static_cast<int>(PartyArray::kStatsLive)) {
+    switch (pc) {
+      case 0x82238C00u:
+      case 0x82238C38u:
+      case 0x82238CC4u:
+      case 0x82238CC8u:
+      case 0x82238EE4u:
+      case 0x82238F1Cu:
+      case 0x82238F3Cu:
+      case 0x82238F40u:
+        return hit.extension;
+    }
+  }
+  // sub_821DED50's six portrait_a loads, one per camp layout, and the camp
+  // swap's; with 11 or 12 first they would land on portrait_b[0], Allegretto's.
+  if (hit.extension == static_cast<int>(PartyArray::kPortraitA)) {
+    switch (pc) {
+      case 0x82238AD0u:
+      case 0x821DEE6Cu:
+      case 0x821DF5BCu:
+      case 0x821DFD04u:
+      case 0x821E0430u:
+      case 0x821E0984u:
+      case 0x821E0F68u:
+        return hit.extension;
+    }
+  }
   // Closing the status page restores the camp cursor from position[c - 1];
   // for 11 and 12 that lands on slotbytes[0], which it would otherwise learn.
   if (pc == 0x822367DCu && hit.extension == static_cast<int>(PartyArray::kPosition))
