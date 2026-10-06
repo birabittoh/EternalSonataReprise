@@ -101,6 +101,18 @@ to its parent heap. At teardown their saved ids are appended to the original
 list after its following field has been released, letting the original cleanup
 loop unregister and destroy them.
 
+The shop's equip panel (screen 23, `src/engine/party_shop_menu.cpp`) shows who
+can wear an item as a grid of icons from the shop's display list: ten dims
+(glyphs 0..9), the cursor (12), one icon per character (13..22) and ten
+equipped markers (25..34). The PS3's list (`0x422944` and its language twins)
+is the 360's with a dim, an icon and a marker added to each block, and it
+lays more than ten members out 6x2 (`sub_217FD8`, `sub_2159D8`). On PS3 data
+the six records are appended after the markers instead, so they become glyphs
+35..40 and no stock index moves, and the grid is redrawn on the host after
+`sub_821FAF08`. The preview list of who can wear the item holds ten in its
+owner (`dword_824409E0 + 4`, count at `+44`); entries 10 and 11 live in a
+sidecar that the reader at `0x821FAFDC` is pointed at.
+
 Note the ordering: Polka is 2, Beat 3, Frederic 4. An earlier revision of the
 overlay had 2/3/4 as Beat/Frederic/Polka because it validated names against max
 HP while misreading the position table; the binary's own order is the one
