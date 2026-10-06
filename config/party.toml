@@ -216,7 +216,7 @@ name = "PartyEndU32"
 registers = ["r9"]
 after_instruction = true
 # sub_821F8F78, sub_821F9600: heal-all item; members counted twelve wide but
-# targeted ten wide (the use struct has ten slots), PartyHealAllExtra heals
+# targeted ten wide (the use struct has ten slots); party_camp_menu.cpp heals
 # positions 11 and 12
 [[midasm_hook]]
 address = 0x821F9020
@@ -233,10 +233,6 @@ address = 0x821F9084
 name = "PartyEndU32"
 registers = ["r9"]
 after_instruction = true
-[[midasm_hook]]
-address = 0x821F911C
-name = "PartyHealAllExtra"
-registers = ["r29"]
 [[midasm_hook]]
 address = 0x821F9650
 name = "PartyClampCount"
@@ -477,6 +473,12 @@ address = 0x8221B680
 name = "PartyEndU32"
 registers = ["r24"]
 after_instruction = true
+# sub_8221B5A0: item target list, ten member loop runs to 11 and 12
+[[midasm_hook]]
+address = 0x8221CFD8
+name = "PartyCompareMemberCount"
+registers = ["cr6", "r5"]
+after_instruction = true
 # sub_8221B460: member list for the item target menu
 [[midasm_hook]]
 address = 0x8221B4AC
@@ -487,16 +489,24 @@ after_instruction = true
 address = 0x8221B4BC
 name = "PartyClampCount"
 registers = ["r31"]
-# sub_82222438: item target highlight over menu slots
+# sub_82222438: item target highlight over each member panel, 11 and 12 too,
+# only those a heal-all item healed
 [[midasm_hook]]
 address = 0x822224C8
 name = "PartyEndU32"
 registers = ["r9"]
 after_instruction = true
 [[midasm_hook]]
-address = 0x822224D4
-name = "PartyClampCount"
-registers = ["r26"]
+address = 0x82222510
+name = "PartyHealFlashSkip"
+registers = ["r30"]
+jump_address_on_true = 0x822225BC
+# sub_822226E0: pulses those highlights, ten handles in
+[[midasm_hook]]
+address = 0x822227C4
+name = "PartyCompareWordEnd"
+registers = ["cr6", "r31"]
+after_instruction = true
 # sub_821FAF08, the shop's stats preview (party_shop_menu.cpp): list entries
 # past ten, then the previewed character's name
 [[midasm_hook]]

@@ -203,9 +203,17 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
       (hit.extension == static_cast<int>(PartyArray::kPosition) ||
        hit.extension == static_cast<int>(PartyArray::kStatsLive)))
     return hit.extension;
-  if (pc >= 0x821E8C78u && pc < 0x821E8CECu &&
-      (hit.extension == static_cast<int>(PartyArray::kStatsLive) ||
-       hit.extension == static_cast<int>(PartyArray::kStatsBase)))
+  // Its last store is the base copy; for 1 and 2 that overlaps live[10..11].
+  if (pc >= 0x821E8C78u && pc < 0x821E8CE4u &&
+      hit.extension == static_cast<int>(PartyArray::kStatsLive))
+    return hit.extension;
+  if (pc == 0x821E8CE4u && hit.extension == static_cast<int>(PartyArray::kStatsBase))
+    return hit.extension;
+  // The item target list (sub_8221B5A0) draws 11 and 12 too.
+  if (pc >= 0x8221B5A0u && pc < 0x82222434u &&
+      (hit.extension == static_cast<int>(PartyArray::kPosition) ||
+       hit.extension == static_cast<int>(PartyArray::kStatsLive) ||
+       (hit.extension == static_cast<int>(PartyArray::kPortraitB) && hit.retail < 0)))
     return hit.extension;
   // Closing the status page restores the camp cursor from position[c - 1];
   // for 11 and 12 that lands on slotbytes[0], which it would otherwise learn.

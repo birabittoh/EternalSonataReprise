@@ -50,6 +50,11 @@ extern "C++" void PartyCompareCountLogical(PPCCRRegister& cr, PPCRegister& r) {
   CompareLogical(cr, r.u32, kTwelve);
 }
 
+// After `cmpwi cr, r, 40` (a byte offset into ten words): compare with 48.
+extern "C++" void PartyCompareWordEnd(PPCCRRegister& cr, PPCRegister& r) {
+  Compare(cr, r.s32, kTwelve * 4);
+}
+
 // After `cmpwi cr, r, 11` (a 1 based id loop's end): compare with 13.
 extern "C++" void PartyCompareLimit(PPCCRRegister& cr, PPCRegister& r) {
   Compare(cr, r.s32, kTwelve + 1);
