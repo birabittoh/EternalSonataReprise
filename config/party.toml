@@ -730,6 +730,17 @@ address = 0x821E2DFC
 name = "PartyPlainNameSid"
 registers = ["r10"]
 
+# sub_82245638, a save row: the leader's name is the character id
+[[midasm_hook]]
+address = 0x82245724
+name = "PartyPlainNameSid"
+registers = ["r4"]
+# and the three faces come from a ten entry table
+[[midasm_hook]]
+address = 0x8224584C
+name = "PartySaveRowPortrait"
+registers = ["r11", "r4"]
+
 # Battle (party_battle.cpp): id gates, then the per character cases
 # sub_821A03D0: battle party load, pc%03d.bop
 [[midasm_hook]]
