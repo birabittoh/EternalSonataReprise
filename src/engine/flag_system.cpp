@@ -16,16 +16,19 @@
 //     to the title, both as part of the whole 4412-byte block, and the block
 //     is written to the save by sub_82241190 and restored by sub_82240AF8.
 //
-//   * Three saves at different points in the story show the region holding
-//     sparse bytes whose set bits only ever accumulate: 0x07 -> 0x3F,
-//     0x3E -> 0xFE, 0x40 -> 0xC0. That is a bit array filled from the low bit
-//     up, one bit per remembered event, which is also what the debug room
-//     (zzz01.e, "which flag shall I toggle? specify 0 and every flag resets")
-//     says it is.
+//   * Saves at different points in the story show the region holding sparse
+//     bytes whose set bits only ever accumulate: 0x07 -> 0x3F, 0x3E -> 0xFE,
+//     0x40 -> 0xC0. That is a bit array filled from the low bit up, one bit
+//     per remembered event, which is also what the debug room (zzz01.e,
+//     "which flag shall I toggle? specify 0 and every flag resets") says.
 //
-//   * The last two bytes are the odd ones out: a big-endian u16 that does not
-//     read as bits (0x046A, 0x0834) and grows with progress. That is the
-//     debug room's scenario counter, so the flag bank proper is 2046 bytes.
+//   * Entry 0 (symbol 500) is the big-endian u32 right after the bank: the
+//     scenario counter, which sub_82241190 divides by 1000 for the save's
+//     chapter byte.
+//
+//   * PS3 mode registers the PS3's 500 table onto this same block, where the
+//     bank is symbol 548 at the same offset (ps3_natives.cpp), so both
+//     targets share these addresses.
 //
 // Threading. The exported entry points are plain guest-memory loads and
 // stores and are safe from any thread. The events are published from the mod
@@ -55,11 +58,13 @@ namespace {
 // Guest addresses
 // ---------------------------------------------------------------------------
 
-// Script symbol 547: the flag bank.
+// Script symbol 547 (548 on the PS3): the flag bank.
 constexpr uint32_t kFlagsAddr = 0x8243C369u;
 constexpr uint32_t kFlagBytes = ETERNALSONATA_FLAG_BYTES;
-// The two bytes after it, still inside symbol 547's 2048.
+// Script symbol 500: the scenario counter, a u32 right after the bank.
 constexpr uint32_t kScenarioAddr = kFlagsAddr + kFlagBytes;
+constexpr uint32_t kScenarioBytes = 4;
+static_assert(kScenarioAddr == 0x8243CB69u);
 
 constexpr int kFlagCount = ETERNALSONATA_FLAG_COUNT;
 
@@ -91,7 +96,7 @@ bool BankReadable() {
     return false;
   }
   auto* heap = memory->LookupHeap(kFlagsAddr);
-  return heap && heap->QueryRangeAccess(kFlagsAddr, kScenarioAddr + 1u) !=
+  return heap && heap->QueryRangeAccess(kFlagsAddr, kScenarioAddr + kScenarioBytes - 1u) !=
                      rex::memory::PageAccess::kNoAccess;
 }
 
@@ -103,9 +108,12 @@ uint8_t* BankHost() {
 
 bool ValidIndex(int index) { return index >= 0 && index < kFlagCount; }
 
+// Unaligned, so byte by byte. Clamped so it never reads as an error.
 int ReadScenario(const uint8_t* bank) {
   const uint8_t* p = bank + kFlagBytes;
-  return (static_cast<int>(p[0]) << 8) | static_cast<int>(p[1]);
+  const uint32_t value = (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) |
+                         (uint32_t(p[2]) << 8) | uint32_t(p[3]);
+  return static_cast<int>(std::min<uint32_t>(value, INT32_MAX));
 }
 
 // ---------------------------------------------------------------------------
@@ -330,7 +338,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetScenarioCounter(void) {
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetScenarioCounter(int value) {
   using namespace eternalsonata;
   std::lock_guard<std::mutex> lock(g_mutex);
-  if (value < 0 || value > 0xFFFF) {
+  if (value < 0) {
     return ETERNALSONATA_FLAG_ERR_INVALID_VALUE;
   }
   if (!BankReadable()) {
@@ -340,7 +348,8 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetScenarioCounter(int value) 
   if (!bank) {
     return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
   }
-  bank[kFlagBytes] = static_cast<uint8_t>((value >> 8) & 0xFF);
-  bank[kFlagBytes + 1] = static_cast<uint8_t>(value & 0xFF);
+  for (uint32_t i = 0; i < kScenarioBytes; ++i) {
+    bank[kFlagBytes + i] = static_cast<uint8_t>(uint32_t(value) >> (8 * (3 - i)));
+  }
   return ETERNALSONATA_FLAG_OK;
 }

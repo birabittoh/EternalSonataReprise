@@ -1,11 +1,11 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
 // Public C ABI for the game's flag system: the bit bank the field scripts use
-// to remember what has happened, plus the scenario counter that sits at the
-// end of it.
+// to remember what has happened, plus the scenario counter that follows it.
+// Both work the same on 360 and PS3 data (docs/flags.md §7).
 //
 // The flags are the game's own progress state. Every chest opened, event seen,
-// door unlocked and party change is a bit in one 2046-byte array, and the
+// door unlocked and party change is a bit in one 2048-byte array, and the
 // scripts are the only thing that reads or writes it: no code in the
 // executable touches the array, it is handed to the `.e` bytecode as an
 // exported symbol. So a mod that sets a flag is talking to the scripts in
@@ -41,16 +41,16 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_FLAGS_ABI_VERSION 1u
+// Version 2: the bank is the full 2048 bytes and the scenario counter is the
+// u32 after it; version 1 read the counter from the bank's last two bytes.
+#define ETERNALSONATA_FLAGS_ABI_VERSION 2u
 
 // Flags in the bank. Flag `n` is bit `n & 7` of byte `n >> 3`, counting from
 // the low bit: the order the game fills them in.
-#define ETERNALSONATA_FLAG_COUNT 16368
+#define ETERNALSONATA_FLAG_COUNT 16384
 
-// Bytes of the bank, for EternalSonataCopyFlags. The last two bytes of the
-// 2048-byte array are the scenario counter and are not flags, which is why
-// this is 2046 and not 2048.
-#define ETERNALSONATA_FLAG_BYTES 2046
+// Bytes of the bank, for EternalSonataCopyFlags.
+#define ETERNALSONATA_FLAG_BYTES 2048
 
 enum {
   ETERNALSONATA_FLAG_OK = 0,
@@ -110,8 +110,10 @@ typedef int (*EternalSonataCopyFlagsFn)(uint8_t* dst, int first_byte,
 // events.
 typedef int (*EternalSonataResetFlagsFn)(void);
 
-// The scenario counter, 0..65535: the coarse "how far in are we" number the
-// debug room lets you set directly. Returns the value or a negative error.
+// The scenario counter: the coarse "how far in are we" number the debug room
+// lets you set directly, chapter times 1000 plus progress within it (1130 is
+// early chapter 1). Set accepts 0..INT32_MAX. Returns the value or a negative
+// error.
 typedef int (*EternalSonataGetScenarioCounterFn)(void);
 typedef int (*EternalSonataSetScenarioCounterFn)(int value);
 
