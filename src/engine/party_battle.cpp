@@ -244,6 +244,21 @@ extern "C++" void PartyEffectAngleWrap(PPCRegister& f1) {
   f1.f64 = SafeAngle(angle);
 }
 
+// sub_820C8378 at 0x820C9040, r31 = particle, f31 = the drawn Z angle about to
+// be stored at +0x9C. One path loads it with lfs from the upper word of an
+// fctiwz result, which only the lower word defines, so it comes out as
+// 0xFFFFFFFF. Every other path draws the integrated Z at +0x90.
+extern "C++" void PartyParticleDrawnZ(PPCRegister& r31, PPCRegister& f31) {
+  if (!BadAngle(static_cast<float>(f31.f64)))
+    return;
+  auto* runtime = rex::Runtime::instance();
+  auto* memory = runtime ? runtime->memory() : nullptr;
+  if (!memory || !r31.u32)
+    return;
+  const float z = rex::memory::load_and_swap<float>(memory->TranslateVirtual<uint8_t*>(r31.u32) + 0x90);
+  f31.f64 = BadAngle(z) ? 0.0 : z;
+}
+
 // sub_820C9550 before it reads the particle's emitter, r31 = particle: logs
 // the first particles that arrive with a bad rotation.
 extern "C++" void PartyEffectAngleGuard(PPCRegister& r31) {
