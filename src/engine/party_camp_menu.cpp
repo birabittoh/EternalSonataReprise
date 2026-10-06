@@ -119,6 +119,25 @@ extern "C++" void PartyPanelTextType(PPCRegister& type) {
   type.u64 = 200;
 }
 
+// After the last `cmpwi cr, i, n` choosing a ruby name by 0 based index (the
+// item target list's): 11 and 12 take the ruby one, as in the camp panels.
+extern "C++" void PartyRubyNameIndexCompare(PPCCRRegister& cr, PPCRegister& i) {
+  if (i.u32 >= 10 && i.u32 < 12) {
+    cr.lt = false;
+    cr.gt = false;
+    cr.eq = true;
+  }
+}
+
+// The item target list's one to three member panel: like sub_821DDD00, but
+// Salsa's image id is built in the register holding c.
+extern "C++" bool PartyTargetPortraitSrn(PPCRegister& c) {
+  if (c.u32 != 12 || !eternalsonata::IsPs3Target())
+    return false;
+  c.u64 = kPortraitId + 1;
+  return true;
+}
+
 extern "C++" bool PartyPanelPortraitSrn(PPCRegister& c, PPCRegister& image,
                                         PPCRegister& height) {
   if (c.u32 != 12 || !eternalsonata::IsPs3Target())
@@ -271,20 +290,10 @@ uint32_t PartyMemberCount(uint8_t* base) {
 
 // sub_8221B5A0, the item target list, has the camp grid's layout: rows of
 // three, and position ten alone on the last row, which has room for 11 and 12.
-// Their health fills go to the same sidecar as the camp grid's. It names
-// every member by plain text id `c`; 11 and 12 get theirs here.
+// Their health fills go to the same sidecar as the camp grid's.
 REX_HOOK_RAW(sub_8221B5A0) {
-  const uint32_t begin = ctx.r3.u32;
   const uint32_t count = ctx.r4.u32;
   __imp__sub_8221B5A0(ctx, base);
-  for (uint32_t c = 11; c <= 12; ++c) {
-    for (uint32_t at = begin; at + 4 < ctx.r3.u32; at += 4) {
-      if (REX_LOAD_U32(at) == 200 && REX_LOAD_U32(at + 4) == c) {
-        REX_STORE_U32(at + 4, eternalsonata::PartyNameSid(static_cast<int>(c), false));
-        break;
-      }
-    }
-  }
   const uint32_t members = PartyMemberCount(base);
   if (count == eternalsonata::kRetailCharacterCount &&
       members > eternalsonata::kRetailCharacterCount)
