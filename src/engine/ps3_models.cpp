@@ -11,10 +11,10 @@
 //             MCH, CLV, loaded whole at boot by sub_80C40
 //
 // ps3_appkeep.cpp loads all of these. Every id but CRS and SRN is the model
-// table entry of the same character, which for -10..-12 is the costume worn
-// (costume_system.cpp).
+// table entry of the same character, which for -10..-12 is the costume worn;
+// CRS and SRN wear theirs through CostumeModel (costume_system.cpp).
 
-#include "ps3_appkeep.h"
+#include "costume_system.h"
 
 #include "generated/eternalsonata_init.h"
 #include "target.h"
@@ -46,8 +46,8 @@ int32_t FallbackSlot(int32_t id) {
 }
 
 uint32_t Ps3Model(uint8_t* base, int32_t id) {
-  if (id >= -21 && id <= -20 && eternalsonata::Ps3AppKeep2Model(-20 - id))
-    return eternalsonata::Ps3AppKeep2Model(-20 - id);
+  if (id >= -21 && id <= -20)
+    return eternalsonata::CostumeModel(11 + (-20 - id));
   const int32_t slot = FallbackSlot(id);
   return slot < 0 ? 0 : REX_LOAD_U32(kModelTableAddr + 4 * slot);
 }

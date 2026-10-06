@@ -1,8 +1,8 @@
 #include "field_player_model_override.h"
 
+#include "costume_system.h"
 #include "force_load_area.h"
 #include "party_arrays.h"
-#include "ps3_appkeep.h"
 #include "target.h"
 #include "generated/eternalsonata_init.h"
 
@@ -59,7 +59,7 @@ uint32_t CharacterModel(uint8_t* base, int c) {
   if (c >= 1 && c <= kRetailCharacters)
     return REX_LOAD_U32(kCharacterSlotAddr[c - 1]);
   if (c <= CharacterCount())
-    return eternalsonata::Ps3AppKeep2Model(static_cast<uint32_t>(c - kRetailCharacters - 1));
+    return eternalsonata::CostumeModel(c);
   return 0;
 }
 

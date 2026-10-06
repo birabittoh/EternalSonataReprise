@@ -27,9 +27,14 @@ int WearCostume(int character, int costume);
 // other is unlocked.
 int NextUnlockedCostume(int character);
 
-// The AppKeep image id of the worn costume's status portrait, loading a
-// mod's on first use; 0 for the character's own.
-uint32_t WornCostumePortrait(int character);
+// The AppKeep image id of the worn costume's portrait of one
+// ETERNALSONATA_COSTUME_PORTRAIT_* kind, loading a mod's on first use; 0 for
+// the character's own.
+uint32_t CostumePortrait(int character, int kind);
+
+// The model the character wears now, for Crescendo and Serenade, which have
+// no model table slot; 0 before the boot or when none is loaded.
+uint32_t CostumeModel(int character);
 int SetCostumePortrait(int character, int costume, int kind, const char* path);
 
 // The PS3 variant number of the costume a 0 based PS3 character (ALG, PLK,

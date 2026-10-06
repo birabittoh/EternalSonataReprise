@@ -12,7 +12,8 @@
 //
 // A costume is a whole field character model: one NOBJ in the Xbox 360
 // layout, the same thing AppKeep.bmd holds for each character. It replaces
-// the character's model everywhere the game builds one from then on.
+// the character's model everywhere the game builds one from then on. A
+// costume may also keep the character's own model and change only portraits.
 //
 // A mod does NOT link against this project. Copy this header into the mod and
 // resolve the entry points at runtime out of the host executable:
@@ -38,9 +39,11 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_COSTUME_ABI_VERSION 2u
+#define ETERNALSONATA_COSTUME_ABI_VERSION 1u
 
 // Characters, 1 based, the same numbering as eternalsonata_party_api.h.
+// Crescendo and Serenade exist only on PS3 data; elsewhere every call naming
+// them fails with ETERNALSONATA_COSTUME_ERR_INVALID_CHARACTER.
 enum {
   ETERNALSONATA_COSTUME_CHAR_ALLEGRETTO = 1,
   ETERNALSONATA_COSTUME_CHAR_POLKA = 2,
@@ -52,7 +55,9 @@ enum {
   ETERNALSONATA_COSTUME_CHAR_FALSETTO = 8,
   ETERNALSONATA_COSTUME_CHAR_CLAVES = 9,
   ETERNALSONATA_COSTUME_CHAR_MARCH = 10,
-  ETERNALSONATA_COSTUME_CHARACTER_COUNT = 10
+  ETERNALSONATA_COSTUME_CHAR_CRESCENDO = 11,
+  ETERNALSONATA_COSTUME_CHAR_SERENADE = 12,
+  ETERNALSONATA_COSTUME_CHARACTER_COUNT = 12
 };
 
 // Costume 0 of every character is its default model, id "default".
@@ -151,12 +156,14 @@ typedef int (*EternalSonataSetCostumeStartsLockedFn)(int character, int costume,
 // and cannot be removed. Each returns the new costume's index, or a negative
 // error.
 
-// From memory: `model` is a complete NOBJ, `size` bytes long, and is copied.
+// From memory: `model` is a complete NOBJ, `size` bytes long, and is copied;
+// null keeps the character's own model.
 typedef int (*EternalSonataRegisterCostumeFn)(int character, const char* id, const char* label,
                                               const uint8_t* model, uint32_t size);
 
 // From a file (UTF-8 path, absolute or relative to the working directory),
 // read the first time the costume is worn. Only checked for existence here.
+// Null or "" keeps the character's own model.
 typedef int (*EternalSonataRegisterCostumeFileFn)(int character, const char* id,
                                                   const char* label, const char* path);
 
@@ -164,9 +171,9 @@ typedef int (*EternalSonataRegisterCostumeFileFn)(int character, const char* id,
 enum {
   // The status page; 512 by 512 on PS3 data.
   ETERNALSONATA_COSTUME_PORTRAIT_STATUS = 0,
-  // The one to three member panel's full body art; 512 by 512 (Allegretto's
-  // own is 256 by 512). Only Allegretto, Polka, Beat and Frederic show it:
-  // the others' panels are laid out for their own art.
+  // The one to three member panel's full body art, the size of the
+  // character's own: each character's panel is laid out for its art
+  // (docs/costumes.md lists them).
   ETERNALSONATA_COSTUME_PORTRAIT_PANEL = 1,
   // The faces of the four or more member layouts, the member swaps and the
   // item target list, which pick one set or the other per layout. Both 256
@@ -176,7 +183,7 @@ enum {
   ETERNALSONATA_COSTUME_PORTRAIT_KIND_COUNT = 4
 };
 
-// Version 2. One portrait of a costume: a DDS file or an NTEX chunk, the size
+// One portrait of a costume: a DDS file or an NTEX chunk, the size
 // of the character's own, read the first time the costume is worn (the status
 // portrait: shown). Without one the character's own stays. Once per kind and
 // costume, and not for the default.

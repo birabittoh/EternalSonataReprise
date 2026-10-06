@@ -765,6 +765,23 @@ address = 0x82221418
 name = "PartyTargetPortraitSrn"
 registers = ["r3"]
 jump_address_on_true = 0x822214DC
+# Once each case has stored the panel's image at 4(r11), r9 = c - 1
+[[midasm_hook]]
+address = 0x8222144C
+name = "PartyTargetPanelCostume"
+registers = ["r9", "r11"]
+[[midasm_hook]]
+address = 0x822214A4
+name = "PartyTargetPanelCostume"
+registers = ["r9", "r11"]
+[[midasm_hook]]
+address = 0x822214F0
+name = "PartyTargetPanelCostume"
+registers = ["r9", "r11"]
+[[midasm_hook]]
+address = 0x82221538
+name = "PartyTargetPanelCostume"
+registers = ["r9", "r11"]
 [[midasm_hook]]
 address = 0x822215C4
 name = "PartyRubyNameSid"
@@ -1134,16 +1151,23 @@ address = 0x82237C60
 name = "PartySwapAsSalsa"
 registers = ["r18"]
 jump_address_on_true = 0x82237DE4
+# Before each case's sub_821E8F58(r4 = image): CRS, SRN and costume art
 [[midasm_hook]]
-address = 0x82237E10
+address = 0x82237C9C
 name = "PartySwapPortrait"
 registers = ["r18", "r4"]
-after_instruction = true
 [[midasm_hook]]
-address = 0x82237DE4
+address = 0x82237D30
 name = "PartySwapPortrait"
 registers = ["r18", "r4"]
-after_instruction = true
+[[midasm_hook]]
+address = 0x82237DF8
+name = "PartySwapPortrait"
+registers = ["r18", "r4"]
+[[midasm_hook]]
+address = 0x82237E1C
+name = "PartySwapPortrait"
+registers = ["r18", "r4"]
 [[midasm_hook]]
 address = 0x82237FE4
 name = "PartyRubyNameSid"
@@ -1160,15 +1184,21 @@ name = "PartySwapAsSalsa"
 registers = ["r23"]
 jump_address_on_true = 0x822383BC
 [[midasm_hook]]
-address = 0x822383DC
+address = 0x8223828C
 name = "PartySwapPortrait"
 registers = ["r23", "r4"]
-after_instruction = true
 [[midasm_hook]]
-address = 0x822383BC
+address = 0x82238308
 name = "PartySwapPortrait"
 registers = ["r23", "r4"]
-after_instruction = true
+[[midasm_hook]]
+address = 0x822383C8
+name = "PartySwapPortrait"
+registers = ["r23", "r4"]
+[[midasm_hook]]
+address = 0x822383E4
+name = "PartySwapPortrait"
+registers = ["r23", "r4"]
 [[midasm_hook]]
 address = 0x82238588
 name = "PartyRubyNameSid"
