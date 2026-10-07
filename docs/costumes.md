@@ -188,7 +188,11 @@ worn costume of Allegretto, Polka and Beat, which native 1141 reads from the
 same slots ([ps3-assets.md](ps3-assets.md) §2).
 
 They start locked, and `lib.e` unlocks them through 5026, which goes through
-the same locks as the API; 5027 reads them back. The PS3 changes them on a
+the same locks as the API; 5027 reads them back. The grant is the chest
+routine's (`lib.e` `0x5E50`): items 427..430 are kept out of the inventory and
+unlock ALG v2, PLK v2, PLK v3 and BET v2. The chests are in `tcd04` (427),
+`lam05` (428), `tnt40`/`tnt45` (429) and `rty04` (430), so this needs no host
+code beyond 5026. The PS3 changes them on a
 camp menu page of its own; here X on the status page does, and is off while
 the camp menu flag `+0x920` (5032) is, as that page is on the PS3. Their
 portraits are `campdata/camp_char.bmd` entries, which the PS3 picks with
