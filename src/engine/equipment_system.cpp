@@ -1424,3 +1424,10 @@ extern "C++" void EquipmentLevelUpMagicOwner(PPCRegister& character) {
     character.u64 =
         static_cast<uint32_t>(eternalsonata::MagicOwner(static_cast<int>(character.u32)));
 }
+
+// sub_821E8930's own gate stops at ten; the PS3 records hold 11 and 12.
+// Before the bgt at 0x821E895C, r10 = c.
+extern "C++" bool EquipmentLevelUpMagicTwelve(PPCRegister& character) {
+  return eternalsonata::IsPs3Target() && character.u32 > eternalsonata::kRetailCast &&
+         character.u32 <= static_cast<uint32_t>(eternalsonata::kRosterSize);
+}

@@ -1409,3 +1409,8 @@ address = 0x821982EC
 name = "EquipmentLevelUpMagicOwner"
 registers = ["r3"]
 after_instruction = true
+[[midasm_hook]]
+address = 0x821E895C
+name = "EquipmentLevelUpMagicTwelve"
+registers = ["r10"]
+jump_address_on_true = 0x821E8960
