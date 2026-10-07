@@ -77,6 +77,10 @@ bool IsModdedCharacter(int character);
 // switches: itself for 1..10, the base for a modded slot, 0 otherwise.
 int CharacterBase(int character);
 
+// Whose magic records a slot casts: the base's for a modded slot, so its
+// ids match the base's battle file and text; the slot itself otherwise.
+int MagicOwner(int character);
+
 // English display name; "" for a vacant slot. Renames through the party API
 // are layered on top in party_system.cpp.
 std::string CharacterDisplayName(int character);

@@ -1393,3 +1393,19 @@ registers = ["r10"]
 address = 0x820DBAE4
 name = "PartyBattlePortraitGroup"
 registers = ["r11"]
+# sub_821E93B0, sub_821E8930: a modded slot casts its base's magic
+[[midasm_hook]]
+address = 0x821E940C
+name = "EquipmentMagicOwner"
+registers = ["r10", "r4"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821E9484
+name = "EquipmentMagicOrderRow"
+registers = ["r7"]
+after_instruction = true
+[[midasm_hook]]
+address = 0x821982EC
+name = "EquipmentLevelUpMagicOwner"
+registers = ["r3"]
+after_instruction = true

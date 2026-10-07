@@ -123,6 +123,10 @@ int CharacterBase(int character) {
   return modded ? modded->base : 0;
 }
 
+int MagicOwner(int character) {
+  return IsModdedCharacter(character) ? CharacterBase(character) : character;
+}
+
 std::string CharacterDisplayName(int character) {
   switch (OriginOf(character)) {
     case CharacterOrigin::kRetail:

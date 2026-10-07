@@ -22,4 +22,8 @@ void BindEquipmentSystem(rex::Runtime* runtime);
 // routine can only be hooked once, and forwards here.
 void NotifyEquipmentSaveLoaded();
 
+// A modded character joining with no magic equipped gets the first light and
+// dark magic it has learned, as a retail character starts with. Guest thread.
+void SeedModdedMagic(int character);
+
 }  // namespace eternalsonata

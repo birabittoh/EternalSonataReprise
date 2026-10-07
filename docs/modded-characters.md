@@ -20,6 +20,7 @@ ten retail characters:
 | Stat template, growth | | the base's row of `0x82016150` |
 | Starting stats | `level`, `hp`, ... | the template |
 | Equipment it may wear | | the base's (master table bit `2 + base` copied to `2 + c`) |
+| Magic | | the base's records: same ids, levels, costs and order |
 | Body: field, battle, events | `model` (NOBJ) | the base's model |
 | Battle scene name | `scene` | the base's (`bJRB` for Jazz) |
 | Battle file: motions, cameras, effects, specials | `pc011.bop` shipped, or `battle_file` | the base's `pcNNN.bop` |
@@ -84,6 +85,15 @@ EternalSonataReprise-Mods is the worked example.
   builders' switches, so its frame is the base's: its own panel art (from a
   Viola or later base, its status art), else the base's.
 
+## Magic
+
+Each magic record (`0x82015380`) has one owner. A modded slot is treated as
+its base's owner by the three readers: the equipment list `sub_821E93B0`
+(owner check and `word_8202C8A8` row), the level up list `sub_821E8930` and
+the equipment API (`equipment_system.cpp`). The level each record unlocks at
+is checked against the modded character's own level. Joining with no magic
+equipped gives it the first light and dark magic it has learned.
+
 ## Saves
 
 The guest save holds ten characters; slots 11 and 12 live in the slot's
@@ -95,11 +105,10 @@ by the character's key, not its slot.
 
 ## Not done yet
 
-* **Magic and specials.** Each magic record (`0x82015380`) has one owner, and
-  `sub_821E93B0` lists a character's records in `word_8202C8A8` order, ten rows
-  on 360 data. A modded character needs records of its own: appended records
-  (raising the count as `EternalSonataPs3MagicCount` does), a twelve row order
-  copy, text for the new ids, and bop action records keyed by those ids.
+* **Magic of its own.** A modded slot casts its base's records, so its battle
+  file must key its actions by the base's magic ids. Records of its own would
+  need appended records (raising the count as `EternalSonataPs3MagicCount`
+  does), a twelve row order copy and text for the new ids.
 * **Events.** Native 1141's negative model ids only cover the PS3 pair.
 * **Battle HUD art of its own**: the HUD portrait is a group of BattleKeep slot
   41's layout, built the way the PS3 pair's are lent (`party_battle.cpp`).
