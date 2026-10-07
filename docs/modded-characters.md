@@ -80,9 +80,9 @@ EternalSonataReprise-Mods is the worked example.
   ([costumes.md](costumes.md) §3). Its bones must match the motions it plays:
   its own battle file's, or the base's.
 * Portraits: DDS or NTEX, sizes as in [costumes.md](costumes.md) §4. The one to
-  three member panel of a modded character uses the builders' generic case,
-  Allegretto's frame (256 x 512): its own panel art, else its base's if the
-  base uses that frame (1..4), else Allegretto's.
+  three member panel of a modded character takes its base's case in the
+  builders' switches, so its frame is the base's: its own panel art (from a
+  Viola or later base, its status art), else the base's.
 
 ## Saves
 
