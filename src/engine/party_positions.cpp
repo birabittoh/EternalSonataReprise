@@ -134,6 +134,20 @@ REX_HOOK_RAW(sub_820E7948) {
   ctx.r3.u64 = 0;
 }
 
+// Script native 5009: clear every slot byte. The retail loop stops at ten.
+REX_HOOK_RAW(sub_820E7A58) {
+  const Party party{base};
+  for (uint32_t c = 1; c <= kPartyCharacterCount; ++c)
+    party.SetSlotByte(c, 0);
+  ctx.r3.u64 = 0;
+}
+
+// Script native 5010: how many characters are in the party.
+REX_HOOK_RAW(sub_820E7A88) {
+  const Party party{base};
+  ctx.r3.u64 = party.Count();
+}
+
 // Swaps the positions of characters a and b.
 REX_HOOK_RAW(sub_821E61D0) {
   const Party party{base};
