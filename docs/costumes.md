@@ -2,7 +2,8 @@
 
 A costume is another model for a party character, worn in the field, in
 battle and in cutscenes, or only other camp portraits for it. All twelve can
-have them on PS3 data; on the Xbox 360's, the ten it has. The PS3 release
+have them on PS3 data; on the Xbox 360's, the ten it has and any modded
+character. The PS3 release
 ships four (Allegretto's, two of Polka's, Beat's) behind a "Costumes" camp
 menu; the Xbox 360 releases ship none. This host keeps the feature on every release, so mods can add
 costumes of their own, for any character.
@@ -84,8 +85,10 @@ small_face_portrait = "costumes/plk_swim_face2.dds" # optional
 Each portrait is a DDS file (or an `NTEX` chunk, which is the same DDS behind
 an 8 byte header) the size of the character's own; a kind left out keeps the
 character's own. A costume with no `model` keeps the character's model and
-changes only these. `[[costume]]` tables for Crescendo or Serenade are
-skipped on Xbox 360 data. From C++, `EternalSonataSetCostumePortraitFile` sets
+changes only these. On Xbox 360 data a `[[costume]]` table for a
+modded character ([modded-characters.md](modded-characters.md)) names it by
+its key and waits until the character is defined; one for Crescendo or
+Serenade never applies. From C++, `EternalSonataSetCostumePortraitFile` sets
 one by kind:
 
 | kind | key | where |

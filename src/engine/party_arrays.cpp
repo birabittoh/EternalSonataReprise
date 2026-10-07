@@ -14,6 +14,7 @@
 // (a helper given pointers into both) is only ever mapped by address.
 
 #include "party_arrays.h"
+#include "character_roster.h"
 #include "ps3_appkeep.h"
 #include "ps3_item_tables.h"
 #include "target.h"
@@ -88,6 +89,49 @@ uint32_t RelocatedBase(size_t i, uint32_t block) {
   return block + static_cast<uint32_t>(i) * kSlotSize + (kArrays[i].retail & 0xF);
 }
 
+// The master item table: u32 flags at +4, bit 2 + c "character c may wear
+// it" (docs/equipment.md). Image data, so written around its protection.
+constexpr uint32_t kMasterTable = 0x82017630u;
+constexpr uint32_t kMasterEnd = 0x82023DCCu;
+constexpr uint32_t kMasterStride = 100;
+
+// A modded character may wear what its base may; a vacant slot nothing.
+void MirrorEquipBits(rex::memory::Memory* memory, int character, int base) {
+  auto* heap = memory->LookupHeap(kMasterTable);
+  uint32_t old_protect = 0;
+  const uint32_t size = kMasterEnd - kMasterTable;
+  if (!heap || !heap->Protect(kMasterTable, size,
+                              rex::memory::kMemoryProtectRead | rex::memory::kMemoryProtectWrite,
+                              &old_protect))
+    return;
+  const uint32_t own = 4u << character;
+  for (uint32_t at = kMasterTable + 4; at < kMasterEnd; at += kMasterStride) {
+    auto* flags = memory->TranslateVirtual<uint8_t*>(at);
+    const uint32_t value = rex::memory::load_and_swap<uint32_t>(flags);
+    const bool may = base && (value & (4u << base));
+    rex::memory::store_and_swap<uint32_t>(flags, may ? value | own : value & ~own);
+  }
+  heap->Protect(kMasterTable, size, old_protect, nullptr);
+}
+
+// A modded slot's template row, camp faces and equipment start as its base's;
+// a vacant 360 slot gets Allegretto's faces so a stray draw shows someone.
+void SeedSlot(rex::memory::Memory* memory, uint32_t block, int character) {
+  if (IsPs3Target())
+    return;
+  MirrorEquipBits(memory, character, IsModdedCharacter(character) ? CharacterBase(character) : 0);
+  const int base = IsModdedCharacter(character) ? CharacterBase(character) : 1;
+  const uint32_t c = static_cast<uint32_t>(character - 1);
+  const uint32_t from = static_cast<uint32_t>(base - 1);
+  for (PartyArray array : {PartyArray::kTemplate, PartyArray::kPortraitA, PartyArray::kPortraitB}) {
+    const size_t i = static_cast<size_t>(array);
+    if (array == PartyArray::kTemplate && !IsModdedCharacter(character))
+      continue;
+    auto* table = memory->TranslateVirtual<uint8_t*>(RelocatedBase(i, block));
+    std::memcpy(table + kArrays[i].stride * c, table + kArrays[i].stride * from, kArrays[i].stride);
+  }
+}
+
 void Relocate() {
   auto* runtime = rex::Runtime::instance();
   auto* memory = runtime ? runtime->memory() : nullptr;
@@ -109,18 +153,20 @@ void Relocate() {
       std::memcpy(dst + kRetailCharacterCount * a.stride, kPs3Templates,
                   kPs3TemplateCount * a.stride);
   }
-  // Portraits: the PS3's own, or Allegretto's for a modded character. The
-  // tables hold image ids, the AppKeep slot plus one.
-  for (uint32_t set = 0; set < 2; ++set) {
-    const size_t i = static_cast<size_t>(PartyArray::kPortraitA) + set;
-    auto* table = memory->TranslateVirtual<uint8_t*>(RelocatedBase(i, block));
-    for (uint32_t c = kRetailCharacterCount; c < kPartyCharacterCount; ++c) {
-      const uint32_t id =
-          IsPs3Target() ? kPs3PortraitSlot + 2 * set + (c - kRetailCharacterCount) + 1
-                        : rex::memory::load_and_swap<uint16_t>(table);
-      rex::memory::store_and_swap<uint16_t>(table + 2 * c, static_cast<uint16_t>(id));
+  // Portraits: the PS3's own. The tables hold image ids, the AppKeep slot
+  // plus one.
+  if (IsPs3Target()) {
+    for (uint32_t set = 0; set < 2; ++set) {
+      const size_t i = static_cast<size_t>(PartyArray::kPortraitA) + set;
+      auto* table = memory->TranslateVirtual<uint8_t*>(RelocatedBase(i, block));
+      for (uint32_t c = kRetailCharacterCount; c < kPartyCharacterCount; ++c)
+        rex::memory::store_and_swap<uint16_t>(
+            table + 2 * c,
+            static_cast<uint16_t>(kPs3PortraitSlot + 2 * set + (c - kRetailCharacterCount) + 1));
     }
   }
+  for (uint32_t c = kRetailCharacterCount; c < kPartyCharacterCount; ++c)
+    SeedSlot(memory, block, static_cast<int>(c + 1));
   g_block.store(block, std::memory_order_release);
   REXLOG_INFO("party arrays: relocated to {:08X}", block);
 }
@@ -385,6 +431,13 @@ uint32_t PartyArrayAddress(PartyArray array, uint32_t index) {
   const uint32_t block = g_block.load(std::memory_order_acquire);
   const uint32_t base = block ? RelocatedBase(i, block) : kArrays[i].retail;
   return base + index * kArrays[i].stride;
+}
+
+void SeedModdedSlot(int character) {
+  const uint32_t block = g_block.load(std::memory_order_acquire);
+  auto* runtime = rex::Runtime::instance();
+  if (block && runtime && runtime->memory())
+    SeedSlot(runtime->memory(), block, character);
 }
 
 namespace {

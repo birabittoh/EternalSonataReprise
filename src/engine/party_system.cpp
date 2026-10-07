@@ -33,6 +33,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -46,6 +47,7 @@
 
 #include "eternalsonata_party_api.h"
 #include "guest_main_thread.h"
+#include "character_roster.h"
 #include "party_system.h"
 #include "room_presence.h"
 #include "target.h"
@@ -145,12 +147,6 @@ int32_t ScaleBattleExp(int32_t total, double multiplier) {
 constexpr int kCharacterCount = ETERNALSONATA_CHARACTER_COUNT;
 // The game's own name blocks list the ten 360 characters.
 constexpr int kNamedCount = 10;
-
-// The cast in character-number order, as the game's own text blocks store it.
-// Note Polka is 2, Beat 3, Frederic 4.
-constexpr const char* kDefaultNames[kCharacterCount + 1] = {
-    "",     "Allegretto", "Polka",  "Beat",   "Frederic", "Viola",
-    "Salsa", "Jazz",      "Falsetto", "Claves", "March", "Crescendo", "Serenade"};
 
 // ---------------------------------------------------------------------------
 // Host state
@@ -284,10 +280,11 @@ bool Editable() { return Available() && !GetRoomPresence().IsBattleActive(); }
 // ---------------------------------------------------------------------------
 
 // Maps an API `character` to the character number it means, or a negative
-// ETERNALSONATA_PARTY_ERR_* for anything outside the cast. Callers hold
+// ETERNALSONATA_PARTY_ERR_* for anything outside the cast, vacant slots
+// included. Callers hold
 // g_mutex.
 int SlotForLocked(int character) {
-  if (character >= 1 && character <= kCharacterCount) {
+  if (CharacterExists(character)) {
     return character;
   }
   return ETERNALSONATA_PARTY_ERR_INVALID_CHARACTER;
@@ -693,14 +690,6 @@ uint32_t PartyNameTextFor(uint32_t blob, uint32_t sid) {
   if (!g_names[slot].empty()) {
     return ruby ? g_name_guest_ruby[slot] : g_name_guest[slot];
   }
-  // The PS3's own spellings (its EBOOT's menu block, ids 11, 12, 23, 24), in
-  // dword_8243D370's order: JPN (Shift JIS), USA, GBR, FRA, ITA, DEU, ESP.
-  static constexpr const char* kPs3Names[2][7] = {
-      {"\x83N\x83\x8c\x83" "b\x83V\x83" "F\x83\x93\x83h", "Crescendo", "Crescendo",
-       "Crescendo", "Crescendo", "Crescendo", "Crescendo"},
-      {"\x83Z\x83\x8c\x83i\x81[\x83" "f", "Serenade", "Serenade", "S\xe9r\xe9nade",
-       "Serenata", "Serenade", "Serenata"},
-  };
   static std::array<std::array<uint32_t, 2>, 2> guest{};
   uint32_t& at = guest[slot - 11][ruby];
   if (!at) {
@@ -709,13 +698,13 @@ uint32_t PartyNameTextFor(uint32_t blob, uint32_t sid) {
       return 0;
     }
   }
-  // A vacant 360 slot gets an empty name rather than a null the caller would
-  // dereference.
+  // The PS3's own spellings, a modded character's name, or for a vacant slot
+  // an empty name rather than a null the caller would dereference.
   std::string text;
-  if (IsPs3Target()) {
-    const uint32_t language = std::min(ReadGuest<uint32_t>(0x8243D370u), 6u);
-    text = kPs3Names[slot - 11][language];
-  }
+  if (IsPs3Target())
+    text = Ps3LocalizedName(slot, ReadGuest<uint32_t>(0x8243D370u));
+  else
+    text = CharacterDisplayName(slot).substr(0, 59);
   WriteGuestString(at, ruby ? "<r>" + text : text);
   return at;
 }
@@ -820,8 +809,10 @@ extern "C" REX_MOD_PLUGIN_EXPORT const char* EternalSonataGetCharacterName(int c
   const std::string& name = NameForSlotLocked(slot);
   if (!name.empty())
     return name.c_str();
-  // On 360 data the last two are vacant until a mod names them.
-  return slot <= kNamedCount || IsPs3Target() ? kDefaultNames[slot] : "";
+  // Kept per slot so the pointer outlives the call.
+  static std::array<std::string, kCharacterCount + 1> display;
+  display[slot] = CharacterDisplayName(slot);
+  return display[slot].c_str();
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPartySize(void) {
@@ -1086,6 +1077,25 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataAddCharacterToParty(int charac
   if (PositionOf(slot) != 0) {
     return ETERNALSONATA_PARTY_ERR_ALREADY_IN_PARTY;
   }
+  // A modded character's own starting stats, until it has fought.
+  ModdedCharacter modded;
+  if (ModdedDefinition(slot, modded) && modded.has_stats && ReadExp(slot) == 0) {
+    EternalSonataCharacterStats stats{};
+    ReadStats(BaseStatsAddr(), slot, &stats);
+    const auto pick = [](int32_t own, int32_t current) { return own > 0 ? own : current; };
+    stats.level = pick(modded.level, stats.level);
+    stats.hp_max = pick(modded.hp_max, stats.hp_max);
+    stats.hp = stats.hp_max;
+    stats.attack = pick(modded.attack, stats.attack);
+    stats.magic = pick(modded.magic, stats.magic);
+    stats.defense = pick(modded.defense, stats.defense);
+    stats.speed = pick(modded.speed, stats.speed);
+    WriteStats(BaseStatsAddr(), slot, stats);
+    WriteStats(LiveStatsAddr(), slot, stats);
+    // The level is a cache of the EXP total, so the total has to buy it.
+    if (stats.level > 1)
+      WriteExp(slot, TotalExpForLevel(stats.level));
+  }
 
   return RunOnGuestThread([slot] {
     const int joined = JoinOnGuestThread(slot);
@@ -1195,4 +1205,72 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCharacterName(int character
   g_names[slot] = name ? name : "";
   PublishNameLocked(slot);
   return ETERNALSONATA_PARTY_OK;
+}
+
+// ---------------------------------------------------------------------------
+// Modded characters (ABI 3)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+eternalsonata::ModdedCharacter FromDefinition(const EternalSonataCharacterDefinition& in) {
+  const auto text = [](const char* s) { return s ? std::string(s) : std::string(); };
+  const auto path = [](const char* s) {
+    return s && *s ? std::filesystem::u8path(s) : std::filesystem::path();
+  };
+  eternalsonata::ModdedCharacter out;
+  out.id = text(in.id);
+  out.name = text(in.name);
+  out.token = text(in.token);
+  out.base = in.base ? in.base : ETERNALSONATA_CHAR_ALLEGRETTO;
+  out.model = path(in.model_path);
+  out.scene = text(in.scene_name);
+  out.battle_file = in.battle_file;
+  out.voice_file = in.voice_file;
+  for (int kind = 0; kind < eternalsonata::kCharacterPortraitKinds; ++kind)
+    out.portraits[kind] = path(in.portrait_paths[kind]);
+  out.has_stats = in.apply_stats != 0;
+  out.level = in.stats.level;
+  out.hp_max = in.stats.hp_max;
+  out.attack = in.stats.attack;
+  out.magic = in.stats.magic;
+  out.defense = in.stats.defense;
+  out.speed = in.stats.speed;
+  return out;
+}
+
+int Define(int character, const EternalSonataCharacterDefinition* definition) {
+  if (!definition || definition->struct_size < sizeof(EternalSonataCharacterDefinition))
+    return ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT;
+  return eternalsonata::DefineModdedCharacter(character, FromDefinition(*definition));
+}
+
+}  // namespace
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetAddedSlotCount(void) {
+  return eternalsonata::AddedSlotCount();
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetAddedSlot(int index) {
+  return eternalsonata::AddedSlot(index);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsCharacterDefined(int character) {
+  return eternalsonata::CharacterExists(character) ? 1 : 0;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataDefineCharacter(
+    int character, const EternalSonataCharacterDefinition* definition) {
+  if (character < eternalsonata::kFirstAddedSlot)
+    return ETERNALSONATA_PARTY_ERR_INVALID_CHARACTER;
+  return Define(character, definition);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataDefineNextCharacter(
+    const EternalSonataCharacterDefinition* definition) {
+  return Define(0, definition);
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataUndefineCharacter(int character) {
+  return eternalsonata::UndefineModdedCharacter(character);
 }

@@ -17,6 +17,11 @@ namespace eternalsonata {
 // binds the change event to the runtime. Call once from OnPostSetup.
 void BindCostumeSystem(rex::Runtime* runtime);
 
+// Slot 11 or 12 changed hands: resets its costume list to the new
+// character's default (its own model and portraits) and registers the
+// [[costume]] tables that were waiting for it.
+void CostumeCharacterDefined(int character);
+
 // The same calls the C ABI exports, with its results; characters are 1 based.
 int CostumeCount(int character);
 const char* CostumeLabel(int character, int costume);
@@ -32,8 +37,8 @@ int NextUnlockedCostume(int character);
 // the character's own.
 uint32_t CostumePortrait(int character, int kind);
 
-// The model the character wears now, for Crescendo and Serenade, which have
-// no model table slot; 0 before the boot or when none is loaded.
+// The model the character wears now, for characters 11 and 12, which have no
+// model table slot; 0 before the boot or when none is loaded.
 uint32_t CostumeModel(int character);
 int SetCostumePortrait(int character, int costume, int kind, const char* path);
 

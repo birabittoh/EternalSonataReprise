@@ -3,11 +3,14 @@
 // The battle reads a character's stats through the twelve wide arrays, so
 // what remains are its own ten character switches. The model and cloth cases
 // follow the PS3's sub_163010 (its twin of sub_821A2B38): Crescendo is model
-// -20 named bCRS with a manto01_sp chain, Serenade -21 named bSRN.
+// -20 named bCRS with a manto01_sp chain, Serenade -21 named bSRN. A modded
+// character takes its own model and files, and its base's case in every
+// switch (docs/modded-characters.md).
 
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include <string>
 
 #include <rex/hook.h>
@@ -18,6 +21,7 @@
 #include <rex/system/xmemory.h>
 
 #include "generated/eternalsonata_init.h"
+#include "character_roster.h"
 #include "costume_system.h"
 #include "party_system.h"
 #include "target.h"
@@ -45,15 +49,35 @@ uint32_t GuestString(uint32_t& at, const char* text) {
 
 }  // namespace
 
+// The pc%03d.bop number sub_821A03D0 loads, r6 = character.
+extern "C++" void PartyBattleFile(PPCRegister& r6) {
+  r6.u64 = static_cast<uint32_t>(eternalsonata::BattleFileNumber(static_cast<int>(r6.u32)));
+}
+
+// The pc%03d(_usa).csf number sub_821BD0D0 loads, r6 = character.
+extern "C++" void PartyVoiceFile(PPCRegister& r6) {
+  r6.u64 = static_cast<uint32_t>(eternalsonata::VoiceFileNumber(static_cast<int>(r6.u32)));
+}
+
 // sub_821A2B38 before its model switch, r11 = character - 1: the model and
 // the scene name the cases leave in r28 and r4.
 extern "C++" bool PartyBattleModel(PPCRegister& r11, PPCRegister& r4, PPCRegister& r28) {
-  if (!eternalsonata::IsPs3Target() || (r11.u32 != kCrescendo - 1 && r11.u32 != kSerenade - 1))
+  const int character = static_cast<int>(r11.u32) + 1;
+  if (character <= eternalsonata::kRetailCast || !eternalsonata::CharacterExists(character))
     return false;
-  const uint32_t index = r11.u32 - (kCrescendo - 1);
-  const uint32_t model = eternalsonata::CostumeModel(static_cast<int>(kCrescendo + index));
-  static uint32_t names[2];
-  const uint32_t name = GuestString(names[index], index ? "bSRN" : "bCRS");
+  const uint32_t model = eternalsonata::CostumeModel(character);
+  std::string scene = eternalsonata::Builtin(character).scene;
+  eternalsonata::ModdedCharacter modded;
+  if (eternalsonata::ModdedDefinition(character, modded))
+    scene = modded.scene.empty() ? eternalsonata::Builtin(modded.base).scene : modded.scene;
+  static uint32_t names[eternalsonata::kRosterSize - eternalsonata::kRetailCast];
+  static std::string named[std::size(names)];
+  const size_t index = static_cast<size_t>(character - eternalsonata::kFirstAddedSlot);
+  if (named[index] != scene) {
+    names[index] = 0;
+    named[index] = scene;
+  }
+  const uint32_t name = GuestString(names[index], scene.c_str());
   if (!model || !name)
     return false;
   r28.u64 = model;
@@ -61,8 +85,17 @@ extern "C++" bool PartyBattleModel(PPCRegister& r11, PPCRegister& r4, PPCRegiste
   return true;
 }
 
-// sub_821A2B38's cloth chains by character, r11 = character: Crescendo's
-// mantle takes the one chain path with its name in r4.
+// sub_821A2B38 before its cloth chains by character, r11 = character: a
+// modded character wearing its base's body takes the base's chains; one with
+// a model of its own has none yet.
+extern "C++" void PartyBattleClothCharacter(PPCRegister& r11) {
+  const int character = static_cast<int>(r11.u32);
+  eternalsonata::ModdedCharacter modded;
+  if (eternalsonata::ModdedDefinition(character, modded))
+    r11.u64 = modded.model.empty() ? static_cast<uint32_t>(modded.base) : 0u;
+}
+
+// Crescendo's mantle takes the one chain path with its name in r4.
 extern "C++" bool PartyBattleCloth(PPCRegister& r11, PPCRegister& r4) {
   if (!eternalsonata::IsPs3Target() || r11.u32 != kCrescendo)
     return false;
@@ -75,10 +108,14 @@ extern "C++" bool PartyBattleCloth(PPCRegister& r11, PPCRegister& r4) {
 
 // sub_82190028(character, motion): whether the character's bop has its own
 // hit motion, else sub_821C8C98 plays the generic flinch. The PS3's twin
-// (sub_139068) gives Crescendo and Serenade Allegretto's motion set.
+// (sub_139068) gives Crescendo and Serenade Allegretto's motion set; a
+// modded character takes its base's.
 extern "C++" void PartyHitMotionCharacter(PPCRegister& r3) {
+  const int character = static_cast<int>(r3.u32);
   if (eternalsonata::IsPs3Target() && (r3.u32 == kCrescendo || r3.u32 == kSerenade))
     r3.u64 = 1;
+  else if (eternalsonata::IsModdedCharacter(character))
+    r3.u64 = static_cast<uint32_t>(eternalsonata::CharacterBase(character));
 }
 
 // The battle HUD's name, r4 = character - 1 into a ten entry text block.
@@ -200,8 +237,11 @@ void LendPortraits(PPCContext& ctx, uint8_t* base, uint32_t hud) {
 // Crescendo and Serenade, drawn from their lent group.
 extern "C++" void PartyBattlePortraitGroup(PPCRegister& r) {
   if (r.u32 == kCrescendo + kPortraitBase || r.u32 == kSerenade + kPortraitBase) {
+    const int character = static_cast<int>(r.u32 - kPortraitBase);
     if (const uint32_t group = g_lending.group[r.u32 - kCrescendo - kPortraitBase])
       r.u64 = group;
+    else if (const int base = eternalsonata::CharacterBase(character))
+      r.u64 = static_cast<uint32_t>(base) + kPortraitBase;  // the base's face for now
   }
 }
 
@@ -334,19 +374,28 @@ constexpr uint32_t kMotionBlendRow = 38 * 2;
 constexpr uint32_t kMotionStopTable = 0x82074E98;   // u32[10]
 constexpr uint32_t kMotionStop = 40;
 
-uint32_t TwelveRowCopy(uint32_t source, uint32_t row, uint32_t tail_value) {
+// Ten retail rows and two more: the PS3's (`tail_value` set, else row 10)
+// or a modded character's base row, refreshed on every use since a slot can
+// change hands.
+uint32_t TwelveRowCopy(uint32_t& copy, uint32_t source, uint32_t row, uint32_t tail_value) {
   auto* runtime = rex::Runtime::instance();
   auto* memory = runtime ? runtime->memory() : nullptr;
   if (!memory)
     return 0;
-  const uint32_t copy = memory->SystemHeapAlloc(row * kSerenade, 0x10);
-  if (!copy)
-    return 0;
+  if (!copy) {
+    copy = memory->SystemHeapAlloc(row * kSerenade, 0x10);
+    if (!copy)
+      return 0;
+    std::memcpy(memory->TranslateVirtual<uint8_t*>(copy), memory->TranslateVirtual<uint8_t*>(source),
+                row * 10);
+  }
   auto* out = memory->TranslateVirtual<uint8_t*>(copy);
-  std::memcpy(out, memory->TranslateVirtual<uint8_t*>(source), row * 10);
   for (uint32_t c = kCrescendo; c <= kSerenade; ++c) {
     uint8_t* dest = out + row * (c - 1);
-    if (tail_value)
+    const int base = eternalsonata::CharacterBase(static_cast<int>(c));
+    if (base)
+      std::memcpy(dest, out + row * (base - 1), row);
+    else if (tail_value)
       rex::memory::store_and_swap<uint32_t>(dest, tail_value);
     else
       std::memcpy(dest, out + row * 9, row);
@@ -360,14 +409,14 @@ uint32_t TwelveRowCopy(uint32_t source, uint32_t row, uint32_t tail_value) {
 // time of the motion it starts. Past row 10 it read float data, thousands of
 // frames, so Crescendo's specials never left his previous pose.
 extern "C++" void PartyMotionBlendTable(PPCRegister& r11) {
-  static const uint32_t copy = TwelveRowCopy(kMotionBlendTable, kMotionBlendRow, 0);
-  if (copy)
+  static uint32_t copy = 0;
+  if (TwelveRowCopy(copy, kMotionBlendTable, kMotionBlendRow, 0))
     r11.u64 = copy;
 }
 
 // After sub_821C9E78 forms its per character u32 table.
 extern "C++" void PartyMotionStopTable(PPCRegister& r11) {
-  static const uint32_t copy = TwelveRowCopy(kMotionStopTable, 4, kMotionStop);
-  if (copy)
+  static uint32_t copy = 0;
+  if (TwelveRowCopy(copy, kMotionStopTable, 4, kMotionStop))
     r11.u64 = copy;
 }

@@ -11,9 +11,11 @@
 #include <cstdint>
 
 #include <rex/hook.h>
+#include <rex/memory/utils.h>
 #include <rex/ppc/context.h>
 #include <rex/system/kernel_state.h>
 
+#include "character_roster.h"
 #include "costume_system.h"
 #include "eternalsonata_costume_api.h"
 #include "party_arrays.h"
@@ -48,9 +50,20 @@ thread_local bool g_screen_heap_fallback = false;
 // The worn costume's one to three member panel art, 0 for the character's own.
 // From Viola on the panel shows the status page's art, so a costume without
 // panel art shows its status portrait there.
+// A modded character falls into the builders' generic case, Allegretto's
+// frame, which reads word_8202C9B4[c - 1]: without art of its own it shows its
+// base's when the base uses that frame too (1..4), else Allegretto's.
 uint32_t CostumePanel(uint32_t c) {
   const int character = static_cast<int>(c);
   uint32_t id = eternalsonata::CostumePortrait(character, ETERNALSONATA_COSTUME_PORTRAIT_PANEL);
+  if (eternalsonata::IsModdedCharacter(character)) {
+    if (id)
+      return id;
+    const int base = eternalsonata::CharacterBase(character);
+    uint8_t* membase = rex::system::kernel_state()->memory()->virtual_membase();
+    return rex::memory::load_and_swap<uint16_t>(
+        membase + 0x8202C9B4u + 2u * static_cast<uint32_t>((base <= 4 ? base : 1) - 1));
+  }
   if (!id && c > 4)
     id = eternalsonata::CostumePortrait(character, ETERNALSONATA_COSTUME_PORTRAIT_STATUS);
   return id;
@@ -100,14 +113,19 @@ extern "C++" void PartyPlainNameSid(PPCRegister& sid) {
 
 // Save rows draw the party from the ten entry face table at 0x822FF530, read
 // at `c << 2`. The PS3 appends CRS and SRN's faces to that set (its 290, 291);
-// a vacant 360 slot gets Allegretto's.
+// a modded character shows its base's, a vacant 360 slot Allegretto's.
 extern "C++" void PartySaveRowPortrait(PPCRegister& offset, PPCRegister& image) {
   const uint32_t c = offset.u32 >> 2;
   if (c <= 10 || c > 12)
     return;
   uint32_t id = 0;
-  if (eternalsonata::IsPs3Target())
+  if (eternalsonata::IsPs3Target()) {
     id = eternalsonata::Ps3AppKeepImageId(291 + c - 11);
+  } else {
+    const int base = std::max(eternalsonata::CharacterBase(static_cast<int>(c)), 1);
+    uint8_t* membase = rex::system::kernel_state()->memory()->virtual_membase();
+    id = rex::memory::load_and_swap<uint32_t>(membase + 0x822FF530u + 4u * base);
+  }
   image.u64 = id ? id : 0x112u;
 }
 

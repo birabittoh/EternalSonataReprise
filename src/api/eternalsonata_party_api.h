@@ -44,7 +44,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_PARTY_ABI_VERSION 2u
+#define ETERNALSONATA_PARTY_ABI_VERSION 3u
 
 // The game's cast. Character ids are 1-based and are the game's own numbering,
 // which is also the order of its internal name table.
@@ -64,6 +64,9 @@ enum {
   ETERNALSONATA_CHAR_SERENADE = 12,
   ETERNALSONATA_CHARACTER_COUNT = 12
 };
+
+// The ten every release has; ids above it are the added slots.
+#define ETERNALSONATA_NATIVE_CHARACTER_COUNT 10
 
 // The party's first three display positions are the ones that walk the field
 // and fight; everything past that is a reserve.
@@ -95,7 +98,10 @@ enum {
   ETERNALSONATA_PARTY_ERR_NOT_ELIGIBLE = -6,
   ETERNALSONATA_PARTY_ERR_ALREADY_IN_PARTY = -7,
   ETERNALSONATA_PARTY_ERR_NOT_IN_PARTY = -8,
-  ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT = -10
+  ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT = -10,
+  // ABI 3: another character holds that slot, or none is free.
+  ETERNALSONATA_PARTY_ERR_SLOT_TAKEN = -11,
+  ETERNALSONATA_PARTY_ERR_NO_SLOTS = -12
 };
 
 // One character's stats, in the units the game's own status and equipment
@@ -283,6 +289,93 @@ typedef int (*EternalSonataSetPartyLevelFn)(int level);
 // the name being replaced (Allegretto has room for ten characters, Beat for
 // four) and show a truncated name if the new one is longer.
 typedef int (*EternalSonataSetCharacterNameFn)(int character, const char* name);
+
+// ---------------------------------------------------------------------------
+// Modded characters (ABI version 3)
+// ---------------------------------------------------------------------------
+//
+// On Xbox 360 data, ids 11 and 12 are vacant slots: the game's tables are
+// twelve wide, but nobody is there, so they cannot join a party or be drawn.
+// A mod defines a slot to put its own character in it. On PS3 data Crescendo
+// and Serenade fill them and there are no vacant slots.
+//
+// A character brings its own model, battle file (motions, camera scripts,
+// effects, specials), voice bank and portraits, and takes everything it does
+// not bring from a `base` character of the retail cast: its stat template and
+// growth, and its cases in the game's own per character switches (cloth, hit
+// motions, battle HUD portrait). Costumes work as for anyone else
+// (eternalsonata_costume_api.h); the definition's model and portraits are its
+// default costume. docs/modded-characters.md has the file formats.
+//
+// The same can be declared without code, as [[character]] in a mod's
+// assets.toml. Definitions are not saved: define on every run, from
+// OnModuleLaunched at the latest, before a save loads.
+
+typedef struct EternalSonataCharacterDefinition {
+  // sizeof(EternalSonataCharacterDefinition).
+  uint32_t struct_size;
+
+  // Unique and stable, e.g. "my_mod/cadenza": saves name the character by it.
+  const char* id;
+  // Display name, single-byte CP1252 like EternalSonataSetCharacterName.
+  const char* name;
+  // Lowercase key for costume declarations and cvars; null derives it from
+  // the name.
+  const char* token;
+
+  // 1..ETERNALSONATA_NATIVE_CHARACTER_COUNT; 0 means Allegretto.
+  int32_t base;
+
+  // A file path, Xbox 360 NOBJ: the body in the field, in battle and in
+  // events. Null wears the base's model. Bone names must match the motions
+  // the character plays, its own battle file's or the base's.
+  const char* model_path;
+  // The battle scene name given to the model, e.g. "bCDZ"; null takes the
+  // base's.
+  const char* scene_name;
+
+  // The NNN of btldata/player/pcNNN.bop and btldata/voice/pcNNN.csf. 0
+  // loads the slot's own (pc011.bop for character 11) when the game data or
+  // a mod ships it, else the base's.
+  int32_t battle_file;
+  int32_t voice_file;
+
+  // Portraits by ETERNALSONATA_COSTUME_PORTRAIT_* kind (status, panel, face,
+  // small face): .dds or NTEX file paths, null for the base's.
+  const char* portrait_paths[4];
+
+  // Starting own stats, applied when the character joins a party while it
+  // has no EXP. 0 lets the base's template decide.
+  int32_t apply_stats;
+  EternalSonataCharacterStats stats;
+
+  uint32_t reserved[8];  // zero-fill
+} EternalSonataCharacterDefinition;
+
+// How many added slots this host has (defined or not), and the id of slot
+// `index` in 0..count-1, or a negative error.
+typedef int (*EternalSonataGetAddedSlotCountFn)(void);
+typedef int (*EternalSonataGetAddedSlotFn)(int index);
+
+// 1 if `character` exists on this data: the retail cast, the PS3's two, or
+// a defined slot.
+typedef int (*EternalSonataIsCharacterDefinedFn)(int character);
+
+// Defines slot `character`. Defining it again with the same id replaces the
+// definition; another id gets ETERNALSONATA_PARTY_ERR_SLOT_TAKEN. Returns the
+// character id.
+typedef int (*EternalSonataDefineCharacterFn)(int character,
+                                              const EternalSonataCharacterDefinition* definition);
+
+// Defines the first free slot (or this id's own), so mods that do not care
+// which slot they get can coexist. Returns the character id, or
+// ETERNALSONATA_PARTY_ERR_NO_SLOTS.
+typedef int (*EternalSonataDefineNextCharacterFn)(
+    const EternalSonataCharacterDefinition* definition);
+
+// Gives a slot back. Refused with ETERNALSONATA_PARTY_ERR_ALREADY_IN_PARTY
+// while the character is in the party.
+typedef int (*EternalSonataUndefineCharacterFn)(int character);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -52,6 +52,7 @@
 #include "native_renderer.h"
 #include "native_renderer_overlay.h"
 #include "input_overlay.h"
+#include "character_roster.h"
 #include "costume_system.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_profile.h"
@@ -548,6 +549,10 @@ class EternalsonataApp : public rex::ReXApp {
     // The script progress flags for mods: src/eternalsonata_flag_api.h answers
     // "unavailable" and publishes no event until this runs.
     eternalsonata::BindFlagSystem(runtime());
+
+    // Modded characters declared in assets.toml, before the costumes that may
+    // name them.
+    eternalsonata::ScanModCharacters(runtime());
 
     // Costumes for mods (src/api/eternalsonata_costume_api.h), and the ones
     // mods declare in assets.toml. Before the guest, which puts them on.

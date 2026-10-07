@@ -1,4 +1,5 @@
 #include "field_player_model_override.h"
+#include "character_roster.h"
 
 #include "costume_system.h"
 #include "force_load_area.h"
@@ -40,25 +41,21 @@ constexpr uint32_t kCharacterSlotAddr[10] = {
     0x82420B1Cu,  // 10 bMCH  March
 };
 
-constexpr const char* kCharacterNames[13] = {
-    "(none)", "Allegretto", "Polka",    "Beat",   "Frederic", "Viola",     "Salsa",
-    "Jazz",   "Falsetto",   "Claves",   "March",  "Crescendo", "Serenade",
-};
-
-// Crescendo and Serenade exist only on PS3 data, where appkeep2.bmd holds
-// their field models.
-constexpr int kRetailCharacters = 10;
-constexpr int kCharacters = 12;
-
+// The highest character that exists: 10 on 360 data until a mod defines
+// slot 11 or 12, 12 on PS3 data.
 int CharacterCount() {
-  return eternalsonata::IsPs3Target() ? kCharacters : kRetailCharacters;
+  int count = eternalsonata::kRetailCast;
+  for (int c = eternalsonata::kFirstAddedSlot; c <= eternalsonata::kRosterSize; ++c)
+    if (eternalsonata::CharacterExists(c))
+      count = c;
+  return count;
 }
 
 // The model handle of character c (1 based), 0 if none.
 uint32_t CharacterModel(uint8_t* base, int c) {
-  if (c >= 1 && c <= kRetailCharacters)
+  if (c >= 1 && c <= eternalsonata::kRetailCast)
     return REX_LOAD_U32(kCharacterSlotAddr[c - 1]);
-  if (c <= CharacterCount())
+  if (eternalsonata::CharacterExists(c))
     return eternalsonata::CostumeModel(c);
   return 0;
 }
@@ -297,20 +294,14 @@ void RespawnFieldLeaderLive(PPCContext& ctx, uint8_t* base) {
   }
 }
 
-// Persisted cvar tokens, in combo order (see settings.cpp).
+// Persisted cvar tokens, in combo order (see settings.cpp). Slots 11 and 12
+// keep the PS3 pair's tokens whoever fills them, so a saved choice names a slot.
 constexpr const char* kSelectionTokens[] = {
     "default", "party",    "allegretto", "polka",  "beat",      "frederic", "viola",
     "salsa",   "jazz",     "falsetto",   "claves", "march",     "crescendo", "serenade",
 };
-
-constexpr const char* kSelectionNames[] = {
-    "Default", "Party Leader", "Allegretto", "Polka",     "Beat",
-    "Frederic", "Viola",       "Salsa",      "Jazz",      "Falsetto",
-    "Claves",  "March",        "Crescendo",  "Serenade",
-};
-static_assert(sizeof(kSelectionNames) / sizeof(kSelectionNames[0]) ==
-                  eternalsonata::FieldPlayerModelOverride::kSelectionCount,
-              "combo labels must match kSelectionCount");
+static_assert(std::size(kSelectionTokens) == eternalsonata::FieldPlayerModelOverride::kSelectionCount,
+              "tokens must match kSelectionCount");
 
 // Mirror of the field_leader_model cvar, read on the guest thread.
 std::atomic<int> g_selection{eternalsonata::FieldPlayerModelOverride::kSelectionDefault};
@@ -414,7 +405,18 @@ int FieldPlayerModelOverride::Selection() {
 }
 
 const char* const* FieldPlayerModelOverride::SelectionNames() {
-  return kSelectionNames;
+  // Rebuilt per call: a modded slot can be defined after boot. ImGui thread.
+  static std::array<std::string, kSelectionCount> names;
+  static std::array<const char*, kSelectionCount> pointers;
+  names[kSelectionDefault] = "Default";
+  names[kSelectionFollowParty] = "Party Leader";
+  for (int c = 1; c <= kRosterSize; ++c) {
+    names[kSelectionFirstCharacter + c - 1] = CharacterExists(c) ? CharacterDisplayName(c)
+                                                                 : "(vacant)";
+  }
+  for (size_t i = 0; i < names.size(); ++i)
+    pointers[i] = names[i].c_str();
+  return pointers.data();
 }
 
 int FieldPlayerModelOverride::SelectionCount() {
@@ -432,11 +434,11 @@ int FieldPlayerModelOverride::DesiredCharacter() {
   return selection - kSelectionFirstCharacter + 1;
 }
 
-const char* FieldPlayerModelOverride::CharacterName(int character) {
-  if (character < 0 || character > kCharacters) {
-    return "?";
-  }
-  return kCharacterNames[character];
+std::string FieldPlayerModelOverride::CharacterName(int character) {
+  if (character == 0)
+    return "(none)";
+  const std::string name = CharacterDisplayName(character);
+  return name.empty() ? "?" : name;
 }
 
 int FieldPlayerModelOverride::PartyLeaderCharacter() {

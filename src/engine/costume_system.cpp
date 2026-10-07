@@ -13,6 +13,7 @@
 // never reused for another costume.
 
 #include "costume_system.h"
+#include "character_roster.h"
 
 #include "field_player_model_override.h"
 #include "generated/eternalsonata_init.h"
@@ -64,10 +65,6 @@ constexpr eternalsonata::PartyArray kFaceArrays[] = {eternalsonata::PartyArray::
 // the other way.
 constexpr std::array<uint32_t, kCharacters> kModelSlot = {1, 2, 3, 4, 5, 6, 7, 8, 10, 9, 0, 0};
 
-constexpr std::array<const char*, kCharacters> kCharacterNames = {
-    "allegretto", "polka",  "beat",   "frederic",  "viola",    "salsa",
-    "jazz",       "falsetto", "claves", "march",   "crescendo", "serenade",
-};
 
 // The NOBJ chunk header: tag and u32 size, the size including the header.
 constexpr size_t kChunkHeader = 8;
@@ -104,6 +101,13 @@ struct State {
   bool live = false;
   bool builtins = false;
   rex::Runtime* runtime = nullptr;
+  // [[costume]] tables naming a character nobody is yet: a modded one a code
+  // mod defines later. Registered when it is.
+  struct Pending {
+    std::string character, id, label;
+    Costume costume;
+  };
+  std::vector<Pending> pending;
 };
 
 std::mutex g_mutex;
@@ -113,25 +117,17 @@ State& state() {
   return s;
 }
 
-// Crescendo and Serenade exist only on PS3 data.
+// Retail, the PS3's pair on PS3 data, or a modded slot once defined.
 bool ValidCharacter(int character) {
-  return character >= 1 &&
-         character <= (eternalsonata::IsPs3Target() ? kCharacters : kRetailCharacters);
-}
-
-// 1..12 on any data, 0 for a name that is none.
-int CharacterIndex(std::string_view name) {
-  for (int c = 0; c < kCharacters; ++c) {
-    if (name == kCharacterNames[c])
-      return c + 1;
-  }
-  const int number = std::atoi(std::string(name).c_str());
-  return number >= 1 && number <= kCharacters ? number : 0;
+  return eternalsonata::CharacterExists(character);
 }
 
 int CharacterFromName(std::string_view name) {
-  const int character = CharacterIndex(name);
-  return ValidCharacter(character) ? character : 0;
+  return eternalsonata::CharacterFromToken(name);
+}
+
+std::string Token(int character) {
+  return eternalsonata::CharacterToken(character);
 }
 
 uint32_t ReadBe32(const uint8_t* p) {
@@ -213,17 +209,14 @@ int RegisterLocked(int character, const char* id, const char* label, Costume cos
   costume.own_model = costume.model.empty() && costume.path.empty();
   auto& list = state().costumes[character - 1];
   list.push_back(std::move(costume));
-  REXLOG_INFO("costumes: {} can wear '{}' ({})", kCharacterNames[character - 1], list.back().label,
+  REXLOG_INFO("costumes: {} can wear '{}' ({})", Token(character), list.back().label,
               list.back().id);
   return static_cast<int>(list.size() - 1);
 }
 
-// The guest model a costume puts in the table, loading it the first time.
-uint32_t GuestModel(int character, int index, int* error) {
+// Reads a costume's model into guest memory the first time.
+uint32_t LoadModel(Costume& costume, int* error) {
   State& s = state();
-  Costume& costume = s.costumes[character - 1][index];
-  if (index == ETERNALSONATA_COSTUME_DEFAULT || costume.own_model)
-    return s.defaults[character - 1];
   if (costume.guest || costume.failed) {
     *error = ETERNALSONATA_COSTUME_ERR_INVALID_MODEL;
     return costume.guest;
@@ -255,6 +248,15 @@ uint32_t GuestModel(int character, int index, int* error) {
   costume.model.shrink_to_fit();
   REXLOG_INFO("costumes: '{}' loaded at {:08X}, {} bytes", costume.id, at, size);
   return at;
+}
+
+// The guest model a costume puts in the table, loading it the first time.
+uint32_t GuestModel(int character, int index, int* error) {
+  State& s = state();
+  Costume& costume = s.costumes[character - 1][index];
+  if (index == ETERNALSONATA_COSTUME_DEFAULT || costume.own_model)
+    return s.defaults[character - 1];
+  return LoadModel(costume, error);
 }
 
 // An NTEX chunk is "NTEX", its size with this header, then a PC DDS.
@@ -329,6 +331,32 @@ void ApplyCampPortraits(int character) {
     StoreU16(memory, eternalsonata::PartyArrayAddress(kFaceArrays[set], i),
              static_cast<uint16_t>(id ? id : s.default_faces[set][i]));
   }
+}
+
+// Slot 11 or 12's default model and faces once the boot hook ran: the PS3's
+// own, a modded character's own file or its base's, or none.
+void SetupAddedSlot(int character) {
+  State& s = state();
+  const int c = character - 1;
+  uint32_t model = 0;
+  if (eternalsonata::IsPs3Target()) {
+    model = eternalsonata::Ps3AppKeep2Model(static_cast<uint32_t>(c - kRetailCharacters));
+  } else if (const int base = eternalsonata::CharacterBase(character)) {
+    Costume& own = s.costumes[c][ETERNALSONATA_COSTUME_DEFAULT];
+    int error = ETERNALSONATA_COSTUME_OK;
+    model = own.path.empty() ? 0 : LoadModel(own, &error);
+    if (!model)
+      model = s.defaults[base - 1];
+  }
+  s.defaults[c] = model;
+  if (s.worn[c] == ETERNALSONATA_COSTUME_DEFAULT)
+    s.models[c] = model;
+  auto* memory = s.runtime ? s.runtime->memory() : rex::Runtime::instance()->memory();
+  for (int set = 0; set < 2; ++set)
+    s.default_faces[set][c] =
+        LoadU16(memory, eternalsonata::PartyArrayAddress(kFaceArrays[set], static_cast<uint32_t>(c)));
+  if (eternalsonata::CharacterExists(character))
+    ApplyCampPortraits(character);
 }
 
 // Puts the costume in the table. Before the boot hook there is no table yet,
@@ -473,14 +501,11 @@ void ScanModCostumes(rex::Runtime* runtime) {
   for (const auto& mod : runtime->EnabledModsInfo()) {
     for (const auto& declared : ReadDeclaredCostumes(mod.mod_root / "assets.toml")) {
       const int character = CharacterFromName(declared.character);
-      // Crescendo and Serenade on 360 data: nothing to dress.
-      if (!character && CharacterIndex(declared.character))
-        continue;
       std::filesystem::path model;
       if (!declared.model.empty())
         model = mod.mod_root / std::filesystem::u8path(declared.model);
       std::error_code ec;
-      if (!character || declared.name.empty() ||
+      if (declared.character.empty() || declared.name.empty() ||
           (!model.empty() && !std::filesystem::is_regular_file(model, ec))) {
         REXLOG_WARN("costumes: mod '{}' declares a [[costume]] without a character, a name or "
                     "a model file it ships ({})",
@@ -496,6 +521,12 @@ void ScanModCostumes(rex::Runtime* runtime) {
       costume.starts_unlocked = costume.unlocked = !declared.locked;
       const std::string id = mod.folder_name + "/" + declared.name;
       const std::string label = declared.label.empty() ? declared.name : declared.label;
+      if (!character) {
+        // Crescendo and Serenade on 360 data stay here for good.
+        std::lock_guard lock(g_mutex);
+        state().pending.push_back({declared.character, id, label, std::move(costume)});
+        continue;
+      }
       std::lock_guard lock(g_mutex);
       if (RegisterLocked(character, id.c_str(), label.c_str(), std::move(costume)) < 0)
         REXLOG_WARN("costumes: mod '{}' declares costume '{}' twice", mod.folder_name, id);
@@ -514,6 +545,34 @@ void BindCostumeSystem(rex::Runtime* runtime) {
     EnsureCharacterLists();
   }
   ScanModCostumes(runtime);
+}
+
+void CostumeCharacterDefined(int character) {
+  std::lock_guard lock(g_mutex);
+  EnsureCharacterLists();
+  State& s = state();
+  const int c = character - 1;
+  // A new occupant starts from its own default; costumes of the last one go.
+  auto& list = s.costumes[c];
+  list.clear();
+  list.push_back({"default", "Default"});
+  s.worn[c] = s.boot[c] = ETERNALSONATA_COSTUME_DEFAULT;
+  ModdedCharacter definition;
+  if (ModdedDefinition(character, definition)) {
+    list.front().path = definition.model;
+    for (int kind = 0; kind < kPortraitKinds; ++kind)
+      list.front().portrait_path[kind] = definition.portraits[kind];
+    for (auto it = s.pending.begin(); it != s.pending.end();) {
+      if (CharacterFromToken(it->character) != character) {
+        ++it;
+        continue;
+      }
+      RegisterLocked(character, it->id.c_str(), it->label.c_str(), std::move(it->costume));
+      it = s.pending.erase(it);
+    }
+  }
+  if (s.live)
+    SetupAddedSlot(character);
 }
 
 int CostumeCount(int character) {
@@ -647,7 +706,7 @@ int SetCostumeUnlocked(int character, int costume, bool unlocked) {
     WearCostume(character, ETERNALSONATA_COSTUME_DEFAULT);
   if (changed) {
     REXLOG_INFO("costumes: {} {} costume {}", unlocked ? "unlocked" : "locked",
-                kCharacterNames[character - 1], costume);
+                Token(character), costume);
     Publish(unlocked ? ETERNALSONATA_COSTUME_EVENT_UNLOCKED : ETERNALSONATA_COSTUME_EVENT_LOCKED,
             character, costume);
   }
@@ -681,8 +740,9 @@ void ResetCostumeRecord() {
     }
     boot = state().boot;
   }
-  for (int c = 1; c <= kCharacters && ValidCharacter(c); ++c)
-    WearCostume(c, boot[c - 1]);
+  for (int c = 1; c <= kCharacters; ++c)
+    if (ValidCharacter(c))
+      WearCostume(c, boot[c - 1]);
 }
 
 // Keys are "costume.<character>" for the costume worn and
@@ -692,7 +752,9 @@ void SaveCostumeRecord(SaveRecord& record) {
   EnsureCharacterLists();
   const State& s = state();
   for (int c = 0; c < kCharacters; ++c) {
-    const std::string name = kCharacterNames[c];
+    const std::string name = Token(c + 1);
+    if (name.empty())
+      continue;
     const auto& list = s.costumes[c];
     if (s.worn[c] != ETERNALSONATA_COSTUME_DEFAULT)
       record["costume." + name] = list[s.worn[c]].id;
@@ -710,16 +772,18 @@ void LoadCostumeRecord(const SaveRecord& record) {
     std::lock_guard lock(g_mutex);
     EnsureCharacterLists();
     for (int c = 0; c < kCharacters; ++c) {
-      const std::string prefix = std::string("unlocked.") + kCharacterNames[c] + ".";
+      const std::string prefix = "unlocked." + Token(c + 1) + ".";
       for (auto& costume : state().costumes[c]) {
         const auto it = record.find(prefix + costume.id);
         costume.unlocked = it != record.end() ? it->second == "1" : costume.starts_unlocked;
       }
     }
   }
-  for (int c = 1; c <= kCharacters && ValidCharacter(c); ++c) {
+  for (int c = 1; c <= kCharacters; ++c) {
+    if (!ValidCharacter(c))
+      continue;
     int index = ETERNALSONATA_COSTUME_DEFAULT;
-    const auto it = record.find(std::string("costume.") + kCharacterNames[c - 1]);
+    const auto it = record.find("costume." + Token(c));
     if (it != record.end()) {
       std::lock_guard lock(g_mutex);
       index = FindLocked(c, it->second);
@@ -779,17 +843,20 @@ REX_HOOK_RAW(sub_82162058) {
   EnsureCharacterLists();
   State& s = state();
   auto* memory = s.runtime ? s.runtime->memory() : rex::Runtime::instance()->memory();
-  for (int c = 0; c < kCharacters; ++c) {
-    s.defaults[c] = kModelSlot[c] ? REX_LOAD_U32(kModelTableAddr + 4 * kModelSlot[c])
-                                  : eternalsonata::Ps3AppKeep2Model(c - kRetailCharacters);
+  for (int c = 0; c < kRetailCharacters; ++c) {
+    s.defaults[c] = REX_LOAD_U32(kModelTableAddr + 4 * kModelSlot[c]);
     s.models[c] = s.defaults[c];
     for (int set = 0; set < 2; ++set)
       s.default_faces[set][c] = LoadU16(
           memory, eternalsonata::PartyArrayAddress(kFaceArrays[set], static_cast<uint32_t>(c)));
   }
   s.live = true;
+  for (int c = kRetailCharacters + 1; c <= kCharacters; ++c)
+    SetupAddedSlot(c);
   WearBootCostumes();
-  for (int c = 1; c <= kCharacters && ValidCharacter(c); ++c) {
+  for (int c = 1; c <= kCharacters; ++c) {
+    if (!ValidCharacter(c))
+      continue;
     const int index = s.worn[c - 1];
     if (index != ETERNALSONATA_COSTUME_DEFAULT && WearLocked(c, index) < 0)
       s.worn[c - 1] = ETERNALSONATA_COSTUME_DEFAULT;
