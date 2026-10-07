@@ -341,6 +341,41 @@ REX_HOOK_RAW(sub_82142360) {
   __imp__sub_82142360(ctx, base);
 }
 
+// 2021 asks which music stream is playing. The PS3 takes the stream as
+// args[0] (nonzero is stream 2), the 360 always asks about stream 1.
+REX_EXTERN(__imp__sub_820F8C88);
+REX_EXTERN(__imp__sub_8213FC38);
+
+REX_HOOK_RAW(sub_820F8C88) {
+  if (!eternalsonata::IsPs3Target()) {
+    __imp__sub_820F8C88(ctx, base);
+    return;
+  }
+  const uint32_t stream = Load(base, ctx.r3.u32) ? 2 : 1;
+  ctx.r3.u64 = REX_LOAD_U32(0x8243D89Cu) + 0x5790u;
+  ctx.r4.u64 = stream;
+  ctx.r5.u64 = 0;
+  __imp__sub_8213FC38(ctx, base);
+  ctx.r3.u64 &= 0xFF;
+}
+
+// 1122 copies a pad's held and newly pressed words out. The PS3 word's low 16
+// bits are digital1 << 8 | digital2, so its scripts' 0x40 is cross (the piano in
+// ftm45 ends on it), where the 360 layout has the left stick click. Cross is A.
+REX_EXTERN(__imp__sub_820ECA18);
+
+REX_HOOK_RAW(sub_820ECA18) {
+  const uint32_t out = Load(base, ctx.r3.u32);
+  __imp__sub_820ECA18(ctx, base);
+  if (!eternalsonata::IsPs3Target())
+    return;
+  for (uint32_t i = 0; i < 2; ++i) {
+    const uint32_t word = Load(base, out + 4 * i);
+    if (word & 0x1000u)
+      Store(base, out + 4 * i, word | 0x40u);
+  }
+}
+
 // sub_820F91A8 (named MEMORY_HEAP__Init in config/rtti_names.toml) registers
 // the field native tables. The extra table is added right after; sub_820FF028
 // ignores a table it already holds, so a second call is harmless.
