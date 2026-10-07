@@ -24,6 +24,7 @@ Converted:
 usage: ps3_convert.py PS3_ROOT OUT --base ASSETS_360 [--verify DECODED_360]
 """
 import argparse
+import atexit
 import bisect
 import collections
 import math
@@ -314,13 +315,23 @@ def convert_colours(d, o, tag, report):
     elif tag == b'NOL2':
         # Type 0 records keep their colour at +8, the typed ones at +24.
         rotate_words(buf, (r + (24 if buf[r] & 3 else 8) for r in range(8, size - 31, 32)))
+    elif tag == b'NATR':
+        # Layout from sub_821100D8: after 8 byte nodes, 12 byte triangles, 6 byte
+        # records and a u16 list, one colour per record when +24 is nonzero.
+        nodes, words, tris, recs, scale = struct.unpack_from('>5H', buf, 16)
+        if scale:
+            at = (32 + 8 * nodes + 12 * tris + 6 * recs + 2 * words + 3) & ~3
+            if at + 4 * recs != size:
+                report.warn(f'NATR at {o:#x}: colours do not end the chunk')
+                return None
+            rotate_words(buf, range(at, size, 4))
     report.counts[tag.decode()] += 1
     return bytes(buf)
 
 
-COLOUR_CHUNKS = {b'NMTR', b'NLIT', b'NFOG', b'NCLC', b'NOL2'}
+COLOUR_CHUNKS = {b'NMTR', b'NLIT', b'NFOG', b'NCLC', b'NOL2', b'NATR'}
 PASSTHROUGH = {b'NPAD', b'NCAM', b'NLC2', b'NBN2', b'NMTN', b'NMTB', b'NCLS', b'NTXA', b'NDYN',
-               b'NMRP', b'NSIG', b'NRTE', b'NAIR', b'NATR'}
+               b'NMRP', b'NSIG', b'NRTE', b'NAIR'}
 
 
 # ---------------------------------------------------------------------------
@@ -1040,6 +1051,8 @@ def main():
         if not args.only and os.path.isdir(pcm_dir):
             shutil.rmtree(pcm_dir)
         scratch = tempfile.mkdtemp(prefix='ps3_convert_')
+        # Several GB of decoded 360 banks: a failed run must not leave them.
+        atexit.register(shutil.rmtree, scratch, ignore_errors=True)
         banks = ps3_audio.decoded_360_banks(args.base, scratch)
         donors = ps3_audio.load_cxs_donors(args.base)
         battlekeep = decoded_360_file(args.base, os.path.join(scratch, 'bop'), BATTLEKEEP)
@@ -1139,7 +1152,6 @@ def main():
 
     if args.out:
         replace_file(os.path.join(args.out, 'index.vmtoc'), toc.bytes())
-        shutil.rmtree(scratch, ignore_errors=True)
 
     for k, v in sorted(report.counts.items()):
         print(f'{v:8}  {k}')
