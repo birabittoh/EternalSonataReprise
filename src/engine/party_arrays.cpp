@@ -17,6 +17,7 @@
 #include "character_roster.h"
 #include "ps3_appkeep.h"
 #include "ps3_item_tables.h"
+#include "shop_stock.h"
 #include "target.h"
 
 #include <array>
@@ -68,6 +69,7 @@ constexpr rex::memory::GuestAddressRange kRanges[] = {
     {0x8243FD08u, 0x82440128u},
     {0x82016150u, 0x820167B0u},
     {0x8202CA28u, 0x8202CA54u},
+    {0x82560114u, 0x825601A2u},
 };
 
 // Crescendo's and Serenade's starting stats, from the PS3 EBOOT at build
@@ -525,6 +527,8 @@ uint32_t EternalSonataPartyRemap(uint32_t ea, const char* function, bool listed,
   using namespace eternalsonata;
   if (const uint32_t icon = Ps3ItemIconAddress(ea, pc))
     return icon;
+  if (ea >= 0x82560114u && ea < 0x825601A2u)
+    return ShopStockAddress(ea, pc);
   const Hit hit = Classify(ea);
   if (hit.retail < 0 && hit.extension < 0)
     return ea;

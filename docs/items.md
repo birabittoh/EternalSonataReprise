@@ -226,7 +226,7 @@ Two things to know before writing to any of this.
 | `sub_82225C28(delta)` | reorder: swaps two entries of `word_8243FC3E` |
 | `sub_82224490` | the screen itself; `sub_82225578` repaints its rows |
 | `sub_821E5D68` | new game: clears everything, sets the budget to the level cap, then gives and registers the starting set from `word_8202CA7C` (four copies of id 209, Floral Powder, costing 8 of the 10 points party level 1 allows) |
-| `sub_8222C190(shop, ...)` | opens a shop: fills `word_82560114` (32 records of `{u16 id, u16}`) from the 68-byte-per-shop stock table at `0x82015CE4` |
+| `sub_8222C190(shop, ...)` | opens a shop: fills `word_82560114` (records of `{u16 id, u16}`, count at `0x82560198`, shop id at `0x82560199`) from the 68-byte-per-shop stock table at `0x82015CE4`. `shop_stock.cpp` moves the list to a guest buffer that holds 35 items, see `docs/ps3-assets.md` |
 
 ## The item catalog
 
