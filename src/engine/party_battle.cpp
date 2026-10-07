@@ -118,6 +118,39 @@ extern "C++" void PartyHitMotionCharacter(PPCRegister& r3) {
     r3.u64 = static_cast<uint32_t>(eternalsonata::CharacterBase(character));
 }
 
+// sub_821E7358 ORs bits 13..21 of each equipped item's flags into the
+// member's status word at +0x3C. No retail item sets them, but the wear bits
+// of 11 and 12 (4 << c) are 13 and 14, which gave whoever wore their gear the
+// light and dark auras of status bits 0 and 1. The PS3 keeps its wear bits
+// at 22 and 23, out of reach. r10 = the item's shifted status bits.
+constexpr uint32_t kStatusShift = 13;
+constexpr uint32_t kCrescendoStatus = (4u << kCrescendo) >> kStatusShift;
+constexpr uint32_t kSerenadeStatus = (4u << kSerenade) >> kStatusShift;
+
+extern "C++" void PartyEquipStatus(PPCRegister& r10) {
+  r10.u64 = r10.u32 & ~(kCrescendoStatus | kSerenadeStatus);
+}
+
+// After sub_821A2B38's member copy, r23 = the member's character, r28 = the
+// copy: on the PS3 Crescendo shines with light and Serenade with dark.
+extern "C++" void PartyMemberStatus(PPCRegister& r23, PPCRegister& r28) {
+  if (!eternalsonata::IsPs3Target())
+    return;
+  auto* runtime = rex::Runtime::instance();
+  auto* memory = runtime ? runtime->memory() : nullptr;
+  if (!memory || !r23.u32 || !r28.u32)
+    return;
+  const uint32_t character =
+      rex::memory::load_and_swap<uint32_t>(memory->TranslateVirtual<uint8_t*>(r23.u32));
+  const uint32_t status = character == kCrescendo  ? kCrescendoStatus
+                          : character == kSerenade ? kSerenadeStatus
+                                                   : 0u;
+  if (!status)
+    return;
+  auto* word = memory->TranslateVirtual<uint8_t*>(r28.u32 + 0x3C);
+  rex::memory::store_and_swap<uint32_t>(word, rex::memory::load_and_swap<uint32_t>(word) | status);
+}
+
 // The battle HUD's name, r4 = character - 1 into a ten entry text block.
 extern "C++" void PartyBattleNameSid(PPCRegister& r4) {
   if (r4.u32 == kCrescendo - 1 || r4.u32 == kSerenade - 1)

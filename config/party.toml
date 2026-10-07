@@ -1284,6 +1284,20 @@ registers = ["r6"]
 address = 0x821BD184
 name = "PartyVoiceFile"
 registers = ["r6"]
+# sub_821E7358: equipment status bits, without the wear bits of 11 and 12
+[[midasm_hook]]
+address = 0x821E7558
+name = "PartyEquipStatus"
+registers = ["r10"]
+[[midasm_hook]]
+address = 0x821E75CC
+name = "PartyEquipStatus"
+registers = ["r10"]
+# sub_821A2B38: the member copy's PS3 auras
+[[midasm_hook]]
+address = 0x821A2F50
+name = "PartyMemberStatus"
+registers = ["r23", "r28"]
 # sub_821A2B38: battle model and its cloth chains
 [[midasm_hook]]
 address = 0x821A2C88
