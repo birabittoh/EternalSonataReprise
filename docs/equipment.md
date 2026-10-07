@@ -233,7 +233,7 @@ menu closing.
 
 | Offset | Type | What |
 | --- | --- | --- |
-| `+0x00` | u16 | character number, 1..10 |
+| `+0x00` | u16 | character number, 1..12 |
 | `+0x02` | u16 | the character's own ordinal for this entry |
 | `+0x04` | u16 | kind: 1 not magic, 2 light, 3 dark |
 | `+0x06` | u16 | the character level it unlocks at |
@@ -266,7 +266,9 @@ which is what a fresh save shows in slots 0 and 1.
 `11 * (c - 1)`, holding magic ids in the order the screen lists them, zero
 padded. Polka's row is 15, 16, 20, 24, 18, 22, 17, 21, 23, 25, 19: every light
 entry, then every dark one. `EternalSonataGetAvailableMagic` walks this row so
-a mod's list comes out in the same order the game's own does.
+a mod's list comes out in the same order the game's own does. It has ten rows;
+PS3 data reads a twelve row copy of the PS3's (`ps3_item_tables.cpp`), and a
+vacant slot 11 or 12 on 360 data has no magic.
 
 ### Learning and listing
 

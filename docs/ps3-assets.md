@@ -154,8 +154,8 @@ Costumes exist only for Allegretto, Polka and Beat (`pcALG_v2`, `pcPLK_v2`,
 `sub_1E5840` turns the selection into a model index.
 
 In PS3 mode `src/engine/ps3_natives.cpp` currently registers these eight
-into the 360's party table. The roster and HP natives work on the 360's ten character
-arrays (characters 11 and 12 read as absent); costume unlocks and the two
+into the 360's party table. The roster and HP natives work on the twelve wide
+party arrays; costume unlocks and the two
 menu flags are host state saved in the save record (§1), and 5028 answers the
 costume system's selection. That is interim: these natives belong to the PS3
 VM, backed by twelve slot state.

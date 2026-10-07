@@ -136,6 +136,13 @@ uint32_t Ps3TextBlockFor(uint32_t block) {
   return 0;
 }
 
+uint32_t Ps3MagicOrderAddress() {
+  if (!g_applied)
+    return 0;
+  std::call_once(g_copies_once, MakeCopies);
+  return g_order;
+}
+
 uint32_t Ps3ItemIconAddress(uint32_t address, uint32_t pc) {
   const uint32_t first = kIconTable + 2 * kPs3ItemIconFirst;
   if (!g_applied || address - first >= sizeof(kPs3ItemIcons) ||
@@ -172,9 +179,6 @@ void EternalSonataPs3MagicCount(PPCRegister& count) {
 extern "C++" void EternalSonataPs3MagicOrder(PPCRegister& table);
 
 void EternalSonataPs3MagicOrder(PPCRegister& table) {
-  if (!g_applied)
-    return;
-  std::call_once(g_copies_once, MakeCopies);
-  if (g_order)
-    table.u64 = g_order;
+  if (const uint32_t order = eternalsonata::Ps3MagicOrderAddress())
+    table.u64 = order;
 }

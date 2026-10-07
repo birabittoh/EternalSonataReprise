@@ -91,6 +91,7 @@
 #include "eternalsonata_item_api.h"
 #include "guest_main_thread.h"
 #include "item_system.h"
+#include "ps3_item_tables.h"
 
 // The Item API's text readers, implemented in item_system.cpp. Its header
 // declares the call shapes as function pointers, for mods that resolve them
@@ -127,7 +128,7 @@ constexpr uint32_t kStatMagicSlots = 0x24u;  // u16[4]
 // The magic table: 12-byte records keyed by magic id - 1.
 constexpr uint32_t kMagicTableAddr = 0x82015380u;
 constexpr uint32_t kMagicStride = 12u;
-constexpr uint32_t kMagicCharacter = 0x00u;  // u16, 1..10
+constexpr uint32_t kMagicCharacter = 0x00u;  // u16, 1..12
 constexpr uint32_t kMagicOrdinal = 0x02u;    // u16
 constexpr uint32_t kMagicKind = 0x04u;       // u16, 1 none, 2 light, 3 dark
 constexpr uint32_t kMagicLevel = 0x06u;      // u16
@@ -138,9 +139,20 @@ constexpr uint32_t kMagicCountPtrAddr = 0x824400E0u;
 constexpr uint32_t kMagicCountOffset = 16u;
 
 // The display order the game's list uses: u16[11] per character, magic ids in
-// the order the screen lists them, zero padded.
+// the order the screen lists them, zero padded. Ten rows; PS3 data reads a
+// twelve row copy instead.
 constexpr uint32_t kMagicOrderAddr = 0x8202C8A8u;
 constexpr uint32_t kMagicPerCharacter = 11u;
+
+uint32_t MagicOrderAddr() {
+  const uint32_t ps3 = Ps3MagicOrderAddress();
+  return ps3 ? ps3 : kMagicOrderAddr;
+}
+
+uint32_t MagicOrderBytes() {
+  const uint32_t rows = Ps3MagicOrderAddress() ? kPartyCharacterCount : kRetailCharacterCount;
+  return 2u * kMagicPerCharacter * rows;
+}
 
 // The BTX text blocks for magic, both keyed by magic id - 1. Not the item
 // blocks, and read through the item system's shared reader.
@@ -441,13 +453,14 @@ uint32_t MagicOrderBound() {
   if (g_magic_order_bound != 0) {
     return g_magic_order_bound;
   }
-  const uint32_t span = 2u * kMagicPerCharacter * kCharacterMax;
-  if (!Readable(kMagicOrderAddr, span)) {
+  const uint32_t order = MagicOrderAddr();
+  const uint32_t span = MagicOrderBytes();
+  if (!Readable(order, span)) {
     return 0;
   }
   uint32_t highest = 0;
-  for (uint32_t i = 0; i < kMagicPerCharacter * kCharacterMax; ++i) {
-    const uint32_t id = ReadGuest<uint16_t>(kMagicOrderAddr + 2u * i);
+  for (uint32_t i = 0; i < span / 2u; ++i) {
+    const uint32_t id = ReadGuest<uint16_t>(order + 2u * i);
     if (id > highest && id <= ETERNALSONATA_MAGIC_ID_MAX) {
       highest = id;
     }
@@ -475,7 +488,7 @@ uint32_t MagicCountBound() {
 bool MagicAvailable() {
   const uint32_t count = MagicCountBound();
   return count != 0 && Readable(kMagicTableAddr, count * kMagicStride) &&
-         Readable(kMagicOrderAddr, 2u * kMagicPerCharacter * kCharacterMax);
+         Readable(MagicOrderAddr(), MagicOrderBytes());
 }
 
 bool ValidMagicSlot(int slot) { return slot >= 0 && slot < kMagicSlotCount; }
@@ -1287,8 +1300,11 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetAvailableMagic(int characte
   // sub_821E93B0's filter, walked in word_8202C8A8's display order so a mod's
   // list comes out in the same order the game's own does.
   const int kind = KindForMagicSlot(slot);
-  const uint32_t row =
-      kMagicOrderAddr + 2u * kMagicPerCharacter * static_cast<uint32_t>(character - 1);
+  const uint32_t offset = 2u * kMagicPerCharacter * static_cast<uint32_t>(character - 1);
+  if (offset >= MagicOrderBytes()) {
+    return 0;  // a vacant slot has no row
+  }
+  const uint32_t row = MagicOrderAddr() + offset;
   int written = 0;
   for (uint32_t i = 0; i < kMagicPerCharacter; ++i) {
     const auto magic_id = static_cast<int>(ReadGuest<uint16_t>(row + 2u * i));

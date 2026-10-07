@@ -6,9 +6,8 @@
 // Unregistered ids are worse than missing: sub_820FF748's range check is
 // inclusive, so 5026 reads past off_8240CA88 into the battle native table.
 //
-// Characters are passed 0 based and are the same numbering as the 360's
-// party arrays, so the roster and HP natives run against those directly.
-// Characters 11 and 12 have no 360 storage and read as absent.
+// Characters are passed 0 based and are the same numbering as the party
+// arrays, so the roster and HP natives run against those directly.
 //
 // The rest is the PS3's costumes (Allegretto, Polka and Beat only), which the
 // costume system (costume_system.cpp) keeps with their locks, and two flags of
@@ -42,7 +41,7 @@ constexpr uint32_t kFirstId = 5026;
 constexpr uint32_t kCount = 8;
 
 // Same layout as party_system.cpp.
-constexpr uint32_t kCharacters = 10;
+constexpr uint32_t kCharacters = eternalsonata::kPartyCharacterCount;
 uint32_t PositionsAddr() {
   return eternalsonata::PartyArrayAddress(eternalsonata::PartyArray::kPosition);
 }
