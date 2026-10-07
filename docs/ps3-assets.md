@@ -175,6 +175,11 @@ negative ids, which PS3 events use where the 360 ones pass 1..10:
 | -10, -11, -12 | the worn costume of ALG, PLK, BET: `pc%s_v%1d.p3obj`, loaded per character by `sub_801F0` into 320 byte slots named `WEARALG`, `WEARPLK`, `WEARBET` |
 | -20..-28 | `AppKeep2.bmd` entries 0..8: CRS, SRN, CPN, VOL, SLS, JRB, FST, MCH, CLV (`sub_80C40`) |
 
+Any other id n is AppKeep slot n - 1 on both releases (the field's "?"
+bubble over an interactable object is PS3 50, 360 51), so PS3 mode
+translates it like 1052 (§4); read untranslated, the bubble showed the gold
+sparkle one slot below it.
+
 Both are raw `NOBJ` pointers, like the 360's (`sub_82162058` stores
 `AppKeep.bmd`'s entry pointers in `dword_82420AFC`), and the PS3 keeps both
 resident. PS3 mode loads them with the rest of `AppKeep.bmd` (§4): the
@@ -519,7 +524,8 @@ also holds costume portraits and the CRS and SRN camp portraits, which the
 In PS3 mode `src/engine/ps3_appkeep.cpp` rebuilds the array in the 360's
 numbering after the load, placing the characters and the camp entries in the
 same heap (SRN spills into physical memory), and appends the 14 PS3 only
-entries from slot 412. Native 1052 translates the PS3 slot scripts pass. The
+entries from slot 412. Natives 1052 and 1141 (kind 0, positive ids)
+translate the PS3 slot scripts pass. The
 achievements screen's texture patches address the PS3 file's ordinals. Asset
 API ordinals (`appkeep.bmd#tex:N`) follow the file, so they differ per
 release.
