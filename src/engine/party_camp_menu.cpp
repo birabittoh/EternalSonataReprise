@@ -47,26 +47,39 @@ uint32_t g_pending_extra_health_bars = 0;
 // Set while a failed screen heap allocation may come from its parent heap.
 thread_local bool g_screen_heap_fallback = false;
 
+// The case a character takes in the one to three member builders' switches:
+// the PS3 lays out Crescendo like Viola and Serenade like Salsa, a modded
+// character takes its base's, a vacant slot the generic case (0).
+int PanelCase(uint32_t c) {
+  if (c <= 10)
+    return static_cast<int>(c);
+  if (eternalsonata::IsPs3Target())
+    return c == 11 ? 5 : c == 12 ? 6 : 0;
+  return eternalsonata::CharacterBase(static_cast<int>(c));
+}
+
+bool AddedSlotTakes(uint32_t c, int first, int last) {
+  const int panel_case = c > 10 ? PanelCase(c) : 0;
+  return panel_case >= first && panel_case <= last;
+}
+
 // The worn costume's one to three member panel art, 0 for the character's own.
 // From Viola on the panel shows the status page's art, so a costume without
-// panel art shows its status portrait there.
-// A modded character falls into the builders' generic case, Allegretto's
-// frame, which reads word_8202C9B4[c - 1]: without art of its own it shows its
-// base's when the base uses that frame too (1..4), else Allegretto's.
+// panel art shows its status portrait there. A modded character without art
+// of its own shows its base's.
 uint32_t CostumePanel(uint32_t c) {
   const int character = static_cast<int>(c);
   uint32_t id = eternalsonata::CostumePortrait(character, ETERNALSONATA_COSTUME_PORTRAIT_PANEL);
-  if (eternalsonata::IsModdedCharacter(character)) {
-    if (id)
-      return id;
-    const int base = eternalsonata::CharacterBase(character);
-    uint8_t* membase = rex::system::kernel_state()->memory()->virtual_membase();
-    return rex::memory::load_and_swap<uint16_t>(
-        membase + 0x8202C9B4u + 2u * static_cast<uint32_t>((base <= 4 ? base : 1) - 1));
-  }
-  if (!id && c > 4)
+  const int panel_case = PanelCase(c);
+  if (!id && panel_case > 4)
     id = eternalsonata::CostumePortrait(character, ETERNALSONATA_COSTUME_PORTRAIT_STATUS);
-  return id;
+  if (id || !eternalsonata::IsModdedCharacter(character))
+    return id;
+  if (panel_case > 4)
+    return 0xC3u + static_cast<uint32_t>(panel_case);
+  uint8_t* membase = rex::system::kernel_state()->memory()->virtual_membase();
+  return rex::memory::load_and_swap<uint16_t>(
+      membase + 0x8202C9B4u + 2u * static_cast<uint32_t>(std::max(panel_case, 1) - 1));
 }
 
 uint32_t CurrentLayout(uint8_t* base, uint32_t owner) {
@@ -136,12 +149,13 @@ extern "C++" void PartyRubyNameCompare(PPCCRRegister& cr, PPCRegister& c) {
     cr.eq = true;
 }
 
-// sub_821DDD00, the one to three member panel. The PS3 lays out Crescendo
-// like Viola and Serenade like Salsa, with their own portraits.
+// sub_821DDD00, the one to three member panel, and the item target list's:
+// 11 and 12 take their PanelCase. The case's image is replaced after it.
 extern "C++" bool PartyPanelPortraitCrs(PPCRegister& c, PPCRegister& image) {
-  if (c.u32 != 11 || !eternalsonata::IsPs3Target())
+  if (!AddedSlotTakes(c.u32, 5, 5))
     return false;
-  image.u64 = kPortraitId;
+  if (eternalsonata::IsPs3Target())
+    image.u64 = kPortraitId;
   return true;
 }
 
@@ -161,33 +175,40 @@ extern "C++" void PartyRubyNameIndexCompare(PPCCRRegister& cr, PPCRegister& i) {
   }
 }
 
-// The item target list's one to three member panel: like sub_821DDD00, but
-// Salsa's image id is built in the register holding c.
+// The item target list's Salsa, Falsetto and Claves case builds its image id
+// in the register holding c.
 extern "C++" bool PartyTargetPortraitSrn(PPCRegister& c) {
-  if (c.u32 != 12 || !eternalsonata::IsPs3Target())
+  if (!AddedSlotTakes(c.u32, 6, 6) && !AddedSlotTakes(c.u32, 8, 9))
     return false;
-  c.u64 = kPortraitId + 1;
+  c.u64 = eternalsonata::IsPs3Target() ? kPortraitId + 1 : CostumePanel(c.u32);
   return true;
 }
 
 extern "C++" bool PartyPanelPortraitSrn(PPCRegister& c, PPCRegister& image,
                                         PPCRegister& height) {
-  if (c.u32 != 12 || !eternalsonata::IsPs3Target())
+  if (!AddedSlotTakes(c.u32, 6, 6) && !AddedSlotTakes(c.u32, 8, 9))
     return false;
-  image.u64 = kPortraitId + 1;
+  image.u64 = eternalsonata::IsPs3Target() ? kPortraitId + 1 : CostumePanel(c.u32);
   height.u64 = 12;
   return true;
 }
 
+extern "C++" bool PartyPanelAsJazz(PPCRegister& c) {
+  return AddedSlotTakes(c.u32, 7, 7);
+}
+
+extern "C++" bool PartyPanelAsMarch(PPCRegister& c) {
+  return AddedSlotTakes(c.u32, 10, 10);
+}
+
 // sub_82237A68, the one to three member swap, picks each panel's portrait by
-// a switch on the character; as in sub_821DDD00, Crescendo takes Viola's case
-// and Serenade Salsa's, then their own image after the case loads its id.
+// a switch on the character. Falsetto, Claves and March share Salsa's frame.
 extern "C++" bool PartySwapAsViola(PPCRegister& c) {
-  return c.u32 == 11 && eternalsonata::IsPs3Target();
+  return AddedSlotTakes(c.u32, 5, 5);
 }
 
 extern "C++" bool PartySwapAsSalsa(PPCRegister& c) {
-  return c.u32 == 12 && eternalsonata::IsPs3Target();
+  return AddedSlotTakes(c.u32, 6, 6) || AddedSlotTakes(c.u32, 8, 10);
 }
 
 extern "C++" void PartySwapPortrait(PPCRegister& c, PPCRegister& image) {
