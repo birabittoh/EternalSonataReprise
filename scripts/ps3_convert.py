@@ -14,6 +14,7 @@ Converted:
   NSHP  RSX vertex packing -> Xenos (normals, colours, skin weights)
   NMTR, NLIT, NFOG, NCLC, NOL2  RGBA colours -> ARGB
   NLOB  offsets of the placed objects it holds
+  NLEF  offsets of the effects it holds, which are converted like any Mefc
   .e    list B bulk offsets, header size, reloc offset
   .bmd / CAMP  entry table; .bop  entry directory
   scp.bmd  score piece textures and banks, in the 360's layout
@@ -383,8 +384,8 @@ def is_ntx3(d, o, end):
 def textures_in_place(d, o, size, report):
     """Converts every NTX3 nested in an opaque chunk without moving anything.
 
-    Mefc effects (inside NLEF) address their textures through their own
-    directory, so each NTEX has to land exactly where its NTX3 was."""
+    For chunks whose layout is not understood: each NTEX has to land exactly
+    where its NTX3 was."""
     buf = None
     at, end = o + 8, o + size
     while at < end:
@@ -460,6 +461,40 @@ def emit_nlob(rb, d, o, size, report):
     report.counts['NLOB'] += 1
 
 
+def emit_nlef(rb, d, o, size, report):
+    """A model's effects: u32 count, u32 offsets from +8, then Mefcs. The
+    offsets are rewritten, so each effect may grow with its models."""
+    rb.mark(o)
+    start = len(rb.out)
+    end = o + size
+    count = rd32(d, o + 8)
+    offsets = struct.unpack_from('>%dI' % count, d, o + 12)
+    copied = o + 12 + 4 * count
+    rb.out += d[o:copied]
+    new_pos = {}
+    for off in sorted(set(offsets)):
+        m = o + 8 + off
+        if m < copied or m + 8 > end:
+            report.warn(f'NLEF at {o:#x}: entry at {off:#x} overlaps')
+            continue
+        msize = rd32(d, m + 4)
+        rb.out += d[copied:m]
+        new_pos[off] = len(rb.out) - (start + 8)
+        if mefc_entries(d, m, min(m + msize, end)):
+            converted, _ = convert_region(d, m, m + msize, report, origin=len(rb.out))
+            rb.out += converted
+        else:
+            report.warn(f'NLEF at {o:#x}: entry at {off:#x} is not an effect')
+            rb.out += textures_in_place(d, m, msize, report) or d[m:m + msize]
+        copied = m + msize
+    rb.out += d[copied:end]
+    for i, off in enumerate(offsets):
+        if off in new_pos:
+            struct.pack_into('>I', rb.out, start + 12 + 4 * i, new_pos[off])
+    struct.pack_into('>I', rb.out, start + 4, len(rb.out) - start)
+    report.counts['NLEF'] += 1
+
+
 def emit_nmdl(rb, d, o, size, report):
     rb.mark(o)
     start = len(rb.out)
@@ -472,6 +507,8 @@ def emit_nmdl(rb, d, o, size, report):
     for co, tag, cs in children(d, o + hdr, o + size):
         if tag == b'NLOB':
             emit_nlob(rb, d, co, cs, report)
+        elif tag == b'NLEF':
+            emit_nlef(rb, d, co, cs, report)
         elif tag == b'NMR2':
             rb.mark(co)
             converted = convert_nmr2(d, co, nvs, report)
@@ -539,12 +576,15 @@ def mefc_entries(d, o, end):
     return entries
 
 
-def convert_region(d, start, end, report, audio=None):
+def convert_region(d, start, end, report, audio=None, origin=None):
     """Converts every NOBJ, loose NMDL, loose NTX3 and effect in d[start:end],
     and with audio every sound bank, copying the rest.
 
     Returns the new bytes and a function mapping an old absolute offset in the
-    region to its new offset relative to the region start."""
+    region to its new offset relative to the region start. Padding aligns
+    to origin + output position, the region start by default."""
+    if origin is None:
+        origin = start
     rb = Rebuild()
     banks = 0
     tables = []
@@ -556,7 +596,7 @@ def convert_region(d, start, end, report, audio=None):
         rb.out += d[a:b]
 
     def pad(n):
-        rb.out += bytes(-(start + len(rb.out)) % n)
+        rb.out += bytes(-(origin + len(rb.out)) % n)
 
     def emit_mefc(o, size, entries):
         # Sections are addressed through the directory, so they may move as

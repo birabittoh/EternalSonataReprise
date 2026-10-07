@@ -408,7 +408,7 @@ Surveyed over the 805 files present on both releases:
 | `NMTR`, `NLIT`, `NFOG`, `NCLC`, `NOL2` | colours RGBA vs ARGB | yes |
 | `NLOB` | offsets move when children resize | yes |
 | `Mefc` | directory addressed sections (§3.4) | yes |
-| `NLEF` | `Mefc`s that cannot move | textures only |
+| `NLEF` | `Mefc`s with embedded models | yes |
 | `NATR` | colours at irregular offsets | no |
 | `NMR2` | morph vertex records, CMP packed (§3.2) | yes |
 | `NBN2`, `NCAM`, `NLC2`, `NCLS`, `NDYN`, `NMRP`, `NMTN` | float drift from re-export, or identical | nothing to do |
@@ -512,8 +512,13 @@ sections to 0x1000, the PS3 to 128. Converting an embedded model or bank
 changes its size, so the converter converts each section and rewrites the
 directory and the `Mefc` size; converting in place without that leaves `SE_0`
 pointing into the model, and the effect loader rejects every instance after
-the first (map objects `80d`, `80e` on `tnt03`). A `Mefc` inside a model's
-`NLEF` cannot move yet and only has its textures converted.
+the first (map objects `80d`, `80e` on `tnt03`).
+
+A model's `NLEF` (u32 count, u32 offsets from +8, then the `Mefc`s) is only
+pointed at by `CreateModel` (model `+176`), so its effects are converted the
+same way and the offsets rewritten. 564 `NLEF`s in 385 files hold 1325
+effects, 205 of them with a model (`CBLn`), which the 360 refuses
+unconverted (version `0x83`); none carries a bank.
 
 ## 4. Containers
 
@@ -724,5 +729,4 @@ endian `.wav`, which scripts ask for by that name.
 * The PS3 script VM: natives compared one by one (§2).
 * Twelve party slots, the camp menu itself and what its flags gate.
 * The costumes' camp menu page ([costumes.md](costumes.md)).
-* The colours in `NATR`, and the `Mefc`s inside `NLEF` beyond their
-  textures (205 PS3 models in 102 files).
+* The colours in `NATR`.
