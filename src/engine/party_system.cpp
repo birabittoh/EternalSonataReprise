@@ -48,6 +48,7 @@
 #include "eternalsonata_party_api.h"
 #include "guest_main_thread.h"
 #include "character_roster.h"
+#include "equipment_system.h"
 #include "party_system.h"
 #include "room_presence.h"
 #include "target.h"
@@ -1100,6 +1101,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataAddCharacterToParty(int charac
   return RunOnGuestThread([slot] {
     const int joined = JoinOnGuestThread(slot);
     if (joined == ETERNALSONATA_PARTY_OK) {
+      SeedModdedMagic(slot);
       RefreshStatsOnGuestThread(slot);
     }
     return joined;

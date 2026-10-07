@@ -267,8 +267,9 @@ which is what a fresh save shows in slots 0 and 1.
 padded. Polka's row is 15, 16, 20, 24, 18, 22, 17, 21, 23, 25, 19: every light
 entry, then every dark one. `EternalSonataGetAvailableMagic` walks this row so
 a mod's list comes out in the same order the game's own does. It has ten rows;
-PS3 data reads a twelve row copy of the PS3's (`ps3_item_tables.cpp`), and a
-vacant slot 11 or 12 on 360 data has no magic.
+PS3 data reads a twelve row copy of the PS3's (`ps3_item_tables.cpp`). On 360
+data a modded slot reads its base's row and records
+([modded-characters.md](modded-characters.md)), and a vacant one has no magic.
 
 ### Learning and listing
 

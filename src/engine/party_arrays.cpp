@@ -259,6 +259,8 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
       case 0x82239DB8u:
       case 0x82239DD8u:
       case 0x82239DDCu:
+      // sub_821E93B0, the level its magic list is filtered by
+      case 0x821E9428u:
         return hit.extension;
     }
   }

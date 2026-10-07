@@ -82,16 +82,19 @@
 
 #include <rex/hook.h>
 #include <rex/memory/utils.h>
+#include <rex/ppc/context.h>
 #include <rex/runtime.h>
 #include <rex/system/mod_plugin.h>
 #include <rex/system/mod_registry.h>
 
+#include "character_roster.h"
 #include "equipment_system.h"
 #include "eternalsonata_equipment_api.h"
 #include "eternalsonata_item_api.h"
 #include "guest_main_thread.h"
 #include "item_system.h"
 #include "ps3_item_tables.h"
+#include "target.h"
 
 // The Item API's text readers, implemented in item_system.cpp. Its header
 // declares the call shapes as function pointers, for mods that resolve them
@@ -525,7 +528,7 @@ bool MagicIsCastable(int magic_id) {
 
 bool MagicBelongsTo(int character, int magic_id) {
   return ReadGuest<uint16_t>(MagicRecord(magic_id) + kMagicCharacter) ==
-         static_cast<uint16_t>(character);
+         static_cast<uint16_t>(MagicOwner(character));
 }
 
 bool HasLearnedMagicLocked(int character, int magic_id) {
@@ -882,6 +885,39 @@ void BindEquipmentSystem(rex::Runtime* runtime) {
 void NotifyEquipmentSaveLoaded() {
   std::lock_guard<std::mutex> lock(g_mutex);
   g_have_snapshot = false;
+}
+
+void SeedModdedMagic(int character) {
+  if (!IsModdedCharacter(character)) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!Available() || !MagicAvailable()) {
+    return;
+  }
+  for (int slot = 0; slot < kMagicSlotCount; ++slot) {
+    if (EquippedMagic(character, slot) != 0) {
+      return;
+    }
+  }
+  const uint32_t offset =
+      2u * kMagicPerCharacter * static_cast<uint32_t>(MagicOwner(character) - 1);
+  if (offset >= MagicOrderBytes()) {
+    return;
+  }
+  const uint32_t row = MagicOrderAddr() + offset;
+  // Slots 2 and 3 repeat 0 and 1, as a new game's do.
+  for (int slot = 0; slot < 2; ++slot) {
+    for (uint32_t i = 0; i < kMagicPerCharacter; ++i) {
+      const auto magic_id = static_cast<int>(ReadGuest<uint16_t>(row + 2u * i));
+      if (ValidMagic(magic_id) && HasLearnedMagicLocked(character, magic_id) &&
+          ReadGuest<uint16_t>(MagicRecord(magic_id) + kMagicKind) == KindForMagicSlot(slot)) {
+        WriteGuest<uint16_t>(MagicSlotAddr(character, slot), static_cast<uint16_t>(magic_id));
+        WriteGuest<uint16_t>(MagicSlotAddr(character, slot + 2), static_cast<uint16_t>(magic_id));
+        break;
+      }
+    }
+  }
 }
 
 }  // namespace eternalsonata
@@ -1300,7 +1336,8 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetAvailableMagic(int characte
   // sub_821E93B0's filter, walked in word_8202C8A8's display order so a mod's
   // list comes out in the same order the game's own does.
   const int kind = KindForMagicSlot(slot);
-  const uint32_t offset = 2u * kMagicPerCharacter * static_cast<uint32_t>(character - 1);
+  const uint32_t offset =
+      2u * kMagicPerCharacter * static_cast<uint32_t>(MagicOwner(character) - 1);
   if (offset >= MagicOrderBytes()) {
     return 0;  // a vacant slot has no row
   }
@@ -1363,4 +1400,27 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataClearMagic(int character) {
     }
   }
   return RunOnGuestThread([character] { return ClearMagicOnGuestThread(character); });
+}
+
+// sub_821E93B0(ctx, c, out, kind), the equipment screen's magic list: a
+// modded slot lists its base's records. After the owner load at 0x821E940C,
+// r10 = the record's character, r4 = c.
+extern "C++" void EquipmentMagicOwner(PPCRegister& owner, PPCRegister& character) {
+  if (character.u32 > eternalsonata::kRetailCast && owner.u32 != character.u32 &&
+      static_cast<int>(owner.u32) == eternalsonata::MagicOwner(static_cast<int>(character.u32)))
+    owner.u64 = character.u32;
+}
+
+// The same routine's display order row, r7 = c - 1 (ten rows on 360 data).
+extern "C++" void EquipmentMagicOrderRow(PPCRegister& row) {
+  if (row.u32 >= eternalsonata::kRetailCast)
+    row.u64 = static_cast<uint32_t>(eternalsonata::MagicOwner(static_cast<int>(row.u32) + 1) - 1);
+}
+
+// sub_821E8930(c, level, levels, ...), the magic a level up taught, takes
+// 1..10 only; r3 = c on the way in from sub_82198260.
+extern "C++" void EquipmentLevelUpMagicOwner(PPCRegister& character) {
+  if (character.u32 > eternalsonata::kRetailCast)
+    character.u64 =
+        static_cast<uint32_t>(eternalsonata::MagicOwner(static_cast<int>(character.u32)));
 }
