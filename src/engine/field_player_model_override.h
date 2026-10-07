@@ -19,6 +19,8 @@
 // something worth breaking control over. See the note in the .cpp.
 #pragma once
 
+#include <string>
+
 namespace rex {
 class Runtime;
 }  // namespace rex
@@ -58,8 +60,8 @@ class FieldPlayerModelOverride {
   // cannot be determined. Shown by the overlay.
   static int PartyLeaderCharacter();
 
-  // Display name for a character number, or "?" if out of range.
-  static const char* CharacterName(int character);
+  // Display name for a character number, "(none)" for 0, "?" for nobody.
+  static std::string CharacterName(int character);
 
   // Respawns the leader on the next field tick outside a cutscene, so a model
   // whose data changed under the same character is rebuilt. Thread safe.

@@ -14,6 +14,7 @@
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
 
+#include "character_roster.h"
 #include "costume_system.h"
 #include "eternalsonata_costume_api.h"
 #include "eternalsonata_asset_container.h"
@@ -31,6 +32,13 @@ extern "C++" void PartyStatusPortrait(PPCRegister &image,
     image.u64 = portrait;
   } else if (character.u32 > 10 && character.u32 <= 12 && eternalsonata::IsPs3Target()) {
     image.u64 = eternalsonata::kPs3MenuPortraitSlot + character.u32 - 10;
+  } else if (const int base = eternalsonata::IsModdedCharacter(static_cast<int>(character.u32))
+                                  ? eternalsonata::CharacterBase(static_cast<int>(character.u32))
+                                  : 0) {
+    // word_8202C894[c - 1], the status art; past ten it reads the magic order.
+    auto* memory = rex::Runtime::instance()->memory();
+    image.u64 = rex::memory::load_and_swap<uint16_t>(
+        memory->TranslateVirtual<uint8_t*>(0x8202C894u + 2u * static_cast<uint32_t>(base - 1)));
   }
 }
 

@@ -1211,6 +1211,16 @@ progress, for instance to unlock it at some point of the story.
 
 `docs/costumes.md` has the details.
 
+## Adding characters
+
+On Xbox 360 data, character slots 11 and 12 are free for new party members. A
+`[[character]]` table in `assets.toml` (or `EternalSonataDefineCharacter`
+from code) gives one a name and a base character, and optionally its own
+model, battle file (`pc011.bop`: motions, cameras, effects), voice bank and
+portraits; whatever it does not bring is the base's. Costumes then work for
+it as for anyone. `docs/modded-characters.md` has the details, and
+`demo_characters` is the worked example.
+
 ## Reading and changing items and gold
 
 The item API covers inventory stacks, the battle Item Set, score pieces,

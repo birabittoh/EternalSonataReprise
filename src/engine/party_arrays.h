@@ -38,6 +38,10 @@ enum class PartyArray : uint8_t {
 // or writes party state goes through this, never the retail addresses.
 uint32_t PartyArrayAddress(PartyArray array, uint32_t index = 0);
 
+// Gives a modded slot its base's template row and camp faces. Before the
+// relocation exists this waits for it, which seeds every defined slot.
+void SeedModdedSlot(int character);
+
 // Makes the native memcpy, memmove and memset family remap the same ranges.
 // Call before the guest runs (OnPostSetup).
 void InitPartyArrays(rex::Runtime* runtime);

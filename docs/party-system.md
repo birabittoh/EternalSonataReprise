@@ -348,7 +348,7 @@ scan runs once, and only after some mod has actually renamed somebody.
 
 ## What is deliberately not modelled
 
-* **An eleventh character, yet.** The storage is twelve wide ("Twelve wide
-  storage"), but the game still counts to ten, so the API does too.
+* **Characters 11 and 12 on Xbox 360 data** until a mod defines them; see
+  [modded-characters.md](modded-characters.md).
 * **Field models.** Who walks the overworld is a separate mechanism entirely;
   see `src/engine/field_player_model_override.h`.

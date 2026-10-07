@@ -1252,6 +1252,11 @@ address = 0x821A0528
 name = "PartyCompareIndexLogical"
 registers = ["cr6", "r11"]
 after_instruction = true
+# and the file number it formats: a modded character's own or its base's
+[[midasm_hook]]
+address = 0x821A053C
+name = "PartyBattleFile"
+registers = ["r6"]
 # sub_8218AA20: battle HUD members
 [[midasm_hook]]
 address = 0x8218AB30
@@ -1270,12 +1275,25 @@ address = 0x821BD0F0
 name = "PartyCompareIndexLogical"
 registers = ["cr6", "r10"]
 after_instruction = true
+# and the bank number it formats, _usa then bare
+[[midasm_hook]]
+address = 0x821BD144
+name = "PartyVoiceFile"
+registers = ["r6"]
+[[midasm_hook]]
+address = 0x821BD184
+name = "PartyVoiceFile"
+registers = ["r6"]
 # sub_821A2B38: battle model and its cloth chains
 [[midasm_hook]]
 address = 0x821A2C88
 name = "PartyBattleModel"
 registers = ["r11", "r4", "r28"]
 jump_address_on_true = 0x821A2DA4
+[[midasm_hook]]
+address = 0x821A3030
+name = "PartyBattleClothCharacter"
+registers = ["r11"]
 [[midasm_hook]]
 address = 0x821A303C
 name = "PartyBattleCloth"

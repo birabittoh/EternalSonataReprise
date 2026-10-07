@@ -358,6 +358,7 @@ set(ETERNALSONATA_SOURCES
     src/platform/input_overlay.cpp
     src/engine/dlc_auto_install.cpp
     src/engine/costume_system.cpp
+    src/engine/character_roster.cpp
     src/engine/party_arrays.cpp
     src/engine/party_positions.cpp
     src/engine/party_bounds.cpp
