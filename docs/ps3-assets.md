@@ -286,6 +286,42 @@ native may still do something different from the 360 entry at the same id
 (events in particular), so each one has to be compared by decompiling it
 before the PS3 VM can forward it to 360 code.
 
+### Music stream query (2021)
+
+The PS3 native takes the stream in `args[0]` (nonzero asks stream 2, zero
+stream 1); the 360's always asks stream 1. In PS3 mode `ps3_natives.cpp`
+hooks `sub_820F8C88` to pass the stream through to `sub_8213FC38`.
+
+### Pad words (1122)
+
+1122 copies a pad's held and newly pressed words out. Only PS3 scripts call
+it. The PS3 word's low 16 bits are `digital1 << 8 | digital2` (menu code at
+EBOOT `0x283D70` tests d-pad `0x1000` up, `0x2000` right, `0x4000` down,
+`0x8000` left, with the stick folded in at `0x10000`..`0x80000` as on the
+360), so `0x40` is cross. The piano in `ftm45` waits on stream 2 (2021) and
+ends on it. The 360 layout has the left stick click there, so in PS3 mode
+`ps3_natives.cpp` hooks `sub_820ECA18` to also set `0x40` when A is set.
+
+### Music start position (2000)
+
+PS3 scripts pass a start position in seconds as `args[4]` of 2000. The PS3
+streams from there; the 360 ignores it, so those tracks still start at 0.
+Not done: it needs a start offset in `sub_82142360`/`sub_82142070`. 2009..2013
+read extra floats on the PS3 and are likely the same feature.
+
+### Shop stock
+
+The native (5012, `sub_8222C190`) is the same. The stock table differs: the
+PS3 keeps 16 records of 74 bytes (`{u16 id, u16 count, u16 items[35]}`) at VA
+`0x47A0F8` (file offset `0x46A0F8`), with restocked shops, new items and shop
+13 (`sbi05`, a PS3 only map). `scripts/ps3_shop_stock.py` writes it at build
+time into `ps3_shop_stock.generated.inc`. Shops 10 and 12 stock 35 items but
+the 360's list holds 32, so `src/engine/shop_stock.cpp` remaps the list
+(`word_82560114` through the id byte at `0x82560199`) into a buffer with room
+for 35. Accesses to the count and id bytes are told apart from records 33..35
+by instruction address. Two midasm hooks (`config/shop.toml`) raise the fill
+loop's end and, in PS3 mode, point its source at the PS3 table.
+
 ### Button prompts
 
 PS3 text names buttons with icons: `<ibN>` is icon N + 54 and `<ib>` the
