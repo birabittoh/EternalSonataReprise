@@ -11,6 +11,7 @@
 // the enemies and two more categories after 40, which the PS3 engine asks
 // for as the 360's plus 2 (EBOOT sub_175248 against sub_821AB7E0).
 
+#include "character_roster.h"
 #include "generated/eternalsonata_init.h"
 #include "target.h"
 
@@ -74,12 +75,19 @@ REX_HOOK_RAW(sub_821A0F18) {
 
 REX_EXTERN(__imp__sub_821ABC68);
 
-// Voice table row of a battle unit (r4: u32 kind, u8 index).
+// Voice table row of a battle unit (r4: u32 kind, u8 index). On 360 data the
+// rows past ten are enemies', so a modded character speaks with its base's
+// row; a line from an unloaded bank never ends and holds the battle intro.
 REX_HOOK_RAW(sub_821ABC68) {
   const uint32_t unit = ctx.r4.u32;
   __imp__sub_821ABC68(ctx, base);
-  if (eternalsonata::IsPs3Target() && REX_LOAD_U32(unit) == 1 && ctx.r3.s32 >= 0)
-    ctx.r3.s64 = ctx.r3.s32 + kPs3EnemyRows;
+  const uint32_t kind = REX_LOAD_U32(unit);
+  if (eternalsonata::IsPs3Target()) {
+    if (kind == 1 && ctx.r3.s32 >= 0)
+      ctx.r3.s64 = ctx.r3.s32 + kPs3EnemyRows;
+  } else if (kind == 0 && ctx.r3.s32 >= 10) {
+    ctx.r3.s64 = eternalsonata::CharacterBase(ctx.r3.s32 + 1) - 1;
+  }
 }
 
 REX_EXTERN(__imp__sub_821BCC40);
