@@ -1,8 +1,8 @@
 // eternalsonata - Field character models only the PS3 release ships.
 //
 // Native 1141 kind 0 returns a field character model as a raw NOBJ pointer,
-// which 1062 then builds. The 360 serves ids 1..10 from the model table
-// (dword_82420AF8, AppKeep.bmd entries 0..9). The PS3 (sub_80610 in the
+// which 1062 then builds. The 360 serves any id n from AppKeep slot n - 1
+// (dword_82420AF8), ids 1..10 being the characters. The PS3 (sub_80610 in the
 // EBOOT) adds negative ids, which its events use for the party:
 //
 //   -10..-12  worn costume of ALG, PLK, BET: pc%s_v%d.p3obj, one buffer per
@@ -13,8 +13,11 @@
 // ps3_appkeep.cpp loads all of these. Every id but CRS and SRN is the model
 // table entry of the same character, which for -10..-12 is the costume worn;
 // CRS and SRN wear theirs through CostumeModel (costume_system.cpp).
+//
+// Positive ids name PS3 AppKeep slots, so they are translated like 1052's.
 
 #include "costume_system.h"
+#include "ps3_appkeep.h"
 
 #include "generated/eternalsonata_init.h"
 #include "target.h"
@@ -61,8 +64,19 @@ REX_HOOK_RAW(sub_820E8B10) {
   const uint32_t args = ctx.r3.u32;
   const int32_t kind = static_cast<int32_t>(REX_LOAD_U32(args));
   const int32_t id = static_cast<int32_t>(REX_LOAD_U32(args + 4));
-  if (!eternalsonata::IsPs3Target() || kind != 0 || id >= 0)
+  if (!eternalsonata::IsPs3Target() || kind != 0)
     return __imp__sub_820E8B10(ctx, base);
+  if (id >= 0) {
+    // The field's "?" bubble is 50. PS3 slots 0..8 are empty, so 1..9 keep
+    // the 360's characters.
+    const uint32_t mapped = eternalsonata::Ps3AppKeepImageId(static_cast<uint32_t>(id));
+    if (!mapped)
+      return __imp__sub_820E8B10(ctx, base);
+    REX_STORE_U32(args + 4, mapped);
+    __imp__sub_820E8B10(ctx, base);
+    REX_STORE_U32(args + 4, static_cast<uint32_t>(id));
+    return;
+  }
   const uint32_t model = Ps3Model(base, id);
   if (!model) {
     static bool warned = false;
