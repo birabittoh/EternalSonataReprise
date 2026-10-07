@@ -1,0 +1,14 @@
+# The shop's stock list (src/engine/shop_stock.cpp): sub_8222C190 fills it
+# from the 360's table, or the PS3's, up to 35 items.
+
+[[midasm_hook]]
+address = 0x8222C274
+name = "EternalSonataShopStockSource"
+registers = ["r10", "r28"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222C290
+name = "EternalSonataShopStockEnd"
+registers = ["r8"]
+after_instruction = true

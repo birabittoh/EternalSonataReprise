@@ -14,6 +14,7 @@ includes = [
   "config/language.toml",
   "config/ps3.toml",
   "config/party.toml",
+  "config/shop.toml",
 ]
 
 # The game's image loader (sub_82279EC8) probes formats using setjmp/longjmp:

@@ -182,7 +182,7 @@ if(EXISTS ${ETERNALSONATA_PS3_EBOOT})
     set(ETERNALSONATA_PS3_EBOOT_DEPENDS ${ETERNALSONATA_PS3_EBOOT})
 endif()
 set(ETERNALSONATA_PS3_TABLES)
-foreach(table ps3_enemy_table ps3_hit_effect_table ps3_item_tables ps3_party_template)
+foreach(table ps3_enemy_table ps3_hit_effect_table ps3_item_tables ps3_party_template ps3_shop_stock)
     set(output ${CMAKE_SOURCE_DIR}/src/engine/${table}.generated.inc)
     add_custom_command(
         OUTPUT ${output}
@@ -366,6 +366,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/party_battle.cpp
     src/engine/party_status_menu.cpp
     src/engine/party_shop_menu.cpp
+    src/engine/shop_stock.cpp
     src/engine/ps3_appkeep.cpp
     src/engine/ps3_battlekeep.cpp
     src/engine/ps3_buttons.cpp

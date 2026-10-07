@@ -10,6 +10,7 @@ ranges = [
   [0x8243FD08, 0x82440128],  # stats_live, stats_base, charwords
   [0x82016150, 0x820167B0],  # template
   [0x8202CA28, 0x8202CA54],  # camp portraits, two sets
+  [0x82560114, 0x825601A2],  # shop stock list (shop_stock.cpp)
 ]
 # Every function: the handler tells arrays apart by instruction, so none
 # needs listing; unlisted hits are only logged.
