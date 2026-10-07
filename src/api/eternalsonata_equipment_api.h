@@ -70,16 +70,16 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_EQUIPMENT_ABI_VERSION 1u
+#define ETERNALSONATA_EQUIPMENT_ABI_VERSION 2u
 
 // Event names on the mod registry bus. See the note at the top.
 #define ETERNALSONATA_EQUIPMENT_EVENT_EQUIPPED "eternalsonata.equipment.equipped"
 #define ETERNALSONATA_EQUIPMENT_EVENT_UNEQUIPPED "eternalsonata.equipment.unequipped"
 #define ETERNALSONATA_EQUIPMENT_EVENT_MAGIC_SET "eternalsonata.equipment.magic_set"
 
-// Characters are the same 1..10 the Party API uses.
+// Characters are the same 1..12 the Party API uses.
 #define ETERNALSONATA_EQUIPMENT_CHARACTER_MIN 1
-#define ETERNALSONATA_EQUIPMENT_CHARACTER_MAX 10
+#define ETERNALSONATA_EQUIPMENT_CHARACTER_MAX 12
 
 // Item ids are the same 1..512 the Item API uses.
 #define ETERNALSONATA_EQUIPMENT_ITEM_ID_MIN 1
@@ -142,7 +142,7 @@ enum {
   // Nothing is loaded yet, or the tables are not mapped (e.g. at the title
   // screen before a save is loaded). Every mutation refuses in this state.
   ETERNALSONATA_EQUIPMENT_ERR_UNAVAILABLE = -1,
-  // The character number is outside 1..10.
+  // The character number is outside 1..12.
   ETERNALSONATA_EQUIPMENT_ERR_INVALID_CHARACTER = -2,
   // The slot is outside 0..3.
   ETERNALSONATA_EQUIPMENT_ERR_INVALID_SLOT = -3,
@@ -176,7 +176,7 @@ enum {
 
 // One equipment slot: what is in it, and what that item contributes.
 typedef struct EternalSonataEquipment {
-  // 1..10, the character this slot belongs to.
+  // 1..12, the character this slot belongs to.
   int32_t character;
   // 0..3, one of the ETERNALSONATA_EQUIPMENT_SLOT_* values.
   int32_t slot;
@@ -340,7 +340,7 @@ typedef int (*EternalSonataUnequipAllFn)(int character);
 // One magic, either in a slot or on its own. EternalSonataGetMagicInfo answers
 // with slot -1, since a table entry does not belong to a slot.
 typedef struct EternalSonataMagic {
-  // 1..10, the character that owns this magic. For a read of an empty slot,
+  // 1..12, the character that owns this magic. For a read of an empty slot,
   // the character whose slot was read.
   int32_t character;
   // 0..3, one of the ETERNALSONATA_MAGIC_SLOT_* values, or -1 when this is a
