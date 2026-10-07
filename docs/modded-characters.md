@@ -109,7 +109,10 @@ by the character's key, not its slot.
   file must key its actions by the base's magic ids. Records of its own would
   need appended records (raising the count as `EternalSonataPs3MagicCount`
   does), a twelve row order copy and text for the new ids.
-* **Events.** Native 1141's negative model ids only cover the PS3 pair.
+* **Events.** Every retail event names its cast with constant model ids
+  (`lib.e` symbol 20043, native 1141), never through a party lookup, so a
+  modded character appears in none. Showing one needs a mod's own event
+  script and a 1141 id for it; the negative ids only cover the PS3 pair.
 * **Battle HUD art of its own**: the HUD portrait is a group of BattleKeep slot
   41's layout, built the way the PS3 pair's are lent (`party_battle.cpp`).
 * **Cloth chains for an own model.** A modded character with its own model has

@@ -147,6 +147,11 @@ on the PS3). `sub_820FF748`'s range check is inclusive, so an unregistered
 | 5032 (x) | `0x381C98` | camp menu flag, block `+0x920 = x == 0` | `lib.e` |
 | 5033 (c) | `0x381C10` | c at display position 1..3 | `Dld17.e` picks a line |
 
+The camp main menu (`sub_2728E8`, `sub_273788`) gains Costumes when any
+costume is unlocked, and Scrapbook, a PS3 only camp screen, when `+0x921`
+(5029, set by `Bel01.e`) is. `+0x920` (5032) is read by the costume page
+(`sub_2733A0`).
+
 Costumes exist only for Allegretto, Polka and Beat (`pcALG_v2`, `pcPLK_v2`,
 ... models, a "Costumes" camp menu). The PS3 party block (`G+0x820`, the
 360's `0x8243FC08`, grows from 10 to 12 entries) keeps unlocks at
@@ -286,6 +291,21 @@ native may still do something different from the 360 entry at the same id
 (events in particular), so each one has to be compared by decompiling it
 before the PS3 VM can forward it to 360 code.
 
+Natives that behave the same on both platforms (decompiled on both sides,
+float arguments checked in the disassembly where Hex-Rays dropped them):
+builtins 1..30 (bar the translated ones), 100..115, 200..225, 2000..2006, 2014,
+2015, 2026, 5000, 5004, 5005, 5011, 5019, 20201, 40047, 60001, 60014, 60015,
+60019, 60021..60023, 60025, 60026, 60032, 60033, 60039, 60043, 60045, 60047,
+60049, 60051..60053, 60056, 60057, 60068, 60075, 60080, 60084, 60086, 60095,
+60100, and in the 1000 table 1008, 1010, 1021, 1022, 1023, 1025, 1028..1032,
+1038, 1039, 1041, 1042, 1044, 1050, 1053..1055, 1063, 1064, 1069, 1071, 1072,
+1074, 1079, 1089, 1090, 1095, 1097, 1098, 1100..1102, 1104, 1105, 1108, 1122
+(bar the pad word), 1123, 1136, 1139, 1140, 1143, 1145, 1146, plus the null
+stubs. Natives that differ: 2021 (stream argument) and the shop stock table,
+each described below. The PS3's unit record array (kind 1) sits 632 bytes lower
+than the 360's with the same stride and fields, which is why raw offsets in
+native bodies such as 40047 do not match.
+
 ### Music stream query (2021)
 
 The PS3 native takes the stream in `args[0]` (nonzero asks stream 2, zero
@@ -304,10 +324,12 @@ ends on it. The 360 layout has the left stick click there, so in PS3 mode
 
 ### Music start position (2000)
 
-PS3 scripts pass a start position in seconds as `args[4]` of 2000. The PS3
-streams from there; the 360 ignores it, so those tracks still start at 0.
-Not done: it needs a start offset in `sub_82142360`/`sub_82142070`. 2009..2013
-read extra floats on the PS3 and are likely the same feature.
+Scripts on both releases pass a start position in seconds as `args[4]` of
+2000. The 360 honours it too: `sub_820F80F8` (Hex-Rays drops its float
+arguments) hands it to `sub_82142070` in `f3`, which stores it in the stream
+request, and `sub_82146AF0` skips `rate * seconds` samples of the PCM data.
+Nothing to port. 2009..2013 read extra floats on the PS3 and are probably the
+same.
 
 ### Shop stock
 
@@ -727,6 +749,7 @@ endian `.wav`, which scripts ask for by that name.
 
 * Running from a PS3 copy alone; moving the conversion into the asset system.
 * The PS3 script VM: natives compared one by one (§2).
-* Twelve party slots, the camp menu itself and what its flags gate.
-* The costumes' camp menu page ([costumes.md](costumes.md)).
+* Twelve party slots.
 * The colours in `NATR`.
+* Last, since the game plays without them: the PS3 only camp screens, the
+  costumes page ([costumes.md](costumes.md)) and Scrapbook.

@@ -74,7 +74,8 @@ end addresses (`< 0x8243FC30` for position) and id gates. Menus with ten slot
 elements get their position searches widened but their member count capped
 at ten, so a member past position ten is not shown yet. The position table
 routines (`sub_820E78B8`, `sub_820E7948`, `sub_821E61D0`, `sub_821E6240`,
-`sub_821E6428`) are rewritten on the host instead
+`sub_821E6428`, plus script natives 5009 `sub_820E7A58` and 5010 `sub_820E7A88`,
+which clear and count ten entries) are rewritten on the host instead
 (`src/engine/party_positions.cpp`), after their PS3 twins.
 
 Entries 10 and 11 are kept in each slot's save record (`party.<array>` keys);
