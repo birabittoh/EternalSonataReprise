@@ -431,7 +431,7 @@ Surveyed over the 805 files present on both releases:
 | `NLOB` | offsets move when children resize | yes |
 | `Mefc` | directory addressed sections (§3.4) | yes |
 | `NLEF` | `Mefc`s with embedded models | yes |
-| `NATR` | colours at irregular offsets | no |
+| `NATR` | colour array RGBA vs ARGB (§3.3) | yes |
 | `NMR2` | morph vertex records, CMP packed (§3.2) | yes |
 | `NBN2`, `NCAM`, `NLC2`, `NCLS`, `NDYN`, `NMRP`, `NMTN` | float drift from re-export, or identical | nothing to do |
 
@@ -515,6 +515,13 @@ holds the texture index (u16) instead of a colour, so it must not be rotated.
 `NLIT` is 48 byte records from +8 with colours at +20 and +28, `NFOG` has one
 at +12, `NCLC` at +20 and +36, and `NOL2` 32 byte records with the colour at
 +24, or +8 for type 0 records.
+
+`NATR` is map collision (`sub_821100D8`): a 32 byte header whose u16s at +16,
++20, +22 and +18 count 8 byte nodes, 12 byte triangles, 6 byte records and a
+u16 list, stored in that order from +32. When the u16 at +24 (a scale, /1024)
+is nonzero, a colour per 6 byte record follows, 4 aligned, ending the chunk.
+Rotated, 610 of the 661 chunks both releases share match the 360 bytes; the
+rest are collision or tints the PS3 changed.
 
 ### 3.4 Effects
 
@@ -750,6 +757,5 @@ endian `.wav`, which scripts ask for by that name.
 * Running from a PS3 copy alone; moving the conversion into the asset system.
 * The PS3 script VM: natives compared one by one (§2).
 * Twelve party slots.
-* The colours in `NATR`.
 * Last, since the game plays without them: the PS3 only camp screens, the
   costumes page ([costumes.md](costumes.md)) and Scrapbook.
