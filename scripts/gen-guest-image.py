@@ -6,7 +6,7 @@ codegen already compiled the code, and the guest never reads either section
 (checked by page protecting them). The import thunk words in .text stay,
 since the SDK reads them at load to pair imports. The BTX text and the
 strings, the PAL-50 messages and the menu layouts come from
-src/guest_data, and data nothing reads (the shader blob,
+src/guest_data, a blank PNG is generated, and data nothing reads (the shader blob,
 the XDBF) is dropped with its resource header; see guest_data.py. Zero runs
 are elided by the XEX "basic" compression, so only data that is read at
 runtime takes space.
@@ -16,8 +16,8 @@ runtime takes space.
 import struct
 import sys
 
-from guest_data import (drop_unread, overlay_layouts, overlay_pal50, overlay_strings,
-                        overlay_text)
+from guest_data import (drop_unread, overlay_blank_png, overlay_layouts, overlay_pal50,
+                        overlay_strings, overlay_text)
 from xex_image import XexImage, XEX_FILE_FORMAT_INFO
 
 XEX_RESOURCE_INFO = 0x000002FF
@@ -123,6 +123,7 @@ def main():
     overlay_strings(image, xex.base)
     overlay_pal50(image, xex.base)
     overlay_layouts(image, xex.base)
+    overlay_blank_png(image, xex.base)
     drop_unread(image, xex.base)
 
     runs = blocks(bytes(image))
