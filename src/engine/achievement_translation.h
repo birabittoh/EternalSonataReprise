@@ -4,11 +4,9 @@
 // from the strings mods published (see settings.h's RegisterLanguageListeners
 // and the declarative [language.strings] table in assets.toml).
 //
-// The catalogue itself comes out of the guest's own XDBF, which the SDK reads
-// once during XEX load in whatever language user_language named at the time.
-// That covers the five languages the disc shipped with and nothing else, so a
-// language a mod invented has no metadata to fall back on beyond its donor's.
-// This fills that in.
+// The catalogue comes from achievement_text.h, the PAL and JP XDBFs dumped as
+// code, so the guest image's XDBF is not read for text. A language a mod
+// invented falls back to its donor's strings.
 
 #pragma once
 
@@ -16,8 +14,8 @@
 
 namespace eternalsonata {
 
-// Rewrites the label, description and locked description of every achievement a
-// mod translated, and leaves the rest exactly as the XDBF supplied them. Both
+// Replaces the catalogue with the boot language's strings, then applies every
+// label, description and locked description a mod translated. Both
 // the F7 overlay and the unlock toast read the same catalogue, so one pass
 // covers both.
 //
