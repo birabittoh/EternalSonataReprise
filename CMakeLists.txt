@@ -326,6 +326,8 @@ add_custom_command(
         ${CMAKE_SOURCE_DIR}/scripts/guest_data.py
         ${CMAKE_SOURCE_DIR}/scripts/xex_image.py
         ${ETERNALSONATA_GUEST_TEXT}
+        ${CMAKE_SOURCE_DIR}/src/guest_data/strings.txt
+        ${CMAKE_SOURCE_DIR}/src/guest_data/wide_strings.txt
         ${CMAKE_SOURCE_DIR}/assets/default.xex
     COMMENT "Stripping the guest image"
     VERBATIM
