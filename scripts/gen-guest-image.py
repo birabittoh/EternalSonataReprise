@@ -17,7 +17,7 @@ import struct
 import sys
 
 from guest_data import (drop_unread, overlay_blank_png, overlay_layouts, overlay_pal50,
-                        overlay_strings, overlay_text)
+                        overlay_strings, overlay_tables, overlay_text)
 from xex_image import XexImage, XEX_FILE_FORMAT_INFO
 
 XEX_RESOURCE_INFO = 0x000002FF
@@ -123,6 +123,7 @@ def main():
     overlay_strings(image, xex.base)
     overlay_pal50(image, xex.base)
     overlay_layouts(image, xex.base)
+    overlay_tables(image, xex.base)
     overlay_blank_png(image, xex.base)
     drop_unread(image, xex.base)
 

@@ -32,14 +32,23 @@ stream, then one command per line, the opcode and its operands as signed
 decimals; the terminator is implied. A stream may not outgrow its retail
 size. sub_821EC050 picks them per screen and language.
 
+Tables are src/guest_data/tables.txt: each `@address` starts a block of
+big endian words, one row per line, `#` starts a comment. A token is a signed
+decimal, a float (it has a `.` or an `e`), four bytes as `01.FF.00.00`, or
+`0x` hex for anything else, and the block ends at the next `@`. Rows only
+group; the block's extent is its word count. The record table at
+0x82078B00 is documented where it is written.
+
     python scripts/guest_data.py check assets/default.xex
     python scripts/guest_data.py extract-text assets/default.xex      # one time
     python scripts/guest_data.py extract-strings assets/default.xex   # one time
     python scripts/guest_data.py extract-pal50 assets/default.xex     # one time
     python scripts/guest_data.py extract-layouts assets/default.xex   # one time
+    python scripts/guest_data.py extract-tables assets/default.xex    # one time
 """
 import argparse
 import os
+import re
 import struct
 import sys
 import zlib
@@ -53,6 +62,7 @@ WIDE_STRINGS_FILE = os.path.join(ROOT, "wide_strings.txt")
 PAL50_FILE = os.path.join(ROOT, "pal50_messages.txt")
 PAL50_ADDRESS = 0x82000698
 LAYOUT_FILE = os.path.join(ROOT, "menu_layouts.txt")
+TABLES_FILE = os.path.join(ROOT, "tables.txt")
 BLANK_PNG_ADDRESS = 0x82074A50
 
 # Menu layouts: sub_821F2F38 runs a stream of commands, an opcode word and
@@ -526,6 +536,93 @@ def signed(v):
     return v - (1 << 32) if v & 0x80000000 else v
 
 
+# Word blocks in tables.txt, as (start, end, row words, schema). A schema is
+# the kinds of one row's words, cycled: b four bytes, i integer, f float,
+# a anything. The first block is the 308 byte records sub_8218E480 indexes
+# (111 of them): 25 triples of {flags, id, id} and two scale floats.
+TABLE_BLOCKS = [
+    (0x82078A34, 0x82078B00, 4, "a"),
+    (0x82078B00, 0x8208108C, 77, "bii" * 25 + "ff"),
+    (0x8208108C, 0x820813CC, 4, "a"),
+    (0x820813CC, 0x82081E34, 8, "a"),
+]
+BYTES_TOKEN = re.compile(r"^[0-9A-F]{2}(\.[0-9A-F]{2}){3}$")
+
+
+def float_token(word):
+    """Shortest decimal that reads back as this float32, or None."""
+    f = struct.unpack(">f", struct.pack(">I", word))[0]
+    if f != f or f in (float("inf"), float("-inf")):
+        return None
+    for digits in range(1, 10):
+        text = "%.*g" % (digits, f)
+        if struct.pack(">f", float(text)) == struct.pack(">I", word):
+            return text if any(c in text for c in ".e") else text + ".0"
+    return None
+
+
+def word_token(word, kind):
+    if kind == "b":
+        return ".".join("%02X" % b for b in struct.pack(">I", word))
+    if kind == "f":
+        return float_token(word) or "0x%08X" % word
+    if kind == "i" or word == 0:
+        return str(signed(word))
+    if word < 0x100000 or word >= 0xFFF00000:
+        return str(signed(word))
+    exponent = (word >> 23) & 0xFF
+    if 0x60 <= exponent <= 0xA0 and float_token(word):
+        return float_token(word)
+    return "0x%08X" % word
+
+
+def token_word(token):
+    if BYTES_TOKEN.match(token):
+        return int.from_bytes(bytes.fromhex(token.replace(".", "")), "big")
+    if token.startswith("0x"):
+        return int(token, 16)
+    if any(c in token for c in ".e") and not token.lstrip("-").isdigit():
+        return struct.unpack(">I", struct.pack(">f", float(token)))[0]
+    return int(token) & 0xFFFFFFFF
+
+
+def read_tables():
+    """[(address, [words])]."""
+    out = []
+    with open(TABLES_FILE, encoding="utf-8") as f:
+        for line in f.read().split("\n"):
+            line = line.split("#")[0].split()
+            if not line:
+                continue
+            if line[0].startswith("@"):
+                out.append((int(line[0][1:], 16), []))
+                continue
+            out[-1][1].extend(token_word(t) for t in line)
+    return out
+
+
+def overlay_tables(image, base):
+    for address, words in read_tables():
+        off = address - base
+        image[off:off + 4 * len(words)] = struct.pack(f">{len(words)}I", *words)
+
+
+def cmd_extract_tables(args):
+    xex = XexImage.load(args.xex)
+    lines = ["# Guest image data tables. See scripts/guest_data.py.", ""]
+    for start, end, row, schema in TABLE_BLOCKS:
+        words = struct.unpack_from(f">{(end - start) // 4}I", xex.data, start - xex.base)
+        lines.append(f"@0x{start:08X}")
+        for i in range(0, len(words), row):
+            kinds = [schema[(i + j) % len(schema)] for j in range(len(words[i:i + row]))]
+            lines.append(" ".join(word_token(w, k) for w, k in zip(words[i:i + row], kinds)))
+        lines.append("")
+    with open(TABLES_FILE, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines))
+    print(f"{len(TABLE_BLOCKS)} blocks in {TABLES_FILE}")
+    return 0
+
+
 def cmd_extract_layouts(args):
     xex = XexImage.load(args.xex)
     lines = []
@@ -605,6 +702,14 @@ def cmd_check(args):
         print(f"MISMATCH blank PNG at 0x{BLANK_PNG_ADDRESS:08X}")
         failures += 1
     covered[off:off + len(record)] = b"\1" * len(record)
+    for address, words in read_tables():
+        off = address - xex.base
+        size = 4 * len(words)
+        if any(covered[off:off + size]):
+            print(f"OVERLAP table at 0x{address:08X}")
+            failures += 1
+        edited += struct.pack(f">{len(words)}I", *words) != xex.data[off:off + size]
+        covered[off:off + size] = b"" * size
     for start, end, _ in DROPPED:
         covered[start - xex.base:end - xex.base] = b"\1" * (end - start)
     total = done = 0
@@ -625,7 +730,8 @@ def main():
     for name, fn in (("check", cmd_check), ("extract-text", cmd_extract_text),
                      ("extract-strings", cmd_extract_strings),
                      ("extract-pal50", cmd_extract_pal50),
-                     ("extract-layouts", cmd_extract_layouts)):
+                     ("extract-layouts", cmd_extract_layouts),
+                     ("extract-tables", cmd_extract_tables)):
         p = sub.add_parser(name)
         p.add_argument("xex")
         p.set_defaults(fn=fn)
