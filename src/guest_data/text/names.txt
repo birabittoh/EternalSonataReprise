@@ -182,7 +182,7 @@
 179	いいえ
 180	写真を所持していません。
 181	アイテムを所持していません。
-182	サインインの状態が変更されました。\nタイトル画面に戻ります。
+182	エラーが発生しました。\nタイトル画面に戻ります。
 183	Aランク！！
 184	 Bランク 
 185	Cラン<m4>ク……
@@ -394,7 +394,7 @@
 179	No
 180	You have no photos.
 181	You have no items.
-182	Sign-in status has changed\nReturning to Title Screen
+182	An error has occurred.\nReturning to Title Screen
 183	Rank A
 184	Rank B
 185	Rank F
@@ -606,7 +606,7 @@
 179	No
 180	You have no photos.
 181	You have no items.
-182	Sign-in status has changed\nReturning to Title Screen
+182	An error has occurred.\nReturning to Title Screen
 183	Rank A
 184	Rank B
 185	Rank F
@@ -818,7 +818,7 @@
 179	Non
 180	Vous n'avez aucune photo.
 181	Vous n'avez aucun objet.
-182	État de connexion modifié.\nRetour à l'écran de titre.
+182	Une erreur est survenue.\nRetour à l'écran de titre.
 183	Note A
 184	Note B
 185	Note F
@@ -1030,7 +1030,7 @@
 179	No
 180	Non possiedi foto.
 181	Non possiedi oggetti.
-182	Stato di connessione cambiato.\nTorna alla schermata del titolo.
+182	Si è verificato un errore.\nTorna alla schermata del titolo.
 183	Grado A
 184	Grado B
 185	Grado F
@@ -1242,7 +1242,7 @@
 179	Nein
 180	Du besitzt keine Fotos.
 181	Du besitzt keine Objekte.
-182	Anmeldestatus hat sich geändert.\nZurück zum Titelbildschirrm.
+182	Ein Fehler ist aufgetreten.\nZurück zum Titelbildschirm.
 183	Rang A
 184	Rang B
 185	Rang F
@@ -1454,7 +1454,7 @@
 179	No
 180	No tienes ninguna foto.
 181	No tienes ningún objeto.
-182	El estado de inicio de sesión ha cambiado.\nRegresarás a la pantalla de inicio.
+182	Se ha producido un error.\nRegresarás a la pantalla de inicio.
 183	Sobresaliente
 184	Aprobado
 185	Suspenso

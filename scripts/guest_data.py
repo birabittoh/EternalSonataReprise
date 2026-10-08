@@ -2,14 +2,19 @@
 """The guest image's data as source: src/guest_data/.
 
 Until every byte of the image's data sections comes from there, the game
-keeps loading the image built from default.xex (scripts/gen-guest-image.py);
-this tool is the way to grow the source and prove it matches.
+keeps loading the image built from default.xex (scripts/gen-guest-image.py),
+with the text below written over it; this tool is the way to grow the source
+and prove it matches.
 
 Text: each BTX blob in .rdata/.data is a UTF-8 file in src/guest_data/text/
 named after what it holds. The first line is its guest address; then one
 block per language, `[USA]`, holding `id<TAB>text` lines. Japanese is
 cp932 in the guest, the other six languages cp1252. `\\n` is a literal
 backslash sequence the game interprets, not a line break.
+
+The text is edited here (the console wording is gone), so a blob may differ
+from the retail one string by string, but it keeps its languages and ids and
+must fit where the retail blob was: the game only points at a blob's start.
 
     python scripts/guest_data.py check assets/default.xex
     python scripts/guest_data.py extract-text assets/default.xex   # one time
@@ -146,6 +151,22 @@ def compile_items():
     return items
 
 
+def retail_size(data, off):
+    """Bytes the retail blob at `off` takes, which a replacement must fit in."""
+    return len(encode_btx(parse_btx(data, off)))
+
+
+def overlay_text(image, base):
+    """Write the source text over `image`, zeroing what each blob no longer
+    uses."""
+    for address, data, name in compile_items():
+        off = address - base
+        size = retail_size(image, off)
+        if len(data) > size:
+            raise ValueError(f"{name} is {len(data)} bytes, {size} available")
+        image[off:off + size] = data + bytes(size - len(data))
+
+
 def cmd_extract_text(args):
     xex = XexImage.load(args.xex)
     os.makedirs(TEXT_DIR, exist_ok=True)
@@ -159,16 +180,24 @@ def cmd_extract_text(args):
 def cmd_check(args):
     xex = XexImage.load(args.xex)
     covered = bytearray(len(xex.data))
-    failures = 0
+    failures = edited = 0
     for address, data, name in compile_items():
         off = address - xex.base
-        if bytes(xex.data[off:off + len(data)]) != data:
-            print(f"MISMATCH {name} at 0x{address:08X}")
+        size = retail_size(xex.data, off)
+        if len(data) > size:
+            print(f"TOO BIG {name}: {len(data)} bytes, {size} available")
             failures += 1
-        if any(covered[off:off + len(data)]):
+        _, langs = read_text(os.path.join(TEXT_DIR, name))
+        retail = parse_btx(xex.data, off)
+        if {k: len(v) for k, v in langs.items()} != {k: len(v) for k, v in retail.items()}:
+            print(f"MISMATCH {name}: languages or string ids differ")
+            failures += 1
+        else:
+            edited += sum(a != b for k in langs for a, b in zip(langs[k], retail[k]))
+        if any(covered[off:off + size]):
             print(f"OVERLAP {name} at 0x{address:08X}")
             failures += 1
-        covered[off:off + len(data)] = b"\1" * len(data)
+        covered[off:off + size] = b"\1" * size
     total = done = 0
     for start, end in DATA_RANGES:
         for i in range(start - xex.base, end - xex.base):
@@ -176,7 +205,7 @@ def cmd_check(args):
                 total += 1
                 done += covered[i]
     print(f"{done} of {total} nonzero data bytes come from source "
-          f"({100 * done / total:.1f}%), {failures} failures")
+          f"({100 * done / total:.1f}%), {edited} strings edited, {failures} failures")
     return 1 if failures else 0
 
 
