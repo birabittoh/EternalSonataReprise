@@ -1,81 +1,23 @@
 #!/usr/bin/env python3
 """Write the guest image the executable embeds (src/core/guest_image.h).
 
-The retail default.xex goes in decrypted, with .text and .pdata zeroed:
-codegen already compiled the code, and the guest never reads either section
-(checked by page protecting them). The import thunk words in .text stay,
-since the SDK reads them at load to pair imports. The BTX text and the
-strings, the PAL-50 messages and the menu layouts come from
-src/guest_data, a blank PNG is generated, and data nothing reads (the shader blob,
-the XDBF) is dropped with its resource header; see guest_data.py. Zero runs
-are elided by the XEX "basic" compression, so only data that is read at
-runtime takes space.
+The image is built from src/guest_data alone: the XEX header
+(xex_header.txt) and every byte of data (text, strings, tables, menu
+layouts), with no retail file. Code sections are empty because codegen
+already compiled them. Zero runs are elided by the XEX "basic" compression,
+so only data that is read at runtime takes space.
 
-    python scripts/gen-guest-image.py assets/default.xex out/guest-image.xex
+    python scripts/gen-guest-image.py out/guest-image.xex
 """
 import struct
 import sys
 
 from guest_data import (drop_unread, overlay_blank_png, overlay_layouts, overlay_pal50,
                         overlay_strings, overlay_tables, overlay_text)
-from xex_image import XexImage, XEX_FILE_FORMAT_INFO
-
-XEX_RESOURCE_INFO = 0x000002FF
-XEX_IMPORT_LIBRARIES = 0x000103FF
-
-ZEROED_SECTIONS = (".text", ".pdata")
+from xex_header import PAGE_SIZE, build_header, import_words, read_header
 
 # Shorter zero runs cost more as a block record than they save.
 MIN_ZERO_RUN = 64
-
-
-def opt_headers(raw):
-    count, = struct.unpack_from(">I", raw, 20)
-    for i in range(count):
-        key, value = struct.unpack_from(">II", raw, 24 + 8 * i)
-        yield 24 + 8 * i, key, value
-
-
-def import_record_addresses(raw):
-    for _, key, off in opt_headers(raw):
-        if key != XEX_IMPORT_LIBRARIES:
-            continue
-        total, strings_size = struct.unpack_from(">II", raw, off)
-        lib = strings_size + 12
-        while lib < total:
-            size, = struct.unpack_from(">I", raw, off + lib)
-            if not size:
-                break
-            count, = struct.unpack_from(">H", raw, off + lib + 0x26)
-            yield from struct.unpack_from(f">{count}I", raw, off + lib + 0x28)
-            lib += size
-
-
-def drop_resource_info(header):
-    """Remove the resource directory, whose only entry is the dropped XDBF.
-    Header data sits at absolute offsets, so the slots after it just move up
-    one."""
-    entries = list(opt_headers(header))
-    kept = [(k, v) for _, k, v in entries if k != XEX_RESOURCE_INFO]
-    if len(kept) == len(entries):
-        return
-    for _, key, off in entries:
-        if key == XEX_RESOURCE_INFO:
-            size, = struct.unpack_from(">I", header, off)
-            header[off:off + size] = bytes(size)
-    header[24:24 + 8 * len(entries)] = bytes(8 * len(entries))
-    for i, (key, value) in enumerate(kept):
-        struct.pack_into(">II", header, 24 + 8 * i, key, value)
-    struct.pack_into(">I", header, 20, len(kept))
-
-
-def pe_sections(image):
-    lfanew, = struct.unpack_from("<I", image, 0x3C)
-    count, opt_size = struct.unpack_from("<H12xH", image, lfanew + 6)
-    table = lfanew + 0x18 + opt_size
-    for i in range(count):
-        name, vsize, rva = struct.unpack_from("<8sII", image, table + 40 * i)
-        yield name.rstrip(b"\0").decode(), rva, vsize
 
 
 def blocks(image):
@@ -101,58 +43,32 @@ def blocks(image):
 
 
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) != 2:
         print(__doc__, file=sys.stderr)
         return 2
-    src, dst = sys.argv[1:]
-    raw = open(src, "rb").read()
-    xex = XexImage.load(src)
-    image = bytearray(xex.data)
-
-    keep = {}
-    for addr in import_record_addresses(raw):
-        if addr and xex.contains(addr, 4):
-            keep[addr] = xex.read(addr, 4)
-    for name, rva, size in pe_sections(image):
-        if name in ZEROED_SECTIONS:
-            image[rva:rva + size] = bytes(size)
-    for addr, word in keep.items():
-        off = addr - xex.base
-        image[off:off + 4] = word
-    overlay_text(image, xex.base)
-    overlay_strings(image, xex.base)
-    overlay_pal50(image, xex.base)
-    overlay_layouts(image, xex.base)
-    overlay_tables(image, xex.base)
-    overlay_blank_png(image, xex.base)
-    drop_unread(image, xex.base)
+    dst = sys.argv[1]
+    spec = read_header()
+    image = bytearray(PAGE_SIZE * sum(c for _, c in spec["pages"]))
+    base = spec["load_address"][0]
+    overlay_text(image, base)
+    overlay_strings(image, base)
+    overlay_pal50(image, base)
+    overlay_layouts(image, base)
+    overlay_tables(image, base)
+    overlay_blank_png(image, base)
+    words = import_words(spec)
+    for addr, word in words.items():
+        struct.pack_into(">I", image, addr - base, word)
+    drop_unread(image, base)
 
     runs = blocks(bytes(image))
-    body = b"".join(
-        image[off:off + data]
-        for off, data in _offsets(runs)
-    )
-
-    # The new file format info goes after the old header, so every other
-    # header keeps its offset.
-    header = bytearray(raw[:struct.unpack_from(">I", raw, 8)[0]])
-    header += bytes(-len(header) % 16)
-    fmt = struct.pack(">IHH", 8 + 8 * len(runs), 0, 1)
-    fmt += b"".join(struct.pack(">II", d, z) for d, z in runs)
-    fmt_off = len(header)
-    header += fmt
-    header += bytes(-len(header) % 0x1000)
-    for slot, key, _ in opt_headers(raw):
-        if key == XEX_FILE_FORMAT_INFO:
-            struct.pack_into(">I", header, slot + 4, fmt_off)
-    drop_resource_info(header)
-    struct.pack_into(">I", header, 8, len(header))
-
+    body = b"".join(image[off:off + data] for off, data in _offsets(runs))
+    header = build_header(spec, runs)
     with open(dst, "wb") as f:
         f.write(header)
         f.write(body)
     print(f"{dst}: {len(header) + len(body)} bytes, {len(runs)} blocks, "
-          f"{len(keep)} import words kept")
+          f"{len(words)} import words")
     return 0
 
 
