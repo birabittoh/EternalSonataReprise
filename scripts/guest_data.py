@@ -42,6 +42,7 @@ import argparse
 import os
 import struct
 import sys
+import zlib
 
 from xex_image import XexImage
 
@@ -52,6 +53,7 @@ WIDE_STRINGS_FILE = os.path.join(ROOT, "wide_strings.txt")
 PAL50_FILE = os.path.join(ROOT, "pal50_messages.txt")
 PAL50_ADDRESS = 0x82000698
 LAYOUT_FILE = os.path.join(ROOT, "menu_layouts.txt")
+BLANK_PNG_ADDRESS = 0x82074A50
 
 # Menu layouts: sub_821F2F38 runs a stream of commands, an opcode word and
 # its operand words, up to STREAM_END. Operand counts come from the
@@ -428,6 +430,28 @@ def overlay_text(image, base):
         image[off:off + size] = data + bytes(size - len(data))
 
 
+def png_chunk(kind, body):
+    return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+
+def blank_png_record():
+    """The file record at BLANK_PNG_ADDRESS: an extension, the record's size,
+    then a fully transparent 64x64 RGBA PNG. zlib level 9 matches retail."""
+    side = 64
+    rows = bytes(side * (1 + side * 4))
+    png = (b"\x89PNG\r\n\x1a\n"
+           + png_chunk(b"IHDR", struct.pack(">IIBBBBB", side, side, 8, 6, 0, 0, 0))
+           + png_chunk(b"IDAT", zlib.compress(rows, 9))
+           + png_chunk(b"IEND", b""))
+    return b".PNG" + struct.pack(">I", 8 + len(png)) + png
+
+
+def overlay_blank_png(image, base):
+    record = blank_png_record()
+    off = BLANK_PNG_ADDRESS - base
+    image[off:off + len(record)] = record
+
+
 def drop_unread(image, base):
     for start, end, _ in DROPPED:
         image[start - base:end - base] = bytes(end - start)
@@ -569,6 +593,12 @@ def cmd_check(args):
             print(f"OVERLAP layout at 0x{address:08X}")
             failures += 1
         covered[off:off + size] = b"\1" * size
+    record = blank_png_record()
+    off = BLANK_PNG_ADDRESS - xex.base
+    if record != xex.data[off:off + len(record)]:
+        print(f"MISMATCH blank PNG at 0x{BLANK_PNG_ADDRESS:08X}")
+        failures += 1
+    covered[off:off + len(record)] = b"\1" * len(record)
     for start, end, _ in DROPPED:
         covered[start - xex.base:end - xex.base] = b"\1" * (end - start)
     total = done = 0
