@@ -1,0 +1,22 @@
+0x823864E8
+[JPN]
+0	いらっしゃいませ。今日は、わたしどもで扱わせていただきます。
+1	いらっしゃいませ。今日は、写真屋さんがみえていますよ。
+[USA]
+0	Welcome. Please let us help you assess your works.
+1	Welcome. We have a photographer in our store today.
+[GBR]
+0	Welcome. Please let us help you assess your works.
+1	Welcome. We have a photographer in our store today.
+[FRA]
+0	Bienvenue. Nous allons nous occuper de tes œuvres d'art.
+1	Bienvenue. Nous avons un photographe au magasin, aujourd'hui.
+[ITA]
+0	Benvenuto. Lascia che ti aiutiamo a sistemare i tuoi lavori.
+1	Benvenuti. Oggi abbiamo un fotografo nel nostro negozio.
+[DEU]
+0	Willkommen. Wir helfen dir gern, deine Werke zu bewerten und zu verkaufen.
+1	Willkommen. Heute haben wir einen Fotografen im Laden.
+[ESP]
+0	Bienvenido. Deja que te ayudemos a vender tu obra.
+1	Bienvenido. Hoy tenemos un fotógrafo en la tienda.

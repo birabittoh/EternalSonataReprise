@@ -1,0 +1,78 @@
+0x822FDD00
+[JPN]
+0	サインインしていません。サインインしますか？\n
+1	空き容量のチェックを行います。\nデータの保存先を選択してください。\n（保存するには最低%.1fMBの空き容量が必要です)
+2	空き容量をチェック中です……。\n本体の電源を切ったり、\nストレージ機器を取り外したりしないでください。\n
+3	十分な空き容量を確認しました。ゲームを開始します。
+4	十分な空き容量を確認できませんでした。\nこの状態では新しいデータを\n保存することはできません。\n\nこのままゲームを開始しますか？
+5	この状態ではデータを保存することはできません。\nこのままゲームを開始しますか？
+6	空き容量をチェックすることができません。\nこの状態ではデータを保存できない可能性があります。\n\nこのままゲームを開始しますか？
+7	サインインすることができません。\nこの状態ではデータは保存されません。\n\nこのままゲームを開始しますか？\n
+8	サインインしていません。\nこの状態ではデータは保存されません。\n\nこのままゲームを開始しますか？
+9	指定されたストレージ機器にアクセスできませんでした。\nこの状態ではデータを保存できない可能性があります。\n\nこのままゲームを開始しますか？
+[USA]
+0	No text needed.
+1	Please select a storage device.\n
+2	Checking disk space...\nPlease do not remove the storage device\nor reset/switch off the Xbox 360 console.\n
+3	There is enough available space. Starting game.\n
+4	Insufficient space on the storage device.\nGame data will not be saved.\nStart game anyway?\n
+5	Game data will not be saved.\nStart game anyway?\n
+6	A storage device has not been selected.\nGame data will not be saved.\nStart game anyway?
+7	No text needed.
+8	You are not signed in. Game data will not be saved.\nStart game anyway?\n
+9	The storage device could not be accessed.<c1>[?]<c><c1>[?]<c>Game data will not be saved.\nStart game anyway?\n
+[GBR]
+0	No text needed.
+1	Please select a storage device.\n
+2	Checking disk space...\nPlease do not remove the storage device\nor switch off the console.\n
+3	There is enough available space. Starting game.\n
+4	Insufficient space on the storage device. Game data will not be saved.\nStart game anyway?\n
+5	Game data will not be saved.\nStart game anyway?\n
+6	A storage device has not been selected. Game data will not be saved.\nStart game anyway?\n
+7	No text needed.
+8	You are not signed in. Game data will not be saved.\nStart game anyway?\n
+9	The storage device could not be accessed. Game data will not be saved.\nStart game anyway?\n
+[FRA]
+0	
+1	Veuillez choisir un périphérique de stockage.\n
+2	Vérification de l'espace libre sur le disque...\nNe pas éteindre la Console Xbox 360 ni retirer le\npériphérique de stockage.\n
+3	Espace suffisant sur le périphérique de stockage. \nLancement de la partie en cours.\n
+4	L'espace libre sur le périphérique de stockage est insuffisant.\nLes données de jeu ne seront pas sauvegardées.\n\nLancer quand même la partie ?\n
+5	Les données de jeu ne seront pas sauvegardées.\nLancer quand même la partie ?\n
+6	Aucun périphérique de stockage n'a été\nsélectionné. Les données de jeu\nne seront pas sauvegardées.\nLancer quand même la partie ?\n
+7	
+8	Vous n'êtes pas connecté. Les données de jeu ne seront pas sauvegardées.\n\nLancer quand même la partie ?\n
+9	Impossible d'accéder au périphérique de stockage.\nLes données de jeu ne seront pas sauvegardées.\n\nLancer quand même la partie ?\n
+[ITA]
+0	
+1	Selezionare una periferica di memorizzazione.
+2	Controllo spazio su disco...\nNon rimuovere la periferica di memorizzazione\nné riavviare/spegnere la console Xbox 360.
+3	Spazio disponibile sufficiente. Avvio del gioco...
+4	Spazio insufficiente sulla periferica di memorizzazione.\nI dati di gioco non saranno salvati.\n\nAvviare il gioco comunque?\n
+5	I dati di gioco non saranno salvati.Avviare il gioco comunque?
+6	Non è stata selezionata alcuna periferica\ndi memorizzazione. I dati di gioco\nnon saranno salvati.\nAvviare il gioco comunque?
+7	
+8	Non sei connesso.\nI dati di gioco non saranno salvati.\n\nAvviare il gioco comunque?
+9	Impossibile accedere alla periferica di memorizzazione. \nI dati di gioco non saranno salvati.\nAvviare il gioco comunque?
+[DEU]
+0	
+1	Bitte Speichergerät wählen.\n
+2	Speicherplatz wird geprüft...\nBitte das Speichergerät nicht entfernen und\ndie Xbox 360 Konsole nicht zurücksetzen oder ausschalten.\n
+3	Es ist genügend Speicherplatz verfügbar. Spiel wird gestartet ...\n
+4	Es ist nicht genügend Speicherplatz auf\ndem Speichergerät verfügbar.\nSpieldaten werden nicht gespeichert.\n\nSpiel trotzdem starten?\n
+5	Spieldaten werden nicht gespeichert.\nSpiel trotzdem starten?\n
+6	Es wurde kein Speichergerät gewählt.\nSpieldaten werden nicht gespeichert.\nSpiel trotzdem starten?\n
+7	
+8	Du bist nicht angemeldet. Spieldaten werden nicht gespeichert.\nSpiel trotzdem starten?\n
+9	Zugriff auf Speichergerät nicht möglich. \nSpieldaten werden nicht gespeichert.\nSpiel trotzdem starten?\n
+[ESP]
+0	
+1	Selecciona un dispositivo de almacenamiento.\n
+2	Comprobando el espacio en disco...\nNo retires el dispositivo de almacenamiento\nni reinicies o apagues la Consola Xbox 360.\n
+3	Hay suficiente espacio en el dispositivo\nde almacenamiento. Iniciando el juego.
+4	No hay espacio suficiente en el dispositivo de almacenamiento.\nNo se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n
+5	No se guardarán los datos del juego.\n¿Deseas iniciar el juego de todos modos?\n
+6	No se ha seleccionado ningún dispositivo\nde almacenamiento. No se guardarán\nlos datos del juego.\n¿Deseas iniciar el juego de todos modos?\n
+7	
+8	No has iniciado sesión. No se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n
+9	No se pudo acceder al dispositivo de almacenamiento. \nNo se guardarán los datos del juego.\n\n¿Deseas iniciar el juego de todos modos?\n

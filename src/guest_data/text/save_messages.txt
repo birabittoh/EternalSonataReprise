@@ -1,0 +1,295 @@
+0x822F94F0
+[JPN]
+0	セーブファイルをチェックしています…。\n本体の電源を切ったり、\nストレージ機器を取り外したりしないでください。
+1	このファイルのデータを上書きします。\nよろしいですか？
+2	新しくファイルを作成します。\nよろしいですか？
+3	データを書き込んでいます…。\n本体の電源を切ったり、\nストレージ機器を取り外したりしないでください。\n
+4	データを正常に保存しました。
+5	データの保存に失敗しました。
+6	このファイルからデータを読み込みます。\nよろしいですか？
+7	データを読み込んでいます…。\n本体の電源を切ったり、\nストレージ機器を取り外したりしないでください。
+8	データを正常に読み込みました。
+9	データの読み込みに失敗しました。
+10	ファイルがありません
+11	新規作成
+12	空き容量が足りないため、セーブできません
+13	このファイルは使用できません
+14	はい
+15	いいえ
+16	プレイ中のユーザーが選択されていないため、\nデータを保存することができません。\nサインインしますか？\n
+17	セーブファイルのチェック中にエラーが発生しました。\nストレージ機器を選択しなおしてください。
+18	エラーが発生したため、\n指定されたストレージ機器にアクセスできません。
+19	ファイルにアクセスできませんでした。指定されたファイルは壊れている可能性があります。
+20	プレイヤーが変更されたため、\nセーブファイルの再チェックを行います。\nストレージ機器を再選択しますか？\n
+21	予期しないエラーが発生しました。\n前の画面に戻ります。
+22	エラーが発生したため、ストレージ機器が選択できません。
+23	ユーザー選択を実行することができませんでした。\nトップメニューに戻ります。\n
+24	サインインしていないため、セーブできません。
+25	指定されたストレージ機器が取り外されたため、\nアクセスできません。
+26	このストレージ機器には、\nトラスティベルのセーブファイルがありません。
+27	このファイルは上書きすることで\n再び使用することができるようになります。\n上書きしますか？
+28	このファイルのデータを読み込むと\nプレイ中のデータは全て失われます。\nよろしいですか？
+29	サインインしていないため、ロードできません。
+30	他のプレイヤーのファイルです
+31	このファイルは他のプレイヤーのファイルです。\n読み込んだデータはセーブできません。\nよろしいですか？\n
+32	他のプレイヤーのデータのため、セーブできません。\n
+33	エンディングを見る
+34	ゲームを最初から始める
+35	このデータはクリアデータです。\n\nクリアデータの場合、\n以下の状態からゲームを開始できます。\nどうしますか？
+36	セーブされていません。\nセーブを終了しますか？
+37	ゲームプレイ中にデータ保存で使用される\nストレージ機器が取り外された可能性があります。\n\n使用するストレージ機器を選択しなおして\nセーブ、またはロードを行ってください。
+38	セーブファイル %02d
+39	空き容量が足りないため、このストレージ機器には\nデータの上書きしかできません。\n\n新しいデータを保存する場合は空き容量のある\nストレージ機器を選択しなおしてください。\n\nこのまま読み込みを続けますか？
+40	空き容量が足りないため、 このストレージ機器に\nデータを保存することは出来ません。\n\nセーブされていませんが、セーブを終了しますか？
+[USA]
+0	Checking save files...\nPlease do not remove the storage device\nor reset/switch off the Xbox 360 console.\n
+1	Overwrite save file.\nProceed?\n
+2	Create new save file.\nProceed?\n
+3	Saving...\nPlease do not remove the storage device\nor reset/switch off the Xbox 360 console.\n
+4	Save complete.
+5	Save failed.
+6	Load data from this file.\nProceed?\n
+7	Loading...\nPlease do not remove the storage device\nor reset/switch off the Xbox 360 console.\n
+8	Load complete.
+9	Load failed.\n
+10	File does not exist.
+11	Create new file
+12	Insufficient space on the storage device.
+13	Save file has been damaged.
+14	Yes
+15	No
+16	No text needed.
+17	There was an error checking the save file.\nPlease reselect a storage device.\n
+18	An unexpected error has occurred.\nThe storage device cannot be accessed.\n
+19	No text needed.
+20	No text needed.
+21	An unexpected error has occurred.\nReturning to previous screen.\n
+22	An unexpected error has occurred.\nThe storage device cannot be accessed.
+23	No text needed.
+24	You must sign in to save.\n
+25	The selected storage device has been removed and\ncannot be accessed.\n
+26	There is no Eternal Sonata game data\nfor this gamer profile on the storage device.\n
+27	Overwrite save file?\n
+28	Loading game data will cause current progress to be lost.\nProceed?\n
+29	You must sign in to load.\n
+30	No text needed.
+31	No text needed.
+32	No text needed.
+33	View ending
+34	Begin new game
+35	This is save game data of a completed game.\nLoading this data will start the game\nin the following state.\nProceed?\n
+36	Game data has not been saved.\nContinue without saving?\n
+37	The storage device used to store game data\nmay have been disconnected during game play.\n\nPlease reselect the storage device.\n
+38	Save File %02d
+39	No text needed.
+40	Insufficient space on the storage device.\nGame data has not been saved.\n\nContinue without saving?
+[GBR]
+0	Checking save files...\nPlease do not remove the storage device\nor switch off the console.\n
+1	Overwrite save file.\nProceed?\n
+2	Create new save file.\nProceed?\n
+3	Saving...\nPlease do not remove the storage device\nor switch off the console.\n
+4	Save complete.
+5	Save failed.
+6	Load data from this file.\nProceed?\n
+7	Loading...\nPlease do not remove the storage device\nor switch off the console.\n
+8	Load complete.
+9	Load failed.\n
+10	File does not exist.
+11	Create new file
+12	Insufficient space on the storage device.
+13	Save file has been damaged.
+14	Yes
+15	No
+16	No text needed.
+17	There was an error checking the save file. Please reselect a storage device.\n
+18	An unexpected error has occurred. The storage device cannot be accessed.\n
+19	No text needed.
+20	No text needed.
+21	An unexpected error has occurred. Returning to previous screen.\n
+22	An unexpected error has occurred. The storage device cannot be accessed.\n
+23	No text needed.
+24	You must sign in to save.\n
+25	The selected storage device has been removed and cannot be accessed.\n
+26	There is no Eternal Sonata game data for this gamer profile on the storage device.\n
+27	Overwrite save file?\n
+28	Loading game data will cause current progress to be lost.\nProceed?\n
+29	You must sign in to load.\n
+30	No text needed.
+31	No text needed.
+32	No text needed.
+33	View ending
+34	Begin new game
+35	This is save game data of a completed game.\nLoading this data will start the game in the following state.\nProceed?\n
+36	Game data has not been saved.\nContinue without saving?\n
+37	The storage device used to store game data may have been disconnected during game play.\nPlease reselect the storage device.\n
+38	Save File %02d
+39	No text needed.
+40	Insufficient space on the storage device. Game data has not been saved.\nContinue without saving?
+[FRA]
+0	Vérification des fichiers de sauvegarde en cours.\nNe pas éteindre la Console Xbox 360 ni retirer le\npériphérique de stockage.\n
+1	Écrasement du fichier de sauvegarde.\nContinuer ?\n
+2	Création d'un nouveau fichier de sauvegarde.\nContinuer ?\n
+3	Sauvegarde en cours.\nNe pas éteindre la Console Xbox 360\nni retirer le périphérique de stockage.\n
+4	Sauvegarde effectuée.
+5	Échec de la sauvegarde.
+6	Chargement de la sauvegarde.\nContinuer ?\n
+7	Chargement en cours.\nNe pas éteindre la Console Xbox 360\nni retirer le périphérique de stockage.\n
+8	Chargement effectué.
+9	Échec du chargement.\n
+10	Fichier inexistant.
+11	Créer un nouveau fichier
+12	Espace insuffisant sur le périphérique de stockage.
+13	Fichier corrompu.
+14	Oui
+15	Non
+16	
+17	Erreur lors de la vérification du fichier de sauvegarde.\nChoisissez de nouveau un périphérique de stockage.\n
+18	Une erreur est survenue.\nAccès au périphérique de stockage impossible.\n
+19	
+20	
+21	Une erreur est survenue. Retour à l'écran précédent.\n
+22	Une erreur est survenue.\nAccès au périphérique de stockage impossible.\n
+23	
+24	Vous devez vous connecter pour sauvegarder.\n
+25	Le périphérique de stockage sélectionné a été retiré.\nIl est impossible d'y accéder.\n
+26	Aucun fichier Eternal Sonata n'a été détecté sur le\n périphérique de stockage pour ce profil du joueur.\n
+27	Écraser le fichier de sauvegarde ?\n
+28	Le chargement de données de jeu entraînera \nla perte de la progression actuelle.\nContinuer ?\n
+29	Vous devez vous connecter pour charger.\n
+30	
+31	
+32	
+33	Voir la séquence de fin
+34	Lancer une nouvelle partie
+35	Il s'agit d'une sauvegarde de partie terminée.\nQue voulez-vous faire ?\n 
+36	Les données de jeu n'ont pas été sauvegardées.\nQuitter sans sauvegarder ?\n
+37	Le périphérique de stockage utilisé pour stocker les données\nde jeu a peut-être été déconnecté en cours de partie.\nChoisissez de nouveau le périphérique de stockage.\n
+38	Sauvegarde %02d
+39	
+40	Espace insuffisant sur le périphérique de stockage.\n\nLes données de jeu n'ont pas été sauvegardées. \nContinuer sans sauvegarder ?
+[ITA]
+0	Verifica del salvataggio in corso...\nNon rimuovere la periferica di memorizzazione\nné riavviare/spegnere la console Xbox 360.
+1	Sovrascrivere il salvataggio.\nProcedere?\n
+2	Creazione nuovo salvataggio.\nProcedere?\n
+3	Salvataggio in corso...Non rimuovere la periferica di memorizzazione\nné riavviare/spegnere la console Xbox 360.
+4	Salvataggio completato.
+5	Salvataggio fallito.
+6	Caricamento dati da questo file.\nProcedere?\n
+7	Caricamento in corso...\nNon rimuovere la periferica di memorizzazione\nné riavviare/spegnere la console Xbox 360.
+8	Caricamento completato.
+9	Caricamento fallito.
+10	Il file non esiste.
+11	Crea nuovo file.
+12	Spazio insufficiente sulla periferica di memorizzazione.
+13	Il salvataggio è danneggiato.
+14	Sì
+15	No
+16	
+17	Si è verificato un errore durante il controllo del salvataggio.\nSeleziona nuovamente una periferica di memorizzazione.\n
+18	Si è verificato un errore inatteso.\nImpossibile accedere alla periferica di memorizzazione.\n
+19	
+20	
+21	Si è verificato un errore inatteso. Ritorno alla schermata precedente.\n
+22	Si è verificato un errore inatteso.\nImpossibile accedere alla periferica di memorizzazione.\n
+23	
+24	È necessario essere connessi per salvare.
+25	La periferica di memorizzazione selezionata è stata\nrimossa e non è possibile accedervi.
+26	Nessun salvataggio di Eternal Sonata per questo profilo\ngiocatore è presente sulla periferica di memorizzazione.\n
+27	Sovrascrivere il salvataggio?
+28	Il caricamento del salvataggio causerà la perdita\ndei progressi attuali.\nProcedere?\n
+29	È necessario essere connessi per caricare.
+30	
+31	
+32	
+33	Visualizza finale
+34	Inizia nuova partita
+35	Questo è il salvataggio di una partita completata. \nCaricando questi dati la partita inizia nel seguente stato.\nProcedere?
+36	I dati della partita non sono stati salvati.\nContinuare senza salvare?\n
+37	La periferica di memorizzazione utilizzata per salvare\ndati di gioco potrebbe essere stata scollegata durante il gioco.\nRiselezionare la periferica di memorizzazione.\n
+38	Salvataggio %02d
+39	
+40	Spazio insufficiente sulla periferica di memorizzazione. \nI dati di gioco non sono stati salvati.\nContinuare senza salvare?
+[DEU]
+0	Gespeicherte Spielstände werden geprüft ...\nBitte das Speichergerät nicht entfernen und die\nXbox 360 Konsole nicht zurücksetzen oder ausschalten.\n
+1	Spielstand wird überschrieben.\nFortfahren?\n
+2	Neuer Spielstand wird angelegt.\nFortfahren?\n
+3	Speichern ...\nBitte das Speichergerät nicht entfernen und\ndie Xbox 360 Konsole nicht zurücksetzen oder ausschalten.\n
+4	Speichern abgeschlossen.
+5	Speichern fehlgeschlagen.
+6	Daten dieser Datei werden geladen.\nFortfahren?\n
+7	Laden ...\nBitte das Speichergerät nicht entfernen und\ndie Xbox 360 Konsole nicht zurücksetzen oder ausschalten.\n
+8	Laden abgeschlossen.
+9	Laden fehlgeschlagen.\n
+10	Datei existiert nicht.
+11	Neue Datei anlegen
+12	Unzureichender Speicherplatz auf dem Speichergerät.
+13	Diese Datei ist beschädigt und kann nicht verwendet werden.
+14	Ja
+15	Nein
+16	
+17	Beim Prüfen der Speicherdatei ist ein Fehler aufgetreten.\nBitte nochmals ein Speichergerät auswählen.\n
+18	Ein unerwarteter Fehler ist aufgetreten.\nAuf das Speichergerät kann nicht zugegriffen werden.\n
+19	
+20	
+21	Ein unerwarteter Fehler ist aufgetreten. \nDer vorherige Bildschirm wird wieder angezeigt.\n
+22	Ein unerwarteter Fehler ist aufgetreten.\nAuf das Speichergerät kann nicht zugegriffen werden.\n
+23	
+24	Zum Speichern musst du angemeldet sein.\n
+25	Das gewählte Speichergerät ist entfernt worden.\nEs kann nicht darauf zugegriffen werden.\n
+26	Das Speichergerät enthält keine Spieldaten von Eternal Sonata\nfür dieses Spielerprofil.\n
+27	Soll dieser Spielstand überschrieben werden?\n
+28	Wenn ein Spielstand geladen wird, geht\nder bisherige Spielfortschritt verloren.\nFortfahren?\n
+29	Zum Laden musst du angemeldet sein.\n
+30	
+31	
+32	
+33	Ende ansehen
+34	Neues Spiel beginnen
+35	Dies sind die gespeicherten Spieldaten eines abgeschlossenen Spiels.\nWenn du diese Daten lädst, kannst du das Spiel mit einer der\nfolgenden Optionen starten.\nWas möchtest du tun?\n
+36	Der Spielstand wurde nicht gespeichert.\nOhne zu speichern fortfahren?\n
+37	Das Speichergerät, auf dem die Spieldaten gespeichert\nsind, wurde eventuell während des Spiels entfernt.\nBitte wähle das Speichergerät erneut.\n
+38	Spielstand %02d
+39	
+40	Unzureichender Speicherplatz auf dem Speichergerät. \nDer Spielstand wurde nicht gespeichert.\nOhne zu speichern fortfahren?
+[ESP]
+0	Comprobando los archivos de guardado...\nNo retires el dispositivo de almacenamiento\nni reinicies o apagues la Consola Xbox 360.\n
+1	Sobrescribir el archivo de guardado.\n¿Continuar?\n
+2	Crear nuevo archivo de guardado.\n¿Continuar?\n
+3	Guardando...\nNo retires el dispositivo de almacenamiento\nni reinicies o apagues la Consola Xbox 360.\n
+4	Datos guardados.
+5	Fallo al guardar.
+6	Cargar datos de este archivo.\n¿Continuar?\n
+7	Cargando...\nNo retires el dispositivo de almacenamiento\nni reinicies o apagues la Consola Xbox 360.\n
+8	Datos cargados.
+9	Fallo al cargar.\n
+10	El archivo no existe.
+11	Crear nuevo archivo
+12	No hay espacio suficiente en el\ndispositivo de almacenamiento.
+13	Partida guardada ha sido dañada.
+14	Sí
+15	No
+16	
+17	Se produjo un error al comprobar el archivo de guardado.\nSelecciona de nuevo un dispositivo de almacenamiento.\n
+18	Se ha producido un error inesperado.\nNo se puede acceder al dispositivo de almacenamiento.\n
+19	
+20	
+21	Se ha producido un error inesperado. Regresarás a la pantalla anterior.\n
+22	Se ha producido un error inesperado.\nNo se puede acceder al dispositivo de almacenamiento.\n
+23	
+24	Para guardar los datos es necesario iniciar sesión.\n
+25	Se ha retirado el dispositivo de almacenamiento\nseleccionado y no se puede acceder al mismo.\n
+26	No hay datos del juego Eternal Sonata en el dispositivo de almacenamiento.\n
+27	¿Sobrescribir el archivo guardado?\n
+28	Al cargar los datos del juego se perderá el progreso actual.\n¿Continuar?\n
+29	Para cargar los datos es necesario iniciar sesión.\n
+30	
+31	
+32	
+33	Ver el final
+34	Iniciar partida nueva
+35	Estos son los datos de juego guardados de una partida completada.\n\nAl cargar estos datos se iniciará la partida\nsegún la opción elegida a continuación.\n¿Continuar?\n
+36	No se han guardado los datos del juego.\n¿Deseas salir de todos modos?\n
+37	El dispositivo de almacenamiento empleado para guardar los\ndatos del juego debe de haberse desconectado durante la partida.\nSelecciona de nuevo un dispositivo de almacenamiento.\n
+38	Part. guardada %02d
+39	
+40	No se pueden guardar los datos del juego por falta de espacio en \nel dispositivo de almacenamiento.\n\nNo se han guardado los datos del juego. ¿Salir de todos modos?

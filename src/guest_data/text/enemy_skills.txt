@@ -1,0 +1,5944 @@
+0x82316500
+[JPN]
+0	エネミー技1
+1	エネミー技2
+2	ロペラヒール
+3	ロペラスクリュー
+4	ロペラブレス
+5	ロペラトルネード
+6	エネミー技7
+7	エネミー技8
+8	ジェネラヒール
+9	ジェネラスクリュー
+10	ジェネラブレス
+11	ジェネラトルネード
+12	エネミー技13
+13	エネミー技14
+14	ベアラヒール
+15	ベアラスクリュー
+16	ベアラブレス
+17	ベアラトルネード
+18	エネミー技19
+19	エネミー技20
+20	エネミー技21
+21	ノーザー
+22	アバランチプレス
+23	スティッフテイル
+24	エネミー技25
+25	エネミー技26
+26	エネミー技27
+27	スラッジ
+28	アースシェイカー
+29	ロングテイル
+30	エネミー技31
+31	エネミー技32
+32	エネミー技33
+33	ファーナスペレット
+34	クラストクラッカー
+35	ファイアリテイル
+36	エネミー技37
+37	エネミー技38
+38	エネミー技39
+39	ラーバサークル
+40	ラーバスタブ
+41	ラーバファイア
+42	エネミー技43
+43	エネミー技44
+44	エネミー技45
+45	ブラックサークル
+46	ブラックスタブ
+47	ブラックファイア
+48	エネミー技49
+49	エネミー技50
+50	エネミー技51
+51	ソウルサークル
+52	ソウルスタブ
+53	ソウルファイア
+54	エネミー技55
+55	エネミー技56
+56	ラティヒール
+57	スアードロップ
+58	ラティチャージ
+59	エーアシュリンカー
+60	エネミー技61
+61	エネミー技62
+62	ラティヒール
+63	スニークドロップ
+64	ラティチャージ
+65	ダークシュリンカー
+66	エネミー技67
+67	エネミー技68
+68	ラティヒール
+69	アイシクルドロップ
+70	ラティチャージ
+71	ミストシュリンカー
+72	エネミー技73
+73	エネミー技74
+74	エネミー技75
+75	パワーブレイズ
+76	アイシィブレス
+77	チルヴォーテクス
+78	エネミー技79
+79	エネミー技80
+80	エネミー技81
+81	パワーブレイズ
+82	ベリィドブレス
+83	イルヴォーテクス
+84	エネミー技85
+85	エネミー技86
+86	エネミー技87
+87	パワーブレイズ
+88	ブレアブレス
+89	ブロウヴォーテクス
+90	エネミー技91
+91	エネミー技92
+92	マーマ
+93	燻ぶるやしの葉
+94	ココナフォール
+95	かびくさといき
+96	エネミー技97
+97	エネミー技98
+98	マーマ
+99	はじける球根
+100	ガリクフォール
+101	ふんぷんげっぷ
+102	エネミー技103
+103	エネミー技104
+104	マーマ
+105	燃えるねぎ
+106	オニオフォール
+107	なまねぎおくび
+108	エネミー技109
+109	エネミー技110
+110	地底太陽
+111	ねつでいふんき
+112	猛回転
+113	火山弾
+114	エネミー技115
+115	エネミー技116
+116	かげの深み
+117	ならくつぶて
+118	烈回転
+119	太古の石塊
+120	エネミー技121
+121	エネミー技122
+122	かげの深み
+123	みなぞこしずく
+124	大回転
+125	澱みの飛沫
+126	エネミー技127
+127	エネミー技128
+128	エンカリッジ
+129	エールラスイル
+130	アッサンブレ
+131	三百の突撃
+132	エネミー技133
+133	エネミー技134
+134	エンカリッジ
+135	エールラグエル
+136	カブリオレ
+137	六百の突撃
+138	エネミー技139
+139	エネミー技140
+140	エンカリッジ
+141	エールラグイル
+142	バロテ
+143	千二百の突撃
+144	エネミー技145
+145	エネミー技146
+146	ビーバ
+147	ナッツクラッカー
+148	ピアース
+149	ポイゾナス
+150	エネミー技151
+151	エネミー技152
+152	ビーバ
+153	ロックシャター
+154	トォチャア
+155	バイルレント
+156	エネミー技157
+157	エネミー技158
+158	ビーバ
+159	チャネルディバイダー
+160	アゴナイト
+161	ベノマス
+162	エネミー技163
+163	エネミー技164
+164	インバイト
+165	ライフスティール
+166	スピリタス
+167	デスブロウ
+168	エネミー技169
+169	エネミー技170
+170	インバイト
+171	エナジースティール
+172	スペクテラ
+173	エグゼキュート
+174	エネミー技175
+175	エネミー技176
+176	インバイト
+177	ビガースティール
+178	ヴィジタンティア
+179	キャピタルパニッシュ
+180	エネミー技181
+181	エネミー技182
+182	タンブルヒール
+183	殺人超音波
+184	ヒップダイブ
+185	ナイトフラッター
+186	エネミー技187
+187	エネミー技188
+188	タンブルヒール
+189	殺人音波
+190	テイルダイブ
+191	フラッター
+192	エネミー技193
+193	エネミー技194
+194	タンブルヒール
+195	殺人衝撃波
+196	ブラッシュダイブ
+197	アルペフラッター
+198	エネミー技199
+199	エネミー技200
+200	菌の命
+201	毒々撒布
+202	巻きがらみ
+203	百手打ち
+204	エネミー技205
+205	エネミー技206
+206	菌の本気
+207	猛毒撒布
+208	巻きまつわり
+209	千手打ち
+210	エネミー技211
+211	エネミー技212
+212	菌の力
+213	胞子撒布
+214	巻きつき
+215	十手打ち
+216	エネミー技217
+217	エネミー技218
+218	かけつけ
+219	みなぎるちから
+220	入魂にぎりこぶし
+221	入魂ざんばら斬り
+222	エネミー技223
+223	エネミー技224
+224	さらしがけ
+225	みなぎるちから
+226	入魂てつこぶし
+227	入魂ちりばら斬り
+228	エネミー技229
+229	エネミー技230
+230	あびせかけ
+231	みなぎるちから
+232	入魂ちからこぶし
+233	入魂こっぱ斬り
+234	エネミー技235
+235	エネミー技236
+236	エネミー技237
+237	レパレ
+238	フラッペ
+239	アテーレ
+240	エネミー技241
+241	エネミー技242
+242	エネミー技243
+243	レパレ
+244	ザノスカ
+245	トゥール
+246	エネミー技247
+247	エネミー技248
+248	エネミー技249
+249	レパレ
+250	バテュ
+251	アントゥルナン
+252	エネミー技253
+253	エネミー技254
+254	エネミー技255
+255	レイオブシーア
+256	アイアンフィスト
+257	レバルスラップ
+258	エネミー技259
+259	エネミー技260
+260	エネミー技261
+261	レイオブグランサー
+262	ゴッドフィスト
+263	レバルスパンク
+264	エネミー技265
+265	エネミー技266
+266	エネミー技267
+267	レイオブワッチャー
+268	ライトフィスト
+269	レバルスマック
+270	エネミー技271
+271	エネミー技272
+272	エネミー技273
+273	タイダルボア
+274	オーバーターン
+275	アズアラム
+276	エネミー技277
+277	エネミー技278
+278	エネミー技279
+279	タイダルヒーブ
+280	オーバーターン
+281	ペイルラム
+282	エネミー技283
+283	エネミー技284
+284	エネミー技285
+285	ダイバクル
+286	オーバーターン
+287	ゴールデンラム
+288	エネミー技289
+289	エネミー技290
+290	エネミー技291
+291	チョークブロウ
+292	インシネレイト
+293	ラシュテイル
+294	エネミー技295
+295	エネミー技296
+296	エネミー技297
+297	ステイフルブロウ
+298	インシネレイト
+299	ラシュテイル
+300	エネミー技301
+301	エネミー技302
+302	エネミー技303
+303	サフォケイトブロウ
+304	インシネレイト
+305	ラシュテイル
+306	エネミー技307
+307	エネミー技308
+308	エネミー技309
+309	チアー
+310	カノンシェル
+311	オーバーラン
+312	エネミー技313
+313	エネミー技314
+314	エネミー技315
+315	チアー
+316	イクスプロージョン
+317	オーバーラン
+318	エネミー技319
+319	エネミー技320
+320	エネミー技321
+321	チアー
+322	バズドロップ
+323	ランペイジ
+324	エネミー技325
+325	エネミー技326
+326	ダークサン
+327	ポッパー
+328	ライトスクリュー
+329	レフトブロウ
+330	エネミー技331
+331	エネミー技332
+332	ダークサン
+333	ストレイフ
+334	ライトスクリュー
+335	レフトブロウ
+336	エネミー技337
+337	エネミー技338
+338	ダークサン
+339	インプロージョン
+340	ライトスクリュー
+341	レフトブロウ
+342	エネミー技343
+343	エネミー技344
+344	エネミー技345
+345	エネミー技346
+346	スマッシュ
+347	ランペイジ
+348	エネミー技349
+349	エネミー技350
+350	エネミー技351
+351	エネミー技352
+352	ジョウルスライサー
+353	グリースホイール
+354	エネミー技355
+355	エネミー技356
+356	エネミー技357
+357	エネミー技358
+358	サーキュラー
+359	ホールショット
+360	エネミー技361
+361	エネミー技362
+362	エネミー技363
+363	エネミー技364
+364	エネミー技365
+365	エネミー技366
+366	エネミー技367
+367	エネミー技368
+368	ダークサン
+369	ポッパー
+370	レフトスクリュー
+371	ライトブロウ
+372	エネミー技373
+373	エネミー技374
+374	ダークサン
+375	ストレイフ
+376	レフトスクリュー
+377	ライトブロウ
+378	エネミー技379
+379	エネミー技380
+380	ダークサン
+381	インプロージョン
+382	レフトスクリュー
+383	ライトブロウ
+384	エネミー技385
+385	エネミー技386
+386	エネミー技387
+387	エネミー技388
+388	エネミー技389
+389	エネミー技390
+390	エネミー技391
+391	エネミー技392
+392	エネミー技393
+393	エネミー技394
+394	エネミー技395
+395	エネミー技396
+396	エネミー技397
+397	エネミー技398
+398	爆気
+399	気つけ
+400	枝打ち
+401	三寸刻み
+402	エネミー技403
+403	エネミー技404
+404	烈気
+405	気つけ
+406	柳打ち
+407	一寸刻み
+408	エネミー技409
+409	エネミー技410
+410	エネミー技411
+411	おたけび
+412	かち上げ
+413	突進
+414	エネミー技415
+415	エネミー技416
+416	エネミー技417
+417	とどろき
+418	かち飛ばし
+419	突破
+420	エネミー技421
+421	エネミー技422
+422	エネミー技423
+423	招天赤零
+424	灼熱吐息
+425	叩きふせ
+426	エネミー技427
+427	エネミー技428
+428	エネミー技429
+429	招天白零
+430	厳凍吐息
+431	叩きのめし
+432	エネミー技433
+433	エネミー技434
+434	ひと飲み
+435	大粉砕
+436	首斬り
+437	打地
+438	エネミー技439
+439	エネミー技440
+440	ひと呑み
+441	大撃砕
+442	首跳ばし
+443	打壌
+444	エネミー技445
+445	エネミー技446
+446	天のたすけ
+447	きのこ祭り
+448	不可視の裁き
+449	ふけもわもわ
+450	エネミー技451
+451	エネミー技452
+452	命のたすけ
+453	きのこ尽くし
+454	不可避の裁き
+455	ふけぶわぶわ
+456	エネミー技457
+457	エネミー技458
+458	エネミー技459
+459	白の大渦
+460	鍬入
+461	赤炎双屠
+462	エネミー技463
+463	エネミー技464
+464	エネミー技465
+465	赤の大渦
+466	鋤入
+467	紫炎双屠
+468	エネミー技469
+469	エネミー技470
+470	ワーダーズコール
+471	インテイク
+472	スィーピン
+473	カードル
+474	エネミー技475
+475	エネミー技476
+476	ガーディーズコール
+477	インテイク
+478	スィーピン
+479	カードル
+480	エネミー技481
+481	エネミー技482
+482	ルースフル
+483	テンペストスウォール
+484	バーニングスピンドル
+485	デッズテイル
+486	エネミー技487
+487	エネミー技488
+488	ルースフル
+489	シャークバイト
+490	ハリケーンシャフト
+491	ガラ・ステイバー
+492	エネミー技493
+493	エネミー技494
+494	ボゥピープ
+495	ロアー
+496	ディープバイト
+497	トリップトゥペイン
+498	エネミー技499
+499	エネミー技500
+500	ピーカブー
+501	ナスティロアー
+502	フェイタルバイト
+503	ボヤージトゥペイン
+504	エネミー技505
+505	エネミー技506
+506	リジェネレイト
+507	ブラッドシンク
+508	モータルクリーブ
+509	パーガトリ
+510	エネミー技511
+511	エネミー技512
+512	リクレイム
+513	ブラッドシンク
+514	クロップトップ
+515	スコーチャー
+516	エネミー技517
+517	エネミー技518
+518	エネミー技519
+519	エネミー技520
+520	エネミー技521
+521	エネミー技522
+522	エネミー技523
+523	エネミー技524
+524	エネミー技525
+525	エネミー技526
+526	エネミー技527
+527	エネミー技528
+528	エネミー技529
+529	エネミー技530
+530	エネミー技531
+531	エネミー技532
+532	エネミー技533
+533	エネミー技534
+534	エネミー技535
+535	エネミー技536
+536	エネミー技537
+537	エネミー技538
+538	エネミー技539
+539	エネミー技540
+540	エネミー技541
+541	エネミー技542
+542	デウス・エクス・マキナ
+543	フォウルプレゼンス
+544	ジャキューズ
+545	ブラッドセント
+546	エネミー技547
+547	エネミー技548
+548	エネミー技549
+549	エネミー技550
+550	エネミー技551
+551	エネミー技552
+552	エネミー技553
+553	エネミー技554
+554	みちるちから
+555	デモニックエンブレイス
+556	メガマッシュ
+557	ギガンティックスラム
+558	エネミー技559
+559	エネミー技560
+560	みちるちから
+561	デモニックエンブレイス
+562	メガマッシュ
+563	ギガンティックスラム
+564	エネミー技565
+565	エネミー技566
+566	ベノムグランド
+567	ヘルエラプション
+568	ジャキュレイタ
+569	フェル・ド・ランス
+570	エネミー技571
+571	エネミー技572
+572	エネミー技573
+573	アウレ・ドミニウム
+574	ボルカノコンカッシオ
+575	アポカリプスフォール
+576	エネミー技577
+577	エネミー技578
+578	パロン
+579	アプラディスソニック
+580	オーゼルヴィアヴィ
+581	ニム・ストラトス
+582	エネミー技583
+583	エネミー技584
+584	元気づけ
+585	テンペストスウォール
+586	バーニングスピンドル
+587	デッズテイル
+588	エネミー技589
+589	エネミー技590
+590	元気づけ
+591	テンペストスウォール
+592	バーニングスピンドル
+593	デッズテイル
+594	エネミー技595
+595	エネミー技596
+596	エネミー技597
+597	スマザーブロウ
+598	インシネレイト
+599	ラシュテイル
+600	エネミー技601
+601	エネミー技602
+602	ベノムグランド
+603	ヘルエラプション
+604	ジャキュレイタ
+605	フェル・ド・ランス
+606	エネミー技607
+607	エネミー技608
+608	こんじょう
+609	エネミー技610
+610	エネミー技611
+611	エネミー技612
+612	エネミー技613
+613	エネミー技614
+614	こんじょう
+615	エネミー技616
+616	エネミー技617
+617	エネミー技618
+618	エネミー技619
+619	エネミー技620
+620	どこんじょう
+621	エネミー技622
+622	エネミー技623
+623	エネミー技624
+624	エネミー技625
+625	エネミー技626
+626	どこんじょう
+627	エネミー技628
+628	エネミー技629
+629	エネミー技630
+630	エネミー技631
+631	エネミー技632
+632	どこんじょう
+633	エネミー技634
+634	エネミー技635
+635	エネミー技636
+636	エネミー技637
+637	エネミー技638
+638	どこんじょう
+639	エネミー技640
+640	エネミー技641
+641	エネミー技642
+642	こんじょう
+643	こんじょう
+644	エネミー技645
+645	エネミー技646
+646	エネミー技647
+647	エネミー技648
+648	エネミー技649
+649	エネミー技650
+650	エネミー技651
+651	エネミー技652
+652	エネミー技653
+653	エネミー技654
+654	エネミー技655
+655	エネミー技656
+656	エネミー技657
+657	エネミー技658
+658	エネミー技659
+659	エネミー技660
+660	エネミー技661
+661	エネミー技662
+662	エネミー技663
+663	エネミー技664
+664	エネミー技665
+665	エネミー技666
+666	エネミー技667
+667	エネミー技668
+668	エネミー技669
+669	エネミー技670
+670	エネミー技671
+671	エネミー技672
+672	エネミー技673
+673	エネミー技674
+674	エネミー技675
+675	エネミー技676
+676	エネミー技677
+677	エネミー技678
+678	エネミー技679
+679	エネミー技680
+680	エネミー技681
+681	エネミー技682
+682	エネミー技683
+683	エネミー技684
+684	エネミー技685
+685	エネミー技686
+686	エネミー技687
+687	エネミー技688
+688	エネミー技689
+689	エネミー技690
+690	三百の突撃
+691	エネミー技692
+692	六百の突撃
+693	エネミー技694
+694	千二百の突撃
+695	エネミー技696
+696	エネミー技697
+697	エネミー技698
+698	エネミー技699
+699	エネミー技700
+700	エネミー技701
+701	エネミー技702
+702	カースドメイス
+703	エネミー技704
+704	カースドメイス
+705	エネミー技706
+706	カースドメイス
+707	エネミー技708
+708	カレントシャドウ
+709	エネミー技710
+710	カレントシャドウ
+711	エネミー技712
+712	カレントシャイン
+713	エネミー技714
+714	エネミー技715
+715	エネミー技716
+716	エネミー技717
+717	エネミー技718
+718	エネミー技719
+719	エネミー技720
+720	にぎりこぶし
+721	ざんばら斬り
+722	てつこぶし
+723	ちりばら斬り
+724	ちからこぶし
+725	こっぱ斬り
+726	エネミー技727
+727	エネミー技728
+728	エネミー技729
+729	エネミー技730
+730	エネミー技731
+731	エネミー技732
+732	エネミー技733
+733	エネミー技734
+734	エネミー技735
+735	エネミー技736
+736	エネミー技737
+737	エネミー技738
+738	エネミー技739
+739	エネミー技740
+740	エネミー技741
+741	エネミー技742
+742	エネミー技743
+743	エネミー技744
+744	エネミー技745
+745	エネミー技746
+746	エネミー技747
+747	エネミー技748
+748	エネミー技749
+749	エネミー技750
+750	エネミー技751
+751	エネミー技752
+752	エネミー技753
+753	エネミー技754
+754	エネミー技755
+755	エネミー技756
+756	エネミー技757
+757	エネミー技758
+758	エネミー技759
+759	エネミー技760
+760	エネミー技761
+761	エネミー技762
+762	エネミー技763
+763	エネミー技764
+764	エネミー技765
+765	エネミー技766
+766	エネミー技767
+767	エネミー技768
+768	エネミー技769
+769	エネミー技770
+770	エネミー技771
+771	エネミー技772
+772	エネミー技773
+773	エネミー技774
+774	エネミー技775
+775	エネミー技776
+776	エネミー技777
+777	エネミー技778
+778	エネミー技779
+779	エネミー技780
+780	エネミー技781
+781	エネミー技782
+782	エネミー技783
+783	エネミー技784
+784	エネミー技785
+785	エネミー技786
+786	エネミー技787
+787	エネミー技788
+788	踏鞴
+789	エネミー技790
+790	地踏鞴
+791	エネミー技792
+792	インフォウルド
+793	エネミー技794
+794	インフォウルド
+795	エネミー技796
+796	エネミー技797
+797	エネミー技798
+798	エネミー技799
+799	エネミー技800
+800	エネミー技801
+801	エネミー技802
+802	エネミー技803
+803	エネミー技804
+804	エネミー技805
+805	エネミー技806
+806	エネミー技807
+807	エネミー技808
+808	デウス・エクス・マキナ
+809	エネミー技810
+810	エネミー技811
+811	エネミー技812
+812	エネミー技813
+813	エネミー技814
+814	エネミー技815
+815	エネミー技816
+816	エネミー技817
+817	エネミー技818
+818	エネミー技819
+819	エネミー技820
+820	ハーシュトーメント
+821	エネミー技822
+822	トルチ
+823	ザムラジャチ
+824	エネミー技825
+825	エネミー技826
+826	エネミー技827
+827	エネミー技828
+828	エネミー技829
+829	エネミー技830
+830	エネミー技831
+831	エネミー技832
+832	エネミー技833
+833	エネミー技834
+834	エネミー技835
+835	エネミー技836
+836	エネミー技837
+837	エネミー技838
+838	エネミー技839
+839	エネミー技840
+840	エネミー技841
+841	エネミー技842
+842	エネミー技843
+843	エネミー技844
+844	エネミー技845
+845	エネミー技846
+846	エネミー技847
+847	エネミー技848
+[USA]
+0	ENWaza1_Name_UnitedStates
+1	ENWaza2_Name_UnitedStates
+2	L'Opera Heal
+3	L'Opera Drill
+4	L'Opera Breath
+5	L'Opera Tornado
+6	Enwaza1_Name_Unitedstates
+7	Enwaza2_Name_Unitedstates
+8	General Heal
+9	General Drill
+10	General Breath
+11	General Tornado
+12	Enwaza1_Name_Unitedstates
+13	Enwaza2_Name_Unitedstates
+14	Bearer Heal
+15	Bearer Drill
+16	Bearer Breath
+17	Bearer Tornado
+18	Enwaza7_Name_Unitedstates
+19	Enwaza8_Name_Unitedstates
+20	Enwaza9_Name_Unitedstates
+21	Norther
+22	Avalanche Press
+23	Stiff Tail
+24	Enwaza7_Name_Unitedstates
+25	Enwaza8_Name_Unitedstates
+26	Enwaza9_Name_Unitedstates
+27	Sludge
+28	Earth Shaker
+29	Long Tail
+30	Enwaza7_Name_Unitedstates
+31	Enwaza8_Name_Unitedstates
+32	Enwaza9_Name_Unitedstates
+33	Furnace Pellet
+34	Crust Cracker
+35	Fiery Tail
+36	Enwaza13_Name_Unitedstates
+37	Enwaza14_Name_Unitedstates
+38	Enwaza15_Name_Unitedstates
+39	Lava Circle
+40	Lava Stab
+41	Lava Fire
+42	Enwaza25_Name_Unitedstates
+43	Enwaza26_Name_Unitedstates
+44	Enwaza27_Name_Unitedstates
+45	Black Circle
+46	Black Stab
+47	Black Fire
+48	Enwaza13_Name_Unitedstates
+49	Enwaza14_Name_Unitedstates
+50	Enwaza15_Name_Unitedstates
+51	Soul Circle
+52	Soul Stab
+53	Soul Fire
+54	Enwaza19_Name_Unitedstates
+55	Enwaza20_Name_Unitedstates
+56	Ratty Heal
+57	Sewer Drop
+58	Ratty Charge
+59	Air Shrinker
+60	Enwaza31_Name_Unitedstates
+61	Enwaza32_Name_Unitedstates
+62	Ratty Heal
+63	Sneak Drop
+64	Ratty Charge
+65	Dark Shrinker
+66	Enwaza31_Name_Unitedstates
+67	Enwaza32_Name_Unitedstates
+68	Ratty Heal
+69	Icicle Drop
+70	Ratty Charge
+71	Mist Shrinker
+72	Enwaza31_Name_Unitedstates
+73	Enwaza32_Name_Unitedstates
+74	Enwaza33_Name_Unitedstates
+75	Power Blaze
+76	Icy Breath
+77	Chill Vortex
+78	Enwaza31_Name_Unitedstates
+79	Enwaza32_Name_Unitedstates
+80	Enwaza33_Name_Unitedstates
+81	Power Blaze
+82	Buried Breath
+83	Ill Vortex
+84	Enwaza85_Name_Unitedstates
+85	Enwaza86_Name_Unitedstates
+86	Enwaza87_Name_Unitedstates
+87	Power Blaze
+88	Blurred Breath
+89	Blow Vortex
+90	Enwaza91_Name_Unitedstates
+91	Enwaza92_Name_Unitedstates
+92	Murmur
+93	Smoldering Palm
+94	Coconut Fall
+95	Moldy Breath
+96	Enwaza97_Name_Unitedstates
+97	Enwaza98_Name_Unitedstates
+98	Murmur
+99	Bursting Bulb
+100	Garlic Fall
+101	Scattering Burp
+102	Enwaza103_Name_Unitedstates
+103	Enwaza104_Name_Unitedstates
+104	Murmur
+105	Burning Onion
+106	Onion Fall
+107	Onion Burp
+108	Enwaza109_Name_Unitedstates
+109	Enwaza110_Name_Unitedstates
+110	Sun Below
+111	Heat Gas
+112	Ultra Spin
+113	Volcanic Missile
+114	Enwaza115_Name_Unitedstates
+115	Enwaza116_Name_Unitedstates
+116	Deep Shadow
+117	Abyss Stone
+118	Fiery Revolution
+119	Ancient Rock
+120	Enwaza121_Name_Unitedstates
+121	Enwaza122_Name_Unitedstates
+122	Deep Shadow
+123	Bottom Drop
+124	Great Revolution
+125	Stagnating Spray
+126	Enwaza127_Name_Unitedstates
+127	Enwaza128_Name_Unitedstates
+128	Encourage
+129	Feather Flare
+130	Assemble
+131	Ride of Three Hundred
+132	Enwaza133_Name_Unitedstates
+133	Enwaza134_Name_Unitedstates
+134	Encourage
+135	Feather Burst
+136	Cabriole
+137	Ride of Six Hundred
+138	Enwaza139_Name_Unitedstates
+139	Enwaza140_Name_Unitedstates
+140	Encourage
+141	Feather Blast
+142	Ballotte
+143	Ride of Twelve Hundred
+144	Enwaza145_Name_Unitedstates
+145	Enwaza146_Name_Unitedstates
+146	Viva
+147	Nutcracker
+148	Pierce
+149	Poisonous
+150	Enwaza151_Name_Unitedstates
+151	Enwaza152_Name_Unitedstates
+152	Viva
+153	Rock Shatter
+154	Torture
+155	Virulent
+156	Enwaza157_Name_Unitedstates
+157	Enwaza158_Name_Unitedstates
+158	Viva
+159	Channel Divider
+160	Agonize
+161	Venomous
+162	Enwaza163_Name_Unitedstates
+163	Enwaza164_Name_Unitedstates
+164	Invite
+165	Life Steal
+166	Spiritus
+167	Deathblow
+168	Enwaza169_Name_Unitedstates
+169	Enwaza170_Name_Unitedstates
+170	Invite
+171	Energy Steal
+172	Spectera
+173	Execute
+174	Enwaza175_Name_Unitedstates
+175	Enwaza176_Name_Unitedstates
+176	Invite
+177	Strength Steal
+178	Visitantia
+179	Capital Punishment
+180	Enwaza181_Name_Unitedstates
+181	Enwaza182_Name_Unitedstates
+182	Tumble Down
+183	Supersonic
+184	Side Dive
+185	Night Flutter
+186	Enwaza187_Name_Unitedstates
+187	Enwaza188_Name_Unitedstates
+188	Tumble Down
+189	Sonic Wave
+190	Tail Dive
+191	Flutter
+192	Enwaza193_Name_Unitedstates
+193	Enwaza194_Name_Unitedstates
+194	Tumble Down
+195	Sonic Killer
+196	Brush Dive
+197	Alpen Flutter
+198	Enwaza199_Name_Unitedstates
+199	Enwaza200_Name_Unitedstates
+200	Germ's Life
+201	Poison Scatter
+202	Entangle
+203	One Hundred Lashes
+204	Enwaza205_Name_Unitedstates
+205	Enwaza206_Name_Unitedstates
+206	Germ's Truth
+207	Venom Scatter
+208	Winding Coil
+209	One Thousand Lashes
+210	Enwaza211_Name_Unitedstates
+211	Enwaza212_Name_Unitedstates
+212	Germ's Power
+213	Spore Scatter
+214	Wreathe
+215	Ten Lashes
+216	Enwaza217_Name_Unitedstates
+217	Enwaza218_Name_Unitedstates
+218	Rush
+219	Rising Power
+220	Sea Knuckle
+221	Cruel Cutlass
+222	Enwaza223_Name_Unitedstates
+223	Enwaza224_Name_Unitedstates
+224	Pillory
+225	Rising Power
+226	Iron Soul
+227	Scattering Soul
+228	Enwaza229_Name_Unitedstates
+229	Enwaza230_Name_Unitedstates
+230	Hurl
+231	Rising Power
+232	Power Soul
+233	Splintering Soul
+234	Enwaza235_Name_Unitedstates
+235	Enwaza236_Name_Unitedstates
+236	Enwaza237_Name_Unitedstates
+237	Reparer
+238	Frappe
+239	A Terre
+240	Enwaza241_Name_Unitedstates
+241	Enwaza242_Name_Unitedstates
+242	Enwaza243_Name_Unitedstates
+243	Reparer
+244	Zanoska
+245	Tour
+246	Enwaza247_Name_Unitedstates
+247	Enwaza248_Name_Unitedstates
+248	Enwaza249_Name_Unitedstates
+249	Reparer
+250	Battu
+251	An Tournant
+252	Enwaza253_Name_Unitedstates
+253	Enwaza254_Name_Unitedstates
+254	Enwaza255_Name_Unitedstates
+255	Seer's Ray
+256	Iron Fist
+257	Level Slap
+258	Enwaza259_Name_Unitedstates
+259	Enwaza260_Name_Unitedstates
+260	Enwaza261_Name_Unitedstates
+261	Glancer's Ray
+262	God Fist
+263	Level Spank
+264	Enwaza265_Name_Unitedstates
+265	Enwaza266_Name_Unitedstates
+266	Enwaza267_Name_Unitedstates
+267	Watcher's Ray
+268	Right Fist
+269	Level Smack
+270	Enwaza271_Name_Unitedstates
+271	Enwaza272_Name_Unitedstates
+272	Enwaza273_Name_Unitedstates
+273	Tidal Gore
+274	Overturn
+275	Azure Ram
+276	Enwaza277_Name_Unitedstates
+277	Enwaza278_Name_Unitedstates
+278	Enwaza279_Name_Unitedstates
+279	Tidal Heave
+280	Overturn
+281	Pale Ram
+282	Enwaza283_Name_Unitedstates
+283	Enwaza284_Name_Unitedstates
+284	Enwaza285_Name_Unitedstates
+285	Debacle
+286	Overturn
+287	Golden Ram
+288	Enwaza289_Name_Unitedstates
+289	Enwaza290_Name_Unitedstates
+290	Enwaza291_Name_Unitedstates
+291	Choking Blow
+292	Incinerate
+293	Lash Tail
+294	Enwaza295_Name_Unitedstates
+295	Enwaza296_Name_Unitedstates
+296	Enwaza297_Name_Unitedstates
+297	Stifling Blow
+298	Incinerate
+299	Lash Tail
+300	Enwaza301_Name_Unitedstates
+301	Enwaza302_Name_Unitedstates
+302	Enwaza303_Name_Unitedstates
+303	Suffocating Blow
+304	Incinerate
+305	Lash Tail
+306	Enwaza307_Name_Unitedstates
+307	Enwaza308_Name_Unitedstates
+308	Enwaza309_Name_Unitedstates
+309	Cheer
+310	Cannon Shell
+311	Overrun
+312	Enwaza313_Name_Unitedstates
+313	Enwaza314_Name_Unitedstates
+314	Enwaza315_Name_Unitedstates
+315	Cheer
+316	Explosion
+317	Overrun
+318	Enwaza319_Name_Unitedstates
+319	Enwaza320_Name_Unitedstates
+320	Enwaza321_Name_Unitedstates
+321	Cheer
+322	Buzz Drop
+323	Rampage
+324	Enwaza325_Name_Unitedstates
+325	Enwaza326_Name_Unitedstates
+326	Dark Sun
+327	Popper
+328	Right Drill
+329	Left Blow
+330	Enwaza331_Name_Unitedstates
+331	Enwaza332_Name_Unitedstates
+332	Dark Sun
+333	Strafe
+334	Right Drill
+335	Left Blow
+336	Enwaza337_Name_Unitedstates
+337	Enwaza338_Name_Unitedstates
+338	Dark Sun
+339	Implosion
+340	Right Drill
+341	Left Blow
+342	Enwaza343_Name_Unitedstates
+343	Enwaza344_Name_Unitedstates
+344	Enwaza345_Name_Unitedstates
+345	Enwaza346_Name_Unitedstates
+346	Smash
+347	Rampage
+348	Enwaza349_Name_Unitedstates
+349	Enwaza350_Name_Unitedstates
+350	Enwaza351_Name_Unitedstates
+351	Enwaza352_Name_Unitedstates
+352	Jowl Slicer
+353	Grease Wheel
+354	Enwaza355_Name_Unitedstates
+355	Enwaza356_Name_Unitedstates
+356	Enwaza357_Name_Unitedstates
+357	Enwaza358_Name_Unitedstates
+358	Circular
+359	Hole Shot
+360	Enwaza361_Unitedstates
+361	Enwaza362_Unitedstates
+362	Enwaza363_Unitedstates
+363	Enwaza364_Unitedstates
+364	Enwaza365_Unitedstates
+365	Enwaza366_Unitedstates
+366	Enwaza367_Unitedstates
+367	Enwaza368_Unitedstates
+368	Dark Sun
+369	Popper
+370	Left Drill
+371	Right Blow
+372	Enwaza373_Unitedstates
+373	Enwaza374_Unitedstates
+374	Dark Sun
+375	Strafe
+376	Left Drill
+377	Right Blow
+378	Enwaza379_Unitedstates
+379	Enwaza380_Unitedstates
+380	Dark Sun
+381	Implosion
+382	Left Drill
+383	Right Blow
+384	Enwaza385_Unitedstates
+385	Enwaza386_Unitedstates
+386	Enwaza387_Unitedstates
+387	Enwaza388_Unitedstates
+388	Enwaza389_Unitedstates
+389	Enwaza390_Unitedstates
+390	Enwaza391_Unitedstates
+391	Enwaza392_Unitedstates
+392	Enwaza393_Unitedstates
+393	Enwaza394_Unitedstates
+394	Enwaza395_Unitedstates
+395	Enwaza396_Unitedstates
+396	Enwaza397_Unitedstates
+397	Enwaza398_Unitedstates
+398	Exploding Breath
+399	Restore
+400	Branch Strike
+401	Cheese Slicer
+402	Enwaza403_Unitedstates
+403	Enwaza404_Unitedstates
+404	Raging Breath
+405	Restore
+406	Willow Strike
+407	Cheese Grater
+408	Enwaza409_Unitedstates
+409	Enwaza410_Unitedstates
+410	Enwaza411_Unitedstates
+411	War Cry
+412	Winning Shot
+413	Charge
+414	Enwaza415_Unitedstates
+415	Enwaza416_Unitedstates
+416	Enwaza417_Unitedstates
+417	Rumble
+418	Winning Hit
+419	Breakthrough
+420	Enwaza421_Unitedstates
+421	Enwaza422_Unitedstates
+422	Enwaza423_Unitedstates
+423	Red Heaven
+424	Fiery Breath
+425	Knock Out
+426	Enwaza427_Unitedstates
+427	Enwaza428_Unitedstates
+428	Enwaza429_Unitedstates
+429	White Heaven
+430	Icy Breath
+431	Knock Down
+432	Enwaza433_Unitedstates
+433	Enwaza434_Unitedstates
+434	One Gulp
+435	Big Smash
+436	Decapitate
+437	Ground Strike
+438	Enwaza439_Unitedstates
+439	Enwaza440_Unitedstates
+440	One Gulp
+441	Big Crush
+442	Guillotine
+443	Earth Strike
+444	Enwaza445_Unitedstates
+445	Enwaza446_Unitedstates
+446	Heaven's Assist
+447	Mushroom Party
+448	Inevitable Punishment
+449	Dander Fume
+450	Enwaza451_Unitedstates
+451	Enwaza452_Unitedstates
+452	Assist Life
+453	Mushroom Brawl
+454	Inevitable Punishment
+455	Dander Cloud
+456	Enwaza457_Unitedstates
+457	Enwaza458_Unitedstates
+458	Enwaza459_Unitedstates
+459	White Swirl
+460	Plow
+461	Red Death
+462	Enwaza463_Name_Unitedstates
+463	Enwaza464_Name_Unitedstates
+464	Enwaza465_Name_Unitedstates
+465	Red Swirl
+466	Furrow
+467	Violet Death
+468	Enwaza469_Name_Unitedstates
+469	Enwaza470_Name_Unitedstates
+470	Warder's Call
+471	Intake
+472	Sweeping
+473	Curdle
+474	Enwaza475_Name_Unitedstates
+475	Enwaza476_Name_Unitedstates
+476	Call of The Guardee
+477	Intake
+478	Sweeping
+479	Curdle
+480	Enwaza481_Name_Unitedstates
+481	Enwaza482_Name_Unitedstates
+482	Ruthless
+483	Tempest Swirl
+484	Burning Spindle
+485	Dead Man's Tale
+486	Enwaza487_Name_Unitedstates
+487	Enwaza488_Name_Unitedstates
+488	Ruthless
+489	Shark Bite
+490	Hurricane Blast
+491	Galiote Staver
+492	Enwaza493_Name_Unitedstates
+493	Enwaza494_Name_Unitedstates
+494	Bo-Peep
+495	Roar
+496	Deep Bite
+497	Trip to Pain
+498	Enwaza499_Name_Unitedstates
+499	Enwaza500_Name_Unitedstates
+500	Peek-a-Boo
+501	Nasty Roar
+502	Fatal Bite
+503	Voyage to Pain
+504	Enwaza505_Name_Unitedstates
+505	Enwaza506_Name_Unitedstates
+506	Regenerate
+507	Blood Sink
+508	Mortal Cleave
+509	Purgatory
+510	Enwaza511_Name_Unitedstates
+511	Enwaza512_Name_Unitedstates
+512	Reclaim
+513	Blood Sink
+514	Crop Top
+515	Scorcher
+516	Enwaza517_Unitedstates
+517	Enwaza518_Unitedstates
+518	Enwaza519_Unitedstates
+519	Enwaza520_Unitedstates
+520	Enwaza521_Unitedstates
+521	Enwaza522_Unitedstates
+522	Enwaza523_Unitedstates
+523	Enwaza524_Unitedstates
+524	Enwaza525_Unitedstates
+525	Enwaza526_Unitedstates
+526	Enwaza527_Unitedstates
+527	Enwaza528_Unitedstates
+528	Enwaza529_Unitedstates
+529	Enwaza530_Unitedstates
+530	Enwaza531_Unitedstates
+531	Enwaza532_Unitedstates
+532	Enwaza533_Unitedstates
+533	Enwaza534_Unitedstates
+534	Enwaza535_Unitedstates
+535	Enwaza536_Unitedstates
+536	Enwaza537_Unitedstates
+537	Enwaza538_Unitedstates
+538	Enwaza539_Unitedstates
+539	Enwaza540_Unitedstates
+540	Enwaza541_Unitedstates
+541	Enwaza542_Unitedstates
+542	Deus Ex Machina
+543	Dark Presence
+544	J'accuse
+545	Blood Scent
+546	Enwaza547_Name_Unitedstates
+547	Enwaza548_Name_Unitedstates
+548	Enwaza549_Name_Unitedstates
+549	Enwaza550_Name_Unitedstates
+550	Enwaza551_Name_Unitedstates
+551	Enwaza552_Name_Unitedstates
+552	Enwaza553_Name_Unitedstates
+553	Enwaza554_Name_Unitedstates
+554	Full Power
+555	Demonic Embrace
+556	Mega Mash
+557	Gigantic Slam
+558	Enwaza559_Name_Unitedstates
+559	Enwaza560_Name_Unitedstates
+560	Full Power
+561	Demonic Embrace
+562	Mega Mash
+563	Gigantic Slam
+564	Enwaza565_Name_Unitedstates
+565	Enwaza566_Name_Unitedstates
+566	Grand Venom
+567	Hell Eruption
+568	Bombardment
+569	Fer-De-Lance
+570	Enwaza571_Name_Unitedstates
+571	Enwaza572_Name_Unitedstates
+572	Enwaza573_Name_Unitedstates
+573	Aure Dominium
+574	Volcano Concussio
+575	Apocalypse Fall
+576	Enwaza577_Name_Unitedstates
+577	Enwaza578_Name_Unitedstates
+578	Pala
+579	Applaudissement Sonique
+580	Orzel Bialy
+581	Nimbostratus
+582	Enwaza583_Unitedstates
+583	Enwaza584_Unitedstates
+584	Stimulant
+585	Tempest Swirl
+586	Burning Spindle
+587	Dead's Tale
+588	Enwaza589_Unitedstates
+589	Enwaza590_Unitedstates
+590	Stimulant
+591	Tempest Swirl
+592	Burning Spindle
+593	Dead's Tale
+594	Enwaza595_Name_Unitedstates
+595	Enwaza596_Name_Unitedstates
+596	Enwaza597_Name_Unitedstates
+597	Smother Blow
+598	Incinerate
+599	Lash Tail
+600	Enwaza601_Unitedstates
+601	Enwaza602_Unitedstates
+602	Grand Venom
+603	Hell Eruption
+604	Bombardment
+605	Fer-De-Lance
+606	Enwaza217_Name_Unitedstates
+607	Enwaza218_Name_Unitedstates
+608	Guts
+609	Enwaza220_Name_Unitedstates
+610	Enwaza221_Name_Unitedstates
+611	Enwaza222_Name_Unitedstates
+612	Enwaza217_Name_Unitedstates
+613	Enwaza218_Name_Unitedstates
+614	Guts
+615	Enwaza220_Name_Unitedstates
+616	Enwaza221_Name_Unitedstates
+617	Enwaza222_Name_Unitedstates
+618	Enwaza217_Name_Unitedstates
+619	Enwaza218_Name_Unitedstates
+620	Grit
+621	Enwaza220_Name_Unitedstates
+622	Enwaza221_Name_Unitedstates
+623	Enwaza222_Name_Unitedstates
+624	Enwaza217_Name_Unitedstates
+625	Enwaza218_Name_Unitedstates
+626	Grit
+627	Enwaza220_Name_Unitedstates
+628	Enwaza221_Name_Unitedstates
+629	Enwaza222_Name_Unitedstates
+630	Enwaza217_Name_Unitedstates
+631	Enwaza218_Name_Unitedstates
+632	Grit
+633	Enwaza220_Name_Unitedstates
+634	Enwaza221_Name_Unitedstates
+635	Enwaza222_Name_Unitedstates
+636	Enwaza217_Name_Unitedstates
+637	Enwaza218_Name_Unitedstates
+638	Grit
+639	Enwaza220_Name_Unitedstates
+640	Enwaza221_Name_Unitedstates
+641	Enwaza222_Name_Unitedstates
+642	Guts
+643	Guts
+644	Enwaza361_Name_Unitedstates
+645	Enwaza361_Name_Unitedstates
+646	Enwaza361_Name_Unitedstates
+647	Enwaza361_Name_Unitedstates
+648	Enwaza649_Name_Unitedstates
+649	Enwaza650_Name_Unitedstates
+650	Enwaza651_Name_Unitedstates
+651	Enwaza652_Name_Unitedstates
+652	Enwaza653_Name_Unitedstates
+653	Enwaza654_Name_Unitedstates
+654	Enwaza655_Name_Unitedstates
+655	Enwaza656_Name_Unitedstates
+656	Enwaza657_Name_Unitedstates
+657	Enwaza658_Name_Unitedstates
+658	Enwaza659_Name_Unitedstates
+659	Enwaza660_Name_Unitedstates
+660	Enwaza661_Name_Unitedstates
+661	Enwaza662_Name_Unitedstates
+662	Enwaza663_Name_Unitedstates
+663	Enwaza664_Name_Unitedstates
+664	Enwaza665_Name_Unitedstates
+665	Enwaza666_Name_Unitedstates
+666	Enwaza667_Name_Unitedstates
+667	Enwaza668_Name_Unitedstates
+668	Enwaza669_Name_Unitedstates
+669	Enwaza670_Name_Unitedstates
+670	Enwaza671_Name_Unitedstates
+671	Enwaza672_Name_Unitedstates
+672	Enwaza673_Name_Unitedstates
+673	Enwaza674_Name_Unitedstates
+674	Enwaza675_Name_Unitedstates
+675	Enwaza676_Name_Unitedstates
+676	Enwaza677_Name_Unitedstates
+677	Enwaza678_Name_Unitedstates
+678	Enwaza679_Name_Unitedstates
+679	Enwaza680_Name_Unitedstates
+680	Enwaza681_Name_Unitedstates
+681	Enwaza682_Name_Unitedstates
+682	Enwaza683_Name_Unitedstates
+683	Enwaza684_Name_Unitedstates
+684	Enwaza685_Name_Unitedstates
+685	Enwaza686_Name_Unitedstates
+686	Enwaza687_Name_Unitedstates
+687	Enwaza688_Name_Unitedstates
+688	Enwaza689_Name_Unitedstates
+689	Enwaza690_Name_Unitedstates
+690	Ride of Three Hundred
+691	Enwaza692_Name_Unitedstates
+692	Ride of Six Hundred
+693	Enwaza694_Name_Unitedstates
+694	Ride of Twelve Hundred
+695	Enwaza696_Name_Unitedstates
+696	Enwaza697_Name_Unitedstates
+697	Enwaza698_Name_Unitedstates
+698	Enwaza699_Name_Unitedstates
+699	Enwaza700_Name_Unitedstates
+700	Enwaza701_Name_Unitedstates
+701	Enwaza702_Name_Unitedstates
+702	Cursed Mace
+703	Enwaza704_Name_Unitedstates
+704	Cursed Mace
+705	Enwaza706_Name_Unitedstates
+706	Cursed Mace
+707	Enwaza708_Name_Unitedstates
+708	Constant Shadow
+709	Enwaza710_Name_Unitedstates
+710	Constant Shadow
+711	Enwaza712_Name_Unitedstates
+712	Constant Shine
+713	Enwaza714_Name_Unitedstates
+714	Enwaza715_Name_Unitedstates
+715	Enwaza716_Name_Unitedstates
+716	Enwaza717_Name_Unitedstates
+717	Enwaza718_Name_Unitedstates
+718	Enwaza719_Name_Unitedstates
+719	Enwaza720_Name_Unitedstates
+720	Closed Fist
+721	Uneven Slash
+722	Steel Fist
+723	Scattering Slash
+724	Power Fist
+725	Splintering Slash
+726	Enwaza727_Name_Unitedstates
+727	Enwaza728_Name_Unitedstates
+728	Enwaza729_Name_Unitedstates
+729	Enwaza730_Name_Unitedstates
+730	Enwaza731_Name_Unitedstates
+731	Enwaza732_Name_Unitedstates
+732	Enwaza733_Name_Unitedstates
+733	Enwaza734_Name_Unitedstates
+734	Enwaza735_Name_Unitedstates
+735	Enwaza736_Name_Unitedstates
+736	Enwaza737_Name_Unitedstates
+737	Enwaza738_Name_Unitedstates
+738	Enwaza739_Name_Unitedstates
+739	Enwaza740_Name_Unitedstates
+740	Enwaza741_Name_Unitedstates
+741	Enwaza742_Name_Unitedstates
+742	Enwaza743_Name_Unitedstates
+743	Enwaza744_Name_Unitedstates
+744	Enwaza745_Name_Unitedstates
+745	Enwaza746_Name_Unitedstates
+746	Enwaza747_Name_Unitedstates
+747	Enwaza748_Name_Unitedstates
+748	Enwaza749_Name_Unitedstates
+749	Enwaza750_Name_Unitedstates
+750	Enwaza751_Name_Unitedstates
+751	Enwaza752_Name_Unitedstates
+752	Enwaza753_Name_Unitedstates
+753	Enwaza754_Name_Unitedstates
+754	Enwaza755_Name_Unitedstates
+755	Enwaza756_Name_Unitedstates
+756	Enwaza757_Name_Unitedstates
+757	Enwaza758_Name_Unitedstates
+758	Enwaza759_Name_Unitedstates
+759	Enwaza760_Name_Unitedstates
+760	Enwaza761_Name_Unitedstates
+761	Enwaza762_Name_Unitedstates
+762	Enwaza763_Name_Unitedstates
+763	Enwaza764_Name_Unitedstates
+764	Enwaza765_Name_Unitedstates
+765	Enwaza766_Name_Unitedstates
+766	Enwaza767_Name_Unitedstates
+767	Enwaza768_Name_Unitedstates
+768	Enwaza769_Name_Unitedstates
+769	Enwaza770_Name_Unitedstates
+770	Enwaza771_Name_Unitedstates
+771	Enwaza772_Name_Unitedstates
+772	Enwaza773_Name_Unitedstates
+773	Enwaza774_Name_Unitedstates
+774	Enwaza775_Name_Unitedstates
+775	Enwaza776_Name_Unitedstates
+776	Enwaza777_Name_Unitedstates
+777	Enwaza778_Name_Unitedstates
+778	Enwaza779_Name_Unitedstates
+779	Enwaza780_Name_Unitedstates
+780	Enwaza781_Name_Unitedstates
+781	Enwaza782_Name_Unitedstates
+782	Enwaza783_Name_Unitedstates
+783	Enwaza784_Name_Unitedstates
+784	Enwaza785_Name_Unitedstates
+785	Enwaza786_Name_Unitedstates
+786	Enwaza787_Name_Unitedstates
+787	Enwaza788_Name_Unitedstates
+788	Stump
+789	Enwaza790_Name_Unitedstates
+790	Heavy Stump
+791	Enwaza792_Name_Unitedstates
+792	Enfold
+793	Enwaza794_Name_Unitedstates
+794	Enfold
+795	Enwaza796_Name_Unitedstates
+796	Enwaza797_Name_Unitedstates
+797	Enwaza798_Name_Unitedstates
+798	Enwaza799_Name_Unitedstates
+799	Enwaza800_Name_Unitedstates
+800	Enwaza801_Name_Unitedstates
+801	Enwaza802_Name_Unitedstates
+802	Enwaza803_Name_Unitedstates
+803	Enwaza804_Name_Unitedstates
+804	Enwaza805_Name_Unitedstates
+805	Enwaza806_Name_Unitedstates
+806	Enwaza807_Name_Unitedstates
+807	Enwaza808_Name_Unitedstates
+808	Deus Ex Machina
+809	Enwaza810_Name_Unitedstates
+810	Enwaza811_Name_Unitedstates
+811	Enwaza812_Name_Unitedstates
+812	Enwaza813_Name_Unitedstates
+813	Enwaza814_Name_Unitedstates
+814	Enwaza815_Name_Unitedstates
+815	Enwaza816_Name_Unitedstates
+816	Enwaza817_Name_Unitedstates
+817	Enwaza818_Name_Unitedstates
+818	Enwaza819_Name_Unitedstates
+819	Enwaza820_Name_Unitedstates
+820	Harsh Torment
+821	Enwaza822_Name_Unitedstates
+822	Truc
+823	Zamrazac
+824	Enwaza825_Name_Unitedstates
+825	Enwaza826_Name_Unitedstates
+826	Enwaza827_Name_Unitedstates
+827	Enwaza828_Name_Unitedstates
+828	Enwaza829_Name_Unitedstates
+829	Enwaza830_Name_Unitedstates
+830	Enwaza831_Name_Unitedstates
+831	Enwaza832_Name_Unitedstates
+832	Enwaza833_Name_Unitedstates
+833	Enwaza834_Name_Unitedstates
+834	Enwaza835_Name_Unitedstates
+835	Enwaza836_Name_Unitedstates
+836	Enwaza837_Name_Unitedstates
+837	Enwaza838_Name_Unitedstates
+838	Enwaza839_Name_Unitedstates
+839	Enwaza840_Name_Unitedstates
+840	Enwaza841_Name_Unitedstates
+841	Enwaza842_Name_Unitedstates
+842	Enwaza843_Name_Unitedstates
+843	Enwaza844_Name_Unitedstates
+844	Enwaza845_Name_Unitedstates
+845	Enwaza846_Name_Unitedstates
+846	Enwaza847_Name_Unitedstates
+847	Enwaza848_Name_Unitedstates
+[GBR]
+0	ENWaza1_Name_UnitedStates
+1	ENWaza2_Name_UnitedStates
+2	L'Opera Heal
+3	L'Opera Drill
+4	L'Opera Breath
+5	L'Opera Tornado
+6	Enwaza1_Name_Unitedstates
+7	Enwaza2_Name_Unitedstates
+8	General Heal
+9	General Drill
+10	General Breath
+11	General Tornado
+12	Enwaza1_Name_Unitedstates
+13	Enwaza2_Name_Unitedstates
+14	Bearer Heal
+15	Bearer Drill
+16	Bearer Breath
+17	Bearer Tornado
+18	Enwaza7_Name_Unitedstates
+19	Enwaza8_Name_Unitedstates
+20	Enwaza9_Name_Unitedstates
+21	Norther
+22	Avalanche Press
+23	Stiff Tail
+24	Enwaza7_Name_Unitedstates
+25	Enwaza8_Name_Unitedstates
+26	Enwaza9_Name_Unitedstates
+27	Sludge
+28	Earth Shaker
+29	Long Tail
+30	Enwaza7_Name_Unitedstates
+31	Enwaza8_Name_Unitedstates
+32	Enwaza9_Name_Unitedstates
+33	Furnace Pellet
+34	Crust Cracker
+35	Fiery Tail
+36	Enwaza13_Name_Unitedstates
+37	Enwaza14_Name_Unitedstates
+38	Enwaza15_Name_Unitedstates
+39	Lava Circle
+40	Lava Stab
+41	Lava Fire
+42	Enwaza25_Name_Unitedstates
+43	Enwaza26_Name_Unitedstates
+44	Enwaza27_Name_Unitedstates
+45	Black Circle
+46	Black Stab
+47	Black Fire
+48	Enwaza13_Name_Unitedstates
+49	Enwaza14_Name_Unitedstates
+50	Enwaza15_Name_Unitedstates
+51	Soul Circle
+52	Soul Stab
+53	Soul Fire
+54	Enwaza19_Name_Unitedstates
+55	Enwaza20_Name_Unitedstates
+56	Ratty Heal
+57	Sewer Drop
+58	Ratty Charge
+59	Air Shrinker
+60	Enwaza31_Name_Unitedstates
+61	Enwaza32_Name_Unitedstates
+62	Ratty Heal
+63	Sneak Drop
+64	Ratty Charge
+65	Dark Shrinker
+66	Enwaza31_Name_Unitedstates
+67	Enwaza32_Name_Unitedstates
+68	Ratty Heal
+69	Icicle Drop
+70	Ratty Charge
+71	Mist Shrinker
+72	Enwaza31_Name_Unitedstates
+73	Enwaza32_Name_Unitedstates
+74	Enwaza33_Name_Unitedstates
+75	Power Blaze
+76	Icy Breath
+77	Chill Vortex
+78	Enwaza31_Name_Unitedstates
+79	Enwaza32_Name_Unitedstates
+80	Enwaza33_Name_Unitedstates
+81	Power Blaze
+82	Buried Breath
+83	Ill Vortex
+84	Enwaza85_Name_Unitedstates
+85	Enwaza86_Name_Unitedstates
+86	Enwaza87_Name_Unitedstates
+87	Power Blaze
+88	Blurred Breath
+89	Blow Vortex
+90	Enwaza91_Name_Unitedstates
+91	Enwaza92_Name_Unitedstates
+92	Murmur
+93	Smoldering Palm
+94	Coconut Fall
+95	Moldy Breath
+96	Enwaza97_Name_Unitedstates
+97	Enwaza98_Name_Unitedstates
+98	Murmur
+99	Bursting Bulb
+100	Garlic Fall
+101	Scattering Burp
+102	Enwaza103_Name_Unitedstates
+103	Enwaza104_Name_Unitedstates
+104	Murmur
+105	Burning Onion
+106	Onion Fall
+107	Onion Burp
+108	Enwaza109_Name_Unitedstates
+109	Enwaza110_Name_Unitedstates
+110	Sun Below
+111	Heat Gas
+112	Ultra Spin
+113	Volcanic Missile
+114	Enwaza115_Name_Unitedstates
+115	Enwaza116_Name_Unitedstates
+116	Deep Shadow
+117	Abyss Stone
+118	Fiery Revolution
+119	Ancient Rock
+120	Enwaza121_Name_Unitedstates
+121	Enwaza122_Name_Unitedstates
+122	Deep Shadow
+123	Bottom Drop
+124	Great Revolution
+125	Stagnating Spray
+126	Enwaza127_Name_Unitedstates
+127	Enwaza128_Name_Unitedstates
+128	Encourage
+129	Feather Flare
+130	Assemble
+131	Ride of Three Hundred
+132	Enwaza133_Name_Unitedstates
+133	Enwaza134_Name_Unitedstates
+134	Encourage
+135	Feather Burst
+136	Cabriole
+137	Ride of Six Hundred
+138	Enwaza139_Name_Unitedstates
+139	Enwaza140_Name_Unitedstates
+140	Encourage
+141	Feather Blast
+142	Ballotte
+143	Ride of Twelve Hundred
+144	Enwaza145_Name_Unitedstates
+145	Enwaza146_Name_Unitedstates
+146	Viva
+147	Nutcracker
+148	Pierce
+149	Poisonous
+150	Enwaza151_Name_Unitedstates
+151	Enwaza152_Name_Unitedstates
+152	Viva
+153	Rock Shatter
+154	Torture
+155	Virulent
+156	Enwaza157_Name_Unitedstates
+157	Enwaza158_Name_Unitedstates
+158	Viva
+159	Channel Divider
+160	Agonize
+161	Venomous
+162	Enwaza163_Name_Unitedstates
+163	Enwaza164_Name_Unitedstates
+164	Invite
+165	Life Steal
+166	Spiritus
+167	Deathblow
+168	Enwaza169_Name_Unitedstates
+169	Enwaza170_Name_Unitedstates
+170	Invite
+171	Energy Steal
+172	Spectera
+173	Execute
+174	Enwaza175_Name_Unitedstates
+175	Enwaza176_Name_Unitedstates
+176	Invite
+177	Strength Steal
+178	Visitantia
+179	Capital Punishment
+180	Enwaza181_Name_Unitedstates
+181	Enwaza182_Name_Unitedstates
+182	Tumble Down
+183	Supersonic
+184	Side Dive
+185	Night Flutter
+186	Enwaza187_Name_Unitedstates
+187	Enwaza188_Name_Unitedstates
+188	Tumble Down
+189	Sonic Wave
+190	Tail Dive
+191	Flutter
+192	Enwaza193_Name_Unitedstates
+193	Enwaza194_Name_Unitedstates
+194	Tumble Down
+195	Sonic Killer
+196	Brush Dive
+197	Alpen Flutter
+198	Enwaza199_Name_Unitedstates
+199	Enwaza200_Name_Unitedstates
+200	Germ's Life
+201	Poison Scatter
+202	Entangle
+203	One Hundred Lashes
+204	Enwaza205_Name_Unitedstates
+205	Enwaza206_Name_Unitedstates
+206	Germ's Truth
+207	Venom Scatter
+208	Winding Coil
+209	One Thousand Lashes
+210	Enwaza211_Name_Unitedstates
+211	Enwaza212_Name_Unitedstates
+212	Germ's Power
+213	Spore Scatter
+214	Wreathe
+215	Ten Lashes
+216	Enwaza217_Name_Unitedstates
+217	Enwaza218_Name_Unitedstates
+218	Rush
+219	Rising Power
+220	Sea Knuckle
+221	Cruel Cutlass
+222	Enwaza223_Name_Unitedstates
+223	Enwaza224_Name_Unitedstates
+224	Pillory
+225	Rising Power
+226	Iron Soul
+227	Scattering Soul
+228	Enwaza229_Name_Unitedstates
+229	Enwaza230_Name_Unitedstates
+230	Hurl
+231	Rising Power
+232	Power Soul
+233	Splintering Soul
+234	Enwaza235_Name_Unitedstates
+235	Enwaza236_Name_Unitedstates
+236	Enwaza237_Name_Unitedstates
+237	Reparer
+238	Frappe
+239	A Terre
+240	Enwaza241_Name_Unitedstates
+241	Enwaza242_Name_Unitedstates
+242	Enwaza243_Name_Unitedstates
+243	Reparer
+244	Zanoska
+245	Tour
+246	Enwaza247_Name_Unitedstates
+247	Enwaza248_Name_Unitedstates
+248	Enwaza249_Name_Unitedstates
+249	Reparer
+250	Battu
+251	An Tournant
+252	Enwaza253_Name_Unitedstates
+253	Enwaza254_Name_Unitedstates
+254	Enwaza255_Name_Unitedstates
+255	Seer's Ray
+256	Iron Fist
+257	Level Slap
+258	Enwaza259_Name_Unitedstates
+259	Enwaza260_Name_Unitedstates
+260	Enwaza261_Name_Unitedstates
+261	Glancer's Ray
+262	God Fist
+263	Level Spank
+264	Enwaza265_Name_Unitedstates
+265	Enwaza266_Name_Unitedstates
+266	Enwaza267_Name_Unitedstates
+267	Watcher's Ray
+268	Right Fist
+269	Level Smack
+270	Enwaza271_Name_Unitedstates
+271	Enwaza272_Name_Unitedstates
+272	Enwaza273_Name_Unitedstates
+273	Tidal Gore
+274	Overturn
+275	Azure Ram
+276	Enwaza277_Name_Unitedstates
+277	Enwaza278_Name_Unitedstates
+278	Enwaza279_Name_Unitedstates
+279	Tidal Heave
+280	Overturn
+281	Pale Ram
+282	Enwaza283_Name_Unitedstates
+283	Enwaza284_Name_Unitedstates
+284	Enwaza285_Name_Unitedstates
+285	Debacle
+286	Overturn
+287	Golden Ram
+288	Enwaza289_Name_Unitedstates
+289	Enwaza290_Name_Unitedstates
+290	Enwaza291_Name_Unitedstates
+291	Choking Blow
+292	Incinerate
+293	Lash Tail
+294	Enwaza295_Name_Unitedstates
+295	Enwaza296_Name_Unitedstates
+296	Enwaza297_Name_Unitedstates
+297	Stifling Blow
+298	Incinerate
+299	Lash Tail
+300	Enwaza301_Name_Unitedstates
+301	Enwaza302_Name_Unitedstates
+302	Enwaza303_Name_Unitedstates
+303	Suffocating Blow
+304	Incinerate
+305	Lash Tail
+306	Enwaza307_Name_Unitedstates
+307	Enwaza308_Name_Unitedstates
+308	Enwaza309_Name_Unitedstates
+309	Cheer
+310	Cannon Shell
+311	Overrun
+312	Enwaza313_Name_Unitedstates
+313	Enwaza314_Name_Unitedstates
+314	Enwaza315_Name_Unitedstates
+315	Cheer
+316	Explosion
+317	Overrun
+318	Enwaza319_Name_Unitedstates
+319	Enwaza320_Name_Unitedstates
+320	Enwaza321_Name_Unitedstates
+321	Cheer
+322	Buzz Drop
+323	Rampage
+324	Enwaza325_Name_Unitedstates
+325	Enwaza326_Name_Unitedstates
+326	Dark Sun
+327	Popper
+328	Right Drill
+329	Left Blow
+330	Enwaza331_Name_Unitedstates
+331	Enwaza332_Name_Unitedstates
+332	Dark Sun
+333	Strafe
+334	Right Drill
+335	Left Blow
+336	Enwaza337_Name_Unitedstates
+337	Enwaza338_Name_Unitedstates
+338	Dark Sun
+339	Implosion
+340	Right Drill
+341	Left Blow
+342	Enwaza343_Name_Unitedstates
+343	Enwaza344_Name_Unitedstates
+344	Enwaza345_Name_Unitedstates
+345	Enwaza346_Name_Unitedstates
+346	Smash
+347	Rampage
+348	Enwaza349_Name_Unitedstates
+349	Enwaza350_Name_Unitedstates
+350	Enwaza351_Name_Unitedstates
+351	Enwaza352_Name_Unitedstates
+352	Jowl Slicer
+353	Grease Wheel
+354	Enwaza355_Name_Unitedstates
+355	Enwaza356_Name_Unitedstates
+356	Enwaza357_Name_Unitedstates
+357	Enwaza358_Name_Unitedstates
+358	Circular
+359	Hole Shot
+360	Enwaza361_Unitedstates
+361	Enwaza362_Unitedstates
+362	Enwaza363_Unitedstates
+363	Enwaza364_Unitedstates
+364	Enwaza365_Unitedstates
+365	Enwaza366_Unitedstates
+366	Enwaza367_Unitedstates
+367	Enwaza368_Unitedstates
+368	Dark Sun
+369	Popper
+370	Left Drill
+371	Right Blow
+372	Enwaza373_Unitedstates
+373	Enwaza374_Unitedstates
+374	Dark Sun
+375	Strafe
+376	Left Drill
+377	Right Blow
+378	Enwaza379_Unitedstates
+379	Enwaza380_Unitedstates
+380	Dark Sun
+381	Implosion
+382	Left Drill
+383	Right Blow
+384	Enwaza385_Unitedstates
+385	Enwaza386_Unitedstates
+386	Enwaza387_Unitedstates
+387	Enwaza388_Unitedstates
+388	Enwaza389_Unitedstates
+389	Enwaza390_Unitedstates
+390	Enwaza391_Unitedstates
+391	Enwaza392_Unitedstates
+392	Enwaza393_Unitedstates
+393	Enwaza394_Unitedstates
+394	Enwaza395_Unitedstates
+395	Enwaza396_Unitedstates
+396	Enwaza397_Unitedstates
+397	Enwaza398_Unitedstates
+398	Exploding Breath
+399	Restore
+400	Branch Strike
+401	Cheese Slicer
+402	Enwaza403_Unitedstates
+403	Enwaza404_Unitedstates
+404	Raging Breath
+405	Restore
+406	Willow Strike
+407	Cheese Grater
+408	Enwaza409_Unitedstates
+409	Enwaza410_Unitedstates
+410	Enwaza411_Unitedstates
+411	War Cry
+412	Winning Shot
+413	Charge
+414	Enwaza415_Unitedstates
+415	Enwaza416_Unitedstates
+416	Enwaza417_Unitedstates
+417	Rumble
+418	Winning Hit
+419	Breakthrough
+420	Enwaza421_Unitedstates
+421	Enwaza422_Unitedstates
+422	Enwaza423_Unitedstates
+423	Red Heaven
+424	Fiery Breath
+425	Knock Out
+426	Enwaza427_Unitedstates
+427	Enwaza428_Unitedstates
+428	Enwaza429_Unitedstates
+429	White Heaven
+430	Icy Breath
+431	Knock Down
+432	Enwaza433_Unitedstates
+433	Enwaza434_Unitedstates
+434	One Gulp
+435	Big Smash
+436	Decapitate
+437	Ground Strike
+438	Enwaza439_Unitedstates
+439	Enwaza440_Unitedstates
+440	One Gulp
+441	Big Crush
+442	Guillotine
+443	Earth Strike
+444	Enwaza445_Unitedstates
+445	Enwaza446_Unitedstates
+446	Heaven's Assist
+447	Mushroom Party
+448	Inevitable Punishment
+449	Dander Fume
+450	Enwaza451_Unitedstates
+451	Enwaza452_Unitedstates
+452	Assist Life
+453	Mushroom Brawl
+454	Inevitable Punishment
+455	Dander Cloud
+456	Enwaza457_Unitedstates
+457	Enwaza458_Unitedstates
+458	Enwaza459_Unitedstates
+459	White Swirl
+460	Plow
+461	Red Death
+462	Enwaza463_Name_Unitedstates
+463	Enwaza464_Name_Unitedstates
+464	Enwaza465_Name_Unitedstates
+465	Red Swirl
+466	Furrow
+467	Violet Death
+468	Enwaza469_Name_Unitedstates
+469	Enwaza470_Name_Unitedstates
+470	Warder's Call
+471	Intake
+472	Sweeping
+473	Curdle
+474	Enwaza475_Name_Unitedstates
+475	Enwaza476_Name_Unitedstates
+476	Call of The Guardee
+477	Intake
+478	Sweeping
+479	Curdle
+480	Enwaza481_Name_Unitedstates
+481	Enwaza482_Name_Unitedstates
+482	Ruthless
+483	Tempest Swirl
+484	Burning Spindle
+485	Dead Man's Tale
+486	Enwaza487_Name_Unitedstates
+487	Enwaza488_Name_Unitedstates
+488	Ruthless
+489	Shark Bite
+490	Hurricane Blast
+491	Galiote Staver
+492	Enwaza493_Name_Unitedstates
+493	Enwaza494_Name_Unitedstates
+494	Bo-Peep
+495	Roar
+496	Deep Bite
+497	Trip to Pain
+498	Enwaza499_Name_Unitedstates
+499	Enwaza500_Name_Unitedstates
+500	Peek-a-Boo
+501	Nasty Roar
+502	Fatal Bite
+503	Voyage to Pain
+504	Enwaza505_Name_Unitedstates
+505	Enwaza506_Name_Unitedstates
+506	Regenerate
+507	Blood Sink
+508	Mortal Cleave
+509	Purgatory
+510	Enwaza511_Name_Unitedstates
+511	Enwaza512_Name_Unitedstates
+512	Reclaim
+513	Blood Sink
+514	Crop Top
+515	Scorcher
+516	Enwaza517_Unitedstates
+517	Enwaza518_Unitedstates
+518	Enwaza519_Unitedstates
+519	Enwaza520_Unitedstates
+520	Enwaza521_Unitedstates
+521	Enwaza522_Unitedstates
+522	Enwaza523_Unitedstates
+523	Enwaza524_Unitedstates
+524	Enwaza525_Unitedstates
+525	Enwaza526_Unitedstates
+526	Enwaza527_Unitedstates
+527	Enwaza528_Unitedstates
+528	Enwaza529_Unitedstates
+529	Enwaza530_Unitedstates
+530	Enwaza531_Unitedstates
+531	Enwaza532_Unitedstates
+532	Enwaza533_Unitedstates
+533	Enwaza534_Unitedstates
+534	Enwaza535_Unitedstates
+535	Enwaza536_Unitedstates
+536	Enwaza537_Unitedstates
+537	Enwaza538_Unitedstates
+538	Enwaza539_Unitedstates
+539	Enwaza540_Unitedstates
+540	Enwaza541_Unitedstates
+541	Enwaza542_Unitedstates
+542	Deus Ex Machina
+543	Dark Presence
+544	J'accuse
+545	Blood Scent
+546	Enwaza547_Name_Unitedstates
+547	Enwaza548_Name_Unitedstates
+548	Enwaza549_Name_Unitedstates
+549	Enwaza550_Name_Unitedstates
+550	Enwaza551_Name_Unitedstates
+551	Enwaza552_Name_Unitedstates
+552	Enwaza553_Name_Unitedstates
+553	Enwaza554_Name_Unitedstates
+554	Full Power
+555	Demonic Embrace
+556	Mega Mash
+557	Gigantic Slam
+558	Enwaza559_Name_Unitedstates
+559	Enwaza560_Name_Unitedstates
+560	Full Power
+561	Demonic Embrace
+562	Mega Mash
+563	Gigantic Slam
+564	Enwaza565_Name_Unitedstates
+565	Enwaza566_Name_Unitedstates
+566	Grand Venom
+567	Hell Eruption
+568	Bombardment
+569	Fer-De-Lance
+570	Enwaza571_Name_Unitedstates
+571	Enwaza572_Name_Unitedstates
+572	Enwaza573_Name_Unitedstates
+573	Aure Dominium
+574	Volcano Concussio
+575	Apocalypse Fall
+576	Enwaza577_Name_Unitedstates
+577	Enwaza578_Name_Unitedstates
+578	Pala
+579	Applaudissement Sonique
+580	Orzel Bialy
+581	Nimbostratus
+582	Enwaza583_Unitedstates
+583	Enwaza584_Unitedstates
+584	Stimulant
+585	Tempest Swirl
+586	Burning Spindle
+587	Dead's Tale
+588	Enwaza589_Unitedstates
+589	Enwaza590_Unitedstates
+590	Stimulant
+591	Tempest Swirl
+592	Burning Spindle
+593	Dead's Tale
+594	Enwaza595_Name_Unitedstates
+595	Enwaza596_Name_Unitedstates
+596	Enwaza597_Name_Unitedstates
+597	Smother Blow
+598	Incinerate
+599	Lash Tail
+600	Enwaza601_Unitedstates
+601	Enwaza602_Unitedstates
+602	Grand Venom
+603	Hell Eruption
+604	Bombardment
+605	Fer-De-Lance
+606	Enwaza217_Name_Unitedstates
+607	Enwaza218_Name_Unitedstates
+608	Guts
+609	Enwaza220_Name_Unitedstates
+610	Enwaza221_Name_Unitedstates
+611	Enwaza222_Name_Unitedstates
+612	Enwaza217_Name_Unitedstates
+613	Enwaza218_Name_Unitedstates
+614	Guts
+615	Enwaza220_Name_Unitedstates
+616	Enwaza221_Name_Unitedstates
+617	Enwaza222_Name_Unitedstates
+618	Enwaza217_Name_Unitedstates
+619	Enwaza218_Name_Unitedstates
+620	Grit
+621	Enwaza220_Name_Unitedstates
+622	Enwaza221_Name_Unitedstates
+623	Enwaza222_Name_Unitedstates
+624	Enwaza217_Name_Unitedstates
+625	Enwaza218_Name_Unitedstates
+626	Grit
+627	Enwaza220_Name_Unitedstates
+628	Enwaza221_Name_Unitedstates
+629	Enwaza222_Name_Unitedstates
+630	Enwaza217_Name_Unitedstates
+631	Enwaza218_Name_Unitedstates
+632	Grit
+633	Enwaza220_Name_Unitedstates
+634	Enwaza221_Name_Unitedstates
+635	Enwaza222_Name_Unitedstates
+636	Enwaza217_Name_Unitedstates
+637	Enwaza218_Name_Unitedstates
+638	Grit
+639	Enwaza220_Name_Unitedstates
+640	Enwaza221_Name_Unitedstates
+641	Enwaza222_Name_Unitedstates
+642	Guts
+643	Guts
+644	Enwaza361_Name_Unitedstates
+645	Enwaza361_Name_Unitedstates
+646	Enwaza361_Name_Unitedstates
+647	Enwaza361_Name_Unitedstates
+648	Enwaza649_Name_Unitedstates
+649	Enwaza650_Name_Unitedstates
+650	Enwaza651_Name_Unitedstates
+651	Enwaza652_Name_Unitedstates
+652	Enwaza653_Name_Unitedstates
+653	Enwaza654_Name_Unitedstates
+654	Enwaza655_Name_Unitedstates
+655	Enwaza656_Name_Unitedstates
+656	Enwaza657_Name_Unitedstates
+657	Enwaza658_Name_Unitedstates
+658	Enwaza659_Name_Unitedstates
+659	Enwaza660_Name_Unitedstates
+660	Enwaza661_Name_Unitedstates
+661	Enwaza662_Name_Unitedstates
+662	Enwaza663_Name_Unitedstates
+663	Enwaza664_Name_Unitedstates
+664	Enwaza665_Name_Unitedstates
+665	Enwaza666_Name_Unitedstates
+666	Enwaza667_Name_Unitedstates
+667	Enwaza668_Name_Unitedstates
+668	Enwaza669_Name_Unitedstates
+669	Enwaza670_Name_Unitedstates
+670	Enwaza671_Name_Unitedstates
+671	Enwaza672_Name_Unitedstates
+672	Enwaza673_Name_Unitedstates
+673	Enwaza674_Name_Unitedstates
+674	Enwaza675_Name_Unitedstates
+675	Enwaza676_Name_Unitedstates
+676	Enwaza677_Name_Unitedstates
+677	Enwaza678_Name_Unitedstates
+678	Enwaza679_Name_Unitedstates
+679	Enwaza680_Name_Unitedstates
+680	Enwaza681_Name_Unitedstates
+681	Enwaza682_Name_Unitedstates
+682	Enwaza683_Name_Unitedstates
+683	Enwaza684_Name_Unitedstates
+684	Enwaza685_Name_Unitedstates
+685	Enwaza686_Name_Unitedstates
+686	Enwaza687_Name_Unitedstates
+687	Enwaza688_Name_Unitedstates
+688	Enwaza689_Name_Unitedstates
+689	Enwaza690_Name_Unitedstates
+690	Ride of Three Hundred
+691	Enwaza692_Name_Unitedstates
+692	Ride of Six Hundred
+693	Enwaza694_Name_Unitedstates
+694	Ride of Twelve Hundred
+695	Enwaza696_Name_Unitedstates
+696	Enwaza697_Name_Unitedstates
+697	Enwaza698_Name_Unitedstates
+698	Enwaza699_Name_Unitedstates
+699	Enwaza700_Name_Unitedstates
+700	Enwaza701_Name_Unitedstates
+701	Enwaza702_Name_Unitedstates
+702	Cursed Mace
+703	Enwaza704_Name_Unitedstates
+704	Cursed Mace
+705	Enwaza706_Name_Unitedstates
+706	Cursed Mace
+707	Enwaza708_Name_Unitedstates
+708	Constant Shadow
+709	Enwaza710_Name_Unitedstates
+710	Constant Shadow
+711	Enwaza712_Name_Unitedstates
+712	Constant Shine
+713	Enwaza714_Name_Unitedstates
+714	Enwaza715_Name_Unitedstates
+715	Enwaza716_Name_Unitedstates
+716	Enwaza717_Name_Unitedstates
+717	Enwaza718_Name_Unitedstates
+718	Enwaza719_Name_Unitedstates
+719	Enwaza720_Name_Unitedstates
+720	Closed Fist
+721	Uneven Slash
+722	Steel Fist
+723	Scattering Slash
+724	Power Fist
+725	Splintering Slash
+726	Enwaza727_Name_Unitedstates
+727	Enwaza728_Name_Unitedstates
+728	Enwaza729_Name_Unitedstates
+729	Enwaza730_Name_Unitedstates
+730	Enwaza731_Name_Unitedstates
+731	Enwaza732_Name_Unitedstates
+732	Enwaza733_Name_Unitedstates
+733	Enwaza734_Name_Unitedstates
+734	Enwaza735_Name_Unitedstates
+735	Enwaza736_Name_Unitedstates
+736	Enwaza737_Name_Unitedstates
+737	Enwaza738_Name_Unitedstates
+738	Enwaza739_Name_Unitedstates
+739	Enwaza740_Name_Unitedstates
+740	Enwaza741_Name_Unitedstates
+741	Enwaza742_Name_Unitedstates
+742	Enwaza743_Name_Unitedstates
+743	Enwaza744_Name_Unitedstates
+744	Enwaza745_Name_Unitedstates
+745	Enwaza746_Name_Unitedstates
+746	Enwaza747_Name_Unitedstates
+747	Enwaza748_Name_Unitedstates
+748	Enwaza749_Name_Unitedstates
+749	Enwaza750_Name_Unitedstates
+750	Enwaza751_Name_Unitedstates
+751	Enwaza752_Name_Unitedstates
+752	Enwaza753_Name_Unitedstates
+753	Enwaza754_Name_Unitedstates
+754	Enwaza755_Name_Unitedstates
+755	Enwaza756_Name_Unitedstates
+756	Enwaza757_Name_Unitedstates
+757	Enwaza758_Name_Unitedstates
+758	Enwaza759_Name_Unitedstates
+759	Enwaza760_Name_Unitedstates
+760	Enwaza761_Name_Unitedstates
+761	Enwaza762_Name_Unitedstates
+762	Enwaza763_Name_Unitedstates
+763	Enwaza764_Name_Unitedstates
+764	Enwaza765_Name_Unitedstates
+765	Enwaza766_Name_Unitedstates
+766	Enwaza767_Name_Unitedstates
+767	Enwaza768_Name_Unitedstates
+768	Enwaza769_Name_Unitedstates
+769	Enwaza770_Name_Unitedstates
+770	Enwaza771_Name_Unitedstates
+771	Enwaza772_Name_Unitedstates
+772	Enwaza773_Name_Unitedstates
+773	Enwaza774_Name_Unitedstates
+774	Enwaza775_Name_Unitedstates
+775	Enwaza776_Name_Unitedstates
+776	Enwaza777_Name_Unitedstates
+777	Enwaza778_Name_Unitedstates
+778	Enwaza779_Name_Unitedstates
+779	Enwaza780_Name_Unitedstates
+780	Enwaza781_Name_Unitedstates
+781	Enwaza782_Name_Unitedstates
+782	Enwaza783_Name_Unitedstates
+783	Enwaza784_Name_Unitedstates
+784	Enwaza785_Name_Unitedstates
+785	Enwaza786_Name_Unitedstates
+786	Enwaza787_Name_Unitedstates
+787	Enwaza788_Name_Unitedstates
+788	Stump
+789	Enwaza790_Name_Unitedstates
+790	Heavy Stump
+791	Enwaza792_Name_Unitedstates
+792	Enfold
+793	Enwaza794_Name_Unitedstates
+794	Enfold
+795	Enwaza796_Name_Unitedstates
+796	Enwaza797_Name_Unitedstates
+797	Enwaza798_Name_Unitedstates
+798	Enwaza799_Name_Unitedstates
+799	Enwaza800_Name_Unitedstates
+800	Enwaza801_Name_Unitedstates
+801	Enwaza802_Name_Unitedstates
+802	Enwaza803_Name_Unitedstates
+803	Enwaza804_Name_Unitedstates
+804	Enwaza805_Name_Unitedstates
+805	Enwaza806_Name_Unitedstates
+806	Enwaza807_Name_Unitedstates
+807	Enwaza808_Name_Unitedstates
+808	Deus Ex Machina
+809	Enwaza810_Name_Unitedstates
+810	Enwaza811_Name_Unitedstates
+811	Enwaza812_Name_Unitedstates
+812	Enwaza813_Name_Unitedstates
+813	Enwaza814_Name_Unitedstates
+814	Enwaza815_Name_Unitedstates
+815	Enwaza816_Name_Unitedstates
+816	Enwaza817_Name_Unitedstates
+817	Enwaza818_Name_Unitedstates
+818	Enwaza819_Name_Unitedstates
+819	Enwaza820_Name_Unitedstates
+820	Harsh Torment
+821	Enwaza822_Name_Unitedstates
+822	Truc
+823	Zamrazac
+824	Enwaza825_Name_Unitedstates
+825	Enwaza826_Name_Unitedstates
+826	Enwaza827_Name_Unitedstates
+827	Enwaza828_Name_Unitedstates
+828	Enwaza829_Name_Unitedstates
+829	Enwaza830_Name_Unitedstates
+830	Enwaza831_Name_Unitedstates
+831	Enwaza832_Name_Unitedstates
+832	Enwaza833_Name_Unitedstates
+833	Enwaza834_Name_Unitedstates
+834	Enwaza835_Name_Unitedstates
+835	Enwaza836_Name_Unitedstates
+836	Enwaza837_Name_Unitedstates
+837	Enwaza838_Name_Unitedstates
+838	Enwaza839_Name_Unitedstates
+839	Enwaza840_Name_Unitedstates
+840	Enwaza841_Name_Unitedstates
+841	Enwaza842_Name_Unitedstates
+842	Enwaza843_Name_Unitedstates
+843	Enwaza844_Name_Unitedstates
+844	Enwaza845_Name_Unitedstates
+845	Enwaza846_Name_Unitedstates
+846	Enwaza847_Name_Unitedstates
+847	Enwaza848_Name_Unitedstates
+[FRA]
+0	
+1	
+2	Soins d'opéra
+3	Spirale d'opéra
+4	Souffle d'opéra
+5	Tornade d'opéra
+6	
+7	
+8	Soins de général
+9	Spirale de général
+10	Souffle de général
+11	Tornade de général
+12	
+13	
+14	Soins de porteur
+15	Spirale de porteur
+16	Souffle de porteur
+17	Tornade de porteur
+18	
+19	
+20	
+21	Nordique
+22	Poids d'avalanche
+23	Queue raide
+24	
+25	
+26	
+27	Cloaque
+28	Séisme
+29	Longue queue
+30	
+31	
+32	
+33	Brandon
+34	Casse-carapace
+35	Queue ardente
+36	
+37	
+38	
+39	Cercle de lave
+40	Coup de lave
+41	Feu de lave
+42	
+43	
+44	
+45	Cercle noir
+46	Coup noir
+47	Feu noir
+48	
+49	
+50	
+51	Cercle d'âme
+52	Coup d'âme
+53	Feu d'âme
+54	
+55	
+56	Soins de rat
+57	Boue d'égout
+58	Charge de rat
+59	Réducteur d'air
+60	
+61	
+62	Soins de rat
+63	Boue furtive
+64	Charge de rat
+65	Réducteur d'ombre
+66	
+67	
+68	Soins de rat
+69	Reste de glaçon
+70	Charge de rat
+71	Réducteur de brume
+72	
+73	
+74	
+75	Flambée puissante
+76	Souffle glacé
+77	Vortex frissonnant
+78	
+79	
+80	
+81	Flambée puissante
+82	Souffle contenu
+83	Vortex malin
+84	
+85	
+86	
+87	Flambée puissante
+88	Souffle bouffi
+89	Vortex venteux
+90	
+91	
+92	Murmure
+93	Palme ardente
+94	Chute de coco
+95	Souffle moisi
+96	
+97	
+98	Murmure
+99	Bulbe éclatant
+100	Chute d'oignon
+101	Rot éparpillé
+102	
+103	
+104	Murmure
+105	Oignon brûlant
+106	Chute d'oignon
+107	Rot d'oignon
+108	
+109	
+110	Soleil enfoui
+111	Gaz brûlant
+112	Ultra-tourbillon
+113	Missile volcan
+114	
+115	
+116	Ombre profonde
+117	Pierre d'abysse
+118	Révolution ardente
+119	Vieux rocher
+120	
+121	
+122	Ombre profonde
+123	Résidu de base
+124	Grande révolution
+125	Jet stagnant
+126	
+127	
+128	Encouragement
+129	Lueur de plume
+130	Regroupement
+131	Sur les trois cents
+132	
+133	
+134	Encouragement
+135	Coup de plume
+136	Cabriole
+137	Sur les six cents
+138	
+139	
+140	Encouragement
+141	Poussée de plume
+142	Ballottage
+143	Sur les douze cents
+144	
+145	
+146	Viva
+147	Casse-noisette
+148	Perforation
+149	Empoisonné
+150	
+151	
+152	Viva
+153	Casse-roche
+154	Torture
+155	Virulent
+156	
+157	
+158	Viva
+159	Diviseur de chaîne
+160	Agonie
+161	Venin
+162	
+163	
+164	Invitation
+165	Vol de vie
+166	Spiritus
+167	Coup mortel
+168	
+169	
+170	Invitation
+171	Vol d'énergie
+172	Spectera
+173	Exécution
+174	
+175	
+176	Invitation
+177	Vol de vigueur
+178	Visitantia
+179	Peine capitale
+180	
+181	
+182	Talon tournant
+183	Supersonique
+184	Plongeon
+185	Battement nocturne
+186	
+187	
+188	Talon tournant
+189	Vague sonique
+190	Plongeon arrière
+191	Battement
+192	
+193	
+194	Talon tournant
+195	Tueur sonique
+196	Plongeon brossé
+197	Battement alpin
+198	
+199	
+200	Vie de germe
+201	Jet de poison
+202	Entrave
+203	Cent frappes
+204	
+205	
+206	Vérité de germe
+207	Jet de venin
+208	Rembobinage
+209	Mille frappes
+210	
+211	
+212	Puissance de germe
+213	Jet de spores
+214	Enveloppement
+215	Dix frappes
+216	
+217	
+218	Ruée
+219	Pouvoir spirituel
+220	Coup de poing marin
+221	Sabre cruel
+222	
+223	
+224	Exposition
+225	Pouvoir spirituel
+226	Âme de fer
+227	Âme éparpillée
+228	
+229	
+230	Projection
+231	Pouvoir spirituel
+232	Âme puissante
+233	Âme éclatante
+234	
+235	
+236	
+237	Réparation
+238	Frappe
+239	À terre
+240	
+241	
+242	
+243	Réparation
+244	Zanoska
+245	Tour
+246	
+247	
+248	
+249	Réparation
+250	Battu
+251	Au tournant
+252	
+253	
+254	
+255	Rayon de voyant
+256	Poing de fer
+257	Gifle
+258	
+259	
+260	
+261	Rayon d'observateur
+262	Poing de dieu
+263	Fessée
+264	
+265	
+266	
+267	Rayon de voyeur
+268	Juste poing
+269	Claque
+270	
+271	
+272	
+273	Mascaret
+274	Chavirage
+275	Éperonnage azur
+276	
+277	
+278	
+279	Houle
+280	Chavirage
+281	Éperonnage pâle
+282	
+283	
+284	
+285	Débâcle
+286	Chavirage
+287	Éperonnage d'or
+288	
+289	
+290	
+291	Étouffement
+292	Incinération
+293	Queue cinglante
+294	
+295	
+296	
+297	Asphyxie
+298	Incinération
+299	Queue cinglante
+300	
+301	
+302	
+303	Suffocation
+304	Incinération
+305	Queue cinglante
+306	
+307	
+308	
+309	Acclamation
+310	Obus
+311	Écrasement
+312	
+313	
+314	
+315	Acclamation
+316	Explosion
+317	Écrasement
+318	
+319	
+320	
+321	Acclamation
+322	Bombe arrière
+323	Saccage
+324	
+325	
+326	Soleil noir
+327	Pression
+328	Vis droite
+329	Coup gauche
+330	
+331	
+332	Soleil noir
+333	Pas de côté
+334	Vis droite
+335	Coup gauche
+336	
+337	
+338	Soleil noir
+339	Implosion
+340	Vis droite
+341	Coup gauche
+342	
+343	
+344	
+345	
+346	Collision
+347	Saccage
+348	
+349	
+350	
+351	
+352	Brise-mâchoire
+353	Roue graissée
+354	
+355	
+356	
+357	
+358	Circulaire
+359	Holeshot
+360	
+361	
+362	
+363	
+364	
+365	
+366	
+367	
+368	Soleil noir
+369	Pression
+370	Vis gauche
+371	Coup droit
+372	
+373	
+374	Soleil noir
+375	Pas de côté
+376	Vis gauche
+377	Coup droit
+378	
+379	
+380	Soleil noir
+381	Implosion
+382	Vis gauche
+383	Coup droit
+384	
+385	
+386	
+387	
+388	
+389	
+390	
+391	
+392	
+393	
+394	
+395	
+396	
+397	
+398	Souffle explosif
+399	Fortifiant
+400	Coup de branche
+401	En morceaux
+402	
+403	
+404	Souffle rageur
+405	Fortifiant
+406	Coup de saule
+407	En miettes
+408	
+409	
+410	
+411	Cri de guerre
+412	Tir gagnant
+413	Charge
+414	
+415	
+416	
+417	Grondement
+418	Coup de maître
+419	Percée
+420	
+421	
+422	
+423	Ciel rouge
+424	Souffle ardent
+425	Écartement
+426	
+427	
+428	
+429	Ciel blanc
+430	Souffle glacé
+431	Mise à terre
+432	
+433	
+434	Goulée
+435	Forte collision
+436	Décapitation
+437	Frappe au sol
+438	
+439	
+440	Goulée
+441	Fort écrasement
+442	Guillotine
+443	Frappe à terre
+444	
+445	
+446	Aide céleste
+447	Foule de champis
+448	Châtiment implacable
+449	Fulmination
+450	
+451	
+452	Aide vitale
+453	Bagarre de champis
+454	Châtiment implacable
+455	Fureur
+456	
+457	
+458	
+459	Tournoiement blanc
+460	Labour
+461	Mort rouge
+462	
+463	
+464	
+465	Tournoiement rouge
+466	Sillon
+467	Mort violette
+468	
+469	
+470	Appel du gardien
+471	Admission
+472	Balayage
+473	Caillage
+474	
+475	
+476	Appel du garde
+477	Admission
+478	Balayage
+479	Caillage
+480	
+481	
+482	Impitoyable
+483	Tournoiement tempête
+484	Fuseau brûlant
+485	Conte de mort
+486	
+487	
+488	Impitoyable
+489	Morsure de squale
+490	Tige d'ouragan
+491	Brise-galiote
+492	
+493	
+494	Bo-pi
+495	Rugissement
+496	Morsure profonde
+497	Chemin douloureux
+498	
+499	
+500	Coucou
+501	Rugissement furieux
+502	Morsure fatale
+503	Voyage douloureux
+504	
+505	
+506	Régénération
+507	Sang répandu
+508	Fendoir mortel
+509	Purgatoire
+510	
+511	
+512	Défrichage
+513	Sang répandu
+514	Triple coup
+515	Canicule
+516	
+517	
+518	
+519	
+520	
+521	
+522	
+523	
+524	
+525	
+526	
+527	
+528	
+529	
+530	
+531	
+532	
+533	
+534	
+535	
+536	
+537	
+538	
+539	
+540	
+541	
+542	Deus Ex Machina
+543	Présence malsaine
+544	J'accuse
+545	Odeur de sang
+546	
+547	
+548	
+549	
+550	
+551	
+552	
+553	
+554	Pouvoir spirituel
+555	Enlacement démoniaque
+556	Méga purée
+557	Jeté géant
+558	
+559	
+560	Pouvoir spirituel
+561	Enlacement démoniaque
+562	Méga purée
+563	Jeté géant
+564	
+565	
+566	Grand venin
+567	Éruption infernale
+568	Bombardement
+569	Fer de lance
+570	
+571	
+572	
+573	Aure Dominium
+574	Concussion volcanique
+575	Chute apocalyptique
+576	
+577	
+578	Pala
+579	Applaudissement sonique
+580	Orzel Bialy
+581	Nimbostratus
+582	
+583	
+584	Stimulant
+585	Tournoiement tempête
+586	Fuseau brûlant
+587	Conte de mort
+588	
+589	
+590	Stimulant
+591	Tournoiement tempête
+592	Fuseau brûlant
+593	Conte de mort
+594	
+595	
+596	
+597	Coup étouffant
+598	Incinération
+599	Queue cinglante
+600	
+601	
+602	Grand venin
+603	Éruption infernale
+604	Bombardement
+605	Fer de lance
+606	
+607	
+608	Boyau
+609	
+610	
+611	
+612	
+613	
+614	Boyau
+615	
+616	
+617	
+618	
+619	
+620	Saletés
+621	Saletés
+622	Saletés
+623	Saletés
+624	Saletés
+625	Saletés
+626	Saletés
+627	Saletés
+628	Saletés
+629	Saletés
+630	Saletés
+631	Saletés
+632	Saletés
+633	Saletés
+634	Saletés
+635	Saletés
+636	Saletés
+637	Saletés
+638	Saletés
+639	
+640	
+641	
+642	Boyau
+643	Boyau
+644	
+645	
+646	
+647	
+648	
+649	
+650	
+651	
+652	
+653	
+654	
+655	
+656	
+657	
+658	
+659	
+660	
+661	
+662	
+663	
+664	
+665	
+666	
+667	
+668	
+669	
+670	
+671	
+672	
+673	
+674	
+675	
+676	
+677	
+678	
+679	
+680	
+681	
+682	
+683	
+684	
+685	
+686	
+687	
+688	
+689	
+690	Sur les trois cents
+691	
+692	Sur les six cents
+693	
+694	Sur les douze cents
+695	
+696	
+697	
+698	
+699	
+700	
+701	
+702	Massue maudite
+703	
+704	Massue maudite
+705	
+706	Massue maudite
+707	
+708	Ombre constante
+709	
+710	Ombre constante
+711	
+712	Lumière constante
+713	
+714	
+715	
+716	
+717	
+718	
+719	
+720	Poing fermé
+721	Entaille inégale
+722	Poing d'acier
+723	Entaille éparse
+724	Poing puissant
+725	Entaille éclatante
+726	
+727	
+728	
+729	
+730	
+731	
+732	
+733	
+734	
+735	
+736	
+737	
+738	
+739	
+740	
+741	
+742	
+743	
+744	
+745	
+746	
+747	
+748	
+749	
+750	
+751	
+752	
+753	
+754	
+755	
+756	
+757	
+758	
+759	
+760	
+761	
+762	
+763	
+764	
+765	
+766	
+767	
+768	
+769	
+770	
+771	
+772	
+773	
+774	
+775	
+776	
+777	
+778	
+779	
+780	
+781	
+782	
+783	
+784	
+785	
+786	
+787	
+788	Souche
+789	
+790	Lourde souche
+791	
+792	Étreinte
+793	
+794	Étreinte
+795	
+796	
+797	
+798	
+799	
+800	
+801	
+802	
+803	
+804	
+805	
+806	
+807	
+808	Deus Ex Machina
+809	
+810	
+811	
+812	
+813	
+814	
+815	
+816	
+817	
+818	
+819	
+820	Dur tourment
+821	
+822	Truc
+823	Zamrazac
+824	ENWaza825_France
+825	ENWaza826_France
+826	ENWaza827_France
+827	ENWaza828_France
+828	ENWaza829_France
+829	ENWaza830_France
+830	ENWaza831_France
+831	ENWaza832_France
+832	ENWaza833_France
+833	ENWaza834_France
+834	ENWaza835_France
+835	ENWaza836_France
+836	ENWaza837_France
+837	ENWaza838_France
+838	ENWaza839_France
+839	ENWaza840_France
+840	ENWaza841_France
+841	ENWaza842_France
+842	ENWaza843_France
+843	ENWaza844_France
+844	ENWaza845_France
+845	ENWaza846_France
+846	ENWaza847_France
+847	ENWaza848_France
+[ITA]
+0	
+1	
+2	Guarigione de l'Opera
+3	Spirale de l'Opera
+4	Alito de l'Opera 
+5	Tornado de l'Opera
+6	
+7	
+8	Guarigione generale
+9	Spirale generale
+10	Alito generale
+11	Tornado generale
+12	
+13	
+14	Guarigione portatrice
+15	Spirale portatrice
+16	Alito portatore
+17	Tornado portatore
+18	
+19	
+20	
+21	Norther
+22	Pressa-valanghe
+23	Coda eretta
+24	
+25	
+26	
+27	Melma
+28	Squoti-terra
+29	Coda lunga
+30	
+31	
+32	
+33	Grumo di fornace
+34	Rompi-crosta
+35	Coda ardente
+36	
+37	
+38	
+39	Cerchio lavico
+40	Stoccata lavica
+41	Fuoco lavico
+42	
+43	
+44	
+45	Cerchio nero
+46	Stoccata nera
+47	Fuoco nero
+48	
+49	
+50	
+51	Cerchio dell'anima
+52	Stoccata dell'anima
+53	Fuoco dell'anima
+54	
+55	
+56	Guarigione dei ratti
+57	Stilla di fogna
+58	Carica dei ratti
+59	Riduci-aria
+60	
+61	
+62	Guarigione dei ratti
+63	Stilla furtiva
+64	Carica dei ratti
+65	Disperdi-oscurità
+66	
+67	
+68	Guarigione dei ratti
+69	Stilla di ghiaccio
+70	Carica dei ratti
+71	Disperdi-nebbia
+72	
+73	
+74	
+75	Vampa di potere
+76	Alito gelido
+77	Vortice gelido
+78	
+79	
+80	
+81	Vampa di potere
+82	Alito sepolto
+83	Vortice malsano
+84	
+85	
+86	
+87	Vampa di potere
+88	Alito affannoso
+89	Vortice soffiante
+90	
+91	
+92	Sussurro
+93	Palma ardente
+94	Caduta di cocco
+95	Alito misero
+96	
+97	
+98	Sussurro
+99	Bulbo esplosivo
+100	Caduta d'aglio
+101	Sbuffo disperdente
+102	
+103	
+104	Sussurro
+105	Cipolla ardente
+106	Caduta di cipolla
+107	Sbuffo di cipolla
+108	
+109	
+110	Oscura-sole
+111	Gas rovente
+112	Ultra-rotazione
+113	Missile vulcanico
+114	
+115	
+116	Ombra profonda
+117	Pietra abissale
+118	Rivoluzione ardente
+119	Roccia antica
+120	
+121	
+122	Ombra profonda
+123	Stilla base
+124	Grande rivoluzione
+125	Spray immobilizzante
+126	
+127	
+128	Incoraggia
+129	Lampo di piuma
+130	Assembla
+131	Carica dei Trecento
+132	
+133	
+134	Incoraggia
+135	Esplosione di piuma
+136	Cabriole
+137	Carica dei Seicento
+138	
+139	
+140	Incoraggia
+141	Impulso di piuma
+142	Ballotte
+143	Carica dei Milleduecento
+144	
+145	
+146	Viva
+147	Schiaccianoci
+148	Trafiggi
+149	Velenoso
+150	
+151	
+152	Viva
+153	Frantuma-rocce
+154	Tortura
+155	Virulento
+156	
+157	
+158	Viva
+159	Separa canale
+160	Tormenta
+161	Velenoso
+162	
+163	
+164	Invita
+165	Sottrai vita
+166	Spirito
+167	Colpo mortale
+168	
+169	
+170	Invita
+171	Sottrai energia
+172	Spectera
+173	Esegui
+174	
+175	
+176	Invita
+177	Sottrai vigore
+178	Visitantia
+179	Punizione capitale
+180	
+181	
+182	Capriola di tallone
+183	Supersonico
+184	Tuffo d'anca
+185	Fremito notturno
+186	
+187	
+188	Capriola di tallone
+189	Onda sonica
+190	Tuffo di coda
+191	Fremito
+192	
+193	
+194	Capriola di tallone
+195	Suono assassino
+196	Tuffo nel folto
+197	Tremito alpino
+198	
+199	
+200	Vita di germe
+201	Spargi-veleno
+202	Imbroglia
+203	Cento attacchi
+204	
+205	
+206	Verità di germe
+207	Spargi-veleno
+208	Spira avvolgente
+209	Mille attacchi
+210	
+211	
+212	Potere di germe
+213	Spargi-spore
+214	Avvolgi
+215	Dieci attacchi
+216	
+217	
+218	Slancio
+219	Potere dello spirito
+220	Nocca di mare
+221	Sciabola crudele
+222	
+223	
+224	Esposizione
+225	Potere dello spirito
+226	Spirito ferreo
+227	Spirito disperdente
+228	
+229	
+230	Lancia
+231	Potere dello spirito
+232	Spirito ferreo
+233	Spirito dirompente
+234	
+235	
+236	
+237	Riparatore
+238	Attacco
+239	A terra
+240	
+241	
+242	
+243	Riparatore
+244	Zanoska
+245	Tour
+246	
+247	
+248	
+249	Riparatore
+250	Battu
+251	An Tournant
+252	
+253	
+254	
+255	Raggio del veggente
+256	Pugno di ferro
+257	Schiaffo bionico
+258	
+259	
+260	
+261	Raggio dello scrutatore
+262	Pugno di Dio
+263	Ceffone bionico
+264	
+265	
+266	
+267	Raggio del Guardiano
+268	Pugno destro
+269	Diretto bionico
+270	
+271	
+272	
+273	Onda di marea
+274	Rovesciamento
+275	Maglio azzurro
+276	
+277	
+278	
+279	Spinta della marea
+280	Rovesciamento
+281	Maglio pallido
+282	
+283	
+284	
+285	Sconfitta
+286	Rovesciamento
+287	Maglio dorato
+288	
+289	
+290	
+291	Colpo strangolante
+292	Incenerisci
+293	Coda a frusta
+294	
+295	
+296	
+297	Colpo soffocante
+298	Incenerisci
+299	Coda a frusta
+300	
+301	
+302	
+303	Colpo asfissiante
+304	Incenerisci
+305	Coda a frusta
+306	
+307	
+308	
+309	Acclamazione
+310	Proiettile di cannone
+311	Sfondamento
+312	
+313	
+314	
+315	Acclamazione
+316	Esplosione
+317	Sfondamento
+318	
+319	
+320	
+321	Acclamazione
+322	Bomba volante
+323	Furia
+324	
+325	
+326	Sole oscuro
+327	Popper
+328	Spirale destra
+329	Colpo sinistro
+330	
+331	
+332	Sole oscuro
+333	Attacco radente
+334	Spirale destra
+335	Colpo sinistro
+336	
+337	
+338	Sole oscuro
+339	Implosione
+340	Spirale destra
+341	Colpo sinistro
+342	
+343	
+344	
+345	
+346	Devastazione
+347	Furia
+348	
+349	
+350	
+351	
+352	Taglia gola
+353	Ruota di grasso
+354	
+355	
+356	
+357	
+358	Circolare
+359	Tiro mirato
+360	
+361	
+362	
+363	
+364	
+365	
+366	
+367	
+368	Sole oscuro
+369	Popper
+370	Spirale sinistra
+371	Colpo destro
+372	
+373	
+374	Sole oscuro
+375	Attacco radente
+376	Spirale sinistra
+377	Colpo destro
+378	
+379	
+380	Sole oscuro
+381	Implosione
+382	Spirale sinistra
+383	Colpo destro
+384	
+385	
+386	
+387	
+388	
+389	
+390	
+391	
+392	
+393	
+394	
+395	
+396	
+397	
+398	Alito esplosivo
+399	Risanante
+400	Attacco secondario
+401	Taglia in metri
+402	
+403	
+404	Alito furioso
+405	Risanante
+406	Attacco del salice
+407	Taglia in centimetri
+408	
+409	
+410	
+411	Grido di guerra
+412	Colpo vincente
+413	Carica
+414	
+415	
+416	
+417	Rombo
+418	Colpo vincente
+419	Sfondamento
+420	
+421	
+422	
+423	Paradiso rosso
+424	Alito ardente
+425	Sbaraglia
+426	
+427	
+428	
+429	Paradiso bianco
+430	Alito gelido
+431	Atterramento
+432	
+433	
+434	Un sol colpo
+435	Catastrofe
+436	Decapita
+437	Attacco di terra
+438	
+439	
+440	Un sol colpo
+441	Frantumazione
+442	Ghigliottina
+443	Attacco della terra
+444	
+445	
+446	Aiuto del paradiso
+447	Festa del fungo
+448	Punizione inevitabile
+449	Fumo collerico
+450	
+451	
+452	Vita di aiuto
+453	Rissa del fungo
+454	Punizione inevitabile
+455	Bube collerica
+456	
+457	
+458	
+459	Turbine bianco
+460	Aratro
+461	Morte rossa
+462	
+463	
+464	
+465	Turbine rosso
+466	Solco
+467	Morte viola
+468	
+469	
+470	Richiamo del guardiano
+471	Aspirazione
+472	Spazzamento
+473	Coagulazione
+474	
+475	
+476	Richiamo del custode
+477	Aspirazione
+478	Spazzamento
+479	Coagulazione
+480	
+481	
+482	Angosciante
+483	Turbine tempestoso
+484	Fuso ardente
+485	Leggenda di morte
+486	
+487	
+488	Angosciante
+489	Morso di squalo
+490	Asta dell'uragano
+491	Bordata sfondante
+492	
+493	
+494	Bo-Peep
+495	Ruggisci
+496	Morso profondo
+497	Sentiero del dolore
+498	
+499	
+500	Peek-a-Boo
+501	Ruggito maligno
+502	Morso fatale
+503	Viaggio nel dolore
+504	
+505	
+506	Rigenera
+507	Pozzo di sangue
+508	Fendente mortale
+509	Purgatorio
+510	
+511	
+512	Recupera
+513	Pozzo di sangue
+514	Artiglio falciante
+515	Ustionante
+516	
+517	
+518	
+519	
+520	
+521	
+522	
+523	
+524	
+525	
+526	
+527	
+528	
+529	
+530	
+531	
+532	
+533	
+534	
+535	
+536	
+537	
+538	
+539	
+540	
+541	
+542	Deus Ex Machina
+543	Presenza immonda
+544	J'accuse
+545	Profumo di sangue
+546	
+547	
+548	
+549	
+550	
+551	
+552	
+553	
+554	Potere dello spirito
+555	Abbraccio demoniaco
+556	Mega-miscuglio
+557	Colpo gigantesco
+558	
+559	
+560	Potere dello spirito
+561	Abbraccio demoniaco
+562	Mega-miscuglio
+563	Colpo gigantesco
+564	
+565	
+566	Veleno forte
+567	Eruzione infernale
+568	Bombardamento
+569	Punta-di-Lancia
+570	
+571	
+572	
+573	Dominio dell'aura
+574	Scossa vulcanica
+575	Caduta apocalittica
+576	
+577	
+578	Pala
+579	Applauso Sonico
+580	Orzel Bialy
+581	Nembostrato
+582	
+583	
+584	Stimolante
+585	Turbine tempestoso
+586	Fuso ardente
+587	Leggenda di morte
+588	
+589	
+590	Stimolante
+591	Turbine tempestoso
+592	Fuso ardente
+593	Leggenda di morte
+594	
+595	
+596	
+597	Tempesta di polvere
+598	Incenerisci
+599	Coda a frusta
+600	
+601	
+602	Veleno potente
+603	Eruzione infernale
+604	Bombardamento
+605	Punta-di-Lancia
+606	
+607	
+608	Interiora
+609	
+610	
+611	
+612	
+613	
+614	Interiora
+615	
+616	
+617	
+618	
+619	
+620	Coraggio
+621	
+622	
+623	
+624	
+625	
+626	Coraggio
+627	
+628	
+629	
+630	
+631	
+632	Coraggio
+633	
+634	
+635	
+636	
+637	
+638	Coraggio
+639	
+640	
+641	
+642	Interiora
+643	Interiora
+644	
+645	
+646	
+647	
+648	
+649	
+650	
+651	
+652	
+653	
+654	
+655	
+656	
+657	
+658	
+659	
+660	
+661	
+662	
+663	
+664	
+665	
+666	
+667	
+668	
+669	
+670	
+671	
+672	
+673	
+674	
+675	
+676	
+677	
+678	
+679	
+680	
+681	
+682	
+683	
+684	
+685	
+686	
+687	
+688	
+689	
+690	Carica dei Trecento
+691	
+692	Carica dei Seicento
+693	
+694	Carica dei Milleduecento
+695	
+696	
+697	
+698	
+699	
+700	
+701	
+702	Mazza stregata
+703	
+704	Mazza stregata
+705	
+706	Mazza stregata
+707	
+708	Ombra costante
+709	
+710	Ombra costante
+711	
+712	Splendore costante
+713	
+714	
+715	
+716	
+717	
+718	
+719	
+720	Pugno chiuso
+721	Fendente irregolare
+722	Pugno d'acciaio
+723	Colpo disperdente
+724	Pugno possente
+725	Fendente dirompente
+726	
+727	
+728	
+729	
+730	
+731	
+732	
+733	
+734	
+735	
+736	
+737	
+738	
+739	
+740	
+741	
+742	
+743	
+744	
+745	
+746	
+747	
+748	
+749	
+750	
+751	
+752	
+753	
+754	
+755	
+756	
+757	
+758	
+759	
+760	
+761	
+762	
+763	
+764	
+765	
+766	
+767	
+768	
+769	
+770	
+771	
+772	
+773	
+774	
+775	
+776	
+777	
+778	
+779	
+780	
+781	
+782	
+783	
+784	
+785	
+786	
+787	
+788	Ceppo
+789	
+790	Ceppo pesante
+791	
+792	Avvolgi
+793	
+794	Avvolgi
+795	
+796	
+797	
+798	
+799	
+800	
+801	
+802	
+803	
+804	
+805	
+806	
+807	
+808	Deus Ex Machina
+809	
+810	
+811	
+812	
+813	
+814	
+815	
+816	
+817	
+818	
+819	
+820	Tormento severo
+821	
+822	Truc
+823	Zamrazac
+824	ENWaza825_Itary
+825	ENWaza826_Itary
+826	ENWaza827_Itary
+827	ENWaza828_Itary
+828	ENWaza829_Itary
+829	ENWaza830_Itary
+830	ENWaza831_Itary
+831	ENWaza832_Itary
+832	ENWaza833_Itary
+833	ENWaza834_Itary
+834	ENWaza835_Itary
+835	ENWaza836_Itary
+836	ENWaza837_Itary
+837	ENWaza838_Itary
+838	ENWaza839_Itary
+839	ENWaza840_Itary
+840	ENWaza841_Itary
+841	ENWaza842_Itary
+842	ENWaza843_Itary
+843	ENWaza844_Itary
+844	ENWaza845_Itary
+845	ENWaza846_Itary
+846	ENWaza847_Itary
+847	ENWaza848_Itary
+[DEU]
+0	
+1	
+2	Opernheilung
+3	Opernschraube
+4	Opernhauch
+5	Operntornado
+6	
+7	
+8	Generalheilung
+9	Generalschraube
+10	Generalhauch
+11	Generaltornado
+12	
+13	
+14	Trägerheilung
+15	Trägerschraube
+16	Trägerhauch
+17	Trägertornado
+18	
+19	
+20	
+21	Norder
+22	Lawinenpresse
+23	Brettschwanz
+24	
+25	
+26	
+27	Klatscher
+28	Erdrüttler
+29	Langschwanz
+30	
+31	
+32	
+33	Ofenpellet
+34	Krustenkracher
+35	Feuerschwanz
+36	
+37	
+38	
+39	Lavakreis
+40	Lavastich
+41	Lavafeuer
+42	
+43	
+44	
+45	Schwarzer Kreis
+46	Schwarzer Stich
+47	Schwarzes Feuer
+48	
+49	
+50	
+51	Seelenkreis
+52	Seelenstich
+53	Seelenfeuer
+54	
+55	
+56	Rattenheilung
+57	Kanalabwurf
+58	Rattensturm
+59	Luftschrumpfer
+60	
+61	
+62	Rattenheilung
+63	Schleichabwurf
+64	Rattensturm
+65	Dunkelschrumpfer
+66	
+67	
+68	Rattenheilung
+69	Eiszapfenabwurf
+70	Rattensturm
+71	Nebelschrumpfer
+72	
+73	
+74	
+75	Glut der Kraft
+76	Eishauch
+77	Kältevortex
+78	
+79	
+80	
+81	Glut der Kraft
+82	Grabeshauch
+83	Böser Vortex
+84	
+85	
+86	
+87	Glut der Kraft
+88	Trübnishauch
+89	Blasevortex
+90	
+91	
+92	Murmeln
+93	Lodernde Handfläche
+94	Kokosfall
+95	Schimmelhauch
+96	
+97	
+98	Murmeln
+99	Platzknolle
+100	Knoblauchfall
+101	Streurülpser
+102	
+103	
+104	Murmeln
+105	Brandzwiebel
+106	Zwiebelfall
+107	Zwiebelrülpser
+108	
+109	
+110	Untersonne
+111	Heizgas
+112	Ultra-Wirbel
+113	Vulkangeschoss
+114	
+115	
+116	Schattentiefe
+117	Abgrundstein
+118	Feuer-Revolution
+119	Uralter Stein
+120	
+121	
+122	Schattentiefe
+123	Basisabwurf
+124	Große Revolution
+125	Stagnationsspray
+126	
+127	
+128	Ermutigung
+129	Federfackel
+130	Zusammensetzen
+131	Ritt der Dreihundert
+132	
+133	
+134	Ermutigung
+135	Federstoß
+136	Kapriole
+137	Ritt der Sechshundert
+138	
+139	
+140	Ermutigung
+141	Federknall
+142	Ballotte
+143	Ritt der Zwölfhundert
+144	
+145	
+146	Viva
+147	Nußknacker
+148	Piercing
+149	Giftalarm
+150	
+151	
+152	Viva
+153	Felsenschmetterer
+154	Marter
+155	Virulenz
+156	
+157	
+158	Viva
+159	Kanalteiler
+160	Agonie
+161	Toxizität
+162	
+163	
+164	Einladung
+165	Lebensklau
+166	Spiritus
+167	Todesstoß
+168	
+169	
+170	Einladung
+171	Energieklau
+172	Spectera
+173	Exekution
+174	
+175	
+176	Einladung
+177	Kraftklau
+178	Visitantia
+179	Todesurteil
+180	
+181	
+182	Purzelferse
+183	Überschall
+184	Hüftschwung
+185	Nachtflatter
+186	
+187	
+188	Purzelferse
+189	Schallwelle
+190	Schwanzschwung
+191	Flatter
+192	
+193	
+194	Purzelferse
+195	Schallknall
+196	Bürstenschwung
+197	Albflatter
+198	
+199	
+200	Leben des Keims
+201	Giftschleuder
+202	Verhedderung
+203	Hundert Schläge
+204	
+205	
+206	Wahrheit des Keims
+207	Toxinschleuder
+208	Wickelspule
+209	Tausend Schläge
+210	
+211	
+212	Macht des Keims
+213	Sporenschleuder
+214	Windung
+215	Zehn Schläge
+216	
+217	
+218	Rausch
+219	Macht des Geistes
+220	Meereskopfnuss
+221	Grausamer Säbel
+222	
+223	
+224	Aussetzung
+225	Macht des Geistes
+226	Eisenseele
+227	Streuseele
+228	
+229	
+230	Weitwurf
+231	Macht des Geistes
+232	Kraftseele
+233	Splitterseele
+234	
+235	
+236	
+237	Reparer
+238	Schlag
+239	Bodenklatscher
+240	
+241	
+242	
+243	Reparer
+244	Zanoska
+245	Tour
+246	
+247	
+248	
+249	Reparer
+250	Battu
+251	En Tournant
+252	
+253	
+254	
+255	Strahl des Sehers
+256	Eisenfaust
+257	Hebelklaps
+258	
+259	
+260	
+261	Strahl des Betrachters
+262	Gottesfaust
+263	Hebelschlag
+264	
+265	
+266	
+267	Strahl des Wächters
+268	Rechte Faust
+269	Hebelklatscher
+270	
+271	
+272	
+273	Gezeitenwelle
+274	Umsturz
+275	Himmelblaue Ramme
+276	
+277	
+278	
+279	Tidenhub
+280	Umsturz
+281	Fahle Ramme
+282	
+283	
+284	
+285	Debakel
+286	Umsturz
+287	Goldene Ramme
+288	
+289	
+290	
+291	Würgeschlag
+292	Zündler
+293	Geißelschwanz
+294	
+295	
+296	
+297	Dämpfungsschlag
+298	Zündler
+299	Geißelschwanz
+300	
+301	
+302	
+303	Erstickungsschlag
+304	Zündler
+305	Geißelschwanz
+306	
+307	
+308	
+309	Jubel
+310	Mörsergranate
+311	Umsturz
+312	
+313	
+314	
+315	Jubel
+316	Explosion
+317	Umsturz
+318	
+319	
+320	
+321	Jubel
+322	Brummerwurf
+323	Amok
+324	
+325	
+326	Dunkle Sonne
+327	Popper
+328	Schraube rechts
+329	Schlag links
+330	
+331	
+332	Dunkle Sonne
+333	Strafe
+334	Schraube rechts
+335	Schlag links
+336	
+337	
+338	Dunkle Sonne
+339	Implosion
+340	Schraube rechts
+341	Schlag links
+342	
+343	
+344	
+345	
+346	Schmetter
+347	Amok
+348	
+349	
+350	
+351	
+352	Backenschlitzer
+353	Fettrad
+354	
+355	
+356	
+357	
+358	Zirkel
+359	Lochtreffer
+360	
+361	
+362	
+363	
+364	
+365	
+366	
+367	
+368	Dunkle Sonne
+369	Popper
+370	Schraube links
+371	Schlag rechts
+372	
+373	
+374	Dunkle Sonne
+375	Strafe
+376	Schraube links
+377	Schlag rechts
+378	
+379	
+380	Dunkle Sonne
+381	Implosion
+382	Schraube links
+383	Schlag rechts
+384	
+385	
+386	
+387	
+388	
+389	
+390	
+391	
+392	
+393	
+394	
+395	
+396	
+397	
+398	Explosionshauch
+399	Restorativ
+400	Asthieb
+401	Zerkleinern
+402	
+403	
+404	Zorneshauch
+405	Restorativ
+406	Weidenhieb
+407	Zerstückeln
+408	
+409	
+410	
+411	Kampfschrei
+412	Siegestreffer
+413	Ansturm
+414	
+415	
+416	
+417	Rumpler
+418	Siegestreffer
+419	Durchbruch
+420	
+421	
+422	
+423	Roter Himmel
+424	Feuerhauch
+425	Abschlag
+426	
+427	
+428	
+429	Weißer Himmel
+430	Eishauch
+431	Niederschlag
+432	
+433	
+434	Ein Schluck
+435	Großer Schmetter
+436	Enthauptung
+437	Bodenschlag
+438	
+439	
+440	Ein Schluck
+441	Große Quetsche
+442	Guillotine
+443	Erdschlag
+444	
+445	
+446	Himmelhilf
+447	Pilzparty
+448	Gerechte Strafe
+449	Kollerdampf
+450	
+451	
+452	Lebenshilfe
+453	Pilzkeilerei
+454	Gerechte Strafe
+455	Kollerpower
+456	
+457	
+458	
+459	Weißer Strudel
+460	Pflug
+461	Roter Tod
+462	
+463	
+464	
+465	Roter Strudel
+466	Furche
+467	Lila Tod
+468	
+469	
+470	Ruf des Wärters
+471	Einnahme
+472	Kehrbesen
+473	Gerinnung
+474	
+475	
+476	Ruf des Bewachten
+477	Einnahme
+478	Kehrbesen
+479	Gerinnung
+480	
+481	
+482	Wehklage
+483	Sturmstrudel
+484	Brennende Spindel
+485	Totentanz
+486	
+487	
+488	Wehklage
+489	Haifischbiss
+490	Wirbelschaft
+491	Breitseite
+492	
+493	
+494	Lämmerschwanz
+495	Brüller
+496	Tiefer Biss
+497	Schmerzensausflug
+498	
+499	
+500	Kuckuck
+501	Böser Brüller
+502	Tödlicher Biss
+503	Schmerzensreise
+504	
+505	
+506	Regenerierung
+507	Aderlass
+508	Tödliche Spaltung
+509	Fegefeuer
+510	
+511	
+512	Rückforderung
+513	Aderlass
+514	Längsschnitt
+515	Hitzschlag
+516	
+517	
+518	
+519	
+520	
+521	
+522	
+523	
+524	
+525	
+526	
+527	
+528	
+529	
+530	
+531	
+532	
+533	
+534	
+535	
+536	
+537	
+538	
+539	
+540	
+541	
+542	Deus Ex Machina
+543	Üble Präsenz
+544	Ankläger
+545	Blutgeruch
+546	
+547	
+548	
+549	
+550	
+551	
+552	
+553	
+554	Macht des Geistes
+555	Dämonische Umarmung
+556	Mega-Matscher
+557	Riesige Sause
+558	
+559	
+560	Macht des Geistes
+561	Dämonische Umarmung
+562	Mega-Matscher
+563	Riesige Sause
+564	
+565	
+566	Giftbombe
+567	Höllenausbruch
+568	Bombardement
+569	Schwertstich
+570	
+571	
+572	
+573	Aurakontrolle
+574	Sturmdegen
+575	Apokalypsen-Fall
+576	
+577	
+578	Pala
+579	Schall-Applaus
+580	Orzel Bialy
+581	Nimbostratus
+582	
+583	
+584	Stimulanz
+585	Sturmstrudel
+586	Brennende Spindel
+587	Totenerzählung
+588	
+589	
+590	Stimulanz
+591	Sturmstrudel
+592	Brennende Spindel
+593	Totenerzählung
+594	
+595	
+596	
+597	Drosselschlag
+598	Zündler
+599	Geißelschwanz
+600	
+601	
+602	Giftbombe
+603	Höllenausbruch
+604	Bombardierung
+605	Schwertstich
+606	
+607	
+608	Tapferkeit
+609	
+610	
+611	
+612	
+613	
+614	Tapferkeit
+615	
+616	
+617	
+618	
+619	
+620	Zähigkeit
+621	
+622	
+623	
+624	
+625	
+626	Zähigkeit
+627	
+628	
+629	
+630	
+631	
+632	Zähigkeit
+633	
+634	
+635	
+636	
+637	
+638	Zähigkeit
+639	
+640	
+641	
+642	Tapferkeit
+643	Tapferkeit
+644	
+645	
+646	
+647	
+648	
+649	
+650	
+651	
+652	
+653	
+654	
+655	
+656	
+657	
+658	
+659	
+660	
+661	
+662	
+663	
+664	
+665	
+666	
+667	
+668	
+669	
+670	
+671	
+672	
+673	
+674	
+675	
+676	
+677	
+678	
+679	
+680	
+681	
+682	
+683	
+684	
+685	
+686	
+687	
+688	
+689	
+690	Ritt der Dreihundert
+691	
+692	Ritt der Sechshundert
+693	
+694	Ritt der Zwölfhundert
+695	
+696	
+697	
+698	
+699	
+700	
+701	
+702	Verfluchter Streitkolben
+703	
+704	Verfluchter Streitkolben
+705	
+706	Verfluchter Streitkolben
+707	
+708	Steter Schatten
+709	
+710	Steter Schatten
+711	
+712	Steter Schein
+713	
+714	
+715	
+716	
+717	
+718	
+719	
+720	Geschlossene Faust
+721	Unebenschnitt
+722	Stahlfaust
+723	Zerstreuschnitt
+724	Kraftfaust
+725	Splitterschnitt
+726	
+727	
+728	
+729	
+730	
+731	
+732	
+733	
+734	
+735	
+736	
+737	
+738	
+739	
+740	
+741	
+742	
+743	
+744	
+745	
+746	
+747	
+748	
+749	
+750	
+751	
+752	
+753	
+754	
+755	
+756	
+757	
+758	
+759	
+760	
+761	
+762	
+763	
+764	
+765	
+766	
+767	
+768	
+769	
+770	
+771	
+772	
+773	
+774	
+775	
+776	
+777	
+778	
+779	
+780	
+781	
+782	
+783	
+784	
+785	
+786	
+787	
+788	Stumpf
+789	
+790	Schwerer Stumpf
+791	
+792	Umfassung
+793	
+794	Umfassung
+795	
+796	
+797	
+798	
+799	
+800	
+801	
+802	
+803	
+804	
+805	
+806	
+807	
+808	Deus Ex Machina
+809	
+810	
+811	
+812	
+813	
+814	
+815	
+816	
+817	
+818	
+819	
+820	Schwere Pein
+821	
+822	Kniff
+823	Zamrazac
+824	ENWaza825_Germany
+825	ENWaza826_Germany
+826	ENWaza827_Germany
+827	ENWaza828_Germany
+828	ENWaza829_Germany
+829	ENWaza830_Germany
+830	ENWaza831_Germany
+831	ENWaza832_Germany
+832	ENWaza833_Germany
+833	ENWaza834_Germany
+834	ENWaza835_Germany
+835	ENWaza836_Germany
+836	ENWaza837_Germany
+837	ENWaza838_Germany
+838	ENWaza839_Germany
+839	ENWaza840_Germany
+840	ENWaza841_Germany
+841	ENWaza842_Germany
+842	ENWaza843_Germany
+843	ENWaza844_Germany
+844	ENWaza845_Germany
+845	ENWaza846_Germany
+846	ENWaza847_Germany
+847	ENWaza848_Germany
+[ESP]
+0	Cuchillada de lava
+1	Fuego de lava
+2	Cura de la Ópera
+3	Vuelta de la Ópera
+4	Aliento de la Ópera
+5	Tornado de la Ópera
+6	
+7	
+8	Cura general
+9	Vuelta general
+10	Aliento general
+11	Tornado general
+12	Cura del portador
+13	
+14	Cura del portador
+15	Tornillo del portador
+16	Aliento del portador
+17	Tornado del portador
+18	
+19	
+20	
+21	Norteño
+22	Prensa avalancha
+23	Cola tiesa
+24	
+25	
+26	
+27	Lodo
+28	Agitador
+29	Cola larga
+30	
+31	
+32	
+33	Perdigón caliente
+34	Rompe costras
+35	Cola feroz
+36	
+37	
+38	
+39	Círculo de lava
+40	Cuchillada de lava
+41	Fuego de lava
+42	
+43	
+44	
+45	Círculo negro
+46	Cuchillada negra
+47	Fuego negro
+48	
+49	
+50	
+51	Círculo del alma
+52	Cuchillada del alma
+53	Fuego del alma
+54	
+55	
+56	Cura de rata
+57	Gota de alcantarilla
+58	Carga de rata
+59	Encogeaire
+60	
+61	
+62	Cura de rata
+63	Gota sigilosa
+64	Carga de rata
+65	Encogeoscuridad
+66	
+67	
+68	Cura de rata
+69	Gota de carámbano
+70	Carga de rata
+71	Encogeniebla
+72	
+73	
+74	
+75	Explosión potente
+76	Aliento helado
+77	Vórtice frío
+78	
+79	
+80	
+81	Explosión potente
+82	Aliento enterrado
+83	Vórtice podrido
+84	
+85	
+86	
+87	Explosión potente
+88	Aliento empañado
+89	Vórtice de aire
+90	
+91	
+92	Murmuro
+93	Palma ardiente
+94	Cascada de coco
+95	Aliento mohoso
+96	
+97	
+98	Murmuro
+99	Bulbo repleto
+100	Cascada de ajo
+101	Eructo disperso
+102	
+103	
+104	Murmuro
+105	Cebolla ardiente
+106	Cascada de cebolla
+107	Eructo de cebolla
+108	
+109	
+110	Bajosol
+111	Gas de calor
+112	Ultra giro
+113	Misil volcánico
+114	
+115	
+116	Sombra profunda
+117	Piedra abismal
+118	Revolución feroz
+119	Roca antigua
+120	
+121	
+122	Sombra profunda
+123	Gota básica
+124	Gran revolución
+125	Spray de estancamiento
+126	
+127	
+128	Estimulante
+129	Bengala de plumas
+130	Montaje
+131	Corrió los trescientos
+132	
+133	
+134	Estimulante
+135	Explosión de plumas
+136	Cabriola
+137	Corrió los seiscientos
+138	
+139	
+140	Estimulante
+141	Estallido de plumas
+142	Ballotte
+143	Corrió los doce mil
+144	
+145	
+146	Viva
+147	Cascanueces
+148	Desgarrador
+149	Venenoso
+150	
+151	
+152	Viva
+153	Quebrantarocas
+154	Tortura
+155	Virulento
+156	
+157	
+158	Viva
+159	Divisor de canales
+160	Agonizar
+161	Ponzoñoso
+162	
+163	
+164	Invitación
+165	Robavidas
+166	Espirítus
+167	Golpe mortal
+168	
+169	
+170	Invitación
+171	Robaenergía
+172	Espectra
+173	Ejecución
+174	
+175	
+176	Invitación
+177	Robavigor
+178	Visitantia
+179	Pena capital
+180	
+181	
+182	Giro de talones
+183	Supersónico
+184	Zambullida chula
+185	Revoloteo nocturno
+186	
+187	
+188	Giro de talones
+189	Onda sónica
+190	Zambullida de cola
+191	Revoloteo
+192	
+193	
+194	Giro de talones
+195	Sónico asesino
+196	Zambullida pincelada
+197	Revoloteo alpino
+198	
+199	
+200	Vida de germen
+201	Dispersaveneno
+202	Enredo
+203	Cien ataques
+204	
+205	
+206	Verogermen
+207	Siembraponzoña
+208	Bobina loca
+209	Mil golpes
+210	
+211	
+212	Poder germen
+213	Siembraesporas
+214	Entretejido
+215	Diez ataques
+216	
+217	
+218	Ráfaga
+219	Poder espíritu
+220	Nudillo marino
+221	Alfanje de crueldad
+222	
+223	
+224	Al descubierto
+225	Poder espíritu
+226	Alma férrea
+227	Alma dispersa
+228	
+229	
+230	Poder espíritu
+231	Poder espíritu
+232	Alma potente
+233	Alma divisoria
+234	
+235	
+236	
+237	Reparador
+238	Ataque
+239	A tierra
+240	
+241	
+242	
+243	Reparador
+244	Zanoska
+245	Tour
+246	
+247	
+248	
+249	Reparador
+250	Battu
+251	Girado
+252	
+253	
+254	
+255	Rayo de profeta
+256	Puño férreo
+257	Robofetón
+258	
+259	
+260	
+261	Rayo de ojeador
+262	Puño divino
+263	Robocachete
+264	
+265	
+266	
+267	Rayo de observador
+268	Puño derecho
+269	Robomanotazo
+270	
+271	
+272	
+273	Aburrimiento monumental
+274	Vuelta de campana
+275	Embestida azul
+276	
+277	
+278	
+279	Tirón monumental
+280	Vuelta de campana
+281	Embestida blanca
+282	
+283	
+284	
+285	Debacle
+286	Vuelta de campana
+287	Embestida dorada
+288	
+289	
+290	
+291	Golpe de asfixia
+292	Incineración
+293	Coletazo
+294	
+295	
+296	
+297	Golpe ahogador
+298	Incineración
+299	Coletazo
+300	
+301	
+302	
+303	Golpe sofocante
+304	Incinerar
+305	Coletazo
+306	
+307	
+308	
+309	Ovación
+310	Proyectil de cañón
+311	Invasión
+312	
+313	
+314	
+315	Ovación
+316	Explosión
+317	Invasión
+318	
+319	
+320	
+321	Ovación
+322	Truñobomba
+323	Arrasando
+324	
+325	
+326	Sol oscuro
+327	Corchete
+328	Vuelta derecha
+329	Golpe de izquierda
+330	
+331	
+332	Sol oscuro
+333	Bombardeo
+334	Vuelta derecha
+335	Golpe de izquierda
+336	
+337	
+338	Sol oscuro
+339	Implosión
+340	Vuelta derecha
+341	Golpe de izquierda
+342	Zamrazac
+343	
+344	
+345	
+346	Estruendo
+347	Arrasando
+348	
+349	
+350	
+351	
+352	Rebanamofletes
+353	Rueda de grasa
+354	
+355	
+356	
+357	
+358	Circular
+359	Disparo certero
+360	
+361	
+362	
+363	
+364	
+365	
+366	
+367	
+368	Sol oscuro
+369	Corchete
+370	Vuelta izquierda
+371	Golpe de derecha
+372	
+373	
+374	Sol oscuro
+375	Bombardeo
+376	Vuelta izquierda
+377	Golpe de derecha
+378	
+379	
+380	Sol oscuro
+381	Implosión
+382	Vuelta izquierda
+383	Golpe de derecha
+384	
+385	
+386	
+387	
+388	
+389	
+390	
+391	
+392	
+393	
+394	
+395	
+396	
+397	
+398	Aliento explosivo
+399	Restaurador
+400	Ataque rama
+401	Picar en centímetros
+402	
+403	
+404	Aliento feroz
+405	Restaurador
+406	Ataque sauce
+407	Picar en milímetros
+408	
+409	
+410	
+411	Grito de guerra
+412	Cornada
+413	Carga
+414	
+415	
+416	
+417	Refriega
+418	Golpe ganador
+419	Gran avance
+420	
+421	
+422	
+423	Paraíso rojo
+424	Aliento abrasador
+425	Liquidación
+426	
+427	
+428	
+429	Paraíso blanco
+430	Aliento helado
+431	Caída
+432	
+433	
+434	Deuntrago
+435	Gran golpazo
+436	Decapitador
+437	Ataque por tierra
+438	
+439	
+440	Deuntrago
+441	Gran machaque
+442	Guillotina
+443	Ataque a tierra
+444	
+445	
+446	Graciasadios
+447	Fiesta de setas
+448	Castigo inevitable 
+449	Gases despendolados
+450	
+451	
+452	Salvavidas
+453	Gresca de setas
+454	Castigo inevitable 
+455	Despendole
+456	
+457	
+458	
+459	Remolino blanco
+460	Arado
+461	Muerte roja
+462	
+463	
+464	
+465	Remolino rojo
+466	Surco
+467	Muerte violeta
+468	
+469	
+470	Aviso del celador
+471	Ingesta
+472	Barrido
+473	Cuajo
+474	
+475	
+476	Aviso de la guardiana
+477	Ingesta
+478	Barrido
+479	Cuajo
+480	
+481	
+482	Implacable
+483	Remolino de tempestad
+484	Huso ardiendo
+485	Historia de muertos
+486	
+487	
+488	Implacable
+489	Mordisco de tiburón
+490	Eje del huracán
+491	Tiro pirata
+492	
+493	
+494	Bopi
+495	Rugido
+496	Mordisco profundo
+497	Viaje al dolor
+498	
+499	
+500	Cu-cú
+501	Rugido asqueroso
+502	Mordisco fatal
+503	Camino al dolor
+504	
+505	
+506	Regeneración
+507	Hundimiento sangriento
+508	Cuchillada mortal
+509	Purgatorio
+510	
+511	
+512	Reclamo
+513	Sangría
+514	Corte superior
+515	Abrasador
+516	
+517	
+518	
+519	
+520	
+521	
+522	
+523	
+524	
+525	
+526	
+527	
+528	
+529	
+530	
+531	
+532	
+533	
+534	
+535	
+536	
+537	
+538	
+539	
+540	
+541	
+542	Deus Ex Machina
+543	Presencia fétida
+544	Mea culpa
+545	Olor a sangre
+546	
+547	
+548	
+549	
+550	
+551	
+552	
+553	
+554	Poder del espíritu
+555	Abrazo demoníaco
+556	Mega aplastamiento
+557	Golpetazo gigante
+558	
+559	
+560	Poder del espíritu
+561	Abrazo demoníaco
+562	Mega aplastamiento
+563	Golpetazo gigante
+564	
+565	
+566	Gran veneno
+567	Erupción infernal
+568	Bombardeo
+569	Punta de lanza
+570	Dominio del aura
+571	
+572	
+573	Dominio del aura
+574	Conmoción volcánica
+575	Caída apocalíptica
+576	
+577	
+578	Pala
+579	Aplauso sónico
+580	Orzel Bialy
+581	Nimbostrato
+582	
+583	
+584	Estimulante
+585	Remolino de tempestad
+586	Huso ardiendo
+587	Historia de muertos
+588	
+589	
+590	Estimulante
+591	Remolino de tempestad
+592	Huso ardiendo
+593	Historia de muertos
+594	
+595	
+596	
+597	Incineración
+598	Incineración
+599	Coletazo
+600	
+601	
+602	Gran veneno
+603	Erupción infernal
+604	Bombardeo
+605	Punta de lanza
+606	
+607	
+608	Entrañas
+609	Entrañas
+610	
+611	
+612	
+613	
+614	Entrañas
+615	
+616	
+617	
+618	
+619	
+620	Agallas
+621	
+622	
+623	
+624	
+625	
+626	Agallas
+627	
+628	
+629	
+630	
+631	
+632	Agallas
+633	
+634	
+635	
+636	
+637	
+638	Agallas
+639	
+640	
+641	
+642	Entrañas
+643	Entrañas
+644	
+645	
+646	
+647	
+648	
+649	
+650	
+651	
+652	
+653	
+654	
+655	
+656	
+657	
+658	
+659	
+660	
+661	
+662	
+663	
+664	
+665	
+666	
+667	
+668	
+669	
+670	
+671	
+672	
+673	
+674	
+675	
+676	
+677	
+678	
+679	
+680	
+681	
+682	
+683	
+684	
+685	
+686	
+687	
+688	
+689	
+690	Corrió los trescientos
+691	
+692	Corrió los seiscientos
+693	
+694	Corrió los doce mil
+695	
+696	
+697	
+698	
+699	
+700	
+701	
+702	Laberinto maldito
+703	
+704	Laberinto maldito
+705	
+706	Laberinto maldito
+707	
+708	Sombra actual
+709	
+710	Sombra actual
+711	
+712	Brillo actual
+713	
+714	
+715	
+716	
+717	
+718	
+719	
+720	Puño cerrado
+721	Cuchillada desigual
+722	Puño de acero
+723	Cuchillada dispersa
+724	Puño potente
+725	Cuchillada divisoria
+726	
+727	
+728	
+729	
+730	
+731	
+732	
+733	
+734	
+735	
+736	
+737	
+738	
+739	
+740	
+741	
+742	
+743	
+744	
+745	
+746	
+747	
+748	
+749	
+750	
+751	
+752	
+753	
+754	
+755	
+756	
+757	
+758	
+759	
+760	
+761	
+762	
+763	
+764	
+765	
+766	
+767	
+768	
+769	
+770	
+771	
+772	
+773	
+774	
+775	
+776	
+777	
+778	
+779	
+780	
+781	
+782	
+783	
+784	
+785	
+786	
+787	
+788	Pisotón
+789	
+790	Pisotón fuerte
+791	
+792	Envolvente
+793	
+794	Envolvente
+795	
+796	
+797	
+798	
+799	
+800	
+801	
+802	
+803	
+804	
+805	
+806	
+807	
+808	Deus Ex Machina
+809	
+810	
+811	
+812	
+813	
+814	
+815	
+816	
+817	
+818	
+819	
+820	Tormento severo
+821	
+822	Truco
+823	Zamrazac
+824	ENWaza825_Spain
+825	ENWaza826_Spain
+826	ENWaza827_Spain
+827	ENWaza828_Spain
+828	ENWaza829_Spain
+829	ENWaza830_Spain
+830	ENWaza831_Spain
+831	ENWaza832_Spain
+832	ENWaza833_Spain
+833	ENWaza834_Spain
+834	ENWaza835_Spain
+835	ENWaza836_Spain
+836	ENWaza837_Spain
+837	ENWaza838_Spain
+838	ENWaza839_Spain
+839	ENWaza840_Spain
+840	ENWaza841_Spain
+841	ENWaza842_Spain
+842	ENWaza843_Spain
+843	ENWaza844_Spain
+844	ENWaza845_Spain
+845	ENWaza846_Spain
+846	ENWaza847_Spain
+847	ENWaza848_Spain

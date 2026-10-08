@@ -1,0 +1,1485 @@
+0x82031A00
+[JPN]
+0	
+1	アレグレット
+2	ポルカ
+3	ビート
+4	ショパン
+5	ビオラ
+6	サルサ
+7	ジルバ
+8	ファルセット
+9	クラベス
+10	マーチ
+11	<r>アレグレット
+12	<r>ポルカ
+13	<r>ビート
+14	<r>ショパン
+15	<r>ビオラ
+16	<r>サルサ
+17	<r>ジルバ
+18	<r>ファルセット
+19	<r>クラベス
+20	<r>マーチ
+21	トップページ
+22	アイテム
+23	ステータス
+24	必殺技
+25	装備
+26	スコアピース
+27	エネミーフォト
+28	並び替え
+29	パーティクラス
+30	セーブ
+31	システム
+32	ロード
+33	アイテムセット
+34	ショップ
+35	攻撃ボタン
+36	サウンド出力
+37	ボリューム調節
+38	ピアノ曲
+39	ミュージック
+40	バトルカメラ演出
+41	振動
+42	音声
+43	日本語
+44	英語
+45	設定
+46	キャラ選択
+47	TIME
+48	Golby
+49	PartyClass
+50	G
+51	Lv.
+52	コマンド選択
+53	戻る
+54	決定して戻る
+55	HP
+56	/
+57	Exp.
+58	Next
+59	決定
+60	使う
+61	アイテム選択
+62	入替え
+63	外す
+64	タブ変更
+65	ページ変更
+66	メニュー
+67	セット
+68	アイテムがありません
+69	Age.
+70	MaxHP.
+71	Atk.
+72	Trt.
+73	Def.
+74	Spd.
+75	武器
+76	鎧
+77	
+78	アクセサリ
+79	光必殺技
+80	闇必殺技
+81	あり
+82	なし
+83	Ⅰ
+84	Ⅱ
+85	次のキャラ
+86	前のキャラ
+87	キャラ変更
+88	
+89	パーティクラス選択
+90	シンキングタイム
+91	行動時間
+92	必殺技装備
+93	反撃
+94	移動速度
+95	コマンド入れ替わり
+96	ハーモニーチェイン
+97	Lv.1
+98	Lv.2
+99	Lv.3
+100	Lv.4
+101	Lv.5
+102	Lv.6
+103	無限
+104	５秒
+105	４秒
+106	３秒
+107	１秒
+108	２箇所
+109	４箇所
+110	ストップ・５秒
+111	リアルタイム・５秒
+112	リアルタイム・４秒
+113	不可
+114	可能
+115	必殺技も可能
+116	通常
+117	１．５倍
+118	２チェイン
+119	３チェイン
+120	６チェイン
+121	変化
+122	ページ
+123	前ページ
+124	次ページ
+125	選択
+126	ヘルプ
+127	演奏
+128	セーブデータ数
+129	変更
+130	ＯＮ
+131	ＯＦＦ
+132	Ａボタン
+133	Ｂボタン
+134	ステレオ
+135	モノラル
+136	５．１chサラウンド
+137	バトル時の\n操作コントローラー
+138	プレイヤー１
+139	プレイヤー２
+140	プレイヤー３
+141	NO.１
+142	NO.２
+143	NO.３
+144	SE
+145	ボイス
+146	×
+147	－
+148	＋
+149	所持数
+150	キャンセル
+151	アイテムを買う
+152	アイテムを売る
+153	写真を売る
+154	やめる
+155	試す
+156	合計
+157	残数
+158	演奏
+159	停止
+160	イベントシーン
+161	フィールド
+162	バトル
+163	写真選択
+164	捨てる
+165	最高
+166	選択した写真を捨てます\n<l20>よろしいですか？\n<l5><a1>はい\n<a2>いいえ<Q1>
+167	演奏
+168	<g>スコアピースを持っていません
+169	アンロックキー確認
+170	防具
+171	装飾品
+172	貴重品
+173	新規入手
+174	全体
+175	消費
+176	購入します。よろしいですか？
+177	売却します。よろしいですか？
+178	はい
+179	いいえ
+180	写真を所持していません。
+181	アイテムを所持していません。
+182	サインインの状態が変更されました。\nタイトル画面に戻ります。
+183	Aランク！！
+184	 Bランク 
+185	Cラン<m4>ク……
+186	Dランク！
+187	このスコアピースでセッションします。\nよろしいですか?
+188	<g><m2>トップページ
+189	<g><m2>アイテム
+190	<g><m2>アイテムセット
+191	<g><m2>ステータス
+192	<g><m2>パーティクラス
+193	<g><m2>スコアピース
+194	<g><m2>エネミーフォト
+195	<g><m2>ピアノ曲
+196	<g><m2>ミュージック
+197	<g><m2>設定
+198	<g><m2>セーブ
+199	<g><m2>ロード
+200	<g><m2>ショップ
+201	字幕
+202	チェック
+203	試聴
+204	ただいまの評<m4>価……
+205	はい\nいいえ
+206	NO.４
+207	撮影失敗
+208	選択した写真を売却します\n<l20>よろしいですか？\n<l5><a1>はい\n<a2>いいえ<Q1>
+209	PP
+210	NO.
+[USA]
+0	
+1	Allegretto
+2	Polka
+3	Beat
+4	Frederic
+5	Viola
+6	Salsa
+7	Jazz
+8	Falsetto
+9	Claves
+10	March
+11	<r>Allegretto
+12	<r>Polka
+13	<r>Beat
+14	<r>Frederic
+15	<r>Viola
+16	<r>Salsa
+17	<r>Jazz
+18	<r>Falsetto
+19	<r>Claves
+20	<r>March
+21	Main Menu
+22	Items
+23	Status
+24	Special Attack
+25	Equipment
+26	Score Pieces
+27	Photos
+28	Switch Character
+29	Party Level
+30	Save
+31	System
+32	Load
+33	Item Set
+34	Shop
+35	Attack Button
+36	Audio Output
+37	Volume
+38	Piano Music
+39	Music
+40	Battle Camera
+41	Vibration
+42	Voice
+43	Japanese
+44	English
+45	Options
+46	Select Character
+47	Time
+48	Gold
+49	Party Level
+50	G
+51	Lv. 
+52	Select
+53	Back
+54	Confirm and Return
+55	HP
+56	/
+57	Exp. 
+58	Next
+59	Confirm
+60	Use
+61	Select Item
+62	Replace
+63	Return
+64	Change Tab
+65	Change Page
+66	Sort
+67	Set
+68	No Item
+69	Age
+70	Max HP
+71	ATK
+72	MAG
+73	DEF
+74	SPD
+75	Weapon
+76	Armor
+77	
+78	Accessory
+79	Light Special Attack
+80	Dark Special Attack
+81	Use
+82	None
+83	I
+84	II
+85	Next
+86	Previous
+87	Switch Character
+88	
+89	Select Party Level
+90	Tactical Time
+91	Action Gauge
+92	Special Attack Slot
+93	Counterattack
+94	Speed
+95	Moving Commands
+96	Harmony Chain
+97	Lv. 1
+98	Lv. 2
+99	Lv. 3
+100	Lv. 4
+101	Lv. 5
+102	Lv. 6
+103	Infinite
+104	5 sec.
+105	4 sec.
+106	3 sec.
+107	1 sec.
+108	Two
+109	Four
+110	Stopped:  5 seconds
+111	Real Time: 5 seconds
+112	Real Time: 4 seconds
+113	None
+114	Regular Attack
+115	Special Attack
+116	Normal
+117	x1.5
+118	2 Chains
+119	3 Chains
+120	6 Chains
+121	Yes
+122	Page
+123	Previous
+124	Next
+125	Select
+126	Help
+127	Play
+128	Save Data
+129	Choose
+130	ON
+131	OFF
+132	A
+133	B
+134	Stereo
+135	Mono
+136	5.1ch Surround
+137	Player Controls
+138	Player 1
+139	Player 2
+140	Player 3
+141	No.1
+142	No.2
+143	No.3
+144	Sound Effects
+145	Voice
+146	x
+147	-
+148	+
+149	Inventory
+150	Cancel
+151	Buy Item
+152	Sell Item
+153	Sell Photo
+154	Quit
+155	Try
+156	Total
+157	Stock
+158	Perform
+159	Stop
+160	Event Sequence
+161	Field
+162	Battle
+163	Select Photo
+164	Trash
+165	Best
+166	Trash the selected photo?\n<l5><a1>Yes\n<a2>No<Q1>
+167	Perform
+168	<g>You have no score pieces.
+169	Unlock Key
+170	Armor
+171	Accessory
+172	Valuables
+173	New Item
+174	All
+175	Used
+176	Buy the item?
+177	Sell the item?
+178	Yes
+179	No
+180	You have no photos.
+181	You have no items.
+182	Sign-in status has changed\nReturning to Title Screen
+183	Rank A
+184	Rank B
+185	Rank F
+186	Rank S
+187	Perform with this score piece?
+188	<g><m2>Menu
+189	<g><m2>Items
+190	<g><m2>Item Set
+191	<g><m2>Status
+192	<g><m2>Party Level
+193	<g><m2>Score Pieces
+194	<g><m2>Photos
+195	<g><m2>Piano Songs
+196	<g><m2>Music
+197	<g><m2>Options
+198	<g><m2>Save
+199	<g><m2>Load
+200	<g><m2>Shop
+201	Subtitles
+202	Mark
+203	Listen
+204	Current Rank...
+205	Yes\nNo
+206	No. 4
+207	Failed to take photo
+208	<l20>Sell photo?\n<l5><a1>Yes\n<a2>No<Q1>
+209	p
+210	No.
+[GBR]
+0	
+1	Allegretto
+2	Polka
+3	Beat
+4	Frederic
+5	Viola
+6	Salsa
+7	Jazz
+8	Falsetto
+9	Claves
+10	March
+11	<r>Allegretto
+12	<r>Polka
+13	<r>Beat
+14	<r>Frederic
+15	<r>Viola
+16	<r>Salsa
+17	<r>Jazz
+18	<r>Falsetto
+19	<r>Claves
+20	<r>March
+21	Main Menu
+22	Items
+23	Status
+24	Special Attack
+25	Equipment
+26	Score Pieces
+27	Photos
+28	Switch Character
+29	Party Level
+30	Save
+31	System
+32	Load
+33	Item Set
+34	Shop
+35	Attack Button
+36	Audio Output
+37	Volume
+38	Piano Music
+39	Music
+40	Battle Camera
+41	Vibration
+42	Voice
+43	Japanese
+44	English
+45	Options
+46	Select Character
+47	Time
+48	Gold
+49	Party Level
+50	G
+51	Lv. 
+52	Select
+53	Back
+54	Confirm and Return
+55	HP
+56	/
+57	Exp. 
+58	Next
+59	Confirm
+60	Use
+61	Select Item
+62	Replace
+63	Return
+64	Change Tab
+65	Change Page
+66	Sort
+67	Set
+68	No Item
+69	Age
+70	Max HP
+71	ATK
+72	MAG
+73	DEF
+74	SPD
+75	Weapon
+76	Armor
+77	
+78	Accessory
+79	Light Special Attack
+80	Dark Special Attack
+81	Use
+82	None
+83	I
+84	II
+85	Next
+86	Previous
+87	Switch Character
+88	
+89	Select Party Level
+90	Tactical Time
+91	Action Gauge
+92	Special Attack Slot
+93	Counterattack
+94	Speed
+95	Moving Commands
+96	Harmony Chain
+97	Lv. 1
+98	Lv. 2
+99	Lv. 3
+100	Lv. 4
+101	Lv. 5
+102	Lv. 6
+103	Infinite
+104	5 sec.
+105	4 sec.
+106	3 sec.
+107	1 sec.
+108	Two
+109	Four
+110	Stopped:  5 seconds
+111	Real Time: 5 seconds
+112	Real Time: 4 seconds
+113	None
+114	Regular Attack
+115	Special Attack
+116	Normal
+117	x1.5
+118	2 Chains
+119	3 Chains
+120	6 Chains
+121	Yes
+122	Page
+123	Previous
+124	Next
+125	Select
+126	Help
+127	Play
+128	Save Data
+129	Choose
+130	ON
+131	OFF
+132	A
+133	B
+134	Stereo
+135	Mono
+136	5.1ch Surround
+137	Player Controls
+138	Player 1
+139	Player 2
+140	Player 3
+141	No.1
+142	No.2
+143	No.3
+144	Sound Effects
+145	Voice
+146	x
+147	-
+148	+
+149	Inventory
+150	Cancel
+151	Buy Item
+152	Sell Item
+153	Sell Photo
+154	Quit
+155	Try
+156	Total
+157	Stock
+158	Perform
+159	Stop
+160	Event Sequence
+161	Field
+162	Battle
+163	Select Photo
+164	Trash
+165	Best
+166	Trash the selected photo?\n<l5><a1>Yes\n<a2>No<Q1>
+167	Perform
+168	<g>You have no score pieces.
+169	Unlock Key
+170	Armor
+171	Accessory
+172	Valuables
+173	New Item
+174	All
+175	Used
+176	Buy the item?
+177	Sell the item?
+178	Yes
+179	No
+180	You have no photos.
+181	You have no items.
+182	Sign-in status has changed\nReturning to Title Screen
+183	Rank A
+184	Rank B
+185	Rank F
+186	Rank S
+187	Perform with this score piece?
+188	<g><m2>Menu
+189	<g><m2>Items
+190	<g><m2>Item Set
+191	<g><m2>Status
+192	<g><m2>Party Level
+193	<g><m2>Score Pieces
+194	<g><m2>Photos
+195	<g><m2>Piano Songs
+196	<g><m2>Music
+197	<g><m2>Options
+198	<g><m2>Save
+199	<g><m2>Load
+200	<g><m2>Shop
+201	Subtitles
+202	Mark
+203	Listen
+204	Current Rank...
+205	Yes\nNo
+206	No. 4
+207	Failed to take photo
+208	<l20>Sell photo?\n<l5><a1>Yes\n<a2>No<Q1>
+209	p
+210	No.
+[FRA]
+0	
+1	Allegretto
+2	Polka
+3	Piccolo
+4	Frédéric
+5	Harpe
+6	Salsa
+7	Jazz
+8	Mazurka
+9	Claves
+10	Marcia
+11	<r>Allegretto
+12	<r>Polka
+13	<r>Piccolo
+14	<r>Frédéric
+15	<r>Harpe
+16	<r>Salsa
+17	<r>Jazz
+18	<r>Mazurka
+19	<r>Claves
+20	<r>Marcia
+21	Menu principal
+22	Objets
+23	État
+24	Attaque spéciale
+25	Équiper
+26	Partitions
+27	Photos
+28	Changer perso.
+29	Niveau groupe
+30	Sauv.
+31	Système
+32	Charger
+33	Équipement
+34	Acheter
+35	Touche d'attaque
+36	Sortie audio
+37	Volume
+38	Piano
+39	Musique
+40	Caméra de combat
+41	Vibration
+42	Voix
+43	Japonais
+44	Anglais
+45	Options
+46	Choix de personnage
+47	Temps
+48	Pièces
+49	Niveau groupe
+50	P
+51	Niv.
+52	Choisir
+53	Ret.
+54	Confirmer et revenir
+55	PV
+56	/
+57	Exp. 
+58	Proch.
+59	OK
+60	Utiliser
+61	Choisir objet
+62	Remplacer
+63	Retirer
+64	Changer onglet
+65	Changer page
+66	Ranger
+67	Affecter
+68	Aucun objet
+69	Âge
+70	PV max.
+71	ATT
+72	MAG
+73	DÉF
+74	VIT
+75	Arme
+76	Armure
+77	
+78	Accessoire
+79	Att. spéciale lumière
+80	Att. spéciale obscurité
+81	Employer
+82	Néant
+83	I
+84	II
+85	Suivant
+86	Précédent
+87	Changer perso.
+88	
+89	Choix niveau groupe
+90	Temps tactique
+91	Jauge d'action
+92	Empl. attaque spéciale
+93	Contre-attaque
+94	Vitesse
+95	Ordres déplacement
+96	Chaîne d'harmonie
+97	Niv. 1
+98	Niv. 2
+99	Niv. 3
+100	Niv. 4
+101	Niv. 5
+102	Niv. 6
+103	Infini
+104	5 sec
+105	4 sec
+106	3 sec
+107	1 sec
+108	Deux
+109	Quatre
+110	Arrêt : 5 sec
+111	Temps réel : 5 sec
+112	Temps réel : 4 sec
+113	Non
+114	Oui
+115	Attaque normale/spéciale
+116	Normale
+117	x1,5
+118	2 enchaînements
+119	3 enchaînements
+120	6 enchaînements
+121	Oui
+122	Page
+123	Page précédente
+124	Page suivante
+125	Choisir
+126	Aide
+127	Jouer
+128	Données sauv.
+129	Choisir
+130	OUI
+131	NON
+132	A
+133	B
+134	Stéréo
+135	Mono
+136	Surround 5.1
+137	Commandes joueur
+138	Joueur 1
+139	Joueur 2
+140	Joueur 3
+141	N°1
+142	N°2
+143	N°3
+144	Effets sonores
+145	Voix
+146	x
+147	-
+148	+
+149	Vous avez
+150	Annuler
+151	Acheter objet
+152	Vendre objet
+153	Vendre photo
+154	Quitter
+155	Essayer
+156	Total
+157	Stock
+158	Interpréter
+159	Stop
+160	Séquence
+161	Terrain
+162	Combat
+163	Choisir photo
+164	Jeter
+165	Meilleur
+166	Jeter les photos sélectionnées ?\n<l5><a1>Oui\n<a2>Non<Q1>
+167	Interpréter
+168	<g>Pas de partition.
+169	Clé de déblocage
+170	Armure
+171	Accessoire
+172	Objets précieux
+173	Nouv. objets
+174	Tous
+175	Utilisé
+176	Acheter l'objet ?
+177	Vendre l'objet ?
+178	Oui
+179	Non
+180	Vous n'avez aucune photo.
+181	Vous n'avez aucun objet.
+182	État de connexion modifié.\nRetour à l'écran de titre.
+183	Note A
+184	Note B
+185	Note F
+186	Note S
+187	Interpréter cette partition ?
+188	<g><m2>Menu
+189	<g><m2>Objets
+190	<g><m2>Ens. objets
+191	<g><m2>État
+192	<g><m2>Niveau groupe
+193	<g><m2>Partitions
+194	<g><m2>Photos
+195	<g><m2>Morceaux au piano
+196	<g><m2>Musique
+197	<g><m2>Options
+198	<g><m2>Sauvegarder
+199	<g><m2>Charger
+200	<g><m2>Magasin
+201	Sous-titres
+202	Cocher
+203	Écouter
+204	Note actuelle...
+205	Oui\nNon
+206	N°4
+207	Pas de photo prise.
+208	<l20>Vendre photo ?\n<l5><a1>Oui\n<a2>Non<Q1>
+209	p
+210	N°
+[ITA]
+0	
+1	Allegretto
+2	Polka
+3	Beat
+4	Frederic
+5	Viola
+6	Salsa
+7	Jazz
+8	Mazurka
+9	Claves
+10	Marcia
+11	<r>Allegretto
+12	<r>Polka
+13	<r>Beat
+14	<r>Frederic
+15	<r>Viola
+16	<r>Salsa
+17	<r>Jazz
+18	<r>Mazurka
+19	<r>Claves
+20	<r>Marcia
+21	Menu principale
+22	Oggetti
+23	Stato
+24	Attacco speciale
+25	Aggiungi all'equip.
+26	Brani musicali
+27	Foto
+28	Cambia personaggio
+29	Livello gruppo
+30	Salva
+31	Sistema
+32	Carica
+33	Set di oggetti
+34	Negozio
+35	Pulsante Attacca
+36	Uscita audio
+37	Volume
+38	Musica per piano
+39	Musica
+40	Fotoc. battaglia
+41	Vibrazione
+42	Voce
+43	Giapponese
+44	Inglese
+45	Opzioni
+46	Scegli personaggio
+47	Tempo
+48	Oro
+49	Livello gruppo
+50	G
+51	Lv. 
+52	Selez.
+53	Ind.
+54	Conferma e torna al menu
+55	PV
+56	/
+57	Esp. 
+58	Succ.
+59	Conf.
+60	Usa
+61	Selez. oggetto
+62	Sostituisci
+63	Torna
+64	Cambia scheda
+65	Cambia pagina
+66	Ordina
+67	Imposta
+68	Ness. oggetto
+69	Età
+70	HP max.
+71	ATC
+72	MAG
+73	DIF
+74	VEL
+75	Arma
+76	Armatura
+77	
+78	Accessori
+79	Attacco speciale di luce
+80	Attacco speciale oscuro
+81	Usa
+82	Nessuno
+83	I
+84	II
+85	Successivo
+86	Precedente
+87	Cambia personaggio
+88	
+89	Selez. livello gruppo
+90	Tempo tattico
+91	Indicatore d'azione
+92	Slot Attacco speciale
+93	Contrattacco
+94	Velocità
+95	Comandi di movimento
+96	Catena d'armonia
+97	Lv. 1
+98	Lv. 2
+99	Lv. 3
+100	Lv. 4
+101	Lv. 5
+102	Lv. 6
+103	Illimitato
+104	5 sec.
+105	4 sec.
+106	3 sec.
+107	1 sec.
+108	Due
+109	Quattro
+110	Bloccato:  5 sec.
+111	Tempo reale: 5 sec.
+112	Tempo reale: 4 sec.
+113	Nessuno
+114	Attacco normale
+115	Attacco speciale
+116	Normale
+117	x1,5
+118	2 Catene
+119	3 Catene
+120	6 Catene
+121	Sì
+122	Pagina
+123	Pag. precedente
+124	Pag. succ.
+125	Selez.
+126	Guida
+127	Gioca
+128	Salva dati
+129	Scegli
+130	Sì
+131	NO
+132	A
+133	B
+134	Stereo
+135	Mono
+136	Surround 5,1ch
+137	Comandi giocatore
+138	Giocatore 1
+139	Giocatore 2
+140	Giocatore 3
+141	N.1
+142	N.2
+143	N.3
+144	Effetti sonori
+145	Voce
+146	x
+147	-
+148	+
+149	Hai
+150	Annulla
+151	Compra ogg.
+152	Vendi ogg.
+153	Vendi foto
+154	Abbandona
+155	Tenta
+156	Totale
+157	Riserva
+158	Esegui
+159	Blocca
+160	Sequenza evento
+161	Campo
+162	Battaglia
+163	Seleziona foto
+164	Getta via
+165	Migliore
+166	Gettare le foto selezionate?\n<l5><a1>Sì\n<a2>No<Q1>
+167	Esegui
+168	<g>Non possiedi brani musicali
+169	Chiave di attivaz.
+170	Armatura
+171	Accessori
+172	Ogg. di valore
+173	Nuovo ogg.
+174	Tutto
+175	Usato
+176	Comprare oggetto?
+177	Vendere oggetto?
+178	Sì
+179	No
+180	Non possiedi foto.
+181	Non possiedi oggetti.
+182	Stato di connessione cambiato.\nTorna alla schermata del titolo.
+183	Grado A
+184	Grado B
+185	Grado F
+186	Grado S
+187	Eseguire questo brano musicale?
+188	<g><m2>Menu
+189	<g><m2>Oggetti
+190	<g><m2>Set di oggetti
+191	<g><m2>Stato
+192	<g><m2>Livello gruppo
+193	<g><m2>Brani musicali
+194	<g><m2>Foto
+195	<g><m2>Sonate per piano
+196	<g><m2>Musica
+197	<g><m2>Opzioni
+198	<g><m2>Salva
+199	<g><m2>Carica
+200	<g><m2>Negozio
+201	Sottotitoli
+202	Segna
+203	Ascolta
+204	Classifica attuale...
+205	Sì\nNo
+206	N. 4
+207	Scatto foto fallito.
+208	<l20>Vendi foto?\n<l5><a1>Sì\n<a2>No<Q1>
+209	p
+210	N.
+[DEU]
+0	
+1	Allegretto
+2	Polka
+3	Beat
+4	Frédéric
+5	Viola
+6	Salsa
+7	Jazz
+8	Mazurka
+9	Claves
+10	Gavotte
+11	<r>Allegretto
+12	<r>Polka
+13	<r>Beat
+14	<r>Frédéric
+15	<r>Viola
+16	<r>Salsa
+17	<r>Jazz
+18	<r>Mazurka
+19	<r>Claves
+20	<r>Gavotte
+21	Hauptmenü
+22	Objekte
+23	Status
+24	Spezialangriff
+25	Ausrüsten
+26	Partiturteile
+27	Fotos
+28	Charakter wechseln
+29	Gruppenlevel
+30	Speichern
+31	System
+32	Laden
+33	Ausrüstung
+34	Handel
+35	Angriff
+36	Audio
+37	Lautstärke
+38	Klaviermusik
+39	Musik
+40	Kampfkamera
+41	Vibration
+42	Sprache
+43	Japanisch
+44	Englisch
+45	Optionen
+46	Charakter wählen
+47	Zeit
+48	Gold
+49	Gruppenlevel
+50	G
+51	Lv. 
+52	Ausw.
+53	Zur.
+54	Bestätigen und zurück
+55	LP
+56	/
+57	EP
+58	Nächst.
+59	OK
+60	Benutzen
+61	Objekt wählen
+62	Ersetzen
+63	Zurückl.
+64	Tab wechseln
+65	Seite wechseln
+66	Sort.
+67	Einsetzen
+68	Keine Objekte
+69	Alter
+70	Max. HP
+71	ANG
+72	MAG
+73	ABW
+74	TMP
+75	Waffe
+76	Rüstung
+77	
+78	Zubehör
+79	Licht-Spezialangriff
+80	Dunkel-Spezialangriff
+81	Benutzen
+82	Nichts
+83	I
+84	II
+85	Nächste
+86	Vorige
+87	Charakter tauschen
+88	
+89	Gruppenlevel wählen
+90	Taktikzeit
+91	Aktionsanzeige
+92	Spezialangriffe
+93	Gegenangriff
+94	Tempo
+95	Bewegliche Befehle
+96	Harmoniekette
+97	Lv. 1
+98	Lv. 2
+99	Lv. 3
+100	Lv. 4
+101	Lv. 5
+102	Lv. 6
+103	Unendlich
+104	5 Sek.
+105	4 Sek.
+106	3 Sek.
+107	1 Sek.
+108	Zwei
+109	Vier
+110	Angehalten:  5 Sek.
+111	Echtzeit: 5 Sek.
+112	Echtzeit: 4 Sek.
+113	Nein
+114	Ja
+115	Normal- / Spezialangriff
+116	Normal
+117	x1,5
+118	2 Ketten
+119	3 Ketten
+120	6 Ketten
+121	Ja
+122	Seite
+123	Vorige Seite
+124	Nächste Seite
+125	Ausw.
+126	Hilfe
+127	Abspielen
+128	Speicherdaten
+129	Wählen
+130	EIN
+131	AUS
+132	A
+133	B
+134	Stereo
+135	Mono
+136	5.1Channel Surround
+137	Spielsteuerung
+138	Spieler 1
+139	Spieler 2
+140	Spieler 3
+141	Nr.1
+142	Nr.2
+143	Nr.3
+144	Soundeffekte
+145	Sprachausgabe
+146	x
+147	-
+148	+
+149	Du hast
+150	Abbrechen
+151	Objekt kaufen
+152	Objekt verkaufen
+153	Foto verkaufen
+154	Beenden
+155	Ausprobieren
+156	Ges.
+157	Vorrat
+158	Abspielen
+159	Anhalten
+160	Event-Sequenz
+161	Unterwegs
+162	Kampf
+163	Foto wählen
+164	Wegwerfen
+165	Bestes:
+166	Die gewählten Fotos wegwerfen?\n<l5><a1>Ja\n<a2>Nein<Q1>
+167	Aufführen
+168	<g>Du besitzt keine Partitur.
+169	Freischalt-Code
+170	Rüstung
+171	Zubehör
+172	Wertgegenstand
+173	Neues Objekt
+174	Alle
+175	Gebraucht
+176	Das Objekt kaufen?
+177	Das Objekt verkaufen?
+178	Ja
+179	Nein
+180	Du besitzt keine Fotos.
+181	Du besitzt keine Objekte.
+182	Anmeldestatus hat sich geändert.\nZurück zum Titelbildschirrm.
+183	Rang A
+184	Rang B
+185	Rang F
+186	Rang S
+187	Diese Partitur aufführen?
+188	<g><m2>Menü
+189	<g><m2>Objekte
+190	<g><m2>Ausrüstung
+191	<g><m2>Status
+192	<g><m2>Gruppenlevel
+193	<g><m2>Partituren
+194	<g><m2>Fotos
+195	<g><m2>Klavierstücke
+196	<g><m2>Musik
+197	<g><m2>Optionen
+198	<g><m2>Speichern
+199	<g><m2>Laden
+200	<g><m2>Handeln
+201	Untertitel
+202	Abhaken
+203	Anhören
+204	Derzeitiger Rang...
+205	Ja\nNein
+206	Nr. 4
+207	Fotografieren fehlgeschlagen.
+208	<l20>Foto verkaufen?\n<l5><a1>Ja\n<a2>Nein<Q1>
+209	p
+210	Nr.
+[ESP]
+0	
+1	Allegretto
+2	Polka
+3	Beat
+4	Frederic
+5	Arpa
+6	Salsa
+7	Jazz
+8	Mazurka
+9	Claves
+10	Marcha
+11	<r>Allegretto
+12	<r>Polka
+13	<r>Beat
+14	<r>Frederic
+15	<r>Arpa
+16	<r>Salsa
+17	<r>Jazz
+18	<r>Mazurka
+19	<r>Claves
+20	<r>Marcha
+21	Menú principal
+22	Objetos
+23	Estado
+24	Ataque especial
+25	Equipar
+26	Fragmentos partitura
+27	Fotos
+28	Cambiar personaje
+29	Nivel grupo
+30	Guardar
+31	Sistema
+32	Cargar
+33	Conjunto de objetos
+34	Tienda
+35	Botón Atacar
+36	Sonido
+37	Volumen
+38	Música piano
+39	Música
+40	Cámara batalla
+41	Vibración
+42	Diálogos
+43	Japonés
+44	Inglés
+45	Opciones
+46	Seleccionar personaje
+47	Tiempo
+48	Oro
+49	Nivel grupo
+50	O
+51	Niv. 
+52	Selec.
+53	Atrás
+54	Confirmar y regresar
+55	PS
+56	/
+57	Exp. 
+58	Próx.
+59	Conf.
+60	Usar
+61	Seleccionar objeto
+62	Sustituir
+63	Devolver
+64	Cambiar ficha
+65	Cambiar página
+66	Ordenar
+67	Añadir
+68	Ningún objeto
+69	Edad
+70	PS máx.
+71	ATQ
+72	MAG
+73	DEF
+74	VEL
+75	Arma
+76	Armadura
+77	
+78	Accesorio
+79	Ataque especial luz
+80	Ataque especial oscuridad
+81	Usar
+82	Ninguno
+83	I
+84	II
+85	Siguiente
+86	Anterior
+87	Cambiar personaje
+88	
+89	Seleccionar nivel grupo
+90	Tiempo táctico
+91	Indicador de acción
+92	Ranura ataque especial
+93	Contraataque
+94	Velocidad
+95	Comandos móviles
+96	Cadena armónica
+97	Niv. 1
+98	Niv. 2
+99	Niv. 3
+100	Niv. 4
+101	Niv. 5
+102	Niv. 6
+103	Infinito
+104	5 seg.
+105	4 seg.
+106	3 seg.
+107	1 seg.
+108	Dos
+109	Cuatro
+110	Parado:  5 seg.
+111	Tiempo real: 5 seg.
+112	Tiempo real: 4 seg.
+113	No
+114	Sí
+115	Ataque normal / especial
+116	Normal
+117	x1,5
+118	2 ataques
+119	3 ataques
+120	6 ataques
+121	Sí
+122	Página
+123	Página anterior
+124	Página siguiente
+125	Selec.
+126	Ayuda
+127	Interpretar
+128	Datos guardados
+129	Elegir
+130	ACTIVADA
+131	DESACTIVADA
+132	A
+133	B
+134	Estéreo
+135	Mono
+136	Envolvente 5,1 canales
+137	Controles del jugador
+138	Jugador 1
+139	Jugador 2
+140	Jugador 3
+141	Nº 1
+142	Nº 2
+143	Nº 3
+144	Efectos de sonido
+145	Voz
+146	x
+147	-
+148	+
+149	Tienes
+150	Cancelar
+151	Comprar objeto
+152	Vender objeto
+153	Vender foto
+154	Salir
+155	Probar
+156	Total
+157	Existencias
+158	Reproducir
+159	Detener
+160	Vídeos
+161	Campo
+162	Batalla
+163	Seleccionar foto
+164	Eliminar
+165	Mejor
+166	¿Eliminar fotos seleccionadas?\n<l5><a1>Sí\n<a2>No<Q1>
+167	Interpretar
+168	<g>No tienes ningún fragmento de partitura.
+169	Clave desbloq.
+170	Armadura
+171	Accesorio
+172	Objetos de valor
+173	Nuevo objeto
+174	Todos
+175	Usados
+176	¿Comprar objeto?
+177	¿Vender objeto?
+178	Sí
+179	No
+180	No tienes ninguna foto.
+181	No tienes ningún objeto.
+182	El estado de inicio de sesión ha cambiado.\nRegresarás a la pantalla de inicio.
+183	Sobresaliente
+184	Aprobado
+185	Suspenso
+186	Premio especial
+187	¿Interpretar partitura?
+188	<g><m2>Menú
+189	<g><m2>Objetos
+190	<g><m2>Conjunto de objetos
+191	<g><m2>Estado
+192	<g><m2>Nivel grupo
+193	<g><m2>Fragmentos partitura
+194	<g><m2>Fotos
+195	<g><m2>Música piano
+196	<g><m2>Música
+197	<g><m2>Opciones
+198	<g><m2>Guardar
+199	<g><m2>Cargar
+200	<g><m2>Tienda
+201	Subtítulos
+202	Marcar
+203	Escuchar
+204	Calificación actual...
+205	Sí\nNo
+206	Nº 4
+207	No se pudo hacer la foto.
+208	Vender foto?\n<l5><a1>Sì\n<a2>No<Q1>
+209	p
+210	Nº

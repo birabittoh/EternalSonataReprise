@@ -1,0 +1,575 @@
+0x82053E10
+[JPN]
+0	? ? ? ? ? ?
+1	Think of me
+2	
+3	心の輝石
+4	Can you recite the dream?
+5	Scrap and build ourselves -革命より-
+6	
+7	事実と誠実、そして真実
+8	灯
+9	鏡天花
+10	命のかたち
+11	Leap the precipice
+12	立ち向かう覚悟
+13	I bet my belief
+14	明暗を分かつ瞬き
+15	Your truth is my false
+16	Broken balance
+17	Well-done
+18	Two ends of my doze
+19	Reflect the sky. Bloom the life
+20	皆が求する凡庸
+21	同じようで違うけど同じ？
+22	Relaxing place
+23	揺らぐ銃後
+24	Endure and resist
+25	A buffer for quiet
+26	和を尊ぶ調べ
+27	白き鏡
+28	Captured phantom
+29	一歩
+30	Underground for underhand
+31	Illuminant lives
+32	Dive into the vast expanse of plains
+33	背も腹もない壁
+34	迫撃
+35	強さから優しさへ
+36	静寂と生息
+37	Wonderland of wanderer
+38	No No I don't die Noooo!
+39	Seize the artifact for tallness
+40	侮らない構え
+41	Rock and burn you
+42	雪と氷の境界
+43	冷厳な意志
+44	Continuous divider
+45	The etudes of spirit
+46	行き着くところ
+47	Spiral twister
+48	The unreasonable theory
+49	策謀
+50	重圧
+51	
+52	Rapid fire
+53	DANTOTSU!
+54	あなた次第
+55	Breeze the conductor
+56	Journey to projective mind
+57	明日から…
+58	Innumerable animals
+59	大切な人
+60	Someone's evening. Someone's daybreak
+61	Repeated tide
+62	Embarrassment consistency
+63	共に在る時
+64	心の散歩
+65	手の中の淡い光
+66	
+67	
+68	
+69	
+70	
+71	
+72	
+73	
+74	
+75	
+76	
+77	
+78	
+79	
+80	
+[USA]
+0	???
+1	Remember Me
+2	
+3	Jewel of the Heart
+4	Can You Recall Your Dream?
+5	Rebuilding Ourselves
+6	
+7	Fact, Faith, and Truth
+8	Light
+9	Heaven's Mirror
+10	Shape of Life
+11	Make the Leap
+12	Prepared to Fight
+13	I Believe
+14	Between Light and Darkness
+15	Your Truth Is My Lie
+16	Unbalanced
+17	Well Done
+18	The End of My Days
+19	Reflect the Sky, Blossom of Life
+20	Mediocrity for All
+21	Different, but the Same
+22	A Relaxing Place
+23	Uncertain Homefront
+24	Resist and Endure
+25	Quiet Defender
+26	Peace Valued
+27	White Mirror
+28	Imprisoned Phantoms
+29	First Step
+30	Underground for the Underhanded
+31	Illuminated Lives
+32	Dive into the Vast Expanse
+33	Wall with No Front or Back
+34	Close Call
+35	From Cruelty to Kindness
+36	Silence and Life
+37	Wonderland Wanderer
+38	Who Wants to Die
+39	The Ultimate Treasure
+40	Take a Stand
+41	Rock and Burn You
+42	Snow and Ice Boundary
+43	Grim Will
+44	Limitless Divide
+45	<#201>tudes of the Spirit
+46	End of the Journey
+47	Twisted Spiral
+48	Illogical Theory
+49	Strategy
+50	Pressure
+51	
+52	Rapid Fire
+53	Salsa's Theme
+54	It's Up to You
+55	Conduct the Breeze
+56	Journey of the Mind
+57	From Tomorrow
+58	Animals Everywhere
+59	Someone Special
+60	Nightfall and Daybreak
+61	Repeating Tide
+62	Constant Embarrassment
+63	Time Together
+64	Strolling Hearts
+65	A Light in the Palm of Your Hand
+66	
+67	
+68	
+69	
+70	
+71	
+72	
+73	
+74	
+75	
+76	
+77	
+78	
+79	
+80	
+[GBR]
+0	???
+1	Remember Me
+2	
+3	Jewel of the Heart
+4	Can You Recall Your Dream?
+5	Rebuilding Ourselves
+6	
+7	Fact, Faith, and Truth
+8	Light
+9	Heaven's Mirror
+10	Shape of Life
+11	Make the Leap
+12	Prepared to Fight
+13	I Believe
+14	Between Light and Darkness
+15	Your Truth Is My Lie
+16	Unbalanced
+17	Well Done
+18	The End of My Days
+19	Reflect the Sky, Blossom of Life
+20	Mediocrity for All
+21	Different, but the Same
+22	A Relaxing Place
+23	Uncertain Homefront
+24	Resist and Endure
+25	Quiet Defender
+26	Peace Valued
+27	White Mirror
+28	Imprisoned Phantoms
+29	First Step
+30	Underground for the Underhanded
+31	Illuminated Lives
+32	Dive into the Vast Expanse
+33	Wall with No Front or Back
+34	Close Call
+35	From Cruelty to Kindness
+36	Silence and Life
+37	Wonderland Wanderer
+38	Who Wants to Die
+39	The Ultimate Treasure
+40	Take a Stand
+41	Rock and Burn You
+42	Snow and Ice Boundary
+43	Grim Will
+44	Limitless Divide
+45	<#201>tudes of the Spirit
+46	End of the Journey
+47	Twisted Spiral
+48	Illogical Theory
+49	Strategy
+50	Pressure
+51	
+52	Rapid Fire
+53	Salsa's Theme
+54	It's Up to You
+55	Conduct the Breeze
+56	Journey of the Mind
+57	From Tomorrow
+58	Animals Everywhere
+59	Someone Special
+60	Nightfall and Daybreak
+61	Repeating Tide
+62	Constant Embarrassment
+63	Time Together
+64	Strolling Hearts
+65	A Light in the Palm of Your Hand
+66	
+67	
+68	
+69	
+70	
+71	
+72	
+73	
+74	
+75	
+76	
+77	
+78	
+79	
+80	
+[FRA]
+0	???
+1	Souviens-toi de moi
+2	
+3	Joyau du cœur
+4	Te rappelles-tu ton rêve ?
+5	Reconstruction
+6	
+7	Fait, foi et vérité
+8	Lumière
+9	Miroir du paradis
+10	Forme de vie
+11	Lance-toi
+12	Prêt à combattre
+13	Je crois
+14	Entre ombre et lumière
+15	Ta vérité est pour moi un mensonge
+16	Déséquilibre
+17	Bien joué
+18	La fin de mes jours
+19	Reflète le ciel, fleur de vie
+20	Médiocrité pour tous
+21	Différent, mais identique
+22	Un endroit apaisant
+23	Arrières incertains
+24	Résiste et endure
+25	Calme défenseur
+26	La valeur de la paix
+27	Miroir blanc
+28	Fantômes emprisonnés
+29	Premier pas
+30	Souterrains pour sournois
+31	Vies illuminées
+32	Plongeon dans l'immensité
+33	Murs sans parois
+34	De justesse
+35	De la cruauté à la bonté
+36	Silence et vie
+37	Vagabond des merveilles
+38	Qui veut mourir ?
+39	Le trésor suprême
+40	Tiens tête
+41	Roche en fusion
+42	Frontière glacée
+43	Sinistre volonté
+44	Partage sans limite
+45	Études de l'esprit
+46	Fin du voyage
+47	Spirale tordue
+48	Théorie illogique
+49	Stratégie
+50	Pression
+51	
+52	Tir rapide
+53	Thème de Salsa
+54	À toi de voir
+55	Mène la brise
+56	Voyage spirituel
+57	Dès demain
+58	Des animaux partout
+59	L'être aimé
+60	Crépuscule et aube
+61	Le cycle des marées
+62	Gêne constante
+63	Le temps passé ensemble
+64	Cœurs en promenade
+65	Une lueur dans la paume de ta main
+66	
+67	
+68	
+69	
+70	
+71	
+72	
+73	
+74	
+75	
+76	
+77	
+78	
+79	
+80	
+[ITA]
+0	???
+1	Ricordati di me
+2	
+3	Gemma del cuore
+4	Puoi ricordare il tuo sogno?
+5	Rigenerare noi stessi
+6	
+7	Fatto, fede e verità
+8	Luce
+9	Specchio del paradiso
+10	La forma della vita
+11	Fai il salto
+12	Pronto alla battaglia
+13	Io credo
+14	Tra luce e oscurità
+15	La tua verità è la mia menzogna
+16	Sbilanciato
+17	Ben fatto
+18	La fine dei miei giorni
+19	Rifletti il cielo, fiore della vita
+20	Mediocrità per tutti
+21	Diverso, ma lo stesso
+22	Un posto rilassante
+23	Fronte interno malsicuro
+24	Resistere e tener duro
+25	Difensore silenzioso
+26	Valore della pace
+27	Specchio bianco
+28	Spettri imprigionati
+29	Il primo passo
+30	Sotterraneo per il disonesto
+31	Vite illuminate
+32	Tuffo nella vasta distesa
+33	Muro senza parte anteriore o posteriore
+34	Un rischio scampato
+35	Da crudeltà a bontà
+36	Silenzio e vita
+37	Vagabondo del paese delle fate
+38	Chi vuole morire
+39	Il tesoro più grande
+40	Prendi posizione
+41	Rock e Burn
+42	Confine di neve e ghiaccio
+43	Volontà spietata
+44	Spartiacque sconfinato
+45	Studi dell'anima
+46	Fine del viaggio
+47	Spirale intrecciata
+48	Teoria assurda
+49	Strategia
+50	Tensione
+51	
+52	Fuoco veloce
+53	Soggetto di Salsa
+54	Tocca a te
+55	Guida la brezza
+56	Viaggio della mente
+57	Da domani
+58	Animali dovunque
+59	Qualcuno speciale
+60	Crepuscolo e alba
+61	Marea ricorrente
+62	Disagio continuo
+63	Il tempo insieme
+64	Cuori erranti
+65	Una luce nel palmo della tua mano
+66	
+67	
+68	
+69	
+70	
+71	
+72	
+73	
+74	
+75	
+76	
+77	
+78	
+79	
+80	
+[DEU]
+0	???
+1	Vergiss mich nicht
+2	
+3	Juwel des Herzens
+4	Erinnere dich an deinen Traum
+5	Das Selbst neu aufgebaut
+6	
+7	Fakten, Glaube, Wahrheit
+8	Licht
+9	Himmelsspiegel
+10	Form des Lebens
+11	Den Sprung wagen
+12	Bereit zum Kampf
+13	Was ich glaube
+14	Zwischen Licht und Finsternis
+15	Deine Wahrheit ist meine Lüge
+16	Aus dem Gleichgewicht
+17	Gut gemacht
+18	Das Ende meiner Tage
+19	Zeig den Himmel, Lebensblüte
+20	Mittelmaß für alle
+21	Dasselbe, aber anders
+22	Ein Ort zum Entspannen
+23	Ungewisse Heimat
+24	Zähigkeit und Widerstand
+25	Stiller Verteidiger
+26	Den Frieden würdigen
+27	Weißer Spiegel
+28	Gefangene Phantome
+29	Erster Schritt
+30	Unterwegs im Untergrund
+31	Erleuchtete Leben
+32	Eintauchen in die Weite
+33	Mauer ohne Vorne und Hinten
+34	Knappes Entkommen
+35	Von Grausamkeit zu Güte
+36	Stille und Leben
+37	Wanderer im Wunderland
+38	Wer will schon sterben
+39	Der größte aller Schätze
+40	Stellung beziehen
+41	Brennende Steine
+42	Grenzen aus Schnee und Eis
+43	Wild entschlossen
+44	Unendliche Teilung
+45	Übungen des Geistes
+46	Ende der Reise
+47	Verschlungene Spirale
+48	Unlogische Theorie
+49	Strategie
+50	Druck
+51	
+52	Schnellfeuer
+53	Salsas Melodie
+54	Es liegt an dir
+55	Den Wind dirigieren
+56	Geistige Reise
+57	Von morgen an
+58	Überall Tiere
+59	Jemand Besonderes
+60	Abend- und Morgendämmerung
+61	Wechsel der Gezeiten
+62	Unendlich peinlich
+63	Zeit miteinander
+64	Spaziergang der Herzen
+65	Ein Licht in deiner Handfläche
+66	
+67	
+68	
+69	
+70	
+71	
+72	
+73	
+74	
+75	
+76	
+77	
+78	
+79	
+80	
+[ESP]
+0	???
+1	Recuérdame
+2	
+3	Joya del corazón
+4	¿Puedes recordar tu sueño?
+5	Reconstruyéndonos
+6	
+7	Hecho, fe y verdad
+8	Luz
+9	Espejo del cielo
+10	Forma de vida
+11	Da el salto
+12	Preparado para luchar
+13	Yo creo
+14	Entre la luz y la oscuridad
+15	Tu verdad es mi mentira
+16	Desequilibrado
+17	Bien hecho
+18	El fin de mis días
+19	Refleja el cielo, flor de vida
+20	Mediocridad para todos
+21	Diferente pero igual
+22	Un lugar relajante
+23	Frente nacional incierto
+24	Resistir y soportar
+25	Defensor silencioso
+26	Paz valorada
+27	Espejo blanco
+28	Fantasmas aprisionados
+29	Primer paso
+30	Turbio y clandestino
+31	Vidas iluminadas
+32	Sumergirse en la gran extensión
+33	Pared sin parte trasera ni delantera
+34	Por los pelos
+35	De crueldad a amabilidad
+36	Silencio y vida
+37	Trotamundos en el país de las maravillas
+38	Quién quiere morir
+39	El tesoro definitivo
+40	Adoptar una postura
+41	Roca y fuego
+42	Frontera de hielo y nieve
+43	Sombría voluntad
+44	Línea divisoria sin límites
+45	Estudios del espíritu
+46	Fin del viaje
+47	Espiral retorcida
+48	Teoría ilógica
+49	Estrategia
+50	Presión
+51	
+52	Fuego graneado
+53	Tema de Salsa
+54	Depende de ti
+55	Dirige la brisa
+56	Viaje de la mente
+57	Desde mañana
+58	Animales por todas partes
+59	Alguien especial
+60	Alba y ocaso
+61	Marea constante
+62	Vergüenza continua
+63	Tiempo juntos
+64	Corazones ambulantes
+65	Una luz en la palma de tu mano
+66	
+67	
+68	
+69	
+70	
+71	
+72	
+73	
+74	
+75	
+76	
+77	
+78	
+79	
+80	

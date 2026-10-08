@@ -1,0 +1,36 @@
+0x82386910
+[JPN]
+0	全部で%dGでございますね。\nまたのごひいきを、お待ちしております。
+1	またのお越しを、お待ちしております。
+2	しめて%dGだな。\nまた会おう。
+3	また会おう。
+[USA]
+0	The total is %dG. Please come again.
+1	Please come again.
+2	It'll be %dG for all of them. Come again, kid.
+3	Come again, kid.
+[GBR]
+0	The total is %dG. Please come again.
+1	Please come again.
+2	It'll be %dG for all of them. Come again, kid.
+3	Come again, kid.
+[FRA]
+0	Le total est de %dP. À bientôt.
+1	À bientôt.
+2	Ça fera %dP pour le tout. À bientôt, petit.
+3	À bientôt, petit.
+[ITA]
+0	Il totale è %dG. Tornate a trovarci.
+1	Tornate a trovarci.
+2	Sarà %dG per tutte. Torna a trovarci, figliolo.
+3	Torna a trovarci, figliolo.
+[DEU]
+0	Das macht insgesamt %dG. Komm bald wieder.
+1	Komm bald wieder.
+2	Alle zusammen kosten %dG. Komm bald zurück, Junge.
+3	Komm bald zurück, Junge.
+[ESP]
+0	El total es de %dO. Hasta pronto.
+1	Hasta pronto.
+2	Te doy %dO por todas. Hasta pronto, muchacho.
+3	Hasta pronto, muchacho.

@@ -1,0 +1,169 @@
+0x82337590
+[JPN]
+0	ありがとうございます。\n%dGでお引き受けいたします。
+1	なんだね、この紙くずは。レンズキャップがついてたほうがましだな。\n%dGで買い取ろう。
+2	なんだね、この紙くずは。レンズキャップを外し忘れたのかね。\n%dGで買い取ろう。
+3	なんだね、この紙くずは。風呂のたきつけにでもするのかね。\n%dGで買い取ろう。
+4	なんだね、この紙くずは。弁当の包み紙にでもするのかね。\n%dGで買い取ろう。
+5	なんだね、この紙くずは。猫にボタンを踏まれたのか。\n%dGで買い取ろう。
+6	悪くないな。売り物になるよ。\n%dGで買い取ろう。
+7	悪くないな。ちょっとしたもんだ。\n%dGで買い取ろう。
+8	いいじゃないか。すみに置けんな。\n%dGで買い取ろう。
+9	いいじゃないか。この調子でたのむよ。\n%dGで買い取ろう。
+10	いいじゃないか。りっぱなもんだ。\n%dGで買い取ろう。
+11	君ね、これは、たいしたもんだ。\n%dGで買い取ろう。
+12	君ね、これは、またとない一瞬だな。\n%dGで買い取ろう。
+13	君ね、これは、一級品だな。\n%dGで買い取ろう。
+14	君ね、これは、そうそう撮れる写真じゃない。\n%dGで買い取ろう。
+15	すばらしい写真だ！　春…　そう、まさに生命の春だ！\n%dGで買い取ろう。
+16	すばらしい写真だ！　秋…　そう、まさに晴朗の秋だ！\n%dGで買い取ろう。
+17	すばらしい写真だ！　夏…　そう、まさに勢焔の夏だ！\n%dGで買い取ろう。
+18	すばらしい写真だ！　冬…　そう、まさに静謐の冬だ！\n%dGで買い取ろう。
+19	なんという美しさ、私には、つける値もないが…\n%dGで買い取ろう。
+20	なんという美しさ、私には、たたえる言葉もないが…\n%dGで買い取ろう。
+21	これは取り損じでございますね。\n0Gで処分いたしましょう。
+22	ああ、これは、なんだな、紙くずだ。\n0G以外のなんでもない。
+[USA]
+0	Thank you for your patronage. I'll take it for %dG.
+1	What is this junk? You'd do better with the lens cover on. I'll give you %dG for it.
+2	What is this junk? Did you forget to take off the lens cover? I'll give you %dG for it.
+3	What is this junk? You gonna use it for kindling? I'll give you %dG for it.
+4	What is this junk? You can't even use it for scrap paper! I'll give you %dG for it.
+5	What is this junk? Did your dog take it? I'll give you %dG for it.
+6	Not bad. This should sell to somebody. I'll buy it for %dG.
+7	Not bad. It's acceptable at least. I'll buy it for %dG.
+8	Pretty good. You've got some talent. I'll buy it for %dG.
+9	Pretty good. Keep it coming. I'll buy it for %dG.
+10	Pretty good. It's very professional. I'll buy it for %dG.
+11	Wow. This is pretty nice. I'll take it for %dG.
+12	Wow. This is quite a shot. I'll take it for %dG.
+13	Wow. This is first rate. I'll take it for %dG.
+14	Wow. This is very good. I'll take it for %dG.
+15	This is magnificent! It depicts the fullness of life! I'll pay %dG for it.
+16	This is magnificent! It depicts the serenity of the moment perfectly! I'll pay %dG for it.
+17	This is magnificent! It depicts the power of life perfectly! I'll pay %dG for it.
+18	This is magnificent! It depicts the tranquility of the moment perfectly! I'll pay %dG for it.
+19	This is so beautiful. It's almost priceless, but I'll pay %dG for it.
+20	This is so beautiful. Words cannot express it. I'll pay %dG for it.
+21	I see you messed up. I'll get rid of it for no charge.
+22	This is just a piece of junk. It's not worth anything.
+[GBR]
+0	Thank you for your patronage. I'll take it for %dG.
+1	What is this junk? You'd do better with the lens cover on. I'll give you %dG for it.
+2	What is this junk? Did you forget to take off the lens cover? I'll give you %dG for it.
+3	What is this junk? You gonna use it for kindling? I'll give you %dG for it.
+4	What is this junk? You can't even use it for scrap paper! I'll give you %dG for it.
+5	What is this junk? Did your dog take it? I'll give you %dG for it.
+6	Not bad. This should sell to somebody. I'll buy it for %dG.
+7	Not bad. It's acceptable at least. I'll buy it for %dG.
+8	Pretty good. You've got some talent. I'll buy it for %dG.
+9	Pretty good. Keep it coming. I'll buy it for %dG.
+10	Pretty good. It's very professional. I'll buy it for %dG.
+11	Wow. This is pretty nice. I'll take it for %dG.
+12	Wow. This is quite a shot. I'll take it for %dG.
+13	Wow. This is first rate. I'll take it for %dG.
+14	Wow. This is very good. I'll take it for %dG.
+15	This is magnificent! It depicts the fullness of life! I'll pay %dG for it.
+16	This is magnificent! It depicts the serenity of the moment perfectly! I'll pay %dG for it.
+17	This is magnificent! It depicts the power of life perfectly! I'll pay %dG for it.
+18	This is magnificent! It depicts the tranquility of the moment perfectly! I'll pay %dG for it.
+19	This is so beautiful. It's almost priceless, but I'll pay %dG for it.
+20	This is so beautiful. Words cannot express it. I'll pay %dG for it.
+21	I see you messed up. I'll get rid of it for no charge.
+22	This is just a piece of junk. It's not worth anything.
+[FRA]
+0	Merci de ta confiance. Je t'en donne %dP.
+1	C'est quoi, cette horreur ? Tu aurais fait mieux en laissant le bouchon. Je t'en donne %dP.
+2	C'est quoi, cette horreur ? Tu as oublié d'enlever le bouchon ? Je t'en donne %dP.
+3	C'est quoi, cette horreur ? C'est pour allumer le feu ? Je t'en donne %dP.
+4	C'est quoi, cette horreur ? C'est même trop moche pour du papier d'emballage ! Je t'en donne %dP.
+5	C'est quoi, cette horreur ? C'est ton chat qui l'a prise ? Je t'en donne %dP.
+6	Pas mal. Ça devrait se vendre. Je te l'achète %dP.
+7	Pas mal du tout. Je te l'achète %dP.
+8	Eh, tu as du talent. Je te l'achète %dP.
+9	Bien, continue comme ça. Je te l'achète %dP.
+10	Bien, très professionnel. Je te l'achète %dP.
+11	Wouah, pas mal du tout. Je te la prends pour %dP.
+12	Wouah, un très beau cliché. Je te le prends pour %dP.
+13	Wouah, une photo de premier ordre. Je te la prends pour %dP.
+14	Wouah, elle est très bonne. Je te la prends pour %dP.
+15	Elle est magnifique, on ressent la richesse de la vie ! Je t'en offre %dP.
+16	Elle est magnifique, on sent bien la sérénité de l'instant. Je t'en offre %dP.
+17	Elle est magnifique. Elle présente à la perfection la puissance de la vie ! Je t'en offre %dP.
+18	Elle est magnifique ! Elle retrace la tranquillité de l'instant. Je t'en offre %dP.
+19	Ce qu'elle est belle... Elle n'a pas de prix, mais je t'en donne %dP.
+20	Ce qu'elle est belle. Je reste sans voix. Je t'en donne %dP.
+21	Elle est totalement ratée. Je t'en débarrasse gratuitement, si tu veux.
+22	Elle est nulle. Elle ne vaut rien.
+[ITA]
+0	Grazie per il tuo sostegno. La scatterò per %dG.
+1	Cos'è questa schifezza? Farai meglio con la copertura. Ti darò %dG.
+2	Cos'è questa schifezza? Ti sei dimenticato di togliere il tappo dell'obiettivo? Ti darò %dG.
+3	Cos'è questa schifezza? Ti servirà per accendere il fuoco? Ti darò %dG.
+4	Cos'è questa schifezza? Non puoi servirtene anche come carta da pacchi! Ti darò %dG.
+5	Cos'è questa schifezza? L'ha mangiata il gatto? Ti darò %dG.
+6	Non male. Si dovrebbe vendere bene. La comprerò per %dG.
+7	Non male. È piuttosto ben fatta. La comprerò per %dG.
+8	Discreta. Hai del talento. La comprerò per %dG.
+9	Discreta. Continua così. La comprerò per %dG.
+10	Discreta. È molto professionale. La comprerò per %dG.
+11	Wow. È molto bella. La comprerò per %dG.
+12	Wow. Questa è davvero una foto. La comprerò per %dG.
+13	Wow. È di prim'ordine. La comprerò per %dG.
+14	Wow. Questa è ottima. La comprerò per %dG.
+15	Questa è magnifica! Descrive la ricchezza della vita! Pagherò %dG.
+16	Questa è magnifica! Descrive perfettamente la serenità dell'istante! Pagherò %dG.
+17	Questa è magnifica! Descrive perfettamente la potenza della vita! Pagherò %dG.
+18	Questa è magnifica! Descrive perfettamente la quiete dell'istante! Pagherò %dG.
+19	Questa è talmente bella. È senza prezzo, ma pagherò %dG.
+20	Questa è talmente bella. Non si può esprimere a parole. Pagherò %dG.
+21	Vedo che hai fatto fiasco. Te ne libererò gratis.
+22	Questa è proprio una porcheria. Non vale niente.
+[DEU]
+0	Nett, dass du damit zu mir kommst. Ich nehme es für %dG.
+1	Was ist das für ein Murks? Hättest du bloß die Kappe auf der Linse gelassen! Ich gebe dir %dG dafür.
+2	Was ist das für ein Murks? Hast du vergessen, die Objektivkappe abzunehmen? Ich gebe dir %dG dafür.
+3	Was ist das für ein Murks? Willst du damit ein Feuer starten? Ich gebe dir %dG dafür.
+4	Was ist das für ein Murks? Das taugt nicht mal als Einwickelpapier. Ich gebe dir %dG dafür.
+5	Was ist das für ein Murks? Hat deine Katze das Foto gemacht? Ich gebe dir %dG dafür.
+6	Nicht schlecht. Das sollte sich verkaufen. Ich kaufe es für %dG.
+7	Nicht schlecht. Gar nicht so übel. Ich kaufe es für %dG.
+8	Ganz ordentlich. Du hast Talent. Ich kaufe es für %dG.
+9	Ganz ordentlich. Mach weiter so. Ich kaufe es für %dG.
+10	Ganz ordentlich. Richtig professionell. Ich kaufe es für %dG.
+11	Na so was. Das ist wirklich schön. Ich nehme es für %dG.
+12	Na so was. Eine gelungene Aufnahme. Ich nehme es für %dG.
+13	Na so was. Das ist ja erste Güte. Ich nehme es für %dG.
+14	Na so was. Ein sehr guter Schnappschuss. Ich nehme es für %dG.
+15	Das ist ja super! Mitten aus dem Leben gegriffen! Ich zahle dafür %dG.
+16	Das ist ja super! Die Ruhe des Augenblicks ist perfekt wiedergegeben! Ich zahle dafür %dG.
+17	Das ist ja super! Voller Schwung und Leben! Ich zahle dafür %dG.
+18	Das ist ja super! Die Beschaulichkeit des Augenblicks ist perfekt eingefangen! Ich zahle dafür %dG.
+19	Das ist wunderschön. Es ist unbezahlbar, aber ich gebe dafür %dG.
+20	Das ist wunderschön. Gar nicht in Worte zu fassen. Ich zahle dafür %dG.
+21	Aha, das war wohl nichts. Gib her, ich schmeiß es für dich weg.
+22	Ds ist einfach nur Bockmist. Vollkommen wertlos.
+[ESP]
+0	Gracias por su visita. Te la compro por %dO.
+1	¿Qué es esta porquería? Te saldría mejor con la tapa puesta. Te doy %dO.
+2	¿Qué es esta porquería? ¿Se te ha olvidado quitar la tapa a la lente? Te doy %dO.
+3	¿Qué es esta porquería? ¿La vas a usar para avivar el fuego de la chimenea? Te doy %dO.
+4	¿Qué es esta porquería? ¡No vale ni para envolver pescado! Te doy %dO.
+5	¿Qué es esta porquería? ¿La ha hecho tu gato? Te doy %dO.
+6	No está mal. No tendré problemas para venderla. Te la compro por %dO.
+7	Bueno, está bastante bien. Te la compro por %dO.
+8	Muy bien. Tienes talento. Te la compro por %dO.
+9	Muy bien. Sigue así. Te la compro por %dO.
+10	Muy bien. Es muy profesional. Te la compro por %dO.
+11	Guau. Es muy bonita. Te la compro por %dO.
+12	Guau. Menuda foto. Te la compro por %dO.
+13	Guau. Esto es una señora foto. Te la compro por %dO.
+14	Guau. Esto está muy bien. Te la compro por %dO.
+15	¡Qué maravilla! ¡Vaya retrato de la vida! Te doy %dO a cambio.
+16	¡Qué maravilla! ¡Esta foto recoge la serenidad del instante perfecto! Te doy %dO a cambio.
+17	¡Qué maravilla! ¡Capta perfectamente el poder de la vida! Te doy %dO a cambio.
+18	¡Qué maravilla! ¡Capta perfectamente la tranquilidad del momento! Te doy %dO a cambio.
+19	Es una preciosidad. No tiene precio, pero pagaría %dO por ella.
+20	Es una preciosidad. No tengo palabras. Te doy %dO a cambio.
+21	La has fastidiado. Yo la regalaría.
+22	Esto es una porquería. No vale un duro.

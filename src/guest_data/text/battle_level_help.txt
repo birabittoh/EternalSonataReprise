@@ -1,0 +1,176 @@
+0x82038978
+[JPN]
+0	<l20><m2>シンキングタイムが無限なので、順番が回ってきた時には、今回の行動をゆっくり考えて決められます。\n行動時間は５秒で、その間は必殺技も使い放題です。
+1	<l20><m2>また、何か行動している間だけ時間が経過し、立ち止まっている時は行動時間が減りません。\nしたがって、一撃ごとに次の行動を、じっくり考えることができます。
+2	<l20><m2>通常攻撃がヒットすると少しだけ行動時間が戻ります。したがって、上手に戦えば５秒以上の時間を使うことができます。\n<m1>ただし、これは通常攻撃だけの話であって、<m2>必殺技は対象外です。
+3	
+4	<l20><m2>行動時間のカウント方法がリアルタイムになりました。最初に動きはじめた瞬間からカウントダウンが開始され、立ち止まっていても時間は経過してしまいます。
+5	<l20><m2>つまり一歩動いたら、その時点から５秒後には自分の順番は終わってしまうということです。
+6	<l20><m2>しかし、パーティクラス１と同様にシンキングタイムは無限なので、順番が回ってきた時に一歩も動かなければ、今回の行動をゆっくり考えて<m3>決めることができます。
+7	
+8	<l20><m2>必殺技装備箇所が４つに増えました。必殺技ボタンを長めに押し、画面下の必殺技名が変化したらボタンを放せば発動します。アイテムスロットが２０Ｐになりました。
+9	<l20><m2>行動時間が４秒に減りました。\nまた、シンキングタイムが３秒になったので、順番が回ってきた時には、３秒以内に行動を決めなければなりません。
+10	<l20><m2>一歩でも行動すると、仮にシンキングタイムが残っていても行動時間のカウントダウンに移ります。\nつまり、シンキングタイムはあくまでも考える時間ということです。
+11	
+12	<l20><m2>シンキングタイムが減り、１秒になってしまいました。反撃が可能になりました。\nエコーが２４ヒット以上のとき、ハーモニーチェインが可能になりました。\nアイテムスロットが３０Ｐになりました。
+13	<l20><m2>反撃について。\n防御ボタンと同様に反撃ボタンが選択可能になることがあります。そのときに反撃ボタンを押せば、敵の行動を中断させ、一定時間反撃をすることが出来ます。
+14	<l20><m2>ハーモニーチェインについて。\nエコーが２４ヒット以上の状態で必殺技を出すと、その必殺技が終了する間際に、別の必殺技へつなげることができます。
+15	
+16	<l20><m2>シンキングタイムが０になり、いきなり行動時間が減りはじめます。\nＮｅｘｔの表示をよく見て、次に順番が回ってくるキャラクターを確認し、常に準備しておくことが必要です。
+17	<l20><m2>また、反撃時に必殺技を使うことが可能になり、キャラクターは１．５倍の速度で移動できるようになりました。
+18	<l20><m2>ハーモニーチェインは３に増え、他の仲間のうち、ターゲットを攻撃できる必殺技を持つ者がいれば、３つ目の必殺技につながります。\nアイテムスロットは４０Ｐになりました。
+19	
+20	<l20><m2>ハーモニーチェインは６に増え、他の仲間のうち、ターゲットを攻撃できる必殺技を持つ者がいれば、最大で６回必殺技がつながります。\nアイテムスロットは５０Ｐになりました。
+21	<l20><m2>また、ハーモニーチェインしてもエコーが消費されなくなり、かつ、次のバトルにも引き継がれるようになったため、戦術によってはエコーをずっと維持して戦うことも可能です。
+22	<l20><m2>ただし、その代償として、チェインする度に各ボタンのコマンドが入れ替わってしまいます。
+23	
+[USA]
+0	<l15>Tactical Time is unlimited and the Action Gauge is set at five seconds. Special attacks can be used as much as you wish during this time.
+1	<l15>Action Gauge will only decrease when moves are performed; it will not decrease when standing still. 
+2	<l15>When a normal attack connects, a small amount of time will be added to the Action Gauge. However, this applies only to normal attacks, and not to special attacks.
+3	
+4	<l15>Movement is now counted in real time. The Action Gauge will start decreasing after your first step, and will continue to do so even when standing still.
+5	<l15>In other words, from the first move you make, you have five seconds before the turn is over.
+6	<l15>However, as in Party Level 1, Tactical Time is still unlimited. So as long as you do not move at the start of the turn, you still have time to consider what to do next.
+7	
+8	<l15>Four slots are now available for special attacks. Holding down the Special Attack button will change the special attack. Release the button when the other special attack name appears.
+9	<l15>There are now twenty item slots. The Action Gauge is set at four seconds and Tactical Time has been reduced to three seconds. 
+10	<l15>Moving even one step will immediately begin to reduce the Action Gauge. Use your Tactical Time wisely.
+11	
+12	<l15>Tactical Time is now reduced to one second and counterattacks are now possible. Harmony Chains can now be used when Echoes are above twenty-four. The item slots have been increased to thirty.
+13	<l15>Much like the Guard button, the Counterattack button can now be utilized in battle. Pushing it at the right moment will allow you to counterattack for a brief period.
+14	<l15>Harmony Chains occur when Echoes are above twenty-four hits. At this point an additional special attack can be linked to the end of the initiating special attack.
+15	
+16	<l15>Tactical Time is now at zero. The Action Gauge will begin counting down immediately. Keep a close eye on the "Next" arrow to maximize your time.
+17	<l15>Special attacks can now be used in counterattacks. The character's movement speed is increased by fifty percent.
+18	<l15>Harmony Chains are increased to three. Up to three special attacks can now be used if there are allies within attack range. Item slots are increased to forty.
+19	
+20	<l15>Harmony Chains are increased to six. Up to six special attacks can now be used if there are allies within attack range. Item slots are increased to fifty.
+21	<l15>Echoes are now retained after a Harmony Chain, and can even be carried over to the next battle. 
+22	<l15>As an offset, command buttons will change at random during each chain.
+23	
+[GBR]
+0	<l15>Tactical Time is unlimited and the Action Gauge is set at five seconds. Special attacks can be used as much as you wish during this time.
+1	<l15>Action Gauge will only decrease when moves are performed; it will not decrease when standing still. 
+2	<l15>When a normal attack connects, a small amount of time will be added to the Action Gauge. However, this applies only to normal attacks, and not to special attacks.
+3	
+4	<l15>Movement is now counted in real time. The Action Gauge will start decreasing after your first step, and will continue to do so even when standing still.
+5	<l15>In other words, from the first move you make, you have five seconds before the turn is over.
+6	<l15>However, as in Party Level 1, Tactical Time is still unlimited. So as long as you do not move at the start of the turn, you still have time to consider what to do next.
+7	
+8	<l15>Four slots are now available for special attacks. Holding down the Special Attack button will change the special attack. Release the button when the other special attack name appears.
+9	<l15>There are now twenty item slots. The Action Gauge is set at four seconds and Tactical Time has been reduced to three seconds. 
+10	<l15>Moving even one step will immediately begin to reduce the Action Gauge. Use your Tactical Time wisely.
+11	
+12	<l15>Tactical Time is now reduced to one second and counterattacks are now possible. Harmony Chains can now be used when Echoes are above twenty-four. The item slots have been increased to thirty.
+13	<l15>Much like the Guard button, the Counterattack button can now be utilized in battle. Pushing it at the right moment will allow you to counterattack for a brief period.
+14	<l15>Harmony Chains occur when Echoes are above twenty-four hits. At this point an additional special attack can be linked to the end of the initiating special attack.
+15	
+16	<l15>Tactical Time is now at zero. The Action Gauge will begin counting down immediately. Keep a close eye on the "Next" arrow to maximize your time.
+17	<l15>Special attacks can now be used in counterattacks. The character's movement speed is increased by fifty percent.
+18	<l15>Harmony Chains are increased to three. Up to three special attacks can now be used if there are allies within attack range. Item slots are increased to forty.
+19	
+20	<l15>Harmony Chains are increased to six. Up to six special attacks can now be used if there are allies within attack range. Item slots are increased to fifty.
+21	<l15>Echoes are now retained after a Harmony Chain, and can even be carried over to the next battle. 
+22	<l15>As an offset, command buttons will change at random during each chain.
+23	
+[FRA]
+0	Le temps tactique est illimité, ce qui laisse le temps de choisir les prochaines actions. Cinq secondes sont disponibles et il est possible d'utiliser les actions spéciales autant que l'on veut pendant ce temps.
+1	Par ailleurs, le temps ne diminue que lorsque des actions sont effectuées. Il ne s'écoule pas quand on reste immobile. Cela permet de réfléchir avant chaque action.
+2	Quand une attaque normale touche, du temps est ajouté, ce qui signifie que l'on peut disposer de plus de cinq secondes. En revanche, cela ne s'applique qu'aux attaques normales, pas aux attaques spéciales.
+3	
+4	Les mouvements sont désormais comptés en temps réel. Le chrono se déclenche dès le premier mouvement et ne s'arrête plus, même si l'on reste immobile.
+5	En d'autres termes, le tour dure cinq secondes à compter du premier mouvement.
+6	Cependant, comme en catégorie de groupe 1, le temps tactique est illimité. Par conséquent, si l'on ne bouge pas quand vient son tour, il reste possible de réfléchir aux actions suivantes.
+7	
+8	Quatre emplacements sont maintenant disponibles pour les actions spéciales. Appuyer longuement sur la touche des actions spéciales les fait défiler dans le bas de l'écran. Il suffit de la lâcher quand l'action souhaitée est affichée.
+9	Il est désormais possible d'utiliser vingt emplacements d'objets. La durée des mouvements est limitée à quatre secondes. Par ailleurs, le temps tactique est réduit à trois secondes.
+10	Faire ne serait-ce qu'un pas déclenche immédiatement le chrono. Il faut utiliser à bon escient le temps tactique.
+11	
+12	Le temps tactique est maintenant réduit à une seconde. Les contre-attaques deviennent possibles. Lorsque l'écho atteint vingt-quatre coups, les chaînes d'harmonie deviennent utilisables. Le nombre d'emplacements d'objets est passé à trente.
+13	À propos des contre-attaques : il est maintenant possible d'appuyer sur la touche de contre-attaque comme sur la touche de défense. Appuyer dessus au bon moment permet de contre-attaquer pendant quelques instants.
+14	À propos des chaînes d'harmonie : lorsque l'écho atteint vingt-quatre coups, il est possible d'enchaîner une action spéciale à la précédente.
+15	
+16	Le temps tactique est réduit à zéro. Le chrono se déclenche immédiatement. Pour optimiser le temps disponible, il faut garder un œil sur l'enchaînement des tours de personnage.
+17	Les actions spéciales peuvent désormais être utilisées comme contre-attaques et la vitesse des personnages a augmenté de 50 %.
+18	Le nombre de chaînes d'harmonie est passé à trois. Par conséquent, si des alliés se trouvent à portée d'attaque, jusqu'à trois actions spéciales peuvent être employées. Le nombre d'emplacements d'objets est passé à quarante.
+19	
+20	Il est désormais possible d'employer six chaînes d'harmonie. Si des alliés sont à portée d'attaque, il est possible d'utiliser jusqu'à six actions spéciales. Le nombre d'emplacements d'objets est passé à cinquante.
+21	Par ailleurs, l'écho est préservé après une chaîne d'harmonie et peut être reporté au combat suivant. En fonction du style de jeu, il est possible de conserver l'écho indéfiniment.
+22	En contrepartie, la commande correspondant à chaque touche change aléatoirement après chaque enchaînement.
+23	
+[ITA]
+0	Il tempo tattico è illimitato, il che lascia molto tempo per decidere le proprie mosse. Sono disponibili cinque secondi, durante i quali è possibile utilizzare tutte le mosse speciali che desideri.
+1	Inoltre, il tempo diminuirà soltanto quando vengono compiute azioni; non diminuirà se non ti muovi. È possibile studiare a fondo ogni azione.
+2	Quando un attacco normale ha successo, verrà aggiunto del tempo al timer e ciò ti permette di poter avere a disposizione più di cinque secondi. Tuttavia, ciò è valido soltanto per gli attacchi normali e non per gli attacchi speciali.
+3	
+4	Il movimento adesso viene valutato in tempo reale. Il contatore comincerà a diminuire dalla tua prima mossa, e continuerà a diminuire anche mentre non ti muovi.
+5	In poche parole, dalla tua prima mossa, hai cinque secondi prima che il turno finisca.
+6	Tuttavia, come per il Livello di Gruppo 1, il tempo tattico è ancora illimitato, perciò se non ti muovi quando tocca a te, c'è ancora tempo per riflettere su cosa fare in seguito.
+7	
+8	Adesso sono disponibili quattro slot per mosse speciali. Tenendo premuto il pulsante mossa speciale, nella parte inferiore dello schermo, scorrerà l'elenco. Quando compare la mossa desiderata, rilasciare il pulsante.
+9	A questo punto è possibile utilizzare venti slot di voci. Il movimento è ora limitato a quattro secondi. Inoltre, anche il tempo tattico è stato ridotto a tre secondi. 
+10	Muovendo anche un solo passo, il contatore di movimento comincerà subito a diminuire. Utilizza saggiamente il tuo tempo tattico.
+11	
+12	Il tempo tattico è ora ridotto a un secondo. Adesso è possibile contrattaccare. È possibile usare le Catene armoniche, quando l'Eco oltrepassa i ventiquattro risultati. Gli slot voci sono stati portati a trenta.
+13	Informazioni sui contrattacchi: quasi come il pulsante difesa, a questo punto è possibile premere il pulsante contrattacca. Premendolo nel momento giusto ti permetterà di contrattaccare per un breve lasso di tempo.
+14	Informazioni sulle Catene d'armonia: quando l'Eco raggiunge i ventiquattro colpi, è possibile collegare una mossa speciale alla mossa speciale precedente.
+15	
+16	Adesso il tempo tattico è zero. Il contatore di movimento comincerà subito a contare alla rovescia. Sta bene attento a quale personaggio sarà il "Successivo" per aumentare al massimo il tuo tempo.
+17	A questo punto è possibile utilizzare le mosse speciali come contrattacchi, e ora i personaggi si muovono ad una velocità del cinquanta percento superiore rispetto a prima.
+18	La Catena armonica è passata a tre, perciò se nella catena d'attacco sono presenti alleati, è possibile utilizzare fino a tre mosse speciali. A questo punto ci sono quaranta posizioni oggetto.
+19	
+20	Adesso è possibile utilizzare sei mosse in Catena armonica. Se nella catena d'attacco sono presenti alleati, è possibile utilizzare fino a sei mosse speciali. A questo punto sono disponibili cinquanta posizioni oggetto.
+21	Inoltre, anche dopo aver utilizzato una Catena armonica l'Eco viene mantenuto e può essere preservato per il prossimo combattimento. A seconda dello stile di gioco, è possibile preservare l'Eco indefinitamente.
+22	Tuttavia, in altenativa, ogni comando del pulsante cambierà a casaccio dopo ogni catena.
+23	
+[DEU]
+0	Taktikzeit ist unbegrenzt; du kannst dir also in Ruhe überlegen, was du tun willst. Es stehen fünf Sekunden zur Verfügung; in dieser Zeit können beliebig viele Spezialaktionen ausgeführt werden.
+1	Außerdem läuft die Zeit nur ab, wenn Aktionen ausgeführt werden, und nicht, wenn du still stehst. So kannst du über jede Aktion vorher nachdenken.
+2	Wenn ein normaler Angriff trifft, erhöht sich die Zeitanzeige, so dass du eventuell mehr als fünf Sekunden hast. Dies gilt aber nur für normale Angriffe, nicht für Spezialangriffe.
+3	
+4	Bewegungen laufen jetzt in Echtzeit ab. Die Anzeige geht von der ersten Bewegung an zurück, auch wenn du still stehenbleibst.
+5	Kurz gesagt: vom ersten Schritt an, den du tust, hast du fünf Sekunden, bevor dein Zug vorbei ist.
+6	\Wie in Gruppenklasse 1 ist die Taktikzeit aber immer noch unbegrenzt. Wenn du dich also nicht bewegst, sobald du am Zug bist, hast du immer noch Zeit, dir eine Strategie zu überlegen.
+7	
+8	Für Spezialaktionen stehen jetzt vier Plätze zur Verfügung. Halte die Taste "Spezialangriff" gedrückt, und sie erscheinen abwechselnd unten am Bildschirm. Bei der gewünschten Aktion lass die Taste los.
+9	Es sind jetzt zwanzig Objektplätze verfügbar. Die Bewegung ist auf vier Sekunden begrenzt. Außerdem beträgt die Taktikzeit nur noch drei Sekunden.
+10	Wenn du auch nur einen Schritt tust, beginnt die Aktionsanzeige zu laufen. Mache klugen Gebrauch von deiner Taktikzeit.
+11	
+12	Die Taktikzeit ist auf eine Sekunde reduziert. Gegenangriffe sind jetzt möglich. Wenn das Echo vierundzwanzig Treffer überschreitet, können Harmonieketten verwendet werden. Es gibt dreißig Objektplätze.
+13	Gegenangriffe: ähnlich wie die Taste "Verteidigung" kann jetzt die Taste "Gegenangriff" gedrückt werden. Wenn du sie im richtigen Moment drückst, kannst du kurz zum Gegenangriff übergehen.
+14	Harmonieketten: sobald das Echo vierundzwanzig Treffer erreicht, kann eine Spezialaktion mit einer früheren Spezialaktion verbunden werden.
+15	
+16	Es gibt keine Taktikzeit mehr. Die Aktionsanzeige beginnt sofort zu laufen. Achte gut darauf, welcher Charakter als nächstes dran ist, um deine Zeit zu maximieren.
+17	Spezialaktionen können jetzt als Gegenangriffe genutzt werden, und die Charaktere bewegen sich um 50 Prozent schneller als zuvor.
+18	Die Harmoniekette ist auf drei angewachsen; wenn sich Verbündete im Angriffsbereich befinden, können also bis zu drei Spezialaktionen benutzt werden. Es gibt jetzt vierzig Objektplätze.
+19	
+20	Die Harmoniekette ist auf sechs angewachsen; wenn sich Verbündete im Angriffsbereich befinden, können bis zu sechs Spezialaktionen benutzt werden. Es gibt jetzt fünfzig Objektplätze.
+21	Außerdem geht das Echo auch nach einer Harmoniekette nicht verloren und kann für den nächsten Kampf übernommen werden. Abhängig vom Spielstil kann das Echo unbegrenzt bewahrt werden.
+22	Dafür ändern sich aber nach jeder Kette die Tastenbefehle nach dem Zufallsprinzip.
+23	
+[ESP]
+0	El tiempo táctico es ilimitado: tómate tu tiempo y decide qué hacer a continuación. Dispones de cinco segundos en los que podrás usar tantos movimientos especiales como desees.
+1	Además, el tiempo sólo correrá si haces algo; si te quedas quieto, no pasa el tiempo. Puedes pensar con calma cada acción.
+2	Si el ataque alcanza al enemigo, se añadirá tiempo al reloj, por lo que en realidad dispones de más de cinco segundos. Esto solamente se aplica a los ataques normales, no a los especiales.
+3	
+4	Ahora los movimientos se realizan siempre en tiempo real. En cuanto hagas el primer movimiento, el reloj empezará a correr, incluso si te quedas quieto.
+5	Dicho de otra forma, en cuanto des un paso, tendrás cinco segundos hasta que se acabe el turno.
+6	Sin embargo, al igual que en el nivel de grupo 1, el tiempo táctico sigue siendo ilimitado. Si al empezar tu turno te quedas quieto, podrás pensar con calma lo que vas a hacer.
+7	
+8	Ahora dispones de cuatro ranuras para movimientos especiales. Mantén pulsado el botón de movimiento especial para cambiar de movimiento en la parte inferior de la pantalla. Cuando aparezca el movimiento que buscas, suelta el botón.
+9	Ahora puedes usar veinte ranuras de objetos, pero dispones tan sólo de cuatro segundos para moverte. Además, el tiempo táctico se ha reducido a tres segundos. 
+10	En cuanto des un paso, el indicador de acción empezará a vaciarse. Emplea bien el tiempo táctico.
+11	
+12	Ahora sólo tienes un segundo de tiempo táctico. En este nivel puedes contraatacar. Cuando el eco llegue a los 24 golpes, podrás usar cadenas armónicas. Dispones de treinta ranuras de objetos.
+13	Contraatacar: además del botón de defensa, ahora puedes pulsar el botón de contraataque. Si lo pulsas en el momento adecuado, podrás contraatacar por unos instantes.
+14	Cadenas armónicas: cuando el eco llegue a los 24 golpes, podrás combinar movimientos especiales.
+15	
+16	El tiempo táctico es cero. El reloj empezará a correr de forma inmediata. Para aprovechar bien el tiempo, procura estar atento para saber qué personaje es el siguiente.
+17	<l15>Ahora puedes usar los movimientos especiales para contraatacar y los personajes se mueven un 50% más deprisa.
+18	La cadena armónica se ha triplicado: si tus amigos están en el radio de ataque, puedes usar hasta tres ataques especiales. Ahora dispones de cuarenta ranuras de objeto.
+19	
+20	Ahora puedes encadenar seis movimientos en una cadena armónica. Si tus compañeros están cerca, se pueden usar hasta seis ataques especiales. Dispones de cincuenta ranuras de objeto.
+21	Además el eco se conserva incluso después de usar una cadena armónica, y se conserva para la próxima batalla. Según el estilo de juego, el eco puede conservarse de forma indefinida.
+22	Por contra, después de cada cadena armónica el comando de cada botón cambiará al azar.
+23	

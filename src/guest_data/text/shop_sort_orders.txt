@@ -1,0 +1,57 @@
+0x820384B8
+[JPN]
+0	ＩＤ順<<>仮<>>
+1	価格順
+2	名前順
+3	攻撃力順
+4	防御力順
+5	獲得順
+6	種類順
+[USA]
+0	By ID (temp)
+1	By Price
+2	By Name
+3	By Attack Power
+4	By Defense Power
+5	By Acquired Time
+6	By Type
+[GBR]
+0	By ID (temp)
+1	By Price
+2	By Name
+3	By Attack Power
+4	By Defense Power
+5	By Acquired Time
+6	By Type
+[FRA]
+0	Par ID (temp.)
+1	Par prix
+2	Par nom
+3	Par puiss. d'ATT
+4	Par puiss. de DÉF
+5	Par temps acquis
+6	Par type
+[ITA]
+0	Per ID (temp)
+1	Per prezzo
+2	Per nome
+3	Per potenza d'attacco
+4	Per potenza di difesa
+5	Per tempo acquisito
+6	Per tipo
+[DEU]
+0	Nach ID (temp.)
+1	Nach Preis
+2	Nach Bezeichnung
+3	Nach Angriffsstärke
+4	Nach Defensivstärke
+5	Nach wann erhalten
+6	Nach Typ
+[ESP]
+0	Por ID (temp)
+1	Por precio
+2	Por nombre
+3	Por potencia de ataque
+4	Por potencia de defensa
+5	Por hora adquisición
+6	Por tipo

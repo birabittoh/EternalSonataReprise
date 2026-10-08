@@ -1,0 +1,71 @@
+0x8202B8A8
+[JPN]
+0	データを正常に読み込みました。
+1	アンロックキーの読み込みに失敗しました。
+2	アンロックキーの読み込みに失敗しました。
+3	アンロックキーのデータがありませんでした。
+4	指定されたストレージ機器が取り外されたため\nアクセスできません。
+5	予期しないエラーが発生しました。\n読み込みを終了します。
+6	サインインをしていないため確認ができません。
+7	アンロックキーのチェック中です…。\n本体の電源を切ったり、\nストレージ機器を取り外したりしないでください。\n
+8	
+[USA]
+0	Loaded data
+1	Failed to read Unlock Key
+2	Failed to read Unlock Key
+3	Data for Unlock Key could not be found
+4	The selected storage device has been\nremoved and cannot be accessed.
+5	An unexpected error has occurred\nUnable to load data
+6	You must be signed-in to check.
+7	Checking Unlock Key.\nPlease do not remove the storage device or\nreset/switch off the Xbox 360 console.\n
+8	
+[GBR]
+0	Loaded data
+1	Failed to read Unlock Key
+2	Failed to read Unlock Key
+3	Data for Unlock Key could not be found
+4	The selected storage device has been\nremoved and cannot be accessed.
+5	An unexpected error has occurred\nUnable to load data
+6	You must be signed-in to check.
+7	Checking Unlock Key.\nPlease do not remove the storage device or\nreset/switch off the Xbox 360 console.\n
+8	
+[FRA]
+0	Données chargées
+1	Impossible de lire la clé de déblocage.
+2	Impossible de lire la clé de déblocage.
+3	Données de clé de déblocage introuvables.
+4	Le périphérique de stockage sélectionné a\nété retiré et est inaccessible.
+5	Erreur inattendue. Chargement des\ndonnées impossible.
+6	La vérification nécessite d'être connecté.
+7	Vérification de clé de déblocage.\nNe pas retirer le périphérique de stockage ni\néteindre la console Xbox 360.\n
+8	
+[ITA]
+0	Dati caricati.
+1	Lettura chiave di attivazione fallita.
+2	Lettura chiave di attivazione fallita.
+3	Impossibile trovare dati per chiave di attivazione.
+4	La periferica di memorizzazione selezionata è stata\nrimossa e non è possibile accedervi.
+5	Si è verificato un errore imprevisto.\nImpossibile caricare i dati.
+6	Devi essere connesso per verificare.
+7	Verifica chiave di attivazione.\nNon rimuovere la periferica di memorizzazione\no spegnere la console Xbox 360.\n
+8	
+[DEU]
+0	Daten wurden geladen.
+1	Freischalt-Code konnte nicht gelesen werden.
+2	Freischalt-Code konnte nicht gelesen werden.
+3	Daten für Freischalt-Code nicht gefunden.
+4	Das gewählte Speichergerät wurde entfernt.\nEs kann nicht darauf zugegriffen werden.
+5	Ein unerwarteter Fehler ist aufgetreten.\nDaten können nicht geladen werden.
+6	Zum Überprüfen musst du angemeldet sein.
+7	Freischalt-Code wird überprüft.\nBitte das Speichergerät nicht entfernen und\ndie Xbox 360 Konsole nicht ausschalten.\n
+8	
+[ESP]
+0	Datos cargados.
+1	No se pudo leer la clave de desbloqueo.
+2	No se pudo leer la clave de desbloqueo.
+3	No se encontraron datos para la clave de desbloqueo.
+4	Se ha extraido el dispositivo de almacenamiento seleccionado\ny no se puede acceder al mismo.
+5	Se ha producido un error inesperado.\nNo se pueden cargar los datos.
+6	Debes iniciar sesión para comprobar la clave.
+7	Comprobando clave de desbloqueo.\nNo retires el dispositivo de almacenamiento\nni apagues la Consola Xbox 360.\n
+8	
