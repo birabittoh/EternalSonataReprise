@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Build an Xbox 360 game directory that runs the PS3 release's data.
+"""Turn an unpacked PS3 tree into a game directory the 360 executable runs.
 
 Input is a tree extracted with unpack_ps3.py, which is already decoded (the
-PS3 ships no codec layer), plus the 360 assets directory. The output mirrors
-the 360 one (hard linked where possible), with every PS3 file the 360
-executable can load converted and written over it, and an index.vmtoc whose
-records describe the converted files as stored. Point game_data_root at it.
-The formats and the evidence for every rule are in docs/ps3-assets.md.
+PS3 ships no codec layer), plus the 360 assets directory. The tree is
+converted in place, like a USA or JP copy (src/installer/release_patch.cpp):
+every PS3 file the 360 executable can load is written over itself, the
+shipped file kept as *.orig and every run starting from those. 360 files the
+PS3 data cannot replace yet are added (hard linked where possible), and
+index.vmtoc gets a stored record for every converted file. Point
+game_data_root at the tree. The formats and the evidence for every rule are
+in docs/ps3-assets.md.
 
 Converted:
   NMDL  version byte 0x83 -> 0x82
@@ -21,7 +24,8 @@ Converted:
   .p3tex  -> .x3tex (a bare texture chain)
   .csf / .cps  audio, see ps3_audio.py; needs ffmpeg on PATH
 
-usage: ps3_convert.py PS3_ROOT OUT --base ASSETS_360 [--verify DECODED_360]
+usage: ps3_convert.py PS3_ROOT [--base ASSETS_360] [--verify DECODED_360]
+Without --base nothing is written: it only converts and reports.
 """
 import argparse
 import atexit
@@ -901,42 +905,85 @@ class Toc:
         return b''.join(bytes(r) for r in sorted(self.records.values(), key=lambda r: bytes(r[:32])))
 
 
-def replace_file(path, data):
-    # The directory starts as hard links to the 360 tree; unlink first so a
-    # write can never reach the original.
-    if os.path.lexists(path):
+ORIGINAL = '.orig'
+# The unpacked PS3 files, listed on the first run: what later runs added has
+# no *.orig and must not be taken for PS3 data.
+SHIPPED = 'ps3-shipped.txt'
+# Bumped with every conversion change, here and in src/installer/ps3_install.cpp.
+STAMP = 'ps3-convert.stamp'
+STAMP_VERSION = b'1'
+NOT_DATA = ('.i64', '.idb', '.id0', '.id1', '.id2', '.nam', '.til', '.bak', ORIGINAL, '.stamp')
+# Never served from the game directory: the guest image is built in, and the
+# release patch bundle is the 360 installer's.
+NOT_DONOR = ('index.vmtoc', 'default.xex', 'release-patches.bin')
+
+
+def walk(root):
+    for at, dirs, files in os.walk(root):
+        dirs[:] = [x for x in dirs if not x.startswith('.')]
+        for f in files:
+            if not f.startswith('.') and not f.lower().endswith(NOT_DATA):
+                yield os.path.relpath(os.path.join(at, f), root).replace(os.sep, '/')
+
+
+def shipped_files(root, record):
+    """Lowercase relative path -> the PS3 spelling, for the files as unpacked."""
+    path = os.path.join(root, SHIPPED)
+    if os.path.exists(path):
+        with open(path, encoding='utf-8') as fh:
+            files = [line for line in fh.read().splitlines() if line]
+    else:
+        files = sorted(rel for rel in walk(root) if rel != SHIPPED)
+    if record and not os.path.exists(path):
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.writelines(rel + '\n' for rel in files)
+    return {rel.lower(): rel for rel in files}
+
+
+def read_shipped(path):
+    """The file as unpacked, from before any earlier run."""
+    with open(path + ORIGINAL if os.path.exists(path + ORIGINAL) else path, 'rb') as fh:
+        return fh.read()
+
+
+def make_room(path, shipped):
+    # A shipped file is kept beside its replacement. Anything else may be a
+    # hard link to the 360 tree: unlink it so a write never reaches the 360 file.
+    if shipped and not os.path.exists(path + ORIGINAL):
+        os.replace(path, path + ORIGINAL)
+    elif os.path.lexists(path):
         os.remove(path)
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+
+
+def replace_file(path, data, shipped=False):
+    make_room(path, shipped)
     with open(path, 'wb') as fh:
         fh.write(data)
 
 
-def link_base(base, out, keep=False):
-    """Mirrors the 360 tree into out, as hard links where the volume allows;
-    with keep, files already there stay. Returns lowercase relative path ->
-    the 360 spelling."""
-    names = {}
-    for root, dirs, files in os.walk(base):
-        dirs[:] = [x for x in dirs if not x.startswith('.')]
-        for f in files:
-            if (f.endswith(('.i64', '.idb', '.id0', '.id1', '.id2', '.nam', '.til', '.bak'))
-                    or f.lower() == 'index.vmtoc'):
-                continue
-            src = os.path.join(root, f)
-            rel = os.path.relpath(src, base).replace(os.sep, '/')
-            dst = os.path.join(out, rel)
-            names[rel.lower()] = rel
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            if os.path.lexists(dst):
-                if keep:
-                    continue
-                os.remove(dst)
-            try:
-                os.link(src, dst)
-            except OSError:
-                with open(src, 'rb') as a, open(dst, 'wb') as b:
-                    b.write(a.read())
-    return names
+def link_file(src, dst, shipped=False):
+    make_room(dst, shipped)
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copyfile(src, dst)
+
+
+def base_files(base):
+    """Lowercase relative path -> the 360 spelling, for every 360 file."""
+    return {rel.lower(): rel for rel in walk(base)
+            if os.path.basename(rel).lower() not in NOT_DONOR}
+
+
+def add_base(base, root, base_names, shipped, keep=False):
+    """Links every 360 file the PS3 does not ship into root, as hard links
+    where the volume allows; with keep, files already there stay."""
+    for low, rel in base_names.items():
+        dst = os.path.join(root, rel)
+        if low in shipped or keep and os.path.lexists(dst):
+            continue
+        link_file(os.path.join(base, rel), dst)
 
 
 # ---------------------------------------------------------------------------
@@ -1026,28 +1073,32 @@ def verify(converted, reference, stats):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    ap.add_argument('ps3_root', help='unpack_ps3.py output')
-    ap.add_argument('out', nargs='?', help='game directory to build; omit to only convert and report')
-    ap.add_argument('--base', help='the 360 assets directory: default.xex, index.vmtoc and '
-                    'every file the PS3 data cannot replace')
+    ap.add_argument('ps3_root', help='unpack_ps3.py output, converted in place')
+    ap.add_argument('--base', help='the 360 assets directory: index.vmtoc and every file the '
+                    'PS3 data cannot replace; omit to only convert and report')
     ap.add_argument('--only', action='append', default=[], help='substring filter on the path')
     ap.add_argument('--verify', metavar='DIR', action='append', default=[],
                     help='decoded 360 tree (unpack_e output) to compare converted models against')
     args = ap.parse_args()
-    if args.out and not args.base:
-        ap.error('building a game directory needs --base')
+    root = args.ps3_root
+    write = bool(args.base)
 
-    toc = names = None
+    shipped = shipped_files(root, record=write)
+    toc = names = base_names = None
     banks = donors = scratch = None
-    if args.out:
+    if write:
         ps3_audio.require_ffmpeg()
-        # A partial run keeps the records of everything converted before.
-        toc_from = args.out if args.only and os.path.exists(
-            os.path.join(args.out, 'index.vmtoc')) else args.base
+        # The PS3 ships no index.vmtoc. A partial run keeps the records of
+        # everything converted before.
+        toc_from = root if args.only and os.path.exists(
+            os.path.join(root, 'index.vmtoc')) else args.base
         with open(os.path.join(toc_from, 'index.vmtoc'), 'rb') as fh:
             toc = Toc(fh.read())
-        names = link_base(args.base, args.out, keep=bool(args.only))
-        pcm_dir = os.path.join(args.out, 'pcm')
+        base_names = base_files(args.base)
+        add_base(args.base, root, base_names, shipped, keep=bool(args.only))
+        # Converted files keep the PS3 spelling, added ones the 360's.
+        names = {**base_names, **shipped}
+        pcm_dir = os.path.join(root, 'pcm')
         if not args.only and os.path.isdir(pcm_dir):
             shutil.rmtree(pcm_dir)
         scratch = tempfile.mkdtemp(prefix='ps3_convert_')
@@ -1058,9 +1109,9 @@ def main():
         battlekeep = decoded_360_file(args.base, os.path.join(scratch, 'bop'), BATTLEKEEP)
 
     def write_pcm(tok, data):
-        replace_file(os.path.join(args.out, 'pcm', tok.hex() + '.wav'), data)
+        replace_file(os.path.join(root, 'pcm', tok.hex() + '.wav'), data)
 
-    if args.out:
+    if write:
         global embedded_audio
         decoded = {}
 
@@ -1099,59 +1150,62 @@ def main():
             return ps3_audio.convert_csf(f'{rel}#{index}', bank, twin, write_pcm, report)
 
     def emit(out_rel, data):
-        if out_rel.lower() not in names:
+        if out_rel.lower() not in base_names:
             report.counts['new files'] += 1
         out_rel = names.get(out_rel.lower(), out_rel)
-        replace_file(os.path.join(args.out, out_rel), data)
+        replace_file(os.path.join(root, out_rel), data, out_rel.lower() in shipped)
         if not toc.set_stored(out_rel, len(data)):
             report.warn(f'{out_rel}: path too long for an index.vmtoc record')
         return out_rel
 
     report = Report()
     stats = collections.Counter()
-    for root, _, files in os.walk(args.ps3_root):
-        for f in sorted(files):
-            path = os.path.join(root, f)
-            rel = os.path.relpath(path, args.ps3_root).replace(os.sep, '/')
-            if args.only and not any(s.lower() in rel.lower() for s in args.only):
+    for low, rel in sorted(shipped.items()):
+        if args.only and not any(s.lower() in low for s in args.only):
+            continue
+        path = os.path.join(root, rel)
+        f = os.path.basename(rel)
+        d = read_shipped(path)
+        if low.endswith(('.csf', '.cps')):
+            if not write:
+                report.counts['audio, converted only into a game directory'] += 1
                 continue
-            with open(path, 'rb') as fh:
-                d = fh.read()
-            low = rel.lower()
-            if low.endswith(('.csf', '.cps')):
-                if not args.out:
-                    report.counts['audio, converted only into a game directory'] += 1
-                    continue
-                if low.endswith('.csf'):
-                    x360 = None
-                    if low in banks:
-                        with open(banks[low], 'rb') as fh:
-                            x360 = fh.read()
-                    emit(rel, ps3_audio.convert_csf(rel, d, x360, write_pcm, report))
-                else:
-                    for out_rel, data in ps3_audio.convert_cps(rel, d, args.base, donors,
-                                                                write_pcm, report):
-                        emit(out_rel, data)
+            if low.endswith('.csf'):
+                x360 = None
+                if low in banks:
+                    with open(banks[low], 'rb') as fh:
+                        x360 = fh.read()
+                emit(rel, ps3_audio.convert_csf(rel, d, x360, write_pcm, report))
+            else:
+                for out_rel, data in ps3_audio.convert_cps(rel, d, args.base, donors,
+                                                            write_pcm, report):
+                    emit(out_rel, data)
+            continue
+        result = convert_file(rel, d, report)
+        if result is None:
+            kind = os.path.splitext(f)[1].lower() or f
+            if base_names is None or low not in base_names:
+                report.counts['kept PS3 ' + kind] += 1
                 continue
-            result = convert_file(rel, d, report)
-            if result is None:
-                report.counts['kept 360 ' + (os.path.splitext(f)[1].lower() or f)] += 1
-                continue
-            out_rel, data = result
-            report.counts['converted'] += 1
-            if low == BATTLEKEEP and args.out:
-                data = append_dropped_battlekeep(data, battlekeep, report)
-            if args.out:
-                out_rel = emit(out_rel, data)
-            for ref_root in args.verify:
-                ref = os.path.join(ref_root, out_rel.lower())
-                if os.path.exists(ref):
-                    with open(ref, 'rb') as fh:
-                        verify(data, fh.read(), stats)
-                    break
+            report.counts['kept 360 ' + kind] += 1
+            link_file(os.path.join(args.base, base_names[low]), path, shipped=True)
+            continue
+        out_rel, data = result
+        report.counts['converted'] += 1
+        if low == BATTLEKEEP and write:
+            data = append_dropped_battlekeep(data, battlekeep, report)
+        if write:
+            out_rel = emit(out_rel, data)
+        for ref_root in args.verify:
+            ref = os.path.join(ref_root, out_rel.lower())
+            if os.path.exists(ref):
+                with open(ref, 'rb') as fh:
+                    verify(data, fh.read(), stats)
+                break
 
-    if args.out:
-        replace_file(os.path.join(args.out, 'index.vmtoc'), toc.bytes())
+    if write:
+        replace_file(os.path.join(root, 'index.vmtoc'), toc.bytes())
+        replace_file(os.path.join(root, STAMP), STAMP_VERSION)
 
     for k, v in sorted(report.counts.items()):
         print(f'{v:8}  {k}')
