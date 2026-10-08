@@ -261,7 +261,7 @@ def _find_title_resource(data, opt_headers, header_size, security_offset):
     return body[body_off : body_off + size]
 
 
-def _extract_xdbf_icon(xdbf):
+def _xdbf_images(xdbf):
     magic, _version, _entry_count, entry_used, free_count, _free_used = struct.unpack_from(
         ">IIIIII", xdbf, 0
     )
@@ -272,17 +272,20 @@ def _extract_xdbf_icon(xdbf):
     entry_size = 18
     content_off = entries_off + entry_size * struct.unpack_from(">I", xdbf, 8)[0] + 8 * free_count
 
+    images = {}
     for i in range(entry_used):
         e_off = entries_off + i * entry_size
         section = struct.unpack_from(">H", xdbf, e_off)[0]
         entry_id = struct.unpack_from(">Q", xdbf, e_off + 2)[0]
         offset, size = struct.unpack_from(">II", xdbf, e_off + 10)
-        if section == XDBF_SECTION_IMAGE and entry_id == XDBF_ID_TITLE_ICON:
-            return xdbf[content_off + offset : content_off + offset + size]
-    raise RuntimeError("no title icon entry found in XDBF resource")
+        if section == XDBF_SECTION_IMAGE:
+            images[entry_id] = xdbf[content_off + offset : content_off + offset + size]
+    if XDBF_ID_TITLE_ICON not in images:
+        raise RuntimeError("no title icon entry found in XDBF resource")
+    return images
 
 
-def extract_icon_png(xex_path):
+def extract_xdbf_images(xex_path):
     with open(xex_path, "rb") as f:
         data = f.read()
 
@@ -294,7 +297,7 @@ def extract_icon_png(xex_path):
 
     opt_headers = _read_opt_headers(data)
     xdbf = _find_title_resource(data, opt_headers, header_size, security_offset)
-    return _extract_xdbf_icon(xdbf)
+    return _xdbf_images(xdbf)
 
 
 def write_ico(png_data, out_path):
@@ -327,7 +330,8 @@ def write_ico(png_data, out_path):
 
 
 def main():
-    icon_data = extract_icon_png(XEX_PATH)
+    images = extract_xdbf_images(XEX_PATH)
+    icon_data = images.pop(XDBF_ID_TITLE_ICON)
     write_ico(icon_data, OUT_ICO_PATH)
 
     lines = [
@@ -347,9 +351,22 @@ def main():
             out.write("    " + ", ".join(str(b) for b in chunk) + ",\n")
         out.write("};\n")
         out.write("inline constexpr unsigned int kIconPNGSize = sizeof(kIconPNG);\n\n")
+        # The achievement images, so the overlay need not read the guest's XDBF.
+        for image_id, png in sorted(images.items()):
+            out.write(f"inline constexpr unsigned char kAchievementImage{image_id}[] = {{\n")
+            for i in range(0, len(png), 20):
+                out.write("    " + ", ".join(str(b) for b in png[i : i + 20]) + ",\n")
+            out.write("};\n")
+        out.write("\nstruct AchievementImage {\n  unsigned int id;\n"
+                  "  const unsigned char* png;\n  unsigned int size;\n};\n\n")
+        out.write("inline constexpr AchievementImage kAchievementImages[] = {\n")
+        for image_id in sorted(images):
+            out.write(f"    {{{image_id}, kAchievementImage{image_id}, "
+                      f"sizeof(kAchievementImage{image_id})}},\n")
+        out.write("};\n\n")
         out.write("}  // namespace eternalsonata\n")
 
-    print(f"+ wrote {OUT_PATH} ({len(icon_data)} byte icon)")
+    print(f"+ wrote {OUT_PATH} ({len(icon_data)} byte icon, {len(images)} achievement images)")
 
 
 if __name__ == "__main__":
