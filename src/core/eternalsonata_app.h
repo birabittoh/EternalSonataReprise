@@ -37,6 +37,7 @@
 #include "fonts.generated.h"
 #include "force_load_area.h"
 #include "ps3_item_tables.h"
+#include "guest_image.h"
 #include "guest_profiler.h"
 #include "fast_forward_key.h"
 #include "host_menu.h"
@@ -336,6 +337,10 @@ class EternalsonataApp : public rex::ReXApp {
     // register itself. Runs after the clear only for reading order; it looks at
     // the cvar, not at config.gpu_plugin.
     eternalsonata::RegisterNativeRendererCvars();
+  }
+
+  void OnLoadXexImage(std::string& xex_image) override {
+    xex_image = eternalsonata::MountGuestImage(runtime()->file_system());
   }
 
   // With gpu_plugin set to "plume" the SDK loads no graphics backend, and this

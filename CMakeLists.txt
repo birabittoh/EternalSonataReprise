@@ -313,6 +313,43 @@ SYM(kReleasePatchDataEnd):
 set_source_files_properties(${ETERNALSONATA_RELEASE_PATCHES_ASM}
     PROPERTIES OBJECT_DEPENDS ${ETERNALSONATA_RELEASE_PATCHES})
 
+# The guest image, linked in so a game directory needs only the data files
+# (src/core/guest_image.h). Code sections are stripped from it.
+set(ETERNALSONATA_GUEST_IMAGE ${CMAKE_BINARY_DIR}/guest-image.xex)
+add_custom_command(
+    OUTPUT ${ETERNALSONATA_GUEST_IMAGE}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-guest-image.py
+        ${CMAKE_SOURCE_DIR}/assets/default.xex ${ETERNALSONATA_GUEST_IMAGE}
+    DEPENDS
+        ${CMAKE_SOURCE_DIR}/scripts/gen-guest-image.py
+        ${CMAKE_SOURCE_DIR}/scripts/xex_image.py
+        ${CMAKE_SOURCE_DIR}/assets/default.xex
+    COMMENT "Stripping the guest image"
+    VERBATIM
+)
+set(ETERNALSONATA_GUEST_IMAGE_ASM ${CMAKE_BINARY_DIR}/guest-image.S)
+file(CONFIGURE OUTPUT ${ETERNALSONATA_GUEST_IMAGE_ASM} CONTENT [=[
+#if defined(__APPLE__)
+#define SYM(name) _##name
+.section __TEXT,__const
+#elif defined(_WIN32)
+#define SYM(name) name
+.section .rdata,"dr"
+#else
+#define SYM(name) name
+.section .rodata
+#endif
+
+.p2align 4
+.global SYM(kGuestImageData)
+SYM(kGuestImageData):
+.incbin "@ETERNALSONATA_GUEST_IMAGE@"
+.global SYM(kGuestImageDataEnd)
+SYM(kGuestImageDataEnd):
+]=] @ONLY)
+set_source_files_properties(${ETERNALSONATA_GUEST_IMAGE_ASM}
+    PROPERTIES OBJECT_DEPENDS ${ETERNALSONATA_GUEST_IMAGE})
+
 # Sources
 set(ETERNALSONATA_SOURCES
     src/core/main.cpp
@@ -351,6 +388,7 @@ set(ETERNALSONATA_SOURCES
     src/core/guest_profiler.cpp
     src/core/host_timer_resolution.cpp
     src/core/target.cpp
+    src/core/guest_image.cpp
     src/engine/force_load_area.cpp
     src/engine/field_player_model_override.cpp
     src/platform/fast_forward_key.cpp
@@ -394,6 +432,7 @@ set(ETERNALSONATA_SOURCES
     ${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
     ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM}
     ${ETERNALSONATA_RELEASE_PATCHES_ASM}
+    ${ETERNALSONATA_GUEST_IMAGE_ASM}
     ${ETERNALSONATA_AREA_NAMES_HEADER}
     ${ETERNALSONATA_PS3_TABLES}
     ${ETERNALSONATA_ICON_HEADER}
