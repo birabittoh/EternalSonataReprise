@@ -34,10 +34,12 @@ size. sub_821EC050 picks them per screen and language.
 
 Tables are src/guest_data/tables.txt: each `@address` starts a block of
 big endian words, one row per line, `#` starts a comment. A token is a signed
-decimal, a float (it has a `.` or an `e`), four bytes as `01.FF.00.00`, or
-`0x` hex for anything else, and the block ends at the next `@`. Rows only
+decimal, a float (it has a `.` or an `e`), four bytes as `01.FF.00.00`, two
+16 bit halves as `32:32`, or `0x` hex for anything else, and the block ends at the next `@`. Rows only
 group; the block's extent is its word count. The record table at
-0x82078B00 is documented where it is written.
+0x82078B00 is documented where it is written. Every word the other sources
+leave out follows as blocks of eight words per row, found by the extractor;
+nothing in them is named yet.
 
     python scripts/guest_data.py check assets/default.xex
     python scripts/guest_data.py extract-text assets/default.xex      # one time
@@ -564,6 +566,8 @@ def float_token(word):
 def word_token(word, kind):
     if kind == "b":
         return ".".join("%02X" % b for b in struct.pack(">I", word))
+    if kind == "h":
+        return "%d:%d" % (word >> 16, word & 0xFFFF)
     if kind == "f":
         return float_token(word) or "0x%08X" % word
     if kind == "i" or word == 0:
@@ -577,6 +581,9 @@ def word_token(word, kind):
 
 
 def token_word(token):
+    if ":" in token:
+        hi, lo = token.split(":")
+        return int(hi) << 16 | int(lo)
     if BYTES_TOKEN.match(token):
         return int.from_bytes(bytes.fromhex(token.replace(".", "")), "big")
     if token.startswith("0x"):
@@ -607,6 +614,41 @@ def overlay_tables(image, base):
         image[off:off + 4 * len(words)] = struct.pack(f">{len(words)}I", *words)
 
 
+ZERO_GAP = 16
+
+
+def uncovered_blocks(xex, covered):
+    """[(start, end)] guest addresses of the words the other sources leave
+    out, with runs of fewer than ZERO_GAP zero words kept inside a block."""
+    blocks = []
+    for start, end in DATA_RANGES:
+        block = None
+        zeros = 0
+        for off in range(start - xex.base, end - xex.base, 4):
+            free = not any(covered[off:off + 4])
+            nonzero = free and any(xex.data[off:off + 4])
+            if nonzero:
+                if block is None:
+                    block = [off, off]
+                block[1] = off + 4
+                zeros = 0
+            elif block is not None:
+                zeros += 1
+                if not free or zeros >= ZERO_GAP:
+                    blocks.append((block[0] + xex.base, block[1] + xex.base))
+                    block = None
+        if block is not None:
+            blocks.append((block[0] + xex.base, block[1] + xex.base))
+    return blocks
+
+
+def halfword_block(words):
+    """True for tables of 16 bit pairs, which read as nonsense words."""
+    used = [w for w in words if w]
+    pairs = sum(0 < w >> 16 < 0x1000 and (w & 0xFFFF) < 0x1000 for w in used)
+    return len(used) >= 4 and pairs * 10 >= len(used) * 6
+
+
 def cmd_extract_tables(args):
     xex = XexImage.load(args.xex)
     lines = ["# Guest image data tables. See scripts/guest_data.py.", ""]
@@ -616,6 +658,16 @@ def cmd_extract_tables(args):
         for i in range(0, len(words), row):
             kinds = [schema[(i + j) % len(schema)] for j in range(len(words[i:i + row]))]
             lines.append(" ".join(word_token(w, k) for w, k in zip(words[i:i + row], kinds)))
+        lines.append("")
+    covered, _, _ = coverage(xex, tables=False)
+    for start, end, _, _ in TABLE_BLOCKS:
+        covered[start - xex.base:end - xex.base] = b"" * (end - start)
+    for start, end in uncovered_blocks(xex, covered):
+        words = struct.unpack_from(f">{(end - start) // 4}I", xex.data, start - xex.base)
+        kind = "h" if halfword_block(words) else "a"
+        lines.append(f"@0x{start:08X}")
+        for i in range(0, len(words), 8):
+            lines.append(" ".join(word_token(w, kind) for w in words[i:i + 8]))
         lines.append("")
     with open(TABLES_FILE, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines))
@@ -640,8 +692,8 @@ def cmd_extract_layouts(args):
     return 0
 
 
-def cmd_check(args):
-    xex = XexImage.load(args.xex)
+def coverage(xex, tables=True):
+    """(covered, edited, failures): which bytes the source accounts for."""
     covered = bytearray(len(xex.data))
     failures = edited = 0
     for address, data, name in compile_items():
@@ -702,7 +754,7 @@ def cmd_check(args):
         print(f"MISMATCH blank PNG at 0x{BLANK_PNG_ADDRESS:08X}")
         failures += 1
     covered[off:off + len(record)] = b"\1" * len(record)
-    for address, words in read_tables():
+    for address, words in (read_tables() if tables else []):
         off = address - xex.base
         size = 4 * len(words)
         if any(covered[off:off + size]):
@@ -712,6 +764,12 @@ def cmd_check(args):
         covered[off:off + size] = b"" * size
     for start, end, _ in DROPPED:
         covered[start - xex.base:end - xex.base] = b"\1" * (end - start)
+    return covered, edited, failures
+
+
+def cmd_check(args):
+    xex = XexImage.load(args.xex)
+    covered, edited, failures = coverage(xex)
     total = done = 0
     for start, end in DATA_RANGES:
         for i in range(start - xex.base, end - xex.base):
