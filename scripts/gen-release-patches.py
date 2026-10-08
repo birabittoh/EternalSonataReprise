@@ -4,7 +4,7 @@
 The recompiled code is the PAL release's and indexes PAL's containers by
 position. The guest image is built into the executable, so another release
 only needs the containers whose layout the code depends on converted, which
-the asset system does as it serves them.
+the installer does once, in place (src/installer/release_patch.cpp).
 Its scripts (.e) are left alone: they run as they are and carry the text.
 
 Every patch works on a container's decoded bytes.

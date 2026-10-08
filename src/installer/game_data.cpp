@@ -16,6 +16,7 @@
 
 #include "disc_image.h"
 #include "intro_screen.h"
+#include "release_patch.h"
 
 // The storage probes come from the SDK's GameDataSelector
 // (src/system/game_data_selector.cpp), which this replaces.
@@ -116,6 +117,17 @@ void Use(const GameDataOptions& options, const fs::path& dir) {
   REXLOG_INFO("Game data set to {}", dir.string());
 }
 
+// The second install step, separate from extraction so a folder extracted
+// earlier needs only this one.
+std::string PatchGameData(const GameDataOptions& options, const fs::path& dir) {
+  if (IsReleasePatched(dir))
+    return {};
+  g_extracting = true;
+  std::string error = PatchRelease(dir, options.progress);
+  g_extracting = false;
+  return error;
+}
+
 struct DialogRequest {
   std::shared_ptr<Flow> flow;
   std::function<void(std::shared_ptr<Flow>, std::string)> then;
@@ -189,6 +201,10 @@ std::string Prepare(const GameDataOptions& options, const std::string& picked) {
 
   if (local && fs::is_directory(path, ec)) {
     std::string error = CheckFolder(path);
+    if (error.empty()) {
+      HideIntroScreen();
+      error = PatchGameData(options, path);
+    }
     if (error.empty())
       Use(options, path);
     return error;
@@ -202,6 +218,8 @@ std::string Prepare(const GameDataOptions& options, const std::string& picked) {
   g_extracting = false;
   if (error.empty() && !IsGameDirectory(out_dir))
     error = "The extracted files are incomplete.";
+  if (error.empty())
+    error = PatchGameData(options, out_dir);
   if (error.empty())
     Use(options, out_dir);
   return error;
@@ -257,29 +275,37 @@ bool IsGameDirectory(const fs::path& dir) {
   return !dir.empty() && fs::is_regular_file(dir / kTableOfContents, ec);
 }
 
-bool UsePreparedGameData(const GameDataOptions& options) {
+bool UsePreparedGameData(const GameDataOptions& options, std::string& error) {
+  std::vector<fs::path> dirs;
   const std::string value = REXCVAR_GET(game_data_root);
-  if (!value.empty()) {
-    const fs::path dir = rex::filesystem::ResolveRelativeTo(fs::path(value), ConfigDir(options));
-    if (IsGameDirectory(dir)) {
-      REXLOG_INFO("game_data_root already valid: {}", dir.string());
-      Use(options, dir);
-      return true;
+  if (!value.empty())
+    dirs.push_back(rex::filesystem::ResolveRelativeTo(fs::path(value), ConfigDir(options)));
+  for (fs::path& dir : PreparedCandidates())
+    dirs.push_back(std::move(dir));
+  for (const fs::path& dir : dirs) {
+    if (!IsGameDirectory(dir))
+      continue;
+    REXLOG_INFO("Found game data at {}", dir.string());
+    try {
+      error = PatchGameData(options, dir);
+    } catch (const std::exception& e) {
+      g_extracting = false;
+      error = std::string("Patching the game files failed: ") + e.what();
     }
-  }
-  for (const fs::path& dir : PreparedCandidates()) {
-    if (IsGameDirectory(dir)) {
-      REXLOG_INFO("Found prepared game data at {}", dir.string());
-      Use(options, dir);
-      return true;
+    if (!error.empty()) {
+      REXLOG_ERROR("{}: {}", dir.string(), error);
+      return false;
     }
+    Use(options, dir);
+    return true;
   }
   return false;
 }
 
 void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext& context,
-                    std::function<void(bool ready)> done) {
+                    std::string error, std::function<void(bool ready)> done) {
   auto flow = std::make_shared<Flow>();
+  flow->prompt.error = std::move(error);
   flow->options = options;
   flow->context = &context;
   flow->done = std::move(done);

@@ -280,9 +280,8 @@ add_custom_target(eternalsonata_guest_shaders
     DEPENDS ${ETERNALSONATA_GUEST_SHADER_PACK} ${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
             ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK} ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM})
 
-# The patches that let USA and JP copies play (scripts/gen-release-patches.py):
-# default.xex for the SDK's game data selector, the layout-sensitive containers
-# for the asset system. Generating them takes every release's full data, so the
+# The patches that let USA and JP copies play (scripts/gen-release-patches.py),
+# applied to the layout-sensitive containers at install. Generating them takes every release's full data, so the
 # bundle is prebuilt and fetched like default.xex; without it those copies are
 # refused.
 set(ETERNALSONATA_RELEASE_PATCHES ${CMAKE_SOURCE_DIR}/assets/release-patches.bin CACHE FILEPATH
@@ -395,6 +394,7 @@ set(ETERNALSONATA_SOURCES
     src/installer/disc_image.cpp
     src/installer/game_data.cpp
     src/installer/intro_screen.cpp
+    src/installer/release_patch.cpp
     src/engine/flag_system.cpp
     src/core/guest_main_thread.cpp
     src/core/guest_profiler.cpp
