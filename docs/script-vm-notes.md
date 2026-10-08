@@ -468,7 +468,7 @@ runs on every non-`--preserve-size` edit.
 A VM crash does not flush `logs/`; catch it under lldb:
 
 ```bash
-lldb -b -s cmds.lldb -- ./eternalsonata.exe --game_data_root assets --gpu_plugin=xenos
+lldb -b -s cmds.lldb -- ./eternalsonata.exe --game_data_root assets
 # cmds.lldb:
 #   settings set interpreter.stop-command-source-on-error false
 #   run

@@ -143,10 +143,11 @@ inline constexpr uint32_t kColorSurfaces = 12304;
 inline constexpr uint32_t kColorSurfaceCount = 4;
 inline constexpr uint32_t kDepthSurface = 12320;
 
-// The 256 entry shader tables the game binds out of, populated once at init by
-// 0x82129260 from the static chunked blob at 0x8238EC50 in the xex. Entries are
-// filled from index 1 upward, in the blob's own chunk order, which is what lets
-// a bound shader object be resolved back to an offline extracted shader.
+// The 256 entry shader tables the game binds out of. Retail fills them at init
+// (0x82129260) from the chunked blob at 0x8238EC50, from index 1 upward in chunk
+// order, which is the slot order of the offline extracted pack. The image drops
+// the blob and the hook on 0x82129260 seeds one placeholder object per slot, so
+// a bound object still resolves back to its slot.
 inline constexpr uint32_t kVertexShaderTable = 0x824BBEE8;
 inline constexpr uint32_t kPixelShaderTable = 0x824BC2E8;
 inline constexpr uint32_t kShaderTableEntries = 256;

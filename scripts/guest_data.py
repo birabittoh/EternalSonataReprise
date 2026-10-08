@@ -60,6 +60,12 @@ TEXT_BLOBS = {
     0x82386910: "shop_checkout_lines",
 }
 
+# Data left out of the image, as (start, end, why). Nothing else reads it.
+DROPPED = [
+    (0x8238EC50, 0x8240AF44, "shader blob: sub_82129260 walks it into the "
+     "shader tables, which the native renderer seeds from its own pack"),
+]
+
 # The image's data sections, as (start, end) guest addresses.
 DATA_RANGES = [(0x82000400, 0x820AB81C), (0x822F0000, 0x82566B3C),
                (0x82566C00, 0x82566C0C), (0x82570000, 0x8257D593)]
@@ -167,6 +173,11 @@ def overlay_text(image, base):
         image[off:off + size] = data + bytes(size - len(data))
 
 
+def drop_unread(image, base):
+    for start, end, _ in DROPPED:
+        image[start - base:end - base] = bytes(end - start)
+
+
 def cmd_extract_text(args):
     xex = XexImage.load(args.xex)
     os.makedirs(TEXT_DIR, exist_ok=True)
@@ -198,13 +209,15 @@ def cmd_check(args):
             print(f"OVERLAP {name} at 0x{address:08X}")
             failures += 1
         covered[off:off + size] = b"\1" * size
+    for start, end, _ in DROPPED:
+        covered[start - xex.base:end - xex.base] = b"" * (end - start)
     total = done = 0
     for start, end in DATA_RANGES:
         for i in range(start - xex.base, end - xex.base):
             if xex.data[i]:
                 total += 1
                 done += covered[i]
-    print(f"{done} of {total} nonzero data bytes come from source "
+    print(f"{done} of {total} nonzero data bytes come from source or are dropped "
           f"({100 * done / total:.1f}%), {edited} strings edited, {failures} failures")
     return 1 if failures else 0
 

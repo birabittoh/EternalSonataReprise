@@ -326,8 +326,9 @@ jobs:
               *d.so)  continue ;;
             esac
             # Skip DXC — build-time shader compiler, not a runtime dependency.
+            # Skip GPU plugins: the native renderer is the only one.
             case "$base" in
-              libdxcompiler*|libdxil*) continue ;;
+              libdxcompiler*|libdxil*|librexgpu-*) continue ;;
             esac
             cp -v "$lib" "$JNI_DIR/"
           done
