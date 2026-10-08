@@ -314,25 +314,25 @@ set_source_files_properties(${ETERNALSONATA_RELEASE_PATCHES_ASM}
     PROPERTIES OBJECT_DEPENDS ${ETERNALSONATA_RELEASE_PATCHES})
 
 # The guest image, linked in so a game directory needs only the data files
-# (src/core/guest_image.h). Code sections are stripped from it.
+# (src/core/guest_image.h). Built from src/guest_data; code sections are empty.
 set(ETERNALSONATA_GUEST_IMAGE ${CMAKE_BINARY_DIR}/guest-image.xex)
 file(GLOB ETERNALSONATA_GUEST_TEXT CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/guest_data/text/*.txt)
 add_custom_command(
     OUTPUT ${ETERNALSONATA_GUEST_IMAGE}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-guest-image.py
-        ${CMAKE_SOURCE_DIR}/assets/default.xex ${ETERNALSONATA_GUEST_IMAGE}
+        ${ETERNALSONATA_GUEST_IMAGE}
     DEPENDS
         ${CMAKE_SOURCE_DIR}/scripts/gen-guest-image.py
         ${CMAKE_SOURCE_DIR}/scripts/guest_data.py
-        ${CMAKE_SOURCE_DIR}/scripts/xex_image.py
+        ${CMAKE_SOURCE_DIR}/scripts/xex_header.py
+        ${CMAKE_SOURCE_DIR}/src/guest_data/xex_header.txt
         ${ETERNALSONATA_GUEST_TEXT}
         ${CMAKE_SOURCE_DIR}/src/guest_data/strings.txt
         ${CMAKE_SOURCE_DIR}/src/guest_data/wide_strings.txt
         ${CMAKE_SOURCE_DIR}/src/guest_data/pal50_messages.txt
         ${CMAKE_SOURCE_DIR}/src/guest_data/menu_layouts.txt
         ${CMAKE_SOURCE_DIR}/src/guest_data/tables.txt
-        ${CMAKE_SOURCE_DIR}/assets/default.xex
-    COMMENT "Stripping the guest image"
+    COMMENT "Building the guest image"
     VERBATIM
 )
 set(ETERNALSONATA_GUEST_IMAGE_ASM ${CMAKE_BINARY_DIR}/guest-image.S)
