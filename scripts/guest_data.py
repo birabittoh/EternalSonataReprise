@@ -105,6 +105,12 @@ TEXT_BLOBS = {
 
 # Data left out of the image, as (start, end, why). Nothing else reads it.
 DROPPED = [
+    (0x820880C0, 0x8209DB98, "debug item, shop and shop item names, only "
+     "pointed at by the name tables at 0x82386E00"),
+    (0x8209E9E0, 0x8209EDA0, "debug names, as above"),
+    (0x8209EDA8, 0x820A9F74, "debug names, as above"),
+    (0x82386E00, 0x8238E128, "per language debug name tables for skills, "
+     "shops and items: no code or data refers to them"),
     (0x8238EC50, 0x8240AF44, "shader blob: sub_82129260 walks it into the "
      "shader tables, which the native renderer seeds from its own pack"),
     (0x82570000, 0x8257D593, "XDBF: achievement text and icons come from "
