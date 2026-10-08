@@ -330,6 +330,7 @@ add_custom_command(
         ${CMAKE_SOURCE_DIR}/src/guest_data/wide_strings.txt
         ${CMAKE_SOURCE_DIR}/src/guest_data/pal50_messages.txt
         ${CMAKE_SOURCE_DIR}/src/guest_data/menu_layouts.txt
+        ${CMAKE_SOURCE_DIR}/src/guest_data/tables.txt
         ${CMAKE_SOURCE_DIR}/assets/default.xex
     COMMENT "Stripping the guest image"
     VERBATIM
