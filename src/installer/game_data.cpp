@@ -16,7 +16,12 @@
 
 #include "disc_image.h"
 #include "intro_screen.h"
+#include "ps3_install.h"
 #include "release_patch.h"
+
+REXCVAR_DEFINE_STRING(ps3_donor_root, "", "Eternal Sonata",
+                      "Extracted Xbox 360 game folder that a PS3 copy borrows the files its "
+                      "conversion does not cover yet from");
 
 // The storage probes come from the SDK's GameDataSelector
 // (src/system/game_data_selector.cpp), which this replaces.
@@ -85,11 +90,11 @@ std::string CopyHint() {
 }
 
 std::string CheckFolder(const fs::path& dir) {
-  if (IsGameDirectory(dir))
+  if (IsGameDirectory(dir) || !FindPs3Archives(dir).empty())
     return {};
   std::error_code ec;
   if (fs::exists(dir / "PS3_GAME", ec) || fs::exists(dir / "PARAM.SFO", ec))
-    return "A PS3 disc has to be converted first (scripts/ps3_convert.py).";
+    return "This PS3 disc folder has no USRDIR/archives.";
   return "This folder does not hold the extracted game files (no index.vmtoc).";
 }
 
@@ -117,9 +122,31 @@ void Use(const GameDataOptions& options, const fs::path& dir) {
   REXLOG_INFO("Game data set to {}", dir.string());
 }
 
+// The Xbox 360 folder a PS3 copy borrows from, or empty.
+fs::path Ps3Donor(const GameDataOptions& options) {
+  const std::string value = REXCVAR_GET(ps3_donor_root);
+  if (value.empty())
+    return {};
+  const fs::path dir = rex::filesystem::ResolveRelativeTo(fs::path(value), ConfigDir(options));
+  std::error_code ec;
+  return fs::is_regular_file(dir / kTableOfContents, ec) && !IsPs3Directory(dir) ? dir : fs::path();
+}
+
 // The second install step, separate from extraction so a folder extracted
 // earlier needs only this one.
 std::string PatchGameData(const GameDataOptions& options, const fs::path& dir) {
+  if (IsPs3Directory(dir)) {
+    if (IsPs3Converted(dir))
+      return {};
+    const fs::path donor = Ps3Donor(options);
+    if (donor.empty())
+      return "A PS3 copy still borrows some files from an Xbox 360 one: set ps3_donor_root to "
+             "an extracted Xbox 360 game folder.";
+    g_extracting = true;
+    std::string error = ConvertPs3(dir, donor, options.progress);
+    g_extracting = false;
+    return error;
+  }
   if (IsReleasePatched(dir))
     return {};
   g_extracting = true;
@@ -199,6 +226,21 @@ std::string Prepare(const GameDataOptions& options, const std::string& picked) {
        SameFileName(path.extension().string(), ".xex")))
     path = path.parent_path();
 
+  if (local && fs::is_directory(path, ec) && !IsGameDirectory(path)) {
+    if (const fs::path archives = FindPs3Archives(path); !archives.empty()) {
+      HideIntroScreen();
+      const fs::path out_dir = WritableBaseDir() / "assets";
+      g_extracting = true;
+      std::string error = UnpackPs3(archives, out_dir, Ps3Donor(options), options.progress);
+      g_extracting = false;
+      if (error.empty())
+        error = PatchGameData(options, out_dir);
+      if (error.empty())
+        Use(options, out_dir);
+      return error;
+    }
+  }
+
   if (local && fs::is_directory(path, ec)) {
     std::string error = CheckFolder(path);
     if (error.empty()) {
@@ -272,7 +314,7 @@ void Ask(std::shared_ptr<Flow> flow) {
 
 bool IsGameDirectory(const fs::path& dir) {
   std::error_code ec;
-  return !dir.empty() && fs::is_regular_file(dir / kTableOfContents, ec);
+  return !dir.empty() && (fs::is_regular_file(dir / kTableOfContents, ec) || IsPs3Directory(dir));
 }
 
 bool UsePreparedGameData(const GameDataOptions& options, std::string& error) {

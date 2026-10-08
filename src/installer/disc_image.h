@@ -14,6 +14,10 @@ namespace eternalsonata {
 using ExtractProgress =
     std::function<void(const std::string& title, float fraction, const std::string& detail)>;
 
+// Moves a directory out of the way instead of deleting what a player put
+// there; an empty one is removed.
+bool MoveAside(const std::filesystem::path& dir);
+
 // Case insensitive, as disc file names are.
 bool SameFileName(std::string_view a, std::string_view b);
 
