@@ -5,9 +5,10 @@ The retail default.xex goes in decrypted, with .text and .pdata zeroed:
 codegen already compiled the code, and the guest never reads either section
 (checked by page protecting them). The import thunk words in .text stay,
 since the SDK reads them at load to pair imports. The BTX text comes from
-src/guest_data/text, and data nothing reads (the shader blob) is dropped; see
-guest_data.py. Zero runs are elided by the XEX "basic"
-compression, so only data that is read at runtime takes space.
+src/guest_data/text, and data nothing reads (the shader blob, the XDBF) is
+dropped with its resource header; see guest_data.py. Zero runs are elided by
+the XEX "basic" compression, so only data that is read at runtime takes
+space.
 
     python scripts/gen-guest-image.py assets/default.xex out/guest-image.xex
 """
@@ -17,6 +18,7 @@ import sys
 from guest_data import drop_unread, overlay_text
 from xex_image import XexImage, XEX_FILE_FORMAT_INFO
 
+XEX_RESOURCE_INFO = 0x000002FF
 XEX_IMPORT_LIBRARIES = 0x000103FF
 
 ZEROED_SECTIONS = (".text", ".pdata")
@@ -45,6 +47,24 @@ def import_record_addresses(raw):
             count, = struct.unpack_from(">H", raw, off + lib + 0x26)
             yield from struct.unpack_from(f">{count}I", raw, off + lib + 0x28)
             lib += size
+
+
+def drop_resource_info(header):
+    """Remove the resource directory, whose only entry is the dropped XDBF.
+    Header data sits at absolute offsets, so the slots after it just move up
+    one."""
+    entries = list(opt_headers(header))
+    kept = [(k, v) for _, k, v in entries if k != XEX_RESOURCE_INFO]
+    if len(kept) == len(entries):
+        return
+    for _, key, off in entries:
+        if key == XEX_RESOURCE_INFO:
+            size, = struct.unpack_from(">I", header, off)
+            header[off:off + size] = bytes(size)
+    header[24:24 + 8 * len(entries)] = bytes(8 * len(entries))
+    for i, (key, value) in enumerate(kept):
+        struct.pack_into(">II", header, 24 + 8 * i, key, value)
+    struct.pack_into(">I", header, 20, len(kept))
 
 
 def pe_sections(image):
@@ -118,6 +138,7 @@ def main():
     for slot, key, _ in opt_headers(raw):
         if key == XEX_FILE_FORMAT_INFO:
             struct.pack_into(">I", header, slot + 4, fmt_off)
+    drop_resource_info(header)
     struct.pack_into(">I", header, 8, len(header))
 
     with open(dst, "wb") as f:

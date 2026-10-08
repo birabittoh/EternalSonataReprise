@@ -64,6 +64,8 @@ TEXT_BLOBS = {
 DROPPED = [
     (0x8238EC50, 0x8240AF44, "shader blob: sub_82129260 walks it into the "
      "shader tables, which the native renderer seeds from its own pack"),
+    (0x82570000, 0x8257D593, "XDBF: achievement text and icons come from "
+     "achievement_text.h and icon.generated.h"),
 ]
 
 # The image's data sections, as (start, end) guest addresses.
