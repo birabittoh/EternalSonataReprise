@@ -342,6 +342,8 @@ def overlay_strings(image, base):
         for address, raw in read_strings(kind):
             off = address - base
             size = string_size(image, off, width)
+            if not size and not any(image[off:off + width]):
+                size = len(raw)
             if len(raw) > size:
                 raise ValueError(f"string at 0x{address:08X} is {len(raw)} bytes, {size} available")
             image[off:off + size + width] = raw + bytes(size + width - len(raw))
@@ -383,7 +385,7 @@ def overlay_pal50(image, base):
     strings = read_pal50()
     data = encode_counted(strings)
     off = PAL50_ADDRESS - base
-    size = pal50_retail_size(image, base, len(strings))
+    size = pal50_retail_size(image, base, len(strings)) if any(image[off:off + 2]) else len(data)
     if len(data) > size:
         raise ValueError(f"PAL-50 messages are {len(data)} bytes, {size} available")
     image[off:off + size] = data + bytes(size - len(data))
@@ -426,7 +428,7 @@ def overlay_layouts(image, base):
     for address, words in read_layouts():
         data = encode_layout(words)
         off = address - base
-        size = stream_size(image, off)
+        size = stream_size(image, off) if u32(image, off) in LAYOUT_OPERANDS or u32(image, off) == STREAM_END else len(data)
         if len(data) > size:
             raise ValueError(f"layout at 0x{address:08X} is {len(data)} bytes, {size} available")
         image[off:off + size] = data + bytes(size - len(data))
@@ -442,7 +444,7 @@ def overlay_text(image, base):
     uses."""
     for address, data, name in compile_items():
         off = address - base
-        size = retail_size(image, off)
+        size = retail_size(image, off) if image[off:off + 4] == b"BTX " else len(data)
         if len(data) > size:
             raise ValueError(f"{name} is {len(data)} bytes, {size} available")
         image[off:off + size] = data + bytes(size - len(data))
