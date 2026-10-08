@@ -55,16 +55,7 @@ void BindAssetSystem(rex::Runtime* runtime);
 // Call after the image is loaded and before the guest runs (OnPreLaunchModule).
 void ApplyXexTextPatches(rex::Runtime* runtime);
 
-// The patches converting another release's `guest_path` ("default.xex",
-// "btldata/battlekeep.bop") into PAL's, one per release that differs there,
-// from the bundle linked into the executable (scripts/gen-release-patches.py).
-// Each accepts only its own release's bytes.
-std::vector<std::span<const uint8_t>> FindReleasePatches(std::string_view guest_path);
-
-// Every container the bundle converts, default.xex aside.
-std::vector<std::string> ReleasePatchedContainers();
-
-// Whether "title_jpn.bmd", the Japanese release's title screen, is served.
+// Whether "title_jpn.bmd", the Japanese release's title screen, was installed.
 bool JapaneseTitleServed();
 
 // Whether the `fourcc` BTX block ("ITA " and so on) has text to show: the

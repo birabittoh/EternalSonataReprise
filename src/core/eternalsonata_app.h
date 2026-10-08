@@ -122,11 +122,12 @@ class EternalsonataApp : public rex::ReXApp {
         eternalsonata::UpdateLoadingScreen(title, fraction, detail);
       };
     }
-    if (eternalsonata::UsePreparedGameData(options))
+    std::string error;
+    if (eternalsonata::UsePreparedGameData(options, error))
       return FinishGameDataPaths();
 
     // Asynchronous, so the main loop runs and feeds the intro screen input.
-    eternalsonata::AskForGameData(options, app_context(), [this, resume](bool ready) {
+    eternalsonata::AskForGameData(options, app_context(), error, [this, resume](bool ready) {
       if (!ready) {
         // Teardown takes a moment; nothing is left to show meanwhile.
         window()->Hide();

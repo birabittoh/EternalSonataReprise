@@ -40,12 +40,6 @@
 #include "settings.h"
 #include "target.h"
 
-// The USA and JP to PAL patch bundle, linked in by release-patches.S.
-extern "C" {
-extern const uint8_t kReleasePatchData[];
-extern const uint8_t kReleasePatchDataEnd[];
-}
-
 namespace eternalsonata {
 namespace {
 
@@ -165,7 +159,7 @@ struct State {
   std::vector<std::pair<uint32_t, std::pair<EternalSonataAssetProviderFn, void*>>> providers;
   uint32_t next_provider_token = 1;
   std::filesystem::path cache_dir;
-  bool japanese_title = false;  // the served cache has kJapaneseTitle
+  bool japanese_title = false;  // game_data_root has kJapaneseTitle
   std::map<std::string, ModVoiceBanks> mod_voice;  // mod folder name -> its banks
   bool bound = false;
   std::map<std::array<uint8_t, 16>, AudioPatch*> tagged_audio;
@@ -913,7 +907,7 @@ bool ReadWholeFile(const std::filesystem::path& path, std::vector<uint8_t>& out)
 // too: containers built from one regional release are wrong for another.
 uint64_t CacheKey(rex::Runtime* runtime) {
   uint64_t h = 0xCBF29CE484222325ull;
-  h = HashUpdate(h, "v6");
+  h = HashUpdate(h, "v7");
   std::vector<uint8_t> base_toc;
   ReadWholeFile(runtime->game_data_root() / "index.vmtoc", base_toc);
   h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(base_toc.data()),
@@ -1577,8 +1571,6 @@ void ApplyLipSyncPatches(const std::string& guest_path, Container& container,
   }
 }
 
-bool ApplyReleasePatch(const std::string& guest_path, std::vector<uint8_t>& bytes);
-
 std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const assets::Toc& toc,
                                                const std::string& guest_path,
                                                Container& container) {
@@ -1638,8 +1630,6 @@ std::optional<PatchedContainer> BuildContainer(rex::Runtime* runtime, const asse
     } else {
       result.bytes = std::move(encoded);
     }
-    if (ApplyReleasePatch(guest_path, result.bytes))
-      ++result.patches_applied;
   }
 
   std::vector<assets::TextEdit> edits;
@@ -1704,134 +1694,6 @@ bool WriteWholeFile(const std::filesystem::path& path, const std::vector<uint8_t
     return false;
   out.write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
   return out.good();
-}
-
-// A USA or JP copy's containers are converted to PAL's as they are read, since
-// the code indexes into them by position; see scripts/gen-release-patches.py.
-bool ApplyReleasePatch(const std::string& guest_path, std::vector<uint8_t>& bytes) {
-  for (const auto patch : FindReleasePatches(guest_path)) {
-    std::vector<uint8_t> converted;
-    if (rex::system::ApplyReleasePatch(patch, bytes, converted)) {
-      bytes = std::move(converted);
-      return true;
-    }
-  }
-  return false;
-}
-
-// The camp menu loads its art from campdata/camp_grpN.bmd, one per language
-// (sub_821E8E28), and waits forever for one that is missing. Only PAL ships
-// them: USA and JP keep their own language's textures in AppKeep.bmd, in the
-// same slots, which PAL left empty. So on their data each is rebuilt from those
-// slots, in the order camp_grp1 lists them, with that one language's art
-// standing in for every language. JP's are byte for byte PAL's camp_grp0.
-constexpr std::array kCampGroupSlots = {251, 268, 269, 267, 304, 305, 306};
-constexpr size_t kCampGroupHeader = 0x30;
-
-bool NeedsCampGroups(const assets::Toc& toc) {
-  return !toc.Find("campdata/camp_grp1.bmd") && toc.Find("appkeep.bmd");
-}
-
-bool LoadDecodedContainer(const std::string& guest_path, std::vector<uint8_t>& out,
-                          bool convert = true);
-
-// Writes the camp_grp files into `dir` and gives them TOC records. Returns
-// how many it wrote.
-size_t WriteCampGroups(assets::Toc& toc, const std::filesystem::path& dir) {
-  std::vector<uint8_t> keep;
-  if (!LoadDecodedContainer("appkeep.bmd", keep, false) || keep.size() < 16 ||
-      std::memcmp(keep.data(), "BMD ", 4) != 0) {
-    REXLOG_ERROR("assets: AppKeep.bmd unreadable, so the camp menu has no art");
-    return 0;
-  }
-  auto be32 = [&](size_t off) {
-    return uint32_t(keep[off]) << 24 | uint32_t(keep[off + 1]) << 16 |
-           uint32_t(keep[off + 2]) << 8 | uint32_t(keep[off + 3]);
-  };
-  const uint32_t count = be32(8);
-  if (count <= kCampGroupSlots.back() + 1 || 12 + 4 * size_t(count) > keep.size()) {
-    REXLOG_ERROR("assets: AppKeep.bmd has {} entries, not the USA or JP layout", count);
-    return 0;
-  }
-
-  std::vector<uint8_t> group(kCampGroupHeader, 0);
-  std::memcpy(group.data(), "CAMP", 4);
-  auto put32 = [&](size_t off, uint32_t v) {
-    for (int i = 0; i < 4; ++i)
-      group[off + i] = uint8_t(v >> (24 - 8 * i));
-  };
-  put32(8, uint32_t(kCampGroupSlots.size()));
-  for (size_t i = 0; i < kCampGroupSlots.size(); ++i) {
-    const uint32_t begin = be32(12 + 4 * kCampGroupSlots[i]);
-    const uint32_t end = be32(12 + 4 * (kCampGroupSlots[i] + 1));
-    if (end <= begin || end > keep.size() || std::memcmp(keep.data() + begin, "NTEX", 4) != 0) {
-      REXLOG_ERROR("assets: AppKeep.bmd slot {} is not a texture", kCampGroupSlots[i]);
-      return 0;
-    }
-    put32(12 + 4 * i, uint32_t(group.size()));
-    group.insert(group.end(), keep.begin() + begin, keep.begin() + end);
-  }
-  put32(4, uint32_t(group.size()));
-
-  size_t written = 0;
-  for (int n = 0; n < 6; ++n) {
-    const std::string path = "campdata/camp_grp" + std::to_string(n) + ".bmd";
-    if (!WriteWholeFile(dir / path, group) || !toc.AddStored(path, uint32_t(group.size()))) {
-      REXLOG_ERROR("assets: could not write {}", path);
-      continue;
-    }
-    ++written;
-  }
-  REXLOG_INFO("assets: rebuilt {} camp_grp files from AppKeep.bmd", written);
-  return written;
-}
-
-// Serves the converted form of every container the bundle covers that no mod
-// patched, which BuildCache has already written. Returns how many it wrote.
-size_t WriteReleaseContainers(rex::Runtime* runtime, assets::Toc& toc,
-                              const std::filesystem::path& dir) {
-  size_t written = 0;
-  for (const auto& path : ReleasePatchedContainers()) {
-    if (path == kJapaneseTitle)
-      continue;
-    std::error_code ec;
-    if (std::filesystem::is_regular_file(dir / path, ec))
-      continue;
-    // A file PAL has and this release lacks is patched from nothing.
-    const bool added = !toc.Find(path);
-    std::vector<uint8_t> bytes;
-    // Not every release differs from PAL on every path: USA's scp.bmd is PAL's.
-    if ((!added && !LoadDecodedContainer(path, bytes, false)) || !ApplyReleasePatch(path, bytes)) {
-      REXLOG_INFO("assets: no patch takes this release's {}, so it is served as it is", path);
-      continue;
-    }
-    const uint32_t size = uint32_t(bytes.size());
-    if (!WriteWholeFile(dir / path, bytes) ||
-        !(added ? toc.AddStored(path, size) : toc.SetStored(path, size))) {
-      REXLOG_ERROR("assets: could not write the converted {}", path);
-      continue;
-    }
-    ++written;
-  }
-  REXLOG_INFO("assets: converted {} containers to the PAL layout", written);
-  return written;
-}
-
-// PAL's title effect has no Japanese variant of its logo, so the title screen
-// loads the Japanese release's title.bmd instead, built from PAL's.
-size_t WriteJapaneseTitle(assets::Toc& toc, const std::filesystem::path& dir) {
-  std::vector<uint8_t> bytes;
-  if (FindReleasePatches(kJapaneseTitle).empty() || !LoadDecodedContainer("title.bmd", bytes) ||
-      !ApplyReleasePatch(kJapaneseTitle, bytes)) {
-    REXLOG_INFO("assets: no Japanese title screen to serve");
-    return 0;
-  }
-  if (!WriteWholeFile(dir / kJapaneseTitle, bytes) ||
-      !toc.AddStored(kJapaneseTitle, uint32_t(bytes.size()))) {
-    REXLOG_ERROR("assets: could not write {}", kJapaneseTitle);
-    return 0;
-  }
-  return 1;
 }
 
 // Builds every patched container plus the index.vmtoc that describes them, into
@@ -1940,11 +1802,6 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir, bool sh
 
   if (shown)
     report(total, "", true);
-  if (NeedsCampGroups(toc)) {
-    built += WriteCampGroups(toc, dir);
-    built += WriteReleaseContainers(runtime, toc, dir);
-  }
-  built += WriteJapaneseTitle(toc, dir);
   if (!built) {
     std::filesystem::remove_all(dir, ec);
     return false;
@@ -2027,17 +1884,14 @@ void RebuildAndServe(bool show_progress = false) {
       std::filesystem::remove_all(it->path(), ec);
   }
 
-  if (Remount(s.runtime, dir)) {
+  if (Remount(s.runtime, dir))
     s.cache_dir = dir;
-    s.japanese_title = std::filesystem::is_regular_file(dir / kJapaneseTitle, ec);
-  }
 }
 
 // ---------------------------------------------------------------------------
 // Reading the shipped asset back (GetText / enumerate)
 // ---------------------------------------------------------------------------
-bool LoadDecodedContainer(const std::string& guest_path, std::vector<uint8_t>& out,
-                          bool convert) {
+bool LoadDecodedContainer(const std::string& guest_path, std::vector<uint8_t>& out) {
   State& s = state();
   if (!s.runtime)
     return false;
@@ -2052,11 +1906,7 @@ bool LoadDecodedContainer(const std::string& guest_path, std::vector<uint8_t>& o
     out = std::move(encoded);
     return true;
   }
-  if (!assets::DecodeAsset(encoded.data(), encoded.size(), entry->size, entry->flag, out))
-    return false;
-  if (convert)
-    ApplyReleasePatch(NormalizeGuestPath(guest_path), out);
-  return true;
+  return assets::DecodeAsset(encoded.data(), encoded.size(), entry->size, entry->flag, out);
 }
 
 bool SupplyReplacementPcm(void*, const uint8_t tag[16], uint64_t* cursor, int sample_rate,
@@ -2246,9 +2096,11 @@ void BindAssetSystem(rex::Runtime* runtime) {
   }
 
   s.bound = true;
-  assets::Toc base_toc;
-  if (s.containers.empty() && FindReleasePatches(kJapaneseTitle).empty() &&
-      !(base_toc.Load(runtime->game_data_root() / "index.vmtoc") && NeedsCampGroups(base_toc)))
+  // The install step writes it (src/installer/release_patch.cpp).
+  std::error_code ec;
+  s.japanese_title =
+      std::filesystem::is_regular_file(runtime->game_data_root() / kJapaneseTitle, ec);
+  if (s.containers.empty())
     return;
   RebuildAndServe(true);
 }
@@ -2382,48 +2234,6 @@ void ApplyXexTextPatches(rex::Runtime* runtime) {
   }
   REXLOG_INFO("assets: patched {} strings across {} language blocks in {}", applied, written,
               kXexContainer);
-}
-
-namespace {
-
-// Calls `visit(path, patch)` for every entry of the bundle.
-template <typename Visit>
-void ForEachReleasePatch(Visit&& visit) {
-  const std::span<const uint8_t> bundle(kReleasePatchData, kReleasePatchDataEnd);
-  if (bundle.size() < 8 || std::memcmp(bundle.data(), "RXDB", 4) != 0)
-    return;
-  for (size_t at = 8; at + 68 <= bundle.size();) {
-    const auto* rec = reinterpret_cast<const char*>(bundle.data() + at);
-    const uint32_t size = uint32_t(bundle[at + 64]) | uint32_t(bundle[at + 65]) << 8 |
-                          uint32_t(bundle[at + 66]) << 16 | uint32_t(bundle[at + 67]) << 24;
-    if (at + 68 + size > bundle.size())
-      return;
-    const std::string_view path(rec, strnlen(rec, 64));
-    // PS3 data is never a USA or JP container; only the executable converts.
-    if (!IsPs3Target() || path == kXexContainer)
-      visit(path, bundle.subspan(at + 68, size));
-    at += 68 + size;
-  }
-}
-
-}  // namespace
-
-std::vector<std::span<const uint8_t>> FindReleasePatches(std::string_view guest_path) {
-  std::vector<std::span<const uint8_t>> patches;
-  ForEachReleasePatch([&](std::string_view path, std::span<const uint8_t> patch) {
-    if (path == guest_path)
-      patches.push_back(patch);
-  });
-  return patches;
-}
-
-std::vector<std::string> ReleasePatchedContainers() {
-  std::vector<std::string> paths;
-  ForEachReleasePatch([&](std::string_view path, std::span<const uint8_t>) {
-    if (path != kXexContainer && std::find(paths.begin(), paths.end(), path) == paths.end())
-      paths.emplace_back(path);
-  });
-  return paths;
 }
 
 bool JapaneseTitleServed() {
