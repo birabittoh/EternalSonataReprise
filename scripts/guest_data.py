@@ -27,10 +27,16 @@ by index from a table of UTF-16 strings, each after a 16 bit length; that
 table is src/guest_data/pal50_messages.txt, laid out like a text file's
 single language block. It may not outgrow the retail table.
 
+Menu layouts are src/guest_data/menu_layouts.txt: each `@address` starts a
+stream, then one command per line, the opcode and its operands as signed
+decimals; the terminator is implied. A stream may not outgrow its retail
+size. sub_821EC050 picks them per screen and language.
+
     python scripts/guest_data.py check assets/default.xex
     python scripts/guest_data.py extract-text assets/default.xex      # one time
     python scripts/guest_data.py extract-strings assets/default.xex   # one time
     python scripts/guest_data.py extract-pal50 assets/default.xex     # one time
+    python scripts/guest_data.py extract-layouts assets/default.xex   # one time
 """
 import argparse
 import os
@@ -45,6 +51,24 @@ STRINGS_FILE = os.path.join(ROOT, "strings.txt")
 WIDE_STRINGS_FILE = os.path.join(ROOT, "wide_strings.txt")
 PAL50_FILE = os.path.join(ROOT, "pal50_messages.txt")
 PAL50_ADDRESS = 0x82000698
+LAYOUT_FILE = os.path.join(ROOT, "menu_layouts.txt")
+
+# Menu layouts: sub_821F2F38 runs a stream of commands, an opcode word and
+# its operand words, up to STREAM_END. Operand counts come from the
+# interpreter's cases; these are the opcodes the image uses.
+STREAM_END = 0xFFFF
+LAYOUT_OPERANDS = {
+    1: 4, 2: 6, 4: 3, 9: 5, 100: 6, 104: 3, 110: 7, 120: 6, 200: 9, 300: 6,
+    500: 5, 600: 3, 601: 3, 700: 6, 707: 2, 800: 4, 1000: 5, 1100: 5,
+    1200: 3, 1300: 5, 1500: 1, 1501: 0, 1502: 3, 1503: 5, 2100: 1, 2101: 0,
+    3000: 1, 3100: 1,
+}
+# Where the streams lie, and the words among them that are other data.
+LAYOUT_RANGES = [(0x8202CAB4, 0x82031A00), (0x82057018, 0x82074A20)]
+NOT_LAYOUTS = [(0x8202D764, 0x8202D790), (0x8205CC74, 0x8205CC78),
+               (0x8205CDA4, 0x8205CDA8), (0x8205CEFC, 0x8205CF00),
+               (0x8205DDE4, 0x8205DDE8), (0x8205E87C, 0x8205E880),
+               (0x8205F0EC, 0x8205F108)]
 
 LANGS = ["JPN", "USA", "GBR", "FRA", "ITA", "DEU", "ESP"]
 CODEC = {"JPN": "cp932"}
@@ -345,6 +369,49 @@ def overlay_pal50(image, base):
     image[off:off + size] = data + bytes(size - len(data))
 
 
+def stream_size(data, off):
+    """Bytes the retail stream at `off` takes, terminator included."""
+    end = off
+    while True:
+        op = u32(data, end)
+        if op == STREAM_END:
+            return end + 4 - off
+        end += 4 * (1 + LAYOUT_OPERANDS[op])
+
+
+def read_layouts():
+    """[(address, [words without the terminator])]."""
+    out = []
+    with open(LAYOUT_FILE, encoding="utf-8") as f:
+        for n, line in enumerate(f.read().split("\n"), 1):
+            line = line.split("#")[0].split()
+            if not line:
+                continue
+            if line[0].startswith("@"):
+                out.append((int(line[0][1:], 16), []))
+                continue
+            words = [int(v) & 0xFFFFFFFF for v in line]
+            if LAYOUT_OPERANDS.get(words[0]) != len(words) - 1:
+                raise ValueError(f"{LAYOUT_FILE}:{n}: opcode {words[0]} takes "
+                                 f"{LAYOUT_OPERANDS.get(words[0])} operands")
+            out[-1][1].extend(words)
+    return out
+
+
+def encode_layout(words):
+    return struct.pack(f">{len(words) + 1}I", *words, STREAM_END)
+
+
+def overlay_layouts(image, base):
+    for address, words in read_layouts():
+        data = encode_layout(words)
+        off = address - base
+        size = stream_size(image, off)
+        if len(data) > size:
+            raise ValueError(f"layout at 0x{address:08X} is {len(data)} bytes, {size} available")
+        image[off:off + size] = data + bytes(size - len(data))
+
+
 def retail_size(data, off):
     """Bytes the retail blob at `off` takes, which a replacement must fit in."""
     return len(encode_btx(parse_btx(data, off)))
@@ -406,6 +473,46 @@ def cmd_extract_pal50(args):
     return 0
 
 
+def find_layouts(data, base):
+    """[(address, [words])] of every stream in LAYOUT_RANGES."""
+    found = []
+    for start, end in LAYOUT_RANGES:
+        a = start
+        while a < end:
+            skip = next((e for s, e in NOT_LAYOUTS if s == a), None)
+            if skip:
+                a = skip
+                continue
+            if not u32(data, a - base):
+                a += 4
+                continue
+            size = stream_size(data, a - base)
+            found.append((a, list(struct.unpack_from(f">{size // 4 - 1}I", data, a - base))))
+            a += size
+    return found
+
+
+def signed(v):
+    return v - (1 << 32) if v & 0x80000000 else v
+
+
+def cmd_extract_layouts(args):
+    xex = XexImage.load(args.xex)
+    lines = []
+    for address, words in find_layouts(xex.data, xex.base):
+        lines.append(f"@0x{address:08X}")
+        i = 0
+        while i < len(words):
+            n = 1 + LAYOUT_OPERANDS[words[i]]
+            lines.append(" ".join(str(signed(v)) for v in words[i:i + n]))
+            i += n
+        lines.append("")
+    with open(LAYOUT_FILE, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines))
+    print(f"{lines.count('')} layouts in {LAYOUT_FILE}")
+    return 0
+
+
 def cmd_check(args):
     xex = XexImage.load(args.xex)
     covered = bytearray(len(xex.data))
@@ -450,6 +557,18 @@ def cmd_check(args):
         print("OVERLAP PAL-50 messages")
         failures += 1
     covered[off:off + size] = b"\1" * size
+    for address, words in read_layouts():
+        off = address - xex.base
+        size = stream_size(xex.data, off)
+        data = encode_layout(words)
+        if len(data) > size:
+            print(f"TOO BIG layout at 0x{address:08X}: {len(data)} bytes, {size} available")
+            failures += 1
+        edited += data != xex.data[off:off + size]
+        if any(covered[off:off + size]):
+            print(f"OVERLAP layout at 0x{address:08X}")
+            failures += 1
+        covered[off:off + size] = b"\1" * size
     for start, end, _ in DROPPED:
         covered[start - xex.base:end - xex.base] = b"\1" * (end - start)
     total = done = 0
@@ -469,7 +588,8 @@ def main():
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name, fn in (("check", cmd_check), ("extract-text", cmd_extract_text),
                      ("extract-strings", cmd_extract_strings),
-                     ("extract-pal50", cmd_extract_pal50)):
+                     ("extract-pal50", cmd_extract_pal50),
+                     ("extract-layouts", cmd_extract_layouts)):
         p = sub.add_parser(name)
         p.add_argument("xex")
         p.set_defaults(fn=fn)
