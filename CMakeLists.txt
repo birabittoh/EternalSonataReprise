@@ -137,14 +137,15 @@ add_custom_command(
     VERBATIM
 )
 
-# Embedded UI art: src/images/*.png are the checked-in source of truth;
+# Embedded UI art: src/images/*.png and res/*.png are the checked-in source of truth;
 # src/images.generated.h is a gitignored build artifact regenerated whenever a
 # .png or the generator script changes.
 set(ETERNALSONATA_IMAGES_HEADER ${CMAKE_SOURCE_DIR}/src/images.generated.h)
 # Globbed so that adding a .png cannot leave a stale header behind: naming them
 # one by one means a new image silently never rebuilds it.
 file(GLOB ETERNALSONATA_IMAGE_SOURCES CONFIGURE_DEPENDS
-     ${CMAKE_SOURCE_DIR}/src/images/*.png)
+     ${CMAKE_SOURCE_DIR}/src/images/*.png
+     ${CMAKE_SOURCE_DIR}/res/*.png)
 add_custom_command(
     OUTPUT ${ETERNALSONATA_IMAGES_HEADER}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-images.py
@@ -391,6 +392,9 @@ set(ETERNALSONATA_SOURCES
     src/engine/equipment_system.cpp
     src/core/game_settings.cpp
     src/core/loading_screen.cpp
+    src/installer/disc_image.cpp
+    src/installer/game_data.cpp
+    src/installer/intro_screen.cpp
     src/engine/flag_system.cpp
     src/core/guest_main_thread.cpp
     src/core/guest_profiler.cpp
@@ -512,6 +516,7 @@ target_include_directories(eternalsonata PRIVATE
     src/platform
     src/assets
     src/api
+    src/installer
 )
 
 if(WIN32)

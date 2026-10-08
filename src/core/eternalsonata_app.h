@@ -21,7 +21,6 @@
 #include <rex/input/input_system.h>
 #include <rex/rex_app.h>
 #include <rex/system/flags.h>
-#include <rex/system/game_data_selector.h>
 #include <rex/system/kernel_state.h>
 #include <rex/ui/imgui_theme.h>
 #include <rex/ui/keybinds.h>
@@ -35,6 +34,7 @@
 #include "eternalsonata_asset_system.h"
 #include "field_player_model_override.h"
 #include "fonts.generated.h"
+#include "game_data.h"
 #include "force_load_area.h"
 #include "ps3_item_tables.h"
 #include "guest_image.h"
@@ -47,8 +47,8 @@
 #include "item_system.h"
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
+#include "intro_screen.h"
 #include "loading_screen.h"
-#include "progress_theme.h"
 #include "music_system.h"
 #include "native_renderer.h"
 #include "native_renderer_overlay.h"
@@ -108,46 +108,50 @@ class EternalsonataApp : public rex::ReXApp {
   std::optional<rex::PathConfig> OnFinalizePaths(
       const rex::PathConfig& defaults, std::function<void(rex::PathConfig)> resume) override {
     (void)defaults;
-    (void)resume;
     // The overlays record into the host frame, so the renderer needs the drawer
     // that produces them; both are live once presentation is set up.
     eternalsonata::PlumeSetOverlayDrawer(imgui_drawer());
     eternalsonata::InitNativeRenderer(window());
     eternalsonata::BindLoadingScreen(imgui_drawer(), &app_context());
+    eternalsonata::BindIntroScreen(imgui_drawer(), &app_context());
 
-    rex::system::GameDataSelectorSettings settings;
-    settings.default_xex_sha256 = "91184E7765172A358ECAA6E5CA1784DB1AE796C60F25051A45C5206F8949501E";
-    // A USA or JP copy is converted into the PAL xex the code was generated from.
-    settings.default_xex_patches = eternalsonata::FindReleasePatches("default.xex");
-    settings.config_path = config_path();
-    // Only used where the loading screen cannot draw (no native renderer).
-    settings.progress_theme = eternalsonata::ProgressTheme();
-    settings.progress_icon_data = eternalsonata::kIconPNG;
-    settings.progress_icon_size = eternalsonata::kIconPNGSize;
+    eternalsonata::GameDataOptions options;
+    options.config_path = config_path();
     if (eternalsonata::PlumeBackendReady()) {
-      settings.progress_callback = [](const std::string& title, float fraction,
-                                      const std::string& detail) {
+      options.progress = [](const std::string& title, float fraction, const std::string& detail) {
         eternalsonata::UpdateLoadingScreen(title, fraction, detail);
       };
     }
+    if (eternalsonata::UsePreparedGameData(options))
+      return FinishGameDataPaths();
 
-    extracting_ = true;
-    const bool ready = rex::system::GameDataSelector::EnsureGameData(settings);
-    extracting_ = false;
+    // Asynchronous, so the main loop runs and feeds the intro screen input.
+    eternalsonata::AskForGameData(options, app_context(), [this, resume](bool ready) {
+      if (!ready) {
+        // Teardown takes a moment; nothing is left to show meanwhile.
+        window()->Hide();
+        app_context().QuitFromUIThread();
+        return;
+      }
+      resume(FinishGameDataPaths());
+    });
+    return std::nullopt;
+  }
+
+  rex::PathConfig FinishGameDataPaths() {
     eternalsonata::HideLoadingScreen();
-    if (!ready) {
-      app_context().QuitFromUIThread();
-      return std::nullopt;
-    }
+    eternalsonata::ReleaseIntroScreen();
     RefreshPathDefaultsIfCvarsChanged();
     eternalsonata::DetectTarget(resolved_path_defaults().game_data_root);
     return resolved_path_defaults();
   }
 
-  // An interrupted extraction leaves a game directory that can still pass the
-  // default.xex check, so closing waits for it to finish.
+  // Closing from the intro quits through it; during extraction the UI thread is
+  // busy in the copy, so closing waits for it to finish.
   bool OnWindowCloseRequested() override {
-    if (extracting_) {
+    if (eternalsonata::RequestIntroQuit())
+      return false;
+    if (eternalsonata::IsExtractingGameData()) {
       REXLOG_INFO("Close requested while extracting game files; ignoring until it finishes");
       return false;
     }
@@ -582,7 +586,6 @@ class EternalsonataApp : public rex::ReXApp {
 
   // Guest frame present count, bumped by the per-swap callback (any thread).
   std::atomic<uint64_t> guest_swap_count_{0};
-  bool extracting_ = false;
   // Trailing window of (wall time, swap count) samples for the F3 "Guest" FPS
   // line, keeping only samples within kStatsWindowSec (ImGui thread only).
   static constexpr double kStatsWindowSec = 1.0;

@@ -1,0 +1,365 @@
+#include "disc_image.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
+#include <fstream>
+#include <optional>
+#include <unordered_set>
+#include <vector>
+
+#include <SDL3/SDL.h>
+
+#include <rex/logging.h>
+#include <rex/ui/progress_window.h>
+
+#include "icon.generated.h"
+#include "progress_theme.h"
+
+// Ported from the SDK's GameDataSelector (src/system/game_data_selector.cpp).
+
+namespace eternalsonata {
+namespace {
+
+namespace fs = std::filesystem;
+
+std::string FormatBytes(uint64_t bytes) {
+  constexpr uint64_t kMiB = 1024ull * 1024;
+  constexpr uint64_t kGiB = kMiB * 1024;
+  const bool gib = bytes >= kGiB;
+  const uint64_t unit = gib ? kGiB : kMiB;
+  const uint64_t tenths = (bytes * 10 + unit / 2) / unit;
+  return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + (gib ? " GiB" : " MiB");
+}
+
+class Progress {
+ public:
+  Progress(const ExtractProgress& callback, std::string label, uint64_t total)
+      : callback_(callback), label_(std::move(label)), total_(total) {
+    if (!callback_)
+      window_.emplace("Preparing game files", ProgressTheme(), kIconPNG, kIconPNGSize);
+    Draw();
+  }
+
+  ~Progress() {
+    bytes_ = total_;
+    Draw();
+  }
+
+  void Add(uint64_t n) {
+    bytes_ += n;
+    const uint64_t now = SDL_GetTicks();
+    if (now - last_draw_ms_ >= 33)
+      Draw();
+    if (now - last_log_ms_ >= 2000) {
+      last_log_ms_ = now;
+      REXLOG_INFO("{}: {}", label_, Detail());
+    }
+  }
+
+ private:
+  std::string Detail() const {
+    if (total_ == 0)
+      return FormatBytes(bytes_);
+    const uint64_t pct = std::min<uint64_t>(100, bytes_ * 100 / total_);
+    return std::to_string(pct) + "%   " + FormatBytes(bytes_) + " of " + FormatBytes(total_);
+  }
+
+  void Draw() {
+    last_draw_ms_ = SDL_GetTicks();
+    const float fraction =
+        total_ ? std::min(1.0f, float(double(bytes_) / double(total_))) : -1.0f;
+    if (callback_)
+      callback_(label_, fraction, Detail());
+    else
+      window_->Draw(label_, fraction, Detail());
+  }
+
+  ExtractProgress callback_;
+  std::optional<rex::ui::ProgressWindow> window_;
+  std::string label_;
+  uint64_t total_ = 0;
+  uint64_t bytes_ = 0;
+  uint64_t last_draw_ms_ = 0;
+  uint64_t last_log_ms_ = 0;
+};
+
+// Bounds checked reads over an untrusted image. SDL_IOStream so an Android
+// content URI is read where it lives.
+class FileReader {
+ public:
+  explicit FileReader(const std::string& path) {
+    io_ = SDL_IOFromFile(path.c_str(), "rb");
+    if (!io_) {
+      REXLOG_ERROR("Failed to open {}: {}", path, SDL_GetError());
+      return;
+    }
+    const Sint64 size = SDL_GetIOSize(io_);
+    if (size > 0)
+      size_ = uint64_t(size);
+  }
+
+  ~FileReader() {
+    if (io_)
+      SDL_CloseIO(io_);
+  }
+
+  FileReader(const FileReader&) = delete;
+  FileReader& operator=(const FileReader&) = delete;
+
+  bool ok() const { return size_ > 0; }
+
+  bool Read(uint64_t off, void* dst, uint64_t len) {
+    if (len == 0)
+      return true;
+    if (off > size_ || len > size_ - off)
+      return false;
+    if (SDL_SeekIO(io_, Sint64(off), SDL_IO_SEEK_SET) < 0)
+      return false;
+    auto* p = static_cast<char*>(dst);
+    while (len > 0) {
+      const size_t n = SDL_ReadIO(io_, p, size_t(len));
+      if (n == 0)
+        return false;
+      p += n;
+      len -= n;
+    }
+    return true;
+  }
+
+  std::optional<uint8_t> U8(uint64_t off) {
+    uint8_t v;
+    return Read(off, &v, 1) ? std::optional(v) : std::nullopt;
+  }
+
+  std::optional<uint16_t> U16LE(uint64_t off) {
+    uint8_t b[2];
+    if (!Read(off, b, sizeof(b)))
+      return std::nullopt;
+    return uint16_t(b[0] | (b[1] << 8));
+  }
+
+  std::optional<uint32_t> U32LE(uint64_t off) {
+    uint8_t b[4];
+    if (!Read(off, b, sizeof(b)))
+      return std::nullopt;
+    return uint32_t(b[0]) | (uint32_t(b[1]) << 8) | (uint32_t(b[2]) << 16) | (uint32_t(b[3]) << 24);
+  }
+
+  bool MagicAt(uint64_t off, std::string_view magic) {
+    std::string buf(magic.size(), '\0');
+    return Read(off, buf.data(), magic.size()) && buf == magic;
+  }
+
+  bool CopyTo(std::ostream& out, uint64_t off, uint64_t len, Progress* progress) {
+    std::vector<char> chunk(1024 * 1024);
+    while (len > 0) {
+      const uint64_t n = std::min<uint64_t>(len, chunk.size());
+      if (!Read(off, chunk.data(), n))
+        return false;
+      out.write(chunk.data(), std::streamsize(n));
+      if (!out)
+        return false;
+      off += n;
+      len -= n;
+      if (progress)
+        progress->Add(n);
+    }
+    return true;
+  }
+
+ private:
+  SDL_IOStream* io_ = nullptr;
+  uint64_t size_ = 0;
+};
+
+// Joins archive supplied names under `base`, refusing anything that escapes it.
+std::optional<fs::path> SafeJoin(const fs::path& base, const std::string& name) {
+  if (name.empty() || name == "." || name == ".." || name.find_first_of("/\\:") != std::string::npos)
+    return std::nullopt;
+  const fs::path p(name);
+  if (p.has_root_name() || p.has_root_directory() || std::distance(p.begin(), p.end()) != 1)
+    return std::nullopt;
+  return base / p;
+}
+
+// Partition offsets seen in the wild; the volume descriptor sits 32 sectors in.
+constexpr uint64_t kXdvdfsPartitionOffsets[] = {0x00000000, 0x0000FB20, 0x00020600, 0x02080000,
+                                                0x0FD90000};
+constexpr std::string_view kXdvdfsMagic = "MICROSOFT*XBOX*MEDIA";
+constexpr uint64_t kSectorSize = 2048;
+constexpr int kMaxDirectoryDepth = 64;
+
+struct Xdvdfs {
+  uint64_t game_offset;
+  uint64_t root_offset;
+};
+
+std::optional<Xdvdfs> FindXdvdfs(FileReader& reader) {
+  for (const uint64_t game_offset : kXdvdfsPartitionOffsets) {
+    const uint64_t fs_off = game_offset + 32 * kSectorSize;
+    if (!reader.MagicAt(fs_off, kXdvdfsMagic))
+      continue;
+    const auto root_sector = reader.U32LE(fs_off + 20);
+    const auto root_size = reader.U32LE(fs_off + 24);
+    if (!root_sector || !root_size || *root_size < 13 || *root_size > 32 * 1024 * 1024)
+      continue;
+    return Xdvdfs{game_offset, game_offset + uint64_t(*root_sector) * kSectorSize};
+  }
+  return std::nullopt;
+}
+
+struct Walk {
+  // Sums sizes without writing, so the progress bar has a real total.
+  bool measure_only = false;
+  bool complete = true;
+  uint32_t files = 0;
+  uint64_t bytes = 0;
+  std::vector<std::string> root_names;
+  Progress* progress = nullptr;
+};
+
+// One directory is a binary tree of entries; a malformed image can make it
+// cyclic, so visited ordinals are tracked.
+void WalkDirectory(FileReader& reader, uint64_t game_offset, uint64_t dir_offset,
+                   const fs::path& out_dir, int depth, Walk& walk) {
+  if (depth > kMaxDirectoryDepth) {
+    REXLOG_WARN("XDVDFS: directories nest deeper than {}", kMaxDirectoryDepth);
+    walk.complete = false;
+    return;
+  }
+  std::vector<uint32_t> pending = {0};
+  std::unordered_set<uint32_t> visited;
+  while (!pending.empty()) {
+    const uint32_t ordinal = pending.back();
+    pending.pop_back();
+    if (!visited.insert(ordinal).second) {
+      walk.complete = false;
+      continue;
+    }
+    const uint64_t p = dir_offset + uint64_t(ordinal) * 4;
+    const auto left = reader.U16LE(p);
+    const auto right = reader.U16LE(p + 2);
+    const auto sector = reader.U32LE(p + 4);
+    const auto length = reader.U32LE(p + 8);
+    const auto attributes = reader.U8(p + 12);
+    const auto name_length = reader.U8(p + 13);
+    if (!left || !right || !sector || !length || !attributes || !name_length || !*name_length) {
+      REXLOG_WARN("XDVDFS: truncated directory entry at 0x{:X}", p);
+      walk.complete = false;
+      continue;
+    }
+    std::string name(*name_length, '\0');
+    if (!reader.Read(p + 14, name.data(), *name_length)) {
+      walk.complete = false;
+      continue;
+    }
+    if (*left)
+      pending.push_back(*left);
+    if (*right)
+      pending.push_back(*right);
+
+    const auto dest = SafeJoin(out_dir, name);
+    if (!dest) {
+      REXLOG_WARN("XDVDFS: rejected entry name '{}'", name);
+      walk.complete = false;
+      continue;
+    }
+    if (depth == 0)
+      walk.root_names.push_back(name);
+
+    const uint64_t entry_offset = game_offset + uint64_t(*sector) * kSectorSize;
+    if (*attributes & 0x10) {
+      std::error_code ec;
+      if (!walk.measure_only)
+        fs::create_directories(*dest, ec);
+      if (*length)
+        WalkDirectory(reader, game_offset, entry_offset, *dest, depth + 1, walk);
+      continue;
+    }
+    ++walk.files;
+    if (walk.measure_only) {
+      walk.bytes += *length;
+      continue;
+    }
+    std::ofstream out(*dest, std::ios::binary | std::ios::trunc);
+    if (!out || !reader.CopyTo(out, entry_offset, *length, walk.progress)) {
+      REXLOG_WARN("XDVDFS: could not write {}", dest->string());
+      walk.complete = false;
+    }
+  }
+}
+
+// Moves a directory out of the way instead of deleting what a player put there.
+bool MoveAside(const fs::path& dir) {
+  std::error_code ec;
+  if (fs::is_directory(dir, ec) && fs::is_empty(dir, ec))
+    return fs::remove(dir, ec);
+  for (int i = 0; i < 100; ++i) {
+    fs::path aside = dir;
+    aside += i ? ".old" + std::to_string(i) : ".old";
+    if (fs::exists(aside, ec))
+      continue;
+    fs::rename(dir, aside, ec);
+    if (ec)
+      return false;
+    REXLOG_WARN("Moved the unusable {} to {}", dir.string(), aside.string());
+    return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+bool SameFileName(std::string_view a, std::string_view b) {
+  return std::equal(a.begin(), a.end(), b.begin(), b.end(), [](char x, char y) {
+    return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+  });
+}
+
+std::string ExtractDiscImage(const std::string& image, const fs::path& out_dir,
+                             std::string_view required_entry, const ExtractProgress& progress_callback) {
+  FileReader reader(image);
+  if (!reader.ok())
+    return "The file could not be read.";
+  const auto info = FindXdvdfs(reader);
+  if (!info)
+    return "This is not an Xbox 360 disc image.";
+
+  Walk measured;
+  measured.measure_only = true;
+  WalkDirectory(reader, info->game_offset, info->root_offset, out_dir, 0, measured);
+  const bool ours = std::any_of(measured.root_names.begin(), measured.root_names.end(),
+                                [&](const std::string& n) { return SameFileName(n, required_entry); });
+  if (!ours)
+    return "This disc image is not Eternal Sonata.";
+  REXLOG_INFO("Disc image holds {} files, {}", measured.files, FormatBytes(measured.bytes));
+
+  fs::path partial = out_dir;
+  partial += ".partial";
+  std::error_code ec;
+  fs::remove_all(partial, ec);
+  fs::create_directories(partial, ec);
+  if (ec)
+    return "Could not create " + partial.string() + ": " + ec.message();
+
+  Walk walk;
+  {
+    Progress progress(progress_callback, "Extracting game files...", measured.bytes);
+    walk.progress = &progress;
+    WalkDirectory(reader, info->game_offset, info->root_offset, partial, 0, walk);
+  }
+  if (!walk.complete) {
+    fs::remove_all(partial, ec);
+    return "Extraction failed. The disc image may be damaged, or the disk full.";
+  }
+  if (fs::exists(out_dir, ec) && !MoveAside(out_dir))
+    return "Could not move the existing " + out_dir.string() + " out of the way.";
+  fs::rename(partial, out_dir, ec);
+  if (ec)
+    return "Could not rename the extracted files: " + ec.message();
+  REXLOG_INFO("Extracted {} files into {}", walk.files, out_dir.string());
+  return {};
+}
+
+}  // namespace eternalsonata

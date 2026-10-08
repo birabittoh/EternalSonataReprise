@@ -1,4 +1,4 @@
-<img width="829" height="375" alt="logo" src="https://github.com/user-attachments/assets/202b83f7-4be5-4add-87c0-bce06c2699e8" />
+<img width="829" height="375" alt="logo" src="res/logo.png" />
 
 Static recompilation of **Eternal Sonata** (Xbox 360) for Windows
 and Linux, built on the [ReXGlue SDK](https://github.com/birabittoh/rexglue-sdk/tree/thedarkness).
