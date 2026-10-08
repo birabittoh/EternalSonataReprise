@@ -24,9 +24,8 @@ therefore a **second target** of this executable:
   mode, with their own save state.
 * Formats that carry no game logic (textures, vertex packing, colour byte
   order, audio) are converted into what the 360 renderer and audio system
-  read. Today `scripts/ps3_convert.py` does that offline; it is meant to move
-  into the asset system so the game can extract or detect either release
-  itself.
+  read, once, at install (`src/installer/ps3_install.cpp`, with
+  `scripts/ps3_convert.py` as its reference).
 
 The 360 fonts and `.tex` files kept in §1 and the eight 360 effects appended
 to BattleKeep (§4) are stopgaps that go away as PS3 slot addressing replaces them.
@@ -57,19 +56,28 @@ python scripts/unpack_ps3.py assets-ps3-raw/PS3_GAME/USRDIR/archives -o assets-p
 Unlike the 360 the PS3 applies no codec: every file is already decoded, which
 is the form `ps3_convert.py` and the 360 tools work on.
 
-Then build a game directory and point `game_data_root` in
+Then convert the tree in place and point `game_data_root` in
 `eternalsonata.toml` at it:
 
 ```bash
-python scripts/ps3_convert.py assets-ps3 assets-ps3-360 --base assets
+python scripts/ps3_convert.py assets-ps3 --base assets
 ```
 
-The offline converter still needs a 360 tree (`--base`, hard linked): it
-provides `default.xex` and every file the conversion does not replace yet.
-Each convertible PS3 file is written over its counterpart, PS3 only files are
-added, and `index.vmtoc` gets a stored record for every converted file. Kept
-from the 360 for now: fonts and `.tex`. Audio needs `ffmpeg` on `PATH`
+Like a USA or JP copy, the tree is converted where it lies: each convertible
+PS3 file is written over itself, the shipped file kept as `*.orig`, and every
+run starts from those (`ps3-shipped.txt` lists what the PS3 shipped, so files
+a run added are never taken for PS3 data). The converter still needs a 360
+tree (`--base`, hard linked) for every file the conversion does not replace
+yet; kept from the 360 for now: fonts and `.tex`. `index.vmtoc` is the 360's
+with a stored record for every converted file. Audio needs `ffmpeg` on `PATH`
 (§5).
+
+The game does the same itself (`src/installer/ps3_install.cpp`, a port that
+must match the script byte for byte on every non audio file): pick a PS3 disc
+folder (or point `game_data_root` at an unpacked tree) with `ps3_donor_root`
+set to an extracted 360 folder, and it unpacks and converts once, then writes
+`ps3-convert.stamp`. ATRAC3 is decoded through the SDK's FFmpeg instead of
+the `ffmpeg` executable.
 
 The game runs in PS3 mode when `game_data_root` holds `pcalg_v1.p3obj`, a
 file only the PS3 ships (`src/core/target.cpp`, `IsPs3Target()`). PS3 mode

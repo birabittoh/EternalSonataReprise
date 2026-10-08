@@ -290,7 +290,8 @@ void WalkDirectory(FileReader& reader, uint64_t game_offset, uint64_t dir_offset
   }
 }
 
-// Moves a directory out of the way instead of deleting what a player put there.
+}  // namespace
+
 bool MoveAside(const fs::path& dir) {
   std::error_code ec;
   if (fs::is_directory(dir, ec) && fs::is_empty(dir, ec))
@@ -308,8 +309,6 @@ bool MoveAside(const fs::path& dir) {
   }
   return false;
 }
-
-}  // namespace
 
 bool SameFileName(std::string_view a, std::string_view b) {
   return std::equal(a.begin(), a.end(), b.begin(), b.end(), [](char x, char y) {

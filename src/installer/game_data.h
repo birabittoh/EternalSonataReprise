@@ -36,7 +36,7 @@ struct GameDataOptions {
   ExtractProgress progress;
 };
 
-// Whether `dir` holds game data this build can run.
+// Whether `dir` holds game data this build can run, once patched or converted.
 bool IsGameDirectory(const std::filesystem::path& dir);
 
 // Sets and persists game_data_root from the cvar or an earlier extraction,
