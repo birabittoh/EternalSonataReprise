@@ -23,18 +23,6 @@
 
 namespace eternalsonata {
 
-bool NativeRendererEnabled() {
-  // Latched on the first call, from RegisterNativeRendererCvars in OnPreSetup,
-  // after the config files are read. Which renderer runs is decided once at
-  // boot by whether the SDK loaded a GPU plugin; changing gpu_plugin at runtime
-  // only records a preference for the next launch. A live read would flip the
-  // hooks in native_renderer_d3d.cpp under a running guest, whose next
-  // D3DDevice__BlockUntilFenceRetired would spin on a counter nothing writes.
-  static const bool enabled =
-      rex::cvar::GetFlagByName("gpu_plugin") == kNativeRendererPluginName;
-  return enabled;
-}
-
 namespace {
 
 // Storage behind the `vsync` cvar registered below. Deliberately a mirror of
@@ -67,9 +55,7 @@ float NativeRenderScale() {
   //
   // `resolution_scale` is deliberately not consulted: under this renderer the
   // extent comes from the window, so the integer the Resolution row writes in
-  // lockstep for the Xenos backend would mean "three times the window" here.
-  if (!NativeRendererEnabled())
-    return 1.0f;
+  // lockstep would mean "three times the window" here.
   if (g_render_scale <= 0.0f)
     return 1.0f;
   return std::clamp(g_render_scale, kMinRenderScaleF, kMaxRenderScaleF);
@@ -80,8 +66,6 @@ float NativeRenderScaleAtBoot() {
   // size a target was built at *is* part of its identity and nothing retires it.
   // Keeps the integer fallback, since that path is the pre-window one.
   static const float scale = [] {
-    if (!NativeRendererEnabled())
-      return 1.0f;
     const float value =
         g_render_scale > 0.0f
             ? std::clamp(g_render_scale, kMinRenderScaleF, kMaxRenderScaleF)
@@ -96,14 +80,10 @@ float NativeRenderScaleAtBoot() {
 bool NativeRenderPixelatedScaling() { return g_render_pixelated_scaling; }
 
 void RegisterNativeRendererCvars() {
-  if (!NativeRendererEnabled())
-    return;
-
   // Same name, type, category, description and default as
   // REXCVAR_DEFINE_BOOL(vsync, true, "GPU", ...) in the SDK's
-  // command_processor.cpp, which lives in rexgpu-xenos and only exists when
-  // that plugin is loaded. Registered here rather than statically so the two
-  // never collide.
+  // command_processor.cpp, which lives in rexgpu-xenos, a plugin this
+  // project never loads.
   //
   // Values from the config file, command line, environment and kGameDefaults
   // (settings.cpp) are still pending here and are applied by RegisterFlag, so
@@ -130,8 +110,7 @@ void RegisterNativeRendererCvars() {
   // `resolution` (SetResolutionSetting in settings.cpp), so without it the
   // window grew and the game kept rendering 720p.
   //
-  // Type, category, range, default and lifecycle match the SDK's definition, so
-  // a settings.toml round-trips between the two renderers unchanged.
+  // Type, category, range, default and lifecycle match the SDK's definition.
   rex::cvar::FlagEntry scale;
   scale.name = "resolution_scale";
   scale.type = rex::cvar::FlagType::Int32;
@@ -157,9 +136,8 @@ void RegisterNativeRendererCvars() {
   rex::cvar::RegisterFlag(std::move(scale));
 
   // This renderer's own scale, and the one it prefers. Fractional, so it can say
-  // things `resolution_scale` cannot ("1.5x", "half res"), and private to this
-  // renderer so a settings.toml still round-trips to Xenos through the integer
-  // above. Zero leaves the integer in charge.
+  // things `resolution_scale` cannot ("1.5x", "half res"). Zero leaves the
+  // integer in charge.
   rex::cvar::FlagEntry fine;
   fine.name = "render_scale";
   fine.type = rex::cvar::FlagType::Double;
@@ -241,7 +219,7 @@ SurfaceListener g_surface_listener;
 
 void InitNativeRenderer(rex::ui::Window* window) {
   static bool initialized = false;
-  if (!NativeRendererEnabled() || initialized)
+  if (initialized)
     return;
   initialized = true;
 

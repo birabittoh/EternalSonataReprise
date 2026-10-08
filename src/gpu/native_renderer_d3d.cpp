@@ -16,6 +16,7 @@
 
 #include "generated/eternalsonata_init.h"
 #include "guest_profiler.h"
+#include "guest_shaders.h"
 #include "native_renderer.h"
 #include "native_renderer_batch.h"
 #include "native_renderer_draw.h"
@@ -28,6 +29,7 @@
 #include "native_renderer_shader_debug.h"
 
 REX_EXTERN(__imp__D3D__CreateDevice);
+REX_EXTERN(__imp__sub_82129260);
 REX_EXTERN(__imp__sub_8212C3B0);
 REX_EXTERN(__imp__sub_8212FB70);
 REXCVAR_DECLARE(bool, sprite_batching);
@@ -38,9 +40,6 @@ REX_EXTERN(__imp__D3DDevice__SetVertexShader);
 REX_EXTERN(__imp__D3DDevice__SetPixelShader);
 REX_EXTERN(__imp__D3DDevice__SetTexture);
 REX_EXTERN(__imp__D3DDevice__Swap);
-REX_EXTERN(__imp__D3DDevice__BlockUntilGpuIdle);
-REX_EXTERN(__imp__D3DDevice__BlockUntilFenceRetired);
-REX_EXTERN(__imp__D3DDevice__ThrottleWait_Poll);
 REX_EXTERN(__imp__D3DDevice__SetVertexShaderConstantI);
 REX_EXTERN(__imp__D3DDevice__SetPixelShaderConstantI);
 REX_EXTERN(__imp__D3DDevice__SetSamplerState_MinFilter);
@@ -1150,16 +1149,14 @@ void SetGuestFrameCallback(std::function<void()> callback) {
 // Scene phases survive the optional effect pass used by blinking models.
 REX_HOOK_RAW(sub_8212C3B0) {
   eternalsonata::SpriteBatchFlush();
-  if (eternalsonata::NativeRendererEnabled())
-    eternalsonata::FrameBeginWorld();
+  eternalsonata::FrameBeginWorld();
   __imp__sub_8212C3B0(ctx, base);
 }
 
 REX_HOOK_RAW(sub_8212C470) {
   eternalsonata::SpriteBatchFlush();
   __imp__sub_8212C470(ctx, base);
-  if (eternalsonata::NativeRendererEnabled())
-    eternalsonata::FrameNoteLayerBoundary();
+  eternalsonata::FrameNoteLayerBoundary();
 }
 
 // (dev, primType, baseVertexIndex, startIndex, indexCount)
@@ -1176,8 +1173,6 @@ REX_HOOK_RAW(D3DDevice__DrawIndexedVertices) {
     __imp__D3DDevice__DrawIndexedVertices(ctx, base);
     eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DDrawIndexed, zone_start);
   }
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   ++eternalsonata::g_draws_indexed;
   eternalsonata::RecordDraw(base, device, params);
@@ -1194,8 +1189,6 @@ REX_HOOK_RAW(D3DDevice__DrawVertices) {
     __imp__D3DDevice__DrawVertices(ctx, base);
     eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DDrawVertices, zone_start);
   }
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   ++eternalsonata::g_draws_vertices;
   eternalsonata::RecordDraw(base, device, params);
@@ -1225,8 +1218,6 @@ REX_HOOK_RAW(D3DDevice__BeginVertices) {
     __imp__D3DDevice__BeginVertices(ctx, base);
     eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DBeginVertices, zone_start);
   }
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   ++eternalsonata::g_draws_inline;
 
@@ -1249,8 +1240,6 @@ REX_HOOK_RAW(D3DDevice__EndVertices) {
     __imp__D3DDevice__EndVertices(ctx, base);
     eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DEndVertices, zone_start);
   }
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   if (!eternalsonata::g_inline.open)
     return;
 
@@ -1262,7 +1251,7 @@ REX_HOOK_RAW(D3DDevice__EndVertices) {
 // constants, texture and shaders exactly as before, and the two hooks above do
 // the rest. Nested calls do not happen; the flag is plain on purpose.
 REX_HOOK_RAW(sub_8212FB70) {
-  if (!eternalsonata::NativeRendererEnabled() || !REXCVAR_GET(sprite_batching)) {
+  if (!REXCVAR_GET(sprite_batching)) {
     __imp__sub_8212FB70(ctx, base);
     return;
   }
@@ -1281,8 +1270,6 @@ REX_HOOK_RAW(D3DDevice__SetStreamSource) {
   const uint32_t offset = ctx.r6.u32;
   const uint32_t stride = ctx.r7.u32;
   __imp__D3DDevice__SetStreamSource(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   if (index < eternalsonata::kMaxStreams)
     eternalsonata::g_streams[index] = {buffer, offset, stride};
@@ -1291,16 +1278,12 @@ REX_HOOK_RAW(D3DDevice__SetStreamSource) {
 REX_HOOK_RAW(D3DDevice__SetIndices) {
   const uint32_t buffer = ctx.r4.u32;
   __imp__D3DDevice__SetIndices(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   eternalsonata::g_index_buffer = buffer;
 }
 
 REX_HOOK_RAW(D3DDevice__SetVertexDeclaration) {
   const uint32_t declaration = ctx.r4.u32;
   __imp__D3DDevice__SetVertexDeclaration(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   eternalsonata::g_declaration = declaration;
 }
 
@@ -1311,7 +1294,7 @@ REX_HOOK_RAW(D3D__CreateDevice) {
   const uint32_t out = static_cast<uint32_t>(ctx.r8.u32);
   __imp__D3D__CreateDevice(ctx, base);
 
-  if (!eternalsonata::NativeRendererEnabled() || ctx.r3.u32 != 0 || out == 0)
+  if (ctx.r3.u32 != 0 || out == 0)
     return;
 
   const uint32_t device = REX_LOAD_U32(out);
@@ -1327,8 +1310,6 @@ REX_HOOK_RAW(D3D__CreateDevice) {
 
 REX_HOOK_RAW(sub_8212BDB0) {
   __imp__sub_8212BDB0(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   const uint32_t shadow_mode = REX_LOAD_U32(0x824BB3C8);
   if (shadow_mode != 1 && shadow_mode != 2)
     return;
@@ -1362,9 +1343,6 @@ REX_HOOK_RAW(D3DDevice__SetVertexShaderConstantF) {
     eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DVsConstF, zone_start);
   }
 
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
-
   using namespace eternalsonata;
   ++g_vs_constant_calls;
   CheckShadow(base, "vertex", device, d3d::kVertexConstantShadow, start, source, count,
@@ -1385,9 +1363,6 @@ REX_HOOK_RAW(D3DDevice__SetPixelShaderConstantF) {
     eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DPsConstF, zone_start);
   }
 
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
-
   using namespace eternalsonata;
   ++g_ps_constant_calls;
   CheckShadow(base, "pixel", device, d3d::kPixelConstantShadow, start, source, count,
@@ -1406,8 +1381,6 @@ REX_HOOK_RAW(D3DDevice__SetVertexShaderConstantI) {
 
   __imp__D3DDevice__SetVertexShaderConstantI(ctx, base);
 
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   eternalsonata::RecordLoopConstants(base, device, 0, start, source, count);
 }
 
@@ -1419,16 +1392,44 @@ REX_HOOK_RAW(D3DDevice__SetPixelShaderConstantI) {
 
   __imp__D3DDevice__SetPixelShaderConstantI(ctx, base);
 
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   eternalsonata::RecordLoopConstants(base, device, 16, start, source, count);
+}
+
+// The renderer init that walks the shader blob into the two tables. The blob
+// is not in the image (gen-guest-image.py), so the walk finds nothing and the
+// tables are seeded here instead: one zeroed placeholder object per slot the
+// pack holds, which is all a bound shader is needed for now. Zero patch table
+// offsets (+892 vertex, +60 pixel) make the guest's setters skip their patches.
+REX_HOOK_RAW(sub_82129260) {
+  using namespace eternalsonata;
+  constexpr uint32_t kVertexObjectBytes = 1024;
+  constexpr uint32_t kPixelObjectBytes = 256;
+  LoadGuestShaders();
+  auto* memory = rex::system::kernel_state()->memory();
+  auto seed = [&](uint32_t table, uint32_t bytes, uint32_t common,
+                  const GuestShader& (*lookup)(uint32_t)) {
+    for (uint32_t slot = 1; slot < d3d::kShaderTableEntries; ++slot) {
+      if (!lookup(slot).valid() || REX_LOAD_U32(table + 4 * slot) != 0)
+        continue;
+      const uint32_t object = memory->SystemHeapAlloc(bytes, 0x20);
+      if (object == 0)
+        return;
+      std::memset(memory->TranslateVirtual(object), 0, bytes);
+      // The resource header the guest's own create functions write.
+      REX_STORE_U32(object, common);
+      REX_STORE_U32(object + 4, 1);
+      REX_STORE_U32(object + 20, 0xFFFF0000u);
+      REX_STORE_U32(table + 4 * slot, object);
+    }
+  };
+  seed(d3d::kVertexShaderTable, kVertexObjectBytes, 0x00100006u, GuestVertexShader);
+  seed(d3d::kPixelShaderTable, kPixelObjectBytes, 0x00100007u, GuestPixelShader);
+  __imp__sub_82129260(ctx, base);
 }
 
 REX_HOOK_RAW(D3DDevice__SetVertexShader) {
   const uint32_t shader = ctx.r4.u32;
   __imp__D3DDevice__SetVertexShader(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   using namespace eternalsonata;
   g_vertex_shader = shader;
@@ -1443,8 +1444,6 @@ REX_HOOK_RAW(D3DDevice__SetVertexShader) {
 REX_HOOK_RAW(D3DDevice__SetPixelShader) {
   const uint32_t shader = ctx.r4.u32;
   __imp__D3DDevice__SetPixelShader(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   using namespace eternalsonata;
   g_pixel_shader = shader;
@@ -1468,10 +1467,6 @@ REX_HOOK_RAW(D3DDevice__SetPixelShader) {
 // path unreachable, which it otherwise would not be, since with no GPU every
 // wait exceeds the window.
 REX_HOOK_RAW(D3DDevice__ThrottleWait_Poll) {
-  if (!eternalsonata::NativeRendererEnabled()) {
-    __imp__D3DDevice__ThrottleWait_Poll(ctx, base);
-    return;
-  }
   ctx.r3.u64 = 0;
 }
 
@@ -1485,10 +1480,6 @@ REX_HOOK_RAW(D3DDevice__ThrottleWait_Poll) {
 // alone.
 REX_HOOK_RAW(D3DDevice__BlockUntilFenceRetired) {
   eternalsonata::SpriteBatchFlush();
-  if (!eternalsonata::NativeRendererEnabled()) {
-    __imp__D3DDevice__BlockUntilFenceRetired(ctx, base);
-    return;
-  }
 }
 
 // Wait for GPU idle.
@@ -1504,10 +1495,6 @@ REX_HOOK_RAW(D3DDevice__BlockUntilFenceRetired) {
 // through a null pointer.
 REX_HOOK_RAW(D3DDevice__BlockUntilGpuIdle) {
   eternalsonata::SpriteBatchFlush();
-  if (!eternalsonata::NativeRendererEnabled()) {
-    __imp__D3DDevice__BlockUntilGpuIdle(ctx, base);
-    return;
-  }
   ctx.r3.u64 = 0;
 }
 
@@ -1521,8 +1508,6 @@ REX_HOOK_RAW(D3DDevice__CreateRenderTarget) {
   const uint32_t height = ctx.r4.u32;
   const uint32_t format = ctx.r5.u32;
   __imp__D3DDevice__CreateRenderTarget(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   const uint32_t surface = ctx.r3.u32;
   if (surface == 0)
@@ -1534,8 +1519,6 @@ REX_HOOK_RAW(D3DDevice__CreateRenderTarget) {
 // (width, height, levels, usage, ?, format, ?, pool) -> texture object.
 REX_HOOK_RAW(D3DDevice__CreateTexture) {
   __imp__D3DDevice__CreateTexture(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   ++eternalsonata::g_textures_created;
 }
 
@@ -1552,8 +1535,6 @@ REX_HOOK_RAW(D3DDevice__SetRenderTarget) {
   const uint32_t index = ctx.r4.u32;
   const uint32_t surface = ctx.r5.u32;
   __imp__D3DDevice__SetRenderTarget(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   if (index < eternalsonata::d3d::kColorSurfaceCount)
     eternalsonata::g_color_surface[index] = surface;
 
@@ -1574,8 +1555,6 @@ REX_HOOK_RAW(D3DDevice__SetDepthStencilSurface) {
   const uint32_t device = ctx.r3.u32;  // volatile across the call; see above
   const uint32_t surface = ctx.r4.u32;
   __imp__D3DDevice__SetDepthStencilSurface(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   eternalsonata::g_depth_surface = surface;
 
   using namespace eternalsonata;
@@ -1595,7 +1574,7 @@ REX_HOOK_RAW(D3DDevice__SetViewport) {
   eternalsonata::SpriteBatchFlush();
   const uint32_t viewport = ctx.r4.u32;
   __imp__D3DDevice__SetViewport(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled() || viewport == 0)
+  if (viewport == 0)
     return;
 
   const uint32_t min_raw = REX_LOAD_U32(viewport + 16);
@@ -1623,8 +1602,6 @@ REX_HOOK_RAW(D3DDevice__Clear) {
   const float z = float(ctx.f1.f64);
   const uint32_t stencil = ctx.r9.u32;
   __imp__D3DDevice__Clear(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   ++eternalsonata::g_clears;
   eternalsonata::g_clear_flags_seen |= flags;
@@ -1647,8 +1624,6 @@ REX_HOOK_RAW(D3DDevice__Resolve) {
   const uint32_t destination = ctx.r6.u32;
   const uint32_t point = ctx.r7.u32;
   __imp__D3DDevice__Resolve(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   using namespace eternalsonata;
   ++g_resolves;
@@ -1702,8 +1677,6 @@ REX_HOOK_RAW(D3DDevice__Resolve) {
 REX_HOOK_RAW(D3DDevice__Swap) {
   eternalsonata::SpriteBatchFlush();
   __imp__D3DDevice__Swap(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   eternalsonata::PlumePresentFrame();
   eternalsonata::TextureMirrorBeginFrame();
@@ -1754,8 +1727,6 @@ REX_HOOK_RAW(D3DDevice__SetTexture) {
     __imp__D3DDevice__SetTexture(ctx, base);
     eternalsonata::GuestZoneEnd(eternalsonata::kZoneD3DSetTexture, zone_start);
   }
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
 
   using namespace eternalsonata;
   if (sampler < d3d::kSamplerCount)
@@ -1772,8 +1743,6 @@ REX_HOOK_RAW(D3DDevice__SetSamplerState_MinFilter) {
   const uint32_t device = ctx.r3.u32;
   const uint32_t stage = ctx.r4.u32;
   __imp__D3DDevice__SetSamplerState_MinFilter(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   ++eternalsonata::g_sampler_sets;
   eternalsonata::SnapshotSampler(base, device, stage);
 }
@@ -1782,8 +1751,6 @@ REX_HOOK_RAW(D3DDevice__SetSamplerState_MagFilter) {
   const uint32_t device = ctx.r3.u32;
   const uint32_t stage = ctx.r4.u32;
   __imp__D3DDevice__SetSamplerState_MagFilter(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   ++eternalsonata::g_sampler_sets;
   eternalsonata::SnapshotSampler(base, device, stage);
 }
@@ -1792,8 +1759,6 @@ REX_HOOK_RAW(D3DDevice__SetSamplerState_MipMapLodBias) {
   const uint32_t device = ctx.r3.u32;
   const uint32_t stage = ctx.r4.u32;
   __imp__D3DDevice__SetSamplerState_MipMapLodBias(ctx, base);
-  if (!eternalsonata::NativeRendererEnabled())
-    return;
   ++eternalsonata::g_sampler_sets;
   eternalsonata::SnapshotSampler(base, device, stage);
 }

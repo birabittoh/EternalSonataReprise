@@ -293,6 +293,10 @@ def main():
     build_dir = os.path.join("out", "build", preset)
     lib_suffix = lib_extension()
     for name in os.listdir(build_dir):
+        # GPU plugins are never loaded (src/gpu/native_renderer.h); older
+        # build dirs may still hold one.
+        if name.startswith(("rexgpu-", "librexgpu-")):
+            continue
         if name.endswith(lib_suffix):
             src = os.path.join(build_dir, name)
             print(f"+ cp {src} {name}")

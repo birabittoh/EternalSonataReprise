@@ -70,82 +70,6 @@
 #include "piano_music_system.h"
 #include "touch_layout.h"
 
-#if REX_PLATFORM_ANDROID
-#include <dlfcn.h>
-#include <rex/filesystem.h>
-
-#include <filesystem>
-#include <string>
-
-namespace eternalsonata {
-
-// Make a GPU plugin reachable at the path the SDK's loader checks.
-//
-// LoadGpuPlugin resolves rexgpu-<name> against rex::filesystem::
-// GetExecutableFolder(), which on Android is the app's files directory. There
-// is no executable directory to stage into there: the plugin ships inside the
-// APK and Android extracts it, alongside libeternalsonata.so itself, into the
-// read-only native library directory. Without this the loader reports
-// "GPU plugin 'xenos' not found at /data/.../files/librexgpu-xenos.so" and the
-// app exits before the window ever appears.
-//
-// A symlink rather than a copy, for two reasons: it avoids duplicating four
-// megabytes into the app's data on every launch, and it leaves dlopen opening a
-// file the app cannot write, which is what an app targeting API 35 needs. The
-// native library directory is found from this library's own path rather than
-// through JNI, since the plugin sits next to it.
-inline void StageAndroidGpuPlugin(const std::string& plugin_name) {
-  if (plugin_name.empty())
-    return;
-
-  Dl_info info = {};
-  if (dladdr(reinterpret_cast<const void*>(&StageAndroidGpuPlugin), &info) == 0 ||
-      info.dli_fname == nullptr) {
-    REXLOG_WARN(
-        "android: could not locate this library, so GPU plugin '{}' cannot be staged where the "
-        "loader looks for it",
-        plugin_name);
-    return;
-  }
-
-  const std::string file_name = "librexgpu-" + plugin_name + ".so";
-  const std::filesystem::path source =
-      std::filesystem::path(info.dli_fname).parent_path() / file_name;
-  const std::filesystem::path link = rex::filesystem::GetExecutableFolder() / file_name;
-
-  std::error_code ec;
-  if (!std::filesystem::exists(source, ec)) {
-    REXLOG_WARN("android: GPU plugin '{}' is not in the APK's library directory ({})", plugin_name,
-                source.string());
-    return;
-  }
-
-  // Replace whatever is there: the library directory path contains an
-  // install-specific token, so a link left by a previous install is stale.
-  if (std::filesystem::exists(std::filesystem::symlink_status(link, ec))) {
-    if (std::filesystem::read_symlink(link, ec) == source && !ec)
-      return;
-    std::filesystem::remove(link, ec);
-  }
-
-  std::filesystem::create_symlink(source, link, ec);
-  if (ec) {
-    REXLOG_WARN("android: could not link GPU plugin '{}' into {} ({}), copying instead",
-                plugin_name, link.string(), ec.message());
-    std::filesystem::copy_file(source, link,
-                               std::filesystem::copy_options::overwrite_existing, ec);
-    if (ec) {
-      REXLOG_ERROR("android: could not stage GPU plugin '{}': {}", plugin_name, ec.message());
-      return;
-    }
-  }
-  REXLOG_INFO("android: GPU plugin '{}' staged at {} -> {}", plugin_name, link.string(),
-              source.string());
-}
-
-}  // namespace eternalsonata
-#endif
-
 class EternalsonataApp : public rex::ReXApp {
  public:
   using rex::ReXApp::ReXApp;
@@ -318,24 +242,11 @@ class EternalsonataApp : public rex::ReXApp {
     config.startup_hint = "Press F4 to open settings.";
 #endif
 
-    // "plume" is not a plugin the SDK can load; it selects this project's own
-    // renderer. Clearing the name here (the last point before ReXApp decides
-    // whether to call LoadGpuPlugin) is what leaves the SDK headless.
-    // NativeRendererEnabled() keeps reading the cvar, which still says
-    // "plume". See native_renderer.h.
-    if (config.gpu_plugin == eternalsonata::kNativeRendererPluginName)
-      config.gpu_plugin.clear();
-
-#if REX_PLATFORM_ANDROID
-    // Anything still named here is a real plugin the SDK is about to load, and
-    // on Android it has to be linked into place first. See
-    // StageAndroidGpuPlugin.
-    eternalsonata::StageAndroidGpuPlugin(config.gpu_plugin);
-#endif
-
-    // Whatever the unloaded plugin would have registered, this renderer has to
-    // register itself. Runs after the clear only for reading order; it looks at
-    // the cvar, not at config.gpu_plugin.
+    // Whatever plugin the config names, this project renders the guest itself.
+    // Clearing it here, the last point before ReXApp decides whether to call
+    // LoadGpuPlugin, leaves the SDK headless; the cvars a plugin would have
+    // registered are registered by the native renderer instead.
+    config.gpu_plugin.clear();
     eternalsonata::RegisterNativeRendererCvars();
   }
 
@@ -343,10 +254,6 @@ class EternalsonataApp : public rex::ReXApp {
     xex_image = eternalsonata::MountGuestImage(runtime()->file_system());
   }
 
-  // With gpu_plugin set to "plume" the SDK loads no graphics backend, and this
-  // project renders the guest itself at the Direct3D level rather than
-  // emulating Xenos. Runs before the guest starts, so no D3D call can arrive
-  // ahead of it. See native_renderer.h.
   // Runs after Runtime exists and immediately before the SDK loads mod plugins
   // and dispatches their OnCreateDialogs, which is the one window in which
   // these subscriptions are guaranteed to be in place before the first mod
@@ -463,32 +370,28 @@ class EternalsonataApp : public rex::ReXApp {
     // waiting on us or on the GPU. Both halves are measured by the native
     // renderer -- the fence wait and the queue's own timestamp pair -- so the
     // verdict is a measurement, not a guess, and it is the first thing to read
-    // before changing anything for speed. Only meaningful under the native
-    // renderer; the Xenos backend measures neither, so the row is left out
-    // rather than shown reading zero.
-    if (eternalsonata::NativeRendererEnabled()) {
-      // The perf-counters section (frame time graph, draw/vert/stall counts,
-      // XMA, dispatch, threading, caches) only ever reads emulated-Xenos and
-      // XMA-decoder counters. This build's native renderer/audio path never
-      // touches them, so left on it would just show a flat graph and zeros.
-      SetDebugOverlayShowPerfCounters(false);
-      SetDebugOverlayDetails([]() {
-        const auto bound = eternalsonata::GetFrameBoundStats();
-        const bool gpu_bound = bound.verdict[0] == 'G';
-        const bool present_bound = bound.verdict[0] == 'P';
-        const ImVec4 colour = present_bound ? ImVec4(0.6f, 0.8f, 1.0f, 1.0f)
-                              : gpu_bound   ? ImVec4(1.0f, 0.7f, 0.3f, 1.0f)
-                                            : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
-        ImGui::TextColored(colour, "%s", bound.verdict);
-        ImGui::Text("CPU: %.2f ms busy + %.2f ms fence wait", bound.cpu_ms, bound.wait_ms);
-        if (bound.gpu_valid) {
-          ImGui::Text("GPU: %.2f ms", bound.gpu_ms);
-        } else {
-          ImGui::TextUnformatted("GPU: not timed");
-        }
-        ImGui::Text("Frame: %.2f ms", bound.frame_ms);
-      });
-    }
+    // before changing anything for speed.
+    //
+    // The perf-counters section (frame time graph, draw/vert/stall counts,
+    // XMA, dispatch, threading, caches) only ever reads emulated-Xenos and
+    // XMA-decoder counters, which nothing here touches.
+    SetDebugOverlayShowPerfCounters(false);
+    SetDebugOverlayDetails([]() {
+      const auto bound = eternalsonata::GetFrameBoundStats();
+      const bool gpu_bound = bound.verdict[0] == 'G';
+      const bool present_bound = bound.verdict[0] == 'P';
+      const ImVec4 colour = present_bound ? ImVec4(0.6f, 0.8f, 1.0f, 1.0f)
+                            : gpu_bound   ? ImVec4(1.0f, 0.7f, 0.3f, 1.0f)
+                                          : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+      ImGui::TextColored(colour, "%s", bound.verdict);
+      ImGui::Text("CPU: %.2f ms busy + %.2f ms fence wait", bound.cpu_ms, bound.wait_ms);
+      if (bound.gpu_valid) {
+        ImGui::Text("GPU: %.2f ms", bound.gpu_ms);
+      } else {
+        ImGui::TextUnformatted("GPU: not timed");
+      }
+      ImGui::Text("Frame: %.2f ms", bound.frame_ms);
+    });
 
     // Discord Rich Presence: reports the field area the player is currently
     // in, updated once per guest frame (area id read from byte_8244B500 and

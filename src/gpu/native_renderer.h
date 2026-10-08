@@ -5,12 +5,10 @@
 // inventory is a static blob in the xex; see scripts/extract_shaders.py).
 // Nothing emulates Xenos, so there is no ring buffer, PM4 parsing or EDRAM.
 //
-// Selected by the `gpu_plugin` cvar, whose default is "plume" (settings.cpp).
-// There is no rexgpu-plume DLL: the name is a sentinel that OnPostSetup clears
-// from RuntimeConfig::gpu_plugin, so the SDK loads no plugin and runs headless.
-// It then drives the guest's vblank interrupt from its own timer thread. Guest
-// paths that write packets into a ring buffer are dead code and are
-// intercepted or stubbed.
+// The only renderer: OnPostSetup clears RuntimeConfig::gpu_plugin, so the SDK
+// loads no plugin and runs headless. This renderer then drives the guest's
+// vblank interrupt from its own timer thread. Guest paths that write packets
+// into a ring buffer are dead code and are intercepted or stubbed.
 
 #pragma once
 
@@ -23,19 +21,8 @@ class Window;
 
 namespace eternalsonata {
 
-// The `gpu_plugin` value that selects this renderer. Not a real plugin name;
-// nothing named rexgpu-plume is ever staged or loaded.
-inline constexpr const char* kNativeRendererPluginName = "plume";
-
-// True when the `gpu_plugin` cvar names this renderer, so no GPU plugin is
-// loaded and this project owns presentation. Reads the cvar, so it is only
-// meaningful once the config files have been loaded.
-bool NativeRendererEnabled();
-
 // Fraction of the window the 3D world is rendered at: 1.0 is the window's own
 // resolution. Live, since the extent it feeds is republished every present.
-// Always 1 on the Xenos path, which owns the cvars itself and does its own
-// scaling.
 float NativeRenderScale();
 
 // The same number as it was at boot, for the one caller that runs before the
@@ -50,10 +37,8 @@ bool NativeRenderPixelatedScaling();
 // Registers the cvars a GPU plugin would have registered, so selecting this
 // renderer does not silently lose them: `vsync` and `resolution_scale`, both of
 // which live inside rexgpu-xenos and therefore never register when no plugin is
-// loaded. Call from OnPreSetup: after the config file has been read
-// (so a saved value is still waiting to be applied to it) and before the SDK
-// decides whether to load a plugin (so the plugin, if one is loaded instead,
-// keeps sole ownership of the name). No-op unless NativeRendererEnabled().
+// loaded. Call from OnPreSetup, after the config file has been read, so a
+// saved value is still waiting to be applied to it.
 void RegisterNativeRendererCvars();
 
 // Called once per guest frame, from the swap hook, on the guest thread that
@@ -63,13 +48,12 @@ void RegisterNativeRendererCvars();
 //
 // The interval is a guest frame, not a fixed period: it moves with the frame
 // rate, and the framerate work makes that vary, so a callback must derive
-// elapsed time from a clock rather than counting calls. No-op unless
-// NativeRendererEnabled().
+// elapsed time from a clock rather than counting calls.
 void SetGuestFrameCallback(std::function<void()> callback);
 
 // Brings up the rendering backend. Call once the window exists and before the
 // guest starts executing, so no guest D3D call can arrive ahead of it. Later
-// calls do nothing. No-op unless NativeRendererEnabled().
+// calls do nothing.
 void InitNativeRenderer(rex::ui::Window* window);
 
 }  // namespace eternalsonata
