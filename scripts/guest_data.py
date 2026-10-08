@@ -16,8 +16,15 @@ The text is edited here (the console wording is gone), so a blob may differ
 from the retail one string by string, but it keeps its languages and ids and
 must fit where the retail blob was: the game only points at a blob's start.
 
+Strings: every other NUL terminated ASCII or Japanese string is a line of
+src/guest_data/strings.txt, `address<TAB>text`, with `\\\\`, `\\t`, `\\n`,
+`\\r` and `\\xNN` escapes, UTF-8 in the file and cp932 in the guest. The
+UTF-16 strings in WIDE_RANGES are the same in wide_strings.txt. They are
+written in place, so one may not grow.
+
     python scripts/guest_data.py check assets/default.xex
-    python scripts/guest_data.py extract-text assets/default.xex   # one time
+    python scripts/guest_data.py extract-text assets/default.xex      # one time
+    python scripts/guest_data.py extract-strings assets/default.xex   # one time
 """
 import argparse
 import os
@@ -28,6 +35,8 @@ from xex_image import XexImage
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "guest_data")
 TEXT_DIR = os.path.join(ROOT, "text")
+STRINGS_FILE = os.path.join(ROOT, "strings.txt")
+WIDE_STRINGS_FILE = os.path.join(ROOT, "wide_strings.txt")
 
 LANGS = ["JPN", "USA", "GBR", "FRA", "ITA", "DEU", "ESP"]
 CODEC = {"JPN": "cp932"}
@@ -69,6 +78,10 @@ DROPPED = [
 ]
 
 # The image's data sections, as (start, end) guest addresses.
+# UTF-16 strings, NUL terminated and 4 aligned, with nothing else between
+# them: the sign-in change and save file messages in six languages.
+WIDE_RANGES = [(0x820AA058, 0x820AA430),(0x820AA56C, 0x820AA652)]
+
 DATA_RANGES = [(0x82000400, 0x820AB81C), (0x822F0000, 0x82566B3C),
                (0x82566C00, 0x82566C0C), (0x82570000, 0x8257D593)]
 
@@ -159,6 +172,127 @@ def compile_items():
     return items
 
 
+ESCAPES = {"\\": "\\\\", "\t": "\\t", "\n": "\\n", "\r": "\\r"}
+UNESCAPES = {"\\": "\\", "t": "\t", "n": "\n", "r": "\r"}
+
+# Strings: (file, codec, terminator width).
+NARROW = (STRINGS_FILE, "cp932", 1)
+WIDE = (WIDE_STRINGS_FILE, "utf-16-be", 2)
+
+JAPANESE = (("　", "ヿ"), ("一", "鿿"), ("！", "～"))
+
+
+def escape(raw, codec):
+    """Text in the codec when it round trips, else bytes as `\\xNN`."""
+    try:
+        text = raw.decode(codec)
+        if text.encode(codec) != raw:
+            raise UnicodeError
+    except UnicodeError:
+        return "".join(ESCAPES.get(chr(c)) or (chr(c) if 0x20 <= c < 0x7F else f"\\x{c:02x}")
+                       for c in raw)
+    return "".join(ESCAPES.get(c) or (c if c >= " " and c != "\x7f" else f"\\x{ord(c):02x}")
+                   for c in text)
+
+
+def unescape(text, codec):
+    out = bytearray()
+    i = 0
+    while i < len(text):
+        if text[i] != "\\":
+            out += text[i].encode(codec)
+            i += 1
+        elif text[i + 1] == "x":
+            out.append(int(text[i + 2:i + 4], 16))
+            i += 4
+        else:
+            out += UNESCAPES[text[i + 1]].encode(codec)
+            i += 2
+    return bytes(out)
+
+
+def read_strings(kind):
+    """[(address, bytes without the terminator)]."""
+    path, codec, _ = kind
+    if not os.path.exists(path):
+        return []
+    out = []
+    with open(path, encoding="utf-8") as f:
+        for line in f.read().split("\n"):
+            if line:
+                address, _, text = line.partition("\t")
+                out.append((int(address, 16), unescape(text, codec)))
+    return out
+
+
+def write_strings(kind, found):
+    path, codec, _ = kind
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.writelines(f"0x{address:08X}\t{escape(raw, codec)}\n" for address, raw in found)
+
+
+def string_size(data, off, width):
+    """Bytes before the terminator."""
+    end = off
+    while any(data[end:end + width]):
+        end += width
+    return end - off
+
+
+def find_strings(data, base, covered):
+    """Guess the image's narrow strings: 4 aligned, NUL terminated and zero
+    padded to the next 4 bytes, at least 4 bytes of printable ASCII or
+    Japanese. Shorter ones are indistinguishable from floats and stay with
+    the tables."""
+    def text(raw):
+        try:
+            t = raw.decode("cp932")
+        except UnicodeDecodeError:
+            return False
+        return t.encode("cp932") == raw and all(
+            " " <= c < "\x7f" or c in "\t\n\r" or any(lo <= c <= hi for lo, hi in JAPANESE)
+            for c in t)
+    found = []
+    for start, end in DATA_RANGES:
+        i, end = start - base, end - base
+        while i < end:
+            if i % 4 == 0 and data[i - 1] == 0 and data[i] and not covered[i]:
+                j = data.index(b"\0", i)
+                raw = bytes(data[i:j])
+                if (j < end and j - i >= 4 and not any(covered[i:j])
+                        and not any(data[j:(j + 4) & ~3]) and text(raw)):
+                    found.append((base + i, raw))
+                    i = j
+                    continue
+            i += 1
+    return found
+
+
+def find_wide_strings(data, base):
+    """The UTF-16 strings in WIDE_RANGES, which hold nothing else."""
+    found = []
+    for start, end in WIDE_RANGES:
+        i = start - base
+        while i < end - base:
+            size = string_size(data, i, 2)
+            found.append((base + i, bytes(data[i:i + size])))
+            i += size + 2
+            while i < end - base and not any(data[i:i + 2]):
+                i += 2
+    return found
+
+
+def overlay_strings(image, base):
+    for kind in (NARROW, WIDE):
+        width = kind[2]
+        for address, raw in read_strings(kind):
+            off = address - base
+            size = string_size(image, off, width)
+            if len(raw) > size:
+                raise ValueError(f"string at 0x{address:08X} is {len(raw)} bytes, {size} available")
+            image[off:off + size + width] = raw + bytes(size + width - len(raw))
+
+
 def retail_size(data, off):
     """Bytes the retail blob at `off` takes, which a replacement must fit in."""
     return len(encode_btx(parse_btx(data, off)))
@@ -190,6 +324,26 @@ def cmd_extract_text(args):
     return 0
 
 
+def cmd_extract_strings(args):
+    xex = XexImage.load(args.xex)
+    covered = bytearray(len(xex.data))
+    for address, _, _ in compile_items():
+        off = address - xex.base
+        size = retail_size(xex.data, off)
+        covered[off:off + size] = b"\1" * size
+    for start, end, _ in DROPPED:
+        covered[start - xex.base:end - xex.base] = b"\1" * (end - start)
+    wide = find_wide_strings(xex.data, xex.base)
+    for address, raw in wide:
+        off = address - xex.base
+        covered[off:off + len(raw) + 2] = b"\1" * (len(raw) + 2)
+    found = find_strings(xex.data, xex.base, covered)
+    write_strings(NARROW, found)
+    write_strings(WIDE, wide)
+    print(f"{len(found)} strings, {len(wide)} wide strings in {ROOT}")
+    return 0
+
+
 def cmd_check(args):
     xex = XexImage.load(args.xex)
     covered = bytearray(len(xex.data))
@@ -211,8 +365,20 @@ def cmd_check(args):
             print(f"OVERLAP {name} at 0x{address:08X}")
             failures += 1
         covered[off:off + size] = b"\1" * size
+    for kind in (NARROW, WIDE):
+        for address, raw in read_strings(kind):
+            off = address - xex.base
+            size = string_size(xex.data, off, kind[2])
+            if len(raw) > size:
+                print(f"TOO BIG string at 0x{address:08X}: {len(raw)} bytes, {size} available")
+                failures += 1
+            edited += raw != xex.data[off:off + size]
+            if any(covered[off:off + size]):
+                print(f"OVERLAP string at 0x{address:08X}")
+                failures += 1
+            covered[off:off + size] = b"\1" * size
     for start, end, _ in DROPPED:
-        covered[start - xex.base:end - xex.base] = b"" * (end - start)
+        covered[start - xex.base:end - xex.base] = b"\1" * (end - start)
     total = done = 0
     for start, end in DATA_RANGES:
         for i in range(start - xex.base, end - xex.base):
@@ -228,7 +394,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("check", cmd_check), ("extract-text", cmd_extract_text)):
+    for name, fn in (("check", cmd_check), ("extract-text", cmd_extract_text),
+                     ("extract-strings", cmd_extract_strings)):
         p = sub.add_parser(name)
         p.add_argument("xex")
         p.set_defaults(fn=fn)

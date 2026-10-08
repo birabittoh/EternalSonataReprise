@@ -1,0 +1,19 @@
+0x820AA058	Terminar juego
+0x820AA078	Se ha actualizado el estado de inicio de sesión. Regresarás a la pantalla del título.
+0x820AA124	Spiel beenden
+0x820AA140	Der Anmeldestatus wurde aktualisiert. Zurück zum Titelbildschirm.
+0x820AA1C4	Fine gioco
+0x820AA1E0	Lo stato di registrazione è stato aggiornato. Tornare alla schermata del titolo.
+0x820AA284	Terminer la partie
+0x820AA2B0	L'état de connexion a été mis à jour. Retour à l'écran de titre.
+0x820AA334	End game
+0x820AA348	The sign-in status has been updated. Returning to the title screen.
+0x820AA3D0	ゲーム中断
+0x820AA3DC	OK
+0x820AA3E8	サインインの状態が変更されました。ゲームを中断し、タイトルに戻ります。
+0x820AA56C	Archivo de guardado %02d
+0x820AA5A0	Spielstand %02d
+0x820AA5C0	Salva file %02d
+0x820AA5E0	Fichier de sauvegarde %02d
+0x820AA618	Save File %02d
+0x820AA638	セーブファイル %02d
