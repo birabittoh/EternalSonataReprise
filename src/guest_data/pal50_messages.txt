@@ -1,0 +1,19 @@
+0x82000698
+0	OK
+1	OK
+2	OK
+3	OK
+4	OK
+5	확인
+6	OK
+7	Aceptar
+8	確定
+9	This game does not support PAL-50. Please change your display setting to PAL-60. To change your setting, in System, select Console Settings, Display.
+10	Ce jeu ne prend pas en charge le mode PAL-50. Configurez l'affichage en mode PAL-60. Pour ce faire, allez dans Système et sélectionnez Paramètres de la console, puis Affichage.
+11	Dieses Spiel unterstützt PAL-50 nicht. Bitte ändern Sie Ihre Anzeigeeinstellungen auf PAL-60. Um Ihre Einstellungen zu ändern, wählen Sie in "System" "Konsoleneinstellungen" und dann "Anzeige".
+12	Questo gioco non supporta la modalità PAL-50. Modifica le tue impostazioni video per abilitare la modalità PAL-60. Per farlo, vai alla voce Sistema, seleziona Impostazioni console e Display.
+13	このゲームは、PAL-50 に対応していません。PAL-60 に変更してください。画面設定は、[システム] 画面、[本体の設定] で [画面] を選ぶと変更できます
+14	이 게임은 PAL-50을 지원하지 않습니다. 디스플레이 설정을 PAL-60으로 변경하십시오. 설정을 변경하려면 [시스템]에서 [본체 설정]-[디스플레이]를 선택하십시오.
+15	Este jogo não suporta PAL-50. Mude sua configuração para PAL-60. Para modificar sua configuração, em Sistema. selecione Configurações do Console, Exibição.
+16	Este juego no es compatible con PAL-50. Cambia la configuración de la pantalla a PAL-60. Para cambiar la configuración, dentro de Sistema, selecciona Configuración de consola, Pantalla.
+17	此遊戲不支援 PAL-50。 請變更您的顯示輸出設定為 PAL-60。 如要變更您的設定，請至[系統]，選取[主機設定]，然後選取[顯示]。

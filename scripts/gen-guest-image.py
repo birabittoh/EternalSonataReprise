@@ -5,7 +5,7 @@ The retail default.xex goes in decrypted, with .text and .pdata zeroed:
 codegen already compiled the code, and the guest never reads either section
 (checked by page protecting them). The import thunk words in .text stay,
 since the SDK reads them at load to pair imports. The BTX text and the
-strings come from src/guest_data, and data nothing reads (the shader blob,
+strings and the PAL-50 messages come from src/guest_data, and data nothing reads (the shader blob,
 the XDBF) is dropped with its resource header; see guest_data.py. Zero runs
 are elided by the XEX "basic" compression, so only data that is read at
 runtime takes space.
@@ -15,7 +15,7 @@ runtime takes space.
 import struct
 import sys
 
-from guest_data import drop_unread, overlay_strings, overlay_text
+from guest_data import drop_unread, overlay_pal50, overlay_strings, overlay_text
 from xex_image import XexImage, XEX_FILE_FORMAT_INFO
 
 XEX_RESOURCE_INFO = 0x000002FF
@@ -119,6 +119,7 @@ def main():
         image[off:off + 4] = word
     overlay_text(image, xex.base)
     overlay_strings(image, xex.base)
+    overlay_pal50(image, xex.base)
     drop_unread(image, xex.base)
 
     runs = blocks(bytes(image))

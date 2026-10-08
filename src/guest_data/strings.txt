@@ -1,5 +1,12 @@
 0x82001108	[XAPI RETURN VALUE] %d\n
 0x82001120	\\SaveMeta.xbx
+0x82001134	\\TitleMeta.xbx
+0x82001148	\\TitleImage.xbx
+0x8200115C	\\SaveImage.xbx
+0x82001170	\\ContentMeta.xbx
+0x820011A8	*
+0x820011B0	$C\\*
+0x820011BC	$C\\
 0x82001484	^;FMT
 0x820014A0	ERR[D3D]: Unanticipated CPU_INTERRUPT.  Sign of a corrupt command buffer?\n
 0x820017A8	unnamed.pix2
