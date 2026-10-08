@@ -1691,19 +1691,9 @@ the image and are patched declaratively with no code at all; see
 left for this section is the flat static data that is not in a blob, such as
 item and enemy name/description fields.
 
-Two ways to change one of those strings:
-
-**Replace `default.xex` itself** (`mods/<name>/game/default.xex`).
-`XexModule::ReadImage` in the SDK doesn't verify a signature on the base
-image load, and accepts a plain, unencrypted/uncompressed XEX2 file
-(`scripts/re/rebuild_xex_unencrypted.py` builds one). A mod's
-`game/default.xex` **replaces the whole file** with no merging: if two
-mods each ship one, `enabled_mods` order picks a single winner and the
-other mod's edits are gone, whether or not they touched the same bytes.
-Use this only when a mod is the sole thing expected to touch game text,
-or needs a structural change a same-length string swap can't do.
-
-**Patch guest memory from a code mod instead**: any number of mods can
+The image is linked into the executable, so a mod cannot replace
+`default.xex` (a mod's `game/default.xex` is ignored). Change one of those
+strings by patching guest memory from a code mod: any number of mods can
 each own a different address with no conflict, the same way
 `src/ui_color` pokes the accent-color struct. Use
 `src/common/include/rexmod/text_patch.h`'s `ApplyTextPatch`
