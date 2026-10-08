@@ -4,7 +4,8 @@
 The retail default.xex goes in decrypted, with .text and .pdata zeroed:
 codegen already compiled the code, and the guest never reads either section
 (checked by page protecting them). The import thunk words in .text stay,
-since the SDK reads them at load to pair imports. Zero runs are elided by the XEX "basic"
+since the SDK reads them at load to pair imports. The BTX text comes from
+src/guest_data/text (see guest_data.py). Zero runs are elided by the XEX "basic"
 compression, so only data that is read at runtime takes space.
 
     python scripts/gen-guest-image.py assets/default.xex out/guest-image.xex
@@ -12,6 +13,7 @@ compression, so only data that is read at runtime takes space.
 import struct
 import sys
 
+from guest_data import overlay_text
 from xex_image import XexImage, XEX_FILE_FORMAT_INFO
 
 XEX_IMPORT_LIBRARIES = 0x000103FF
@@ -94,6 +96,7 @@ def main():
     for addr, word in keep.items():
         off = addr - xex.base
         image[off:off + 4] = word
+    overlay_text(image, xex.base)
 
     runs = blocks(bytes(image))
     body = b"".join(

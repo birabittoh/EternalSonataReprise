@@ -22,12 +22,6 @@ void ScanTick(u8* base);
 // main-menu Options screen.
 void OptionsTick();
 
-// Defined in eternalsonata_hooks.cpp. Given a string the BTX lookup returned,
-// yields our PC wording of it, or 0 to leave it alone. Called from the
-// sub_8223B780 hook, which lives in eternalsonata_options.cpp because a guest
-// function can only be hooked once.
-u32 ConsoleTextOverrideFor(u8* base, u32 text_address);
-
 // Defined in eternalsonata_framerate.cpp: the wall-clock stepping behind the
 // "unlocked" frame rate. FrameDeltaScale is applied by the sub_82181728 hook
 // in eternalsonata_lipsync.cpp (the delta getter can only be hooked once);
