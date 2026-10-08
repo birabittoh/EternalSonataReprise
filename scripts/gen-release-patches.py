@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """Build the bundle of patches that lets the USA and JP copies of the game run.
 
-The recompiled code is the PAL release's, so it only runs on PAL's xex image
-and indexes PAL's containers by position. Another release gets its default.xex
-converted by the SDK's game data selector, and the containers whose layout
-the code depends on converted by the asset system as it serves them. Its
-scripts (.e) are left alone: they run as they are and carry the text.
+The recompiled code is the PAL release's and indexes PAL's containers by
+position. The guest image is built into the executable, so another release
+only needs the containers whose layout the code depends on converted, which
+the asset system does as it serves them.
+Its scripts (.e) are left alone: they run as they are and carry the text.
 
-Every patch works on a normalized form, so that the bytes it diffs have
-something in common: for default.xex, the original headers with encryption and
-compression switched off followed by the flat image, which the SDK's loader
-accepts as is; for a container, its decoded bytes.
+Every patch works on a container's decoded bytes.
 
 Patch layout ("RXD1"), integers little endian:
 
@@ -29,7 +26,7 @@ The triples are bsdiff's: add `x` bytes of diff to the source, copy `y` bytes
 of extra, then move the source cursor by `z`.
 
 Bundle layout: 'RXDB', u32 count, then per patch a 64-byte NUL padded guest
-path ("default.xex", "btldata/battlekeep.bop"), a u32 length and the patch. A
+path ("btldata/battlekeep.bop"), a u32 length and the patch. A
 path has one patch per release that differs from PAL there; the reader tries
 each, since only one accepts its source. A file the release lacks is patched
 from an empty source.
@@ -51,7 +48,6 @@ import bsdiff4.core
 import numpy
 
 import unpack_e
-from xex_image import XEX_FILE_FORMAT_INFO, XexImage
 
 # Everything that differs between the releases except the scripts, the voice
 # banks and the music, which are loaded whole. index.vmtoc is not here: the
@@ -83,21 +79,6 @@ def is_japanese(xex):
     security, = struct.unpack_from(">I", raw, 16)
     region, = struct.unpack_from(">I", raw, security + 0x178)
     return region & 0xFF00 and not region & 0xFF00FF
-
-
-def normalize_xex(path):
-    raw = open(path, "rb").read()
-    header_size, = struct.unpack_from(">I", raw, 8)
-    header_count, = struct.unpack_from(">I", raw, 20)
-    header = bytearray(raw[:header_size])
-    for i in range(header_count):
-        key, value = struct.unpack_from(">II", raw, 24 + 8 * i)
-        if key == XEX_FILE_FORMAT_INFO:
-            struct.pack_into(">HH", header, value + 4, 0, 0)  # no encryption, no compression
-            break
-    else:
-        raise ValueError(f"{path}: no XEX_FILE_FORMAT_INFO header")
-    return raw, bytes(header) + XexImage.load(path).data
 
 
 def apply(source, control, diff, extra):
@@ -132,18 +113,13 @@ def main():
     pal, out_path = sys.argv[1:3]
 
     patches = []
-    _, pal_xex = normalize_xex(os.path.join(pal, "default.xex"))
     pal_toc = unpack_e.load_toc(pal)
     for release in sys.argv[3:]:
         print(release)
-        # The game converts default.xex in place and keeps the original beside it.
+        # The game converted default.xex in place once and kept the original beside it.
         xex = os.path.join(release, "default.xex")
         if os.path.exists(xex + ".orig"):
             xex += ".orig"
-        source_raw, source = normalize_xex(xex)
-        if source != pal_xex:
-            patches.append(("default.xex", make_patch(source_raw, source, pal_xex)))
-            print(f"  default.xex: {len(patches[-1][1])} bytes")
 
         toc = unpack_e.load_toc(release)
         for name in CONTAINERS:
