@@ -1,0 +1,71 @@
+0x822FD6F8
+[JPN]
+0	プロローグ
+1	第一章　雨だれ
+2	第二章　革命
+3	第三章　幻想即興曲
+4	第四章　華麗なる大円舞曲
+5	第五章　夜想曲
+6	第六章　別れの曲
+7	第七章　英雄
+8	最終章　鏡天花
+[USA]
+0	Prologue
+1	Ch. 1 Raindrops
+2	Ch. 2 Revolution
+3	Ch. 3 Fantaisie-Impromptu
+4	Ch. 4 Grande Valse Brillante
+5	Ch. 5 Nocturne
+6	Ch. 6 Tristesse
+7	Ch. 7 Heroic
+8	Final Chapter Heaven's Mirror
+[GBR]
+0	Prologue
+1	Ch. 1 Raindrops
+2	Ch. 2 Revolution
+3	Ch. 3 Fantaisie-Impromptu
+4	Ch. 4 Grande Valse Brillante
+5	Ch. 5 Nocturne
+6	Ch. 6 Tristesse
+7	Ch. 7 Heroic
+8	Final Chapter Heaven's Mirror
+[FRA]
+0	Prologue
+1	Chapitre 1
+2	Chapitre 2
+3	Chapitre 3
+4	Chapitre 4
+5	Chapitre 5
+6	Chapitre 6
+7	Chapitre 7
+8	Dernier chapitre
+[ITA]
+0	Prologo
+1	Capitolo 1
+2	Capitolo 2
+3	Capitolo 3
+4	Capitolo 4
+5	Capitolo 5
+6	Capitolo 6
+7	Capitolo 7
+8	Ultimo capitolo
+[DEU]
+0	Prolog
+1	Kapitel 1
+2	Kapitel 2
+3	Kapitel 3
+4	Kapitel 4
+5	Kapitel 5
+6	Kapitel 6
+7	Kapitel 7
+8	Letztes Kapitel
+[ESP]
+0	Prólogo
+1	Capítulo 1
+2	Capítulo 2
+3	Capítulo 3
+4	Capítulo 4
+5	Capítulo 5
+6	Capítulo 6
+7	Capítulo 7
+8	Capítulo final

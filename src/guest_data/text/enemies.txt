@@ -1,0 +1,897 @@
+0x82332D90
+[JPN]
+0	ブレッドギャング
+1	トレーサー
+2	フォレストボア
+3	ヘラクレスオオイノシシ
+4	ドラゴンパピー
+5	シラタマ
+6	フーガ
+7	オーガーチャンプ
+8	オーガーキング
+9	トリックオアトリート
+10	ウィックドシュラブ
+11	キラーナイト
+12	覆われし者
+13	チューバ
+14	チューバ
+15	デスクロウ
+16	アンレスト
+17	海賊船長ドルチェ
+18	海賊船長ドルチェ
+19	フーガ
+20	ルートラーカー
+21	ディープラーカー
+22	ロンド
+23	ワルツ
+24	ルインドボディ
+25	アニヒレーター
+26	ショパン
+27	ロペラナイト
+28	ロペラジェネラル
+29	スタンダードベアラー
+30	アイスコフィン
+31	アースシェイカー
+32	ハーケンビュグゼ
+33	炎のアンティーク
+34	闇のアンティーク
+35	光のアンティーク
+36	フローライトマウス
+37	ロードオブダークネス
+38	アイシクルイーター
+39	フラメア
+40	コルセスカ
+41	ヴィージュ
+42	グレートココナッツ
+43	ガーリックパパ
+44	ブラッディオニオン
+45	シーラカンス
+46	エンシェントフィッシュ
+47	ブルーギル
+48	エンゼルゴート
+49	エターナルグリーン
+50	ブラックゴート
+51	キャラバンクラブ
+52	トリックテイル
+53	レアメタルピッカー
+54	メラディクター
+55	スカージャー
+56	アナテマ
+57	スィーツウィスパー
+58	デビルバッツ
+59	ピュアアイスメロディ
+60	ワンナプ
+61	ギヤマン
+62	ボルボ
+63	きりこみ海賊
+64	さまよえる海賊
+65	つわもの海賊
+66	ベリーベリーエンプティ
+67	リーフエッグ
+68	パーフェクトメロン
+69	クロガネ
+70	アストラルリート
+71	ブロンズアームズ
+72	ホワイトパール
+73	ソードフィッシュ
+74	ストロンググローリー
+75	カラミティウィルム
+76	ブラックオニキス
+77	メリクリウス
+78	ルビーアイ
+79	オレンジフロート
+80	スチームホーン
+81	オーパーツ
+82	ゴールデンテンプル
+83	アビス
+84	ファコプス
+85	リュウグウ
+86	ソルビエ
+87	オーパーツ
+88	ゴールデンテンプル
+89	アビス
+90	海賊船長ドルチェ
+91	海賊船長ドルチェ
+92	サンドシーアー
+93	ロンド
+94	海賊副長ベス
+95	海賊艇長ギタ
+96	海賊副長ベス
+97	海賊艇長ギタ
+98	海賊副長ベス
+99	海賊艇長ギタ
+100	メラディクター
+101	海賊副長ベス
+102	海賊艇長ギタ
+103	焔のアンティーク
+104	メリクリウス
+105	エネミー106
+106	エネミー107
+107	エネミー108
+108	エネミー109
+109	エネミー110
+110	エネミー111
+111	エネミー112
+112	エネミー113
+113	エネミー114
+114	エネミー115
+115	エネミー116
+116	エネミー117
+117	エネミー118
+118	エネミー119
+119	エネミー120
+120	エネミー121
+121	エネミー122
+122	エネミー123
+123	エネミー124
+124	エネミー125
+125	エネミー126
+126	エネミー127
+[USA]
+0	Bread Gang
+1	Tracer
+2	Forest Boar
+3	Herculean Boar
+4	Baby Dragon
+5	White Jewel
+6	Fugue
+7	Ogre Champ
+8	Ogre King
+9	Trick or Treat
+10	Wicked Shrub
+11	Killer Knight
+12	Hidden One
+13	Tuba
+14	Tuba
+15	Death Crow
+16	Unrest
+17	Captain Dolce
+18	Captain Dolce
+19	Fugue
+20	Root Lurker
+21	Deep Lurker
+22	Rondo
+23	Waltz
+24	Ruined Body
+25	Annihilator
+26	Fr<#233>d<#233>ric Fran<#231>ois Chopin
+27	L'Opera Knight
+28	L'Opera General
+29	Standard Bearer
+30	Ice Coffin
+31	Earth Shaker
+32	Haken B<#252>chse
+33	Fire Antique
+34	Dark Antique
+35	Light Antique
+36	Florite Mouse
+37	Lord of Darkness
+38	Icicle Eater
+39	Flamea
+40	Corsesca
+41	Viege
+42	Great Coconut
+43	Garlic Dad
+44	Bloody Onion
+45	Coelacanth
+46	Ancient Fish
+47	Blue Gil
+48	Angel Goat
+49	Eternal Green
+50	Black Goat
+51	Caravan Crab
+52	Trick Tail
+53	Rare Metal Picker
+54	Maledictor
+55	Scourger
+56	Anathema
+57	Sweet Whisper
+58	Dark Bat
+59	Ice Melody
+60	Mushroom Up
+61	Gyaman
+62	Bolbo
+63	Raider Pirate
+64	Roaming Pirate
+65	Warrior Pirate
+66	Very Very Empty
+67	Leaf Egg
+68	Perfect Melon
+69	Black Gold
+70	Astral Lied
+71	Bronze Arms
+72	White Pearl
+73	Swordfish
+74	Strong Glory
+75	Calamity Wilhm
+76	Black Onyx
+77	Mercurius
+78	Ruby Eye
+79	Orange Float
+80	Steam Horn
+81	OOPARTS
+82	Golden Temple
+83	Abyss
+84	Phacops
+85	Ryuuguu
+86	Sorbie
+87	OOPARTS
+88	Golden Temple
+89	Abyss
+90	Captain Dolce
+91	Captain Dolce
+92	Sand Seer
+93	Rondo
+94	1st Lieutenant
+95	2nd Lieutenant
+96	1st Lieutenant
+97	2nd Lieutenant
+98	1st Lieutenant
+99	2nd Lieutenant
+100	Maledictor
+101	1st Lieutenant
+102	2nd Lieutenant
+103	Fire Antique
+104	Mercurius
+105	Enemy106_Name_UnitedStates
+106	Enemy107_Name_UnitedStates
+107	Enemy108_Name_UnitedStates
+108	Enemy109_Name_UnitedStates
+109	Enemy110_Name_UnitedStates
+110	Enemy111_Name_UnitedStates
+111	Enemy112_Name_UnitedStates
+112	Enemy113_Name_UnitedStates
+113	Enemy114_Name_UnitedStates
+114	Enemy115_Name_UnitedStates
+115	Enemy116_Name_UnitedStates
+116	Enemy117_Name_UnitedStates
+117	Enemy118_Name_UnitedStates
+118	Enemy119_Name_UnitedStates
+119	Enemy120_Name_UnitedStates
+120	Enemy121_Name_UnitedStates
+121	Enemy122_Name_UnitedStates
+122	Enemy123_Name_UnitedStates
+123	Enemy124_Name_UnitedStates
+124	Enemy125_Name_UnitedStates
+125	Enemy126_Name_UnitedStates
+126	Enemy127_Name_UnitedStates
+[GBR]
+0	Bread Gang
+1	Tracer
+2	Forest Boar
+3	Herculean Boar
+4	Baby Dragon
+5	White Jewel
+6	Fugue
+7	Ogre Champ
+8	Ogre King
+9	Trick or Treat
+10	Wicked Shrub
+11	Killer Knight
+12	Hidden One
+13	Tuba
+14	Tuba
+15	Death Crow
+16	Unrest
+17	Captain Dolce
+18	Captain Dolce
+19	Fugue
+20	Root Lurker
+21	Deep Lurker
+22	Rondo
+23	Waltz
+24	Ruined Body
+25	Annihilator
+26	Fr<#233>d<#233>ric Fran<#231>ois Chopin
+27	L'Opera Knight
+28	L'Opera General
+29	Standard Bearer
+30	Ice Coffin
+31	Earth Shaker
+32	Haken B<#252>chse
+33	Fire Antique
+34	Dark Antique
+35	Light Antique
+36	Florite Mouse
+37	Lord of Darkness
+38	Icicle Eater
+39	Flamea
+40	Corsesca
+41	Viege
+42	Great Coconut
+43	Garlic Dad
+44	Bloody Onion
+45	Coelacanth
+46	Ancient Fish
+47	Blue Gil
+48	Angel Goat
+49	Eternal Green
+50	Black Goat
+51	Caravan Crab
+52	Trick Tail
+53	Rare Metal Picker
+54	Maledictor
+55	Scourger
+56	Anathema
+57	Sweet Whisper
+58	Dark Bat
+59	Ice Melody
+60	Mushroom Up
+61	Gyaman
+62	Bolbo
+63	Raider Pirate
+64	Roaming Pirate
+65	Warrior Pirate
+66	Very Very Empty
+67	Leaf Egg
+68	Perfect Melon
+69	Black Gold
+70	Astral Lied
+71	Bronze Arms
+72	White Pearl
+73	Swordfish
+74	Strong Glory
+75	Calamity Wilhm
+76	Black Onyx
+77	Mercurius
+78	Ruby Eye
+79	Orange Float
+80	Steam Horn
+81	OOPARTS
+82	Golden Temple
+83	Abyss
+84	Phacops
+85	Ryuuguu
+86	Sorbie
+87	OOPARTS
+88	Golden Temple
+89	Abyss
+90	Captain Dolce
+91	Captain Dolce
+92	Sand Seer
+93	Rondo
+94	1st Lieutenant
+95	2nd Lieutenant
+96	1st Lieutenant
+97	2nd Lieutenant
+98	1st Lieutenant
+99	2nd Lieutenant
+100	Maledictor
+101	1st Lieutenant
+102	2nd Lieutenant
+103	Fire Antique
+104	Mercurius
+105	Enemy106_Name_UnitedStates
+106	Enemy107_Name_UnitedStates
+107	Enemy108_Name_UnitedStates
+108	Enemy109_Name_UnitedStates
+109	Enemy110_Name_UnitedStates
+110	Enemy111_Name_UnitedStates
+111	Enemy112_Name_UnitedStates
+112	Enemy113_Name_UnitedStates
+113	Enemy114_Name_UnitedStates
+114	Enemy115_Name_UnitedStates
+115	Enemy116_Name_UnitedStates
+116	Enemy117_Name_UnitedStates
+117	Enemy118_Name_UnitedStates
+118	Enemy119_Name_UnitedStates
+119	Enemy120_Name_UnitedStates
+120	Enemy121_Name_UnitedStates
+121	Enemy122_Name_UnitedStates
+122	Enemy123_Name_UnitedStates
+123	Enemy124_Name_UnitedStates
+124	Enemy125_Name_UnitedStates
+125	Enemy126_Name_UnitedStates
+126	Enemy127_Name_UnitedStates
+[FRA]
+0	Pisteur
+1	Traceur
+2	Sanglier des bois
+3	Sanglier herculéen
+4	Bébé dragon
+5	Joyau blanc
+6	Staccato
+7	Champion ogre
+8	Roi ogre
+9	Sale surprise
+10	Touffu tordu
+11	Chevalier tueur
+12	Masqué
+13	Tuba
+14	Tuba
+15	Corbeau
+16	Corneille
+17	Capitaine Dolce
+18	Capitaine Dolce
+19	Staccato
+20	Rôdeur racine
+21	Rôdeur profond
+22	Rumba
+23	Valse
+24	Corps putride
+25	Annihilateur
+26	Frédéric François Chopin
+27	Chevalier d'opéra
+28	Général d'opéra
+29	Porte-drapeau
+30	Cercueil de glace
+31	Séisme
+32	Hakenbüchse
+33	Antiquité de feu
+34	Antiquité obscure
+35	Antiquité de lumière
+36	Gerboise ardente
+37	Gerboise noire
+38	Gerboise de glace
+39	Flamea
+40	Corsesca
+41	Viege
+42	Grande noix de coco
+43	Papa ail
+44	Oignon sanglant
+45	Cœlacanthe
+46	Poisson antique
+47	Ouïes bleues
+48	Chèvre-ange
+49	Éternel vert
+50	Chèvre noire
+51	Crabe caravane
+52	Queue surprise
+53	Prospecteur
+54	Malédiction
+55	Fléau
+56	Anathème
+57	Doux chuchotement
+58	Vampire noir
+59	Mélodie glacée
+60	Champivole
+61	Gyaman
+62	Bolbo
+63	Pirate pillard
+64	Pirate errant
+65	Pirate guerrier
+66	Sous-néant
+67	Œuf-feuille
+68	Melon parfait
+69	Or noir
+70	Lied astral
+71	Bras de bronze
+72	Perle blanche
+73	Espadon
+74	Glorieux
+75	Wilhm calamiteux
+76	Onyx noir
+77	Mercurius
+78	Œil rubis
+79	Flotteur orange
+80	Cornevapeur
+81	INSOLITE
+82	Temple d'or
+83	Abysse
+84	Phacops
+85	Ryuuguu
+86	Sorbie
+87	INSOLITE
+88	Temple d'or
+89	Abysse
+90	Capitaine Dolce
+91	Capitaine Dolce
+92	Voyant des sables
+93	Rumba
+94	Lieutenant
+95	Sous-lieutenant
+96	Lieutenant
+97	Sous-lieutenant
+98	Lieutenant
+99	Sous-lieutenant
+100	Malédiction
+101	Lieutenant
+102	Sous-lieutenant
+103	Antiquité de feu
+104	Mercurius
+105	
+106	
+107	
+108	
+109	
+110	
+111	
+112	
+113	
+114	
+115	
+116	
+117	
+118	
+119	
+120	
+121	
+122	
+123	
+124	
+125	
+126	
+[ITA]
+0	Gang del pane
+1	Inseguitore
+2	Cinghiale dei boschi
+3	Cinghiale possente
+4	Cucciolo di drago
+5	Gemma bianca
+6	Staccato
+7	Orco campione
+8	Re orco
+9	Dolcetto o scherzetto
+10	Arbusto maligno
+11	Cavaliere assassino
+12	Spirito nascosto
+13	Tuba
+14	Tuba
+15	Grido di morte
+16	Tumulto
+17	Capitan Dolce
+18	Capitan Dolce
+19	Staccato
+20	Insidia radice
+21	Insidia profonda
+22	Rumba
+23	Valzer
+24	Corpo corrotto
+25	Annichilatore
+26	Frédéric François Chopin
+27	Cavaliere dell'Opera
+28	Generale de L'Opera
+29	Portatore standard
+30	Bara di ghiaccio
+31	Squoti-terra
+32	Hakenbüchse
+33	Antico di fuoco
+34	Antico oscuro
+35	Antico luminoso
+36	Ratto raggiante
+37	Ratto dell'oscurità
+38	Mangia ghiaccio
+39	Flamea
+40	Corsesca
+41	Viege
+42	Grande noce di cocco
+43	Aglio padre
+44	Cipolla sanguinante
+45	Celacanto
+46	Pesce antico
+47	Persico blu
+48	Capra angelica
+49	Verde eterno
+50	Capra nera
+51	Granchio gigante
+52	Coda assassina
+53	Afferra metalli rari
+54	Maledictor
+55	Fustigatore
+56	Anatema
+57	Dolce sussurro
+58	Pipistrello oscuro
+59	Melodia di ghiaccio
+60	Fungo fluttuante
+61	Gyaman
+62	Bolbo
+63	Pirata razziatore
+64	Pirata errante
+65	Pirata guerriero
+66	Zucca vuota
+67	Uovo foglia
+68	Melone perfetto
+69	Oro nero
+70	Melodia astrale
+71	Braccia di bronzo
+72	Perla bianca
+73	Pescespada
+74	Gloria possente
+75	Rapace devastante
+76	Onice nera
+77	Mercurio
+78	Occhio di rubino
+79	Globo fluttuante
+80	Corno fumante
+81	MANFUPOS
+82	Tempio dorato
+83	Abisso
+84	Phacops
+85	Ryuuguu
+86	Sorbie
+87	MANFUPOS
+88	Tempio dorato
+89	Abisso
+90	Capitan Dolce
+91	Capitan Dolce
+92	Veggente di sabbia
+93	Rumba
+94	1° Tenente
+95	2° Tenente
+96	1° Tenente
+97	2° Tenente
+98	1° Tenente
+99	2° Tenente
+100	Maledictor
+101	1° Tenente
+102	2° Tenente
+103	Antico di fuoco
+104	Mercurio
+105	
+106	
+107	
+108	
+109	
+110	
+111	
+112	
+113	
+114	
+115	
+116	
+117	
+118	
+119	
+120	
+121	
+122	
+123	
+124	
+125	
+126	
+[DEU]
+0	Brotnager
+1	Jagdnager
+2	Wildschwein
+3	Herkules-Wildschwein
+4	Drachenbaby
+5	Weißes Juwel
+6	Staccato
+7	Ogerchampion
+8	Ogerkönig
+9	Kürbisschweber
+10	Strauchschweber
+11	Mordsbiest
+12	Lauerbiest
+13	Tuba
+14	Tuba
+15	Todeskrähe
+16	Unholdkrähe
+17	Käpt'n Dolce
+18	Käpt'n Dolce
+19	Staccato
+20	Wurzellauerer
+21	Tiefenlauerer
+22	Rondo
+23	Walzer
+24	Fetzenleib
+25	Annihilator
+26	Frédéric François Chopin
+27	Ritter der Oper
+28	General der Oper
+29	Standartenträger
+30	Eisbestatter
+31	Erdbeber
+32	Hakenschnäpper
+33	Feuerpfahl
+34	Dunkelpfahl
+35	Lichtpfahl
+36	Phosphormaus
+37	Herr der Finsternis
+38	Eiszapfenfresser
+39	Flamea
+40	Corsesca
+41	Viega
+42	Große Kokosnuss
+43	Knoblauchpapa
+44	Blutzwiebel
+45	Quastenflosser
+46	Urfisch
+47	Sonnenbarsch
+48	Engelsziege
+49	Grünziege
+50	Schwarze Ziege
+51	Reisekrabbe
+52	Trickschwanz
+53	Metallkneifer
+54	Verflucher
+55	Geißel
+56	Anathema
+57	Flederwisper
+58	Dunkelfleder
+59	Eismelodie
+60	Fliegenpilz
+61	Pilzkopf
+62	Knolli
+63	Plünderpirat
+64	Wanderpirat
+65	Kriegerpirat
+66	Hohlkopf
+67	Blätter-Ei
+68	Perfekte Melone
+69	Schwarzes Gold
+70	Astralgestalt
+71	Bronze-Arm
+72	Weiße Perle
+73	Schwertfisch
+74	Ruhmesfisch
+75	Unglücksbiest
+76	Schwarzer Onyx
+77	Mercurius
+78	Rubinauge
+79	Gelbschweber
+80	Dampfhorn
+81	OOPARTS
+82	Goldener Tempel
+83	Abgrund
+84	Phacops
+85	Ryuuguu
+86	Sorbie
+87	OOPARTS
+88	Goldener Tempel
+89	Abgrund
+90	Käpt'n Dolce
+91	Käpt'n Dolce
+92	Sandseher
+93	Rumba
+94	1. Leutnant
+95	2. Leutnant
+96	1. Leutnant
+97	2. Leutnant
+98	1. Leutnant
+99	2. Leutnant
+100	Verflucher
+101	1. Leutnant
+102	2. Leutnant
+103	Feuerpfahl
+104	Mercurius
+105	
+106	
+107	
+108	
+109	
+110	
+111	
+112	
+113	
+114	
+115	
+116	
+117	
+118	
+119	
+120	
+121	
+122	
+123	
+124	
+125	
+126	
+[ESP]
+0	La banda del pan
+1	Rastreador
+2	Jabalí de bosque
+3	Jabalí hercúleo
+4	Bebé dragón
+5	Joya blanca
+6	Fuga
+7	Champi ogro
+8	Rey ogro
+9	Calabaza murciélaga
+10	Calabaza oscura
+11	Caballero asesino
+12	Caballero escondido
+13	Tuba
+14	Tuba
+15	Cuervo de la muerte
+16	Monstruenco
+17	Capitana Dolce
+18	Capitana Dolce
+19	Fuga
+20	Buscaraíces
+21	Merodeador profundo
+22	Rumba
+23	Vals
+24	Cuerpo estropeado
+25	Aniquilador
+26	Frederic François Chopin
+27	Caballero de la Ópera
+28	General de la Ópera
+29	Portador vulgar
+30	Féretro helado
+31	Agitador
+32	Hakenbüchse
+33	Farola de fuego
+34	Farola oscura
+35	Farola de luz
+36	Ratón de florita
+37	Señor de la oscuridad
+38	Comecarámbanos
+39	Flámea
+40	Corsesca
+41	Viege
+42	Gran coco
+43	Papá ajo
+44	Cebolla sangrienta
+45	Coelacanth
+46	Pescado antiguo
+47	Bluegill
+48	Cabra angelical
+49	Verde eterno
+50	Cabra negra
+51	Cangrespión
+52	Escarabajo rosa
+53	Buscador de metales raros
+54	Malhechor
+55	Azotador
+56	Anatema
+57	Susurro dulce
+58	Murciélago oscuro
+59	Melodía glacial
+60	Seta tiesa
+61	Gyaman
+62	Bolbo
+63	Pirata ladrón
+64	Pirata deambulante
+65	Pirata guerrero
+66	Cococebolla
+67	Huevo de hoja
+68	Melón perfecto
+69	Oro negro
+70	Canción astral
+71	Brazos de bronce
+72	Perla blanca
+73	Pez espada
+74	Gloria robusta
+75	Calamidades
+76	Ónix negro
+77	Mercurius
+78	Ojo de rubí
+79	Sorbete de naranja
+80	Asta de vapor
+81	OOPARTES
+82	Templo dorado
+83	Abismo
+84	Fapolis
+85	Ryuuguu
+86	Sorbi
+87	OOPARTES
+88	Templo dorado
+89	Abismo
+90	Capitana Dolce
+91	Capitana Dolce
+92	Profeta de arena
+93	Rumba
+94	1er teniente
+95	2º teniente
+96	1er teniente
+97	2º teniente
+98	1er teniente
+99	2º teniente
+100	Malhechor
+101	1er teniente
+102	2º teniente
+103	Farola de fuego
+104	Mercurius
+105	Cura de la ópera
+106	Vuelta de la ópera
+107	Aliento de la ópera
+108	Tornado de la ópera
+109	Cura general
+110	Vuelta general
+111	Aliento general
+112	Tornado general
+113	Cura del portador
+114	Tornillo del portador
+115	Aliento del portador
+116	Tornado del portador
+117	Norteño
+118	Prensa avalancha
+119	Cola tiesa
+120	Lodo
+121	Agitador
+122	Cola larga
+123	Perdigón caliente
+124	Rompe costras
+125	Cola feroz
+126	Círculo de lava

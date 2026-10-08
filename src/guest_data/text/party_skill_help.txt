@@ -1,0 +1,834 @@
+0x822FF598
+[JPN]
+0	alg通常1
+1	alg通常2
+2	alg通常3
+3	属性：光　遠隔攻撃　射程8メートル　+20メートル　2.4秒\n敵をやきつくす火焔流。命中した場合、さらに先の敵も巻き込む。
+4	属性：闇　遠隔攻撃　射程8メートル　+20メートル　2.4秒\n凍てつく息吹きが地をつたう。命中した場合、さらに先の敵も巻き込む。
+5	属性：光　近接攻撃　6ヒット　ノックダウン弱　2.8秒\n刃舞う近接多段攻撃。剣士の初伝技。
+6	属性：闇　近接攻撃　6ヒット　ノックダウン中　2.8秒\n剣舞う近接多段攻撃。剣士の中伝技。
+7	属性：光　近接攻撃　2ヒット　ノックバック中　1.6秒\n敵を真っぷたつに斬り上げる必殺剣技。
+8	属性：闇　近接攻撃　2ヒット　ノックバック強　1.6秒\n敵を異次元へ跳ばし落とす必殺剣技。
+9	属性：光　近接攻撃　8ヒット　ノックダウン弱　3.6秒\n息つく間も与えずに圧倒する近接多段攻撃。
+10	属性：闇　近接攻撃　8ヒット　ノックダウン中　3.6秒\n息のむ間も与えずに粉砕する近接多段攻撃。
+11	plk通常1
+12	plk通常2
+13	plk通常3
+14	属性：光　回復技　射程8メートル　2.3秒　自分または仲間一人\n魔法の技。生気を与え、自分または仲間一人の傷をいやす。
+15	属性：光　回復技　射程8メートル　2.3秒　近くの仲間\n魔法の技。生気を与え、近くの仲間の傷をいやす。
+16	属性：光　回復技　射程無限　4.2秒　味方すべて\n魔法の技。生気を与え、味方すべての傷をいやす。
+17	属性：光　遠隔攻撃　射程無限　2.8秒　敵すべて\n隠者の術。水の力を呼びさまし敵に打ちつける。
+18	属性：闇　遠隔攻撃　射程無限　2.8秒　敵すべて\n隠者の術。大地の力を呼びおこし敵に打ちつける。
+19	属性：光　遠隔攻撃　射程無限　ノックダウン中　2.4秒～\n投射攻撃。まばゆい星の力を打ちつけ、対象とその周囲にダメージを与える。
+20	属性：闇　遠隔攻撃　射程無限　ノックダウン強　2.4秒～\n投射攻撃。冥い星の力を打ちつけ、対象とその周囲にダメージを与える。
+21	属性：光　近接攻撃　6ヒット　+10メートル　2.8秒\n空間を割り砕く強力な近接多段攻撃。最後の一撃はさらに奥の敵を撃つ。
+22	属性：闇　近接攻撃　6ヒット　+10メートル　2.8秒\n骨身を責める近接多段攻撃。最後の一撃はさらに奥の敵を撃つ。
+23	属性：光　近接範囲攻撃　半径5メートル　2.4秒\n魔力の塊を呼び寄せ、自分を中心として周囲にダメージを与える。
+24	属性：闇　近接範囲攻撃　半径5メートル　2.4秒\n雷電の群を呼び降らし、自分を中心として周囲にダメージを与える。
+25	bet通常1
+26	bet通常2
+27	bet通常3
+28	属性：光　ビート専用の写真術。撮った写真は、じょじょに現像される。\nじゅうぶん現像されたら、ショップで売ろう。特によい写真は、写真屋さんに売ろう。
+29	属性：闇　ビート専用の写真術。撮った写真は、じょじょに現像される。\nじゅうぶん現像されたら、ショップで売ろう。特によい写真は、写真屋さんに売ろう。
+30	属性：光　遠隔攻撃　射程25メートル　1.8/2.4秒\n投射連続攻撃。近距離12メートル以内では4ヒット。
+31	属性：闇　遠隔攻撃　射程25メートル　1.8/2.4秒\n投射連続攻撃。近距離12メートル以内では4ヒット。
+32	bet必殺光3
+33	bet必殺闇3
+34	属性：光　近接攻撃　6ヒット　ノックバック中　3.3秒\n鋭いカギツメで突き刺す近接多段攻撃。
+35	属性：闇　近接攻撃　6ヒット　ノックバック強　3.3秒\n堅いカナヅチで叩き伏せる近接多段攻撃。
+36	属性：光　遠隔範囲攻撃　射程無限　3.3秒\n強烈な爆風を起こし、対象とその周囲にダメージを与える。
+37	属性：闇　遠隔範囲攻撃　射程12メートル　4.7秒　HP吸収\n銀砂の渦を散り撒き、対象とその周囲の敵からHPを奪う。
+38	cpn通常1
+39	cpn通常2
+40	cpn通常3
+41	属性：光　回復技　射程無限　1.7秒　味方すべて\n魔法の技。活力を与え、味方すべての傷をいやす。
+42	属性：光　回復技　射程8メートル　1.7秒　自分または仲間一人\n魔法の技。活力を与え、自分または仲間一人の傷をいやす。
+43	属性：光　回復技　射程8メートル　1.7秒　自分または仲間一人\n魔法の技。活力を与え、自分または仲間一人の傷をいやす。
+44	属性：光　遠隔範囲攻撃　射程無限　1.7秒\n稲妻を落とし、対象とその周囲の敵にダメージを与える。
+45	属性：闇　全体攻撃　1.7秒\n敵すべてを火炎で包み、ダメージを与える。
+46	属性：光　近接攻撃　3ヒット　3.4秒\n霊気を集めて吹き上げる近接攻撃。
+47	属性：闇　近接攻撃　3ヒット　3.4秒\n霊気を集めて打ち上げる近接攻撃。
+48	属性：光　近接攻撃　1ヒット　ノックバック強　1.7秒\n慈悲の一撃。素早い単発の近接攻撃。
+49	属性：闇　近接攻撃　2ヒット　+10メートル　1.7秒\n暗夜の一撃。命中した場合、背後の敵にもダメージを与える。
+50	属性：光　射程4メートル　5ヒット　2.2秒　攻撃力増加\n惑乱の光でダメージを与えるとともに、その敵の攻撃力を20増加させる。
+51	属性：闇　射程4メートル　1ヒット　1.0秒　攻撃力減少\n幻迷の光でダメージを与えるとともに、その敵の攻撃力を10減少させる。
+52	vol通常1
+53	vol通常2
+54	vol通常3
+55	属性：光　近接攻撃　7ヒット　3.7秒\n近接多段攻撃。素早い連打でひるんだ敵に、必殺の一撃をうちこむ。
+56	属性：闇　近接攻撃　7ヒット　3.7秒\n近接多段攻撃。激しい連打でたじろぐ敵に、急所の一撃をうちこむ。
+57	属性：光　回復技　射程無限　3.5秒　味方\n天なる神の腕を借りて、味方すべての傷をいやす。
+58	属性：闇　回復技　射程無限　3.2秒　仲間\n地なる神の息を借りて、自分以外の仲間の傷をいやす。
+59	属性：光　遠隔攻撃　射程無限　ノックダウン中　2.1秒～\n聖なる矢で敵を突きたたく。
+60	属性：闇　遠隔攻撃　射程無限　ノックダウン強　2.1秒～\n邪なる矢で敵をえぐりうがつ。
+61	属性：光　遠隔範囲攻撃　射程無限　3.3秒\n無数の矢ぶすまをあびせる遠隔範囲攻撃。
+62	属性：闇　遠隔攻撃　射程無限　3.5秒　状態異常を付与\n敵に狩人の印をきざみ、次に与える攻撃の威力を増す。
+63	sls通常1
+64	sls通常2
+65	sls通常3
+66	属性：光　近接攻撃　4ヒット　+4メートル　3.0秒\n敵から生命の炎を奪いはなち、さらに先の敵も巻き込む。
+67	属性：闇　近接攻撃　3ヒット　3.0秒　状態異常を付与\n敵から生命の炎を奪いまとう。次に使う必殺技の威力が増加する。
+68	属性：光　近接攻撃　1ヒット　ノックバック中　2.0秒\n単発の近接攻撃。熱と光でダメージを与える。
+69	属性：闇　近接攻撃　1ヒット　ノックバック強　2.0秒\n単発の近接攻撃。大気をはぎとりダメージを与える。
+70	属性：光　近接攻撃　5ヒット　ノックバック中　1.8秒\n脚力をいかしてはなつ素早い回転攻撃。
+71	属性：闇　近接攻撃　5ヒット　ノックバック強　1.8秒\n身軽さをいかしてはなつ素早い回転攻撃。
+72	属性：光　近接攻撃　12ヒット　ノックダウン弱　3.1秒\n相手を寸断する近接多段攻撃。
+73	属性：闇　近接攻撃　12ヒット　ノックダウン中　3.1秒\n相手を切り回す近接多段攻撃。
+74	jrb通常1
+75	jrb通常2
+76	jrb通常3
+77	属性：光　近接攻撃　7ヒット　ノックダウン弱　3.6秒\n極高熱の炎が刀身をつつみ、いかなる盾具足をも焼き切る。
+78	属性：闇　近接攻撃　7ヒット　ノックダウン中　3.6秒\n骨をもこごる寒気が刀身にまとい、相手をうちのめす。
+79	属性：光　近接攻撃　1ヒット　+10メートル　2.0秒\n旧故の契をも絶つ斬撃。命中した場合、背後の敵にもダメージを与える。
+80	属性：闇　近接攻撃　1ヒット　+10メートル　2.0秒\n世界の理をも裂く斬撃。命中した場合、背後の敵にもダメージを与える。
+81	属性：光　近接範囲攻撃　半径5.5メートル　1.7秒\n大気をゆるがしふるわせて周囲の敵にダメージを与える。
+82	属性：闇　近接範囲攻撃　半径5.5メートル　1.7秒\n地を割り溶岩を噴出して周囲の敵にダメージを与える。
+83	属性：光　遠隔攻撃　射程12メートル　1.7秒\n猛烈な竜巻を起こし、その進路に立つ者へダメージを与える。
+84	属性：闇　遠隔攻撃　射程12メートル　1.7秒\n強烈な怒涛を起こし、その進路に立つ者へダメージを与える。
+85	fst通常1
+86	fst通常2
+87	fst通常3
+88	属性：光　近接攻撃　2ヒット　+10メートル　1.6秒\n敵を痛打し、さらにその先の敵へ衝撃を与える。
+89	属性：闇　近接攻撃　2ヒット　+10メートル　1.6秒\n敵を打ち、さらにその先の敵へ衝撃を与える。
+90	属性：光　近接攻撃　9ヒット　ノックバック中　3.8秒\nながれるように連打する近接多段攻撃。
+91	属性：闇　近接攻撃　9ヒット　ノックバック強　3.8秒\n切れ間なく連打する近接多段攻撃。
+92	属性：光　近接攻撃　3ヒット　+5メートル　2.1秒\n蹴術の秘技。命中した場合、さらに横列に衝撃をとばす。
+93	属性：闇　近接攻撃　3ヒット　+5メートル　2.1秒\n蹴術の絶技。命中した場合、さらに横列に衝撃をとばす。
+94	属性：光　近接攻撃　1ヒット　ノックダウン中　1.6秒\n高く空に舞い眼前の敵に闘気をはなつ。
+95	属性：闇　近接攻撃　1ヒット　ノックダウン強　1.6秒\n高く宙に跳び眼前の敵に闘気をあびせる。
+96	clv通常1
+97	clv通常2
+98	clv通常3
+99	属性：光　近接攻撃　2ヒット　+5メートル　1.8秒\n鋭い刀風を発する近接攻撃。命中した場合、背後の敵にもダメージを与える。
+100	属性：闇　近接攻撃　2ヒット　+5メートル　1.8秒\n烈しい刀気を生じる近接攻撃。命中した場合、背後の敵にもダメージを与える。
+101	属性：光　回復技　射程8メートル　2.2秒　近くの仲間\n聖獣ユニコーンの力を借りて近くの仲間の傷をいやす。
+102	属性：闇　近接攻撃　1ヒット　ノックバック強　2.2秒\n魔獣アイアタルの力を借りて敵一体を攻撃する。
+103	属性：光　近接攻撃　7ヒット　ノックバック中　3.5秒\n厳しい突きをくりだす近接多段攻撃。
+104	属性：闇　近接攻撃　7ヒット　ノックバック強　3.5秒\n激しい突きをくりだす近接多段攻撃。
+105	属性：光　遠隔攻撃　射程無限　1.9秒+\n剣身に大地の力を集めて飛ばし、対象とその周囲にダメージを与える。
+106	属性：闇　遠隔攻撃　射程無限　1.9秒+\n剣身に野獣の力を込めて飛ばし、対象とその周囲にダメージを与える。
+107	mch通常1
+108	mch通常2
+109	mch通常3
+110	属性：光　射程3メートル　1ヒット　3.3秒　状態異常を付与\n敵の四肢をしめつけて、一定限行動を封じる。
+111	属性：闇　射程3メートル　1ヒット　3.3秒　状態異常を付与\n敵の脚をしめつけて、移動能力を減じる。
+112	属性：光　近接攻撃　13ヒット　ノックバック中　3.7秒\n無数の斬撃をふるう近接多段攻撃。
+113	属性：闇　近接攻撃　13ヒット　ノックバック強　3.7秒\n無数の斬撃でほふる近接多段攻撃。
+114	属性：光　近接攻撃　4ヒット　+6メートル　2.9秒\n敵から影の力をはぎとばし、さらに先の敵も巻き込む。
+115	属性：闇　近接攻撃　3ヒット　2.9秒　状態異常を付与\n敵から影の力を奪いまとう。次に受ける攻撃のダメージを減らす。
+116	属性：光　遠隔攻撃　射程6メートル　+9メートル　1.9秒\nふたつの円刃を投げつける。命中した場合、さらに左右にダメージ。
+117	属性：闇　遠隔攻撃　射程6メートル　+9メートル　1.9秒\nふたつの円刃を投げつける。命中した場合、さらに左右にダメージ。
+[USA]
+0	ArtsComment_001_UnitedStates
+1	ArtsComment_002_UnitedStates
+2	ArtsComment_003_UnitedStates
+3	Light / Range: 25 feet (+65 feet) / 2.4 seconds\nBlazing fire stream that engulfs the target and enemies behind it.
+4	Dark / Range: 25 feet (+65 feet) / 2.4 seconds\nIcy breath that engulfs the target and enemies behind it.
+5	Light /6 Hits / 2.8 seconds\nWeak Knockdown\nBasic close combat attack by a knight.
+6	Dark / 6 Hits / 2.8 seconds\nMedium Knockdown\nMedium close combat attack by a knight.
+7	Light / 2 Hits / 1.6 seconds\nMedium Knockback\nSpecial attack that slices the enemy in two.
+8	Dark / 2 Hits / 1.6 seconds\nStrong Knockback\nSends the enemy into another dimension.
+9	Light / 8 Hits / 3.6 seconds\nWeak Knockdown\nA relentless close combat attack that overwhelms the enemy.
+10	Dark / 8 Hits / 3.6 seconds\nMedium Knockdown\nA relentless close combat attack that crushes the enemy.
+11	ArtsComment_012_UnitedStates
+12	ArtsComment_013_UnitedStates
+13	ArtsComment_014_UnitedStates
+14	Light / Healing / Range: 25 feet / 2.3 seconds\nHeal one party member.
+15	Light / Healing / Range: 25 feet / 2.3 seconds\nHeal party members in the vicinity other than yourself.
+16	Light / Healing / Infinite Range / 4.2 seconds\nHeal all party members.
+17	Light / Infinite Range / 2.8 seconds\nAttack all enemies with the power of water.
+18	Dark / Infinite Range / 2.8 seconds\nAttack all enemies with the power of the earth.
+19	Light / Infinite Range / 2.4+ seconds\nMedium Knockdown\nInflict damage on the target and nearby enemies.
+20	Dark / Infinite Range / 2.4+ seconds\nInflict damage on the target and nearby enemies.
+21	Light / 6 Hits (+30 feet) / 2.8 seconds\nClose combat attack with the final attack reaching enemies in the back.
+22	Dark / 6 Hits (+30 feet) / 2.8 seconds\nClose combat attack with the final attack reaching enemies in the back.
+23	Light / Radius: 15 feet / 2.4 seconds\nAttack nearby enemies with magic.
+24	Dark / Radius: 15 feet / 2.4 seconds\nAttack nearby enemies with lightning.
+25	ArtsComment_026_UnitedStates
+26	ArtsComment_027_UnitedStates
+27	ArtsComment_028_UnitedStates
+28	Light / Photo\nPhotos taken will develop gradually and can be sold at shops.
+29	Dark / Photo\nPhotos taken will develop gradually and can be sold at shops.
+30	Light / Range: 80 feet / 1.8 or 2.4 seconds\n4 hits for a target within 40 feet.
+31	Dark / Range: 80 feet / 1.8 or 2.4 seconds\n4 hits for a target within 40 feet.
+32	ArtsComment_033_UnitedStates
+33	ArtsComment_034_UnitedStates
+34	Light / 6 Hits / 3.3 seconds\nMedium Knockback\nPierce the enemy with a sharp hammer.
+35	Dark / 6 Hits / 3.3 seconds\nMedium Knockdown\nPierce the enemy with a hard hammer.
+36	Light / Infinite Range / 3.3 seconds\nA powerful heat blast hits the target and nearby enemies.
+37	Dark / Range: 40 feet / 4.7 seconds\nAbsorb HP from the target and nearby enemies.
+38	ArtsComment_039_UnitedStates
+39	ArtsComment_040_UnitedStates
+40	ArtsComment_041_UnitedStates
+41	Light / Healing / Infinite Range / 1.7 seconds\nHeal all party members.
+42	Light / Healing / Range: 25 feet / 1.7 seconds\nHeal one party member.
+43	Light / Healing / Range: 25 feet / 1.7 seconds\nHeal one party member.
+44	Light / Infinite Range / 1.7 seconds\nDrop a lightning bolt on the target and nearby enemies.
+45	Dark / Infinite Range / 1.7 seconds \nEngulf all enemies in flame.
+46	Light / 3 Hits / 3.4 seconds\nAuras are collected and blown upward.
+47	Dark / 3 Hits / 3.4 seconds\nAuras are collected and shot upward.
+48	Light / 1 Hit / 1.7 seconds\nStrong Knockback\nCompassionate strike.
+49	Dark / 2 Hits (+30 feet) / 1.7 seconds\nA strike in the night. Hits enemies in the back as well.
+50	Light / 5 Hits / Range: 15 feet / 2.2 seconds\nIncrease ATK\nAttack with the light of confusion and increase the enemy's ATK by 20.
+51	Dark / 1 Hit / Range: 15 feet / 1.0 seconds\nDecrease ATK\nAttack with the light of illusion and decrease enemy's ATK by 10.
+52	ArtsComment_053_UnitedStates
+53	ArtsComment_054_UnitedStates
+54	ArtsComment_055_UnitedStates
+55	Light / 7 Hits / 3.7 seconds\nClose combat attack with a finishing blow.
+56	Dark / 7 Hits / 3.7 seconds\nClose combat attack with a finishing blow.
+57	Light / Healing / Infinite Range / 3.5 seconds\nHeal all party members.
+58	Dark / Healing / Infinite Range / 3.2 seconds\nHeal all party members except yourself.
+59	Light / Infinite Range / 2.1+ seconds\nMedium Knockdown\nPierce the enemy with a holy arrow.
+60	Dark / Infinite Range / 2.1+ seconds\nStrong Knockdown\nPierce the enemy with an evil arrow.
+61	Light / Infinite Range / 3.3 seconds\nArrows come down on nearby enemies.
+62	Dark / Infinite Range / 3.5 seconds\nStatus Effect\nMark the target and increase power of the next attack.
+63	ArtsComment_064_UnitedStates
+64	ArtsComment_065_UnitedStates
+65	ArtsComment_066_UnitedStates
+66	Light / 4 Hits (+15 feet) / 3.0 seconds\nRob target of energy and affect enemies behind it as well.
+67	Dark / 3 Hits / 3.0 seconds\nStatus Effect\nRob target of energy and increase power of next special attack.
+68	Light / 1 Hit / 2.0 seconds\nMedium Knockback\nDamage the enemy with fire and light.
+69	Dark / 1 Hit / 2.0 seconds\nStrong Knockback\nAbsorb energy from the atmosphere and attack.
+70	Light / 5 Hits / 1.8 seconds\nMedium Knockback\nQuick spinning attack.
+71	Dark / 5 Hits / 1.8 seconds\nStrong Knockback\nQuick spinning attack.
+72	Light / 12 Hits / 3.1 seconds\nWeak Knockdown\nMulti-hit attack that crushes the enemy.
+73	Dark / 12 Hits / 3.1 seconds\nMedium Knockdown\nMulti-hit attack that slashes the enemy.
+74	ArtsComment_075_UnitedStates
+75	ArtsComment_076_UnitedStates
+76	ArtsComment_077_UnitedStates
+77	Light / 7 Hits / 3.6 seconds\nWeak Knockdown\nThe fire on the blade burns all.
+78	Dark / 7 Hits / 3.6 seconds\nMedium Knockdown\nThe ice on the blade crushes the enemy.
+79	Light / 1 Hit (+30 feet) / 2.0 seconds\nThe second hit damages enemies from behind.
+80	Dark / 1 Hit (+30 feet) 2.0 seconds\nThe second hit damages enemies from behind.
+81	Light / Radius: 20 feet / 1.7 seconds\nAttack nearby enemies.
+82	Dark / Radius: 20 feet / 1.7 seconds\nEmerging lava attacks nearby enemies.
+83	Light / Range: 40 feet / 1.7 seconds\nCreate a tornado and attack the enemy.
+84	Dark / Range: 40 feet / 1.7 seconds\nCreate a maelstrom and attack the enemy.
+85	ArtsComment_086_UnitedStates
+86	ArtsComment_087_UnitedStates
+87	ArtsComment_088_UnitedStates
+88	Light / 2 Hits (+30 feet) / 1.6 seconds\nAttack the target and any enemies behind it.
+89	Dark / 2 Hits (+30 feet) / 1.6 seconds\nAttack the target and any enemies behind it.
+90	Light / 9 Hits / 3.8 seconds\nMedium Knockback\nClose combat multi-hit attack.
+91	Dark / 9 Hits / 3.8 seconds\nStrong Knockback\nClose combat multi-hit attack.
+92	Light / 3 Hits (+15 feet) / 2.1 seconds\nKick creates a horizontal shock wave.
+93	Dark / 3 Hits (+15 feet) / 2.1 seconds\nKick creates a horizontal shock wave.
+94	Light / 1 Hit / 1.6 seconds\nMedium Knockdown\nJump up and attack the enemy in front.
+95	Dark / 1 Hit / 1.6 seconds\nMedium Knockdown\nJump high and attack the enemy in front.
+96	ArtsComment_097_UnitedStates
+97	ArtsComment_098_UnitedStates
+98	ArtsComment_099_UnitedStates
+99	Light / 2 Hits (+15 feet) / 1.8 seconds\nClose-combat attack on the target and any enemies behind it.
+100	Dark / 2 Hits (+15 feet) / 1.8 seconds\nClose-combat attack on the target and any enemies behind it.
+101	Light / Healing / Range: 25 feet / 2.2 seconds\nHeal party members in close proximity other than yourself.
+102	Dark / 1 Hit / 2.2 seconds\nStrong Knockback\nAttack one enemy with the power of the Aiatar.
+103	Light / 7 Hits / 3.5 seconds\nMedium Knockback\nFierce piercing attack.
+104	Dark / 7 Hits / 3.5 seconds\nStrong Knockback\nFierce piercing attack.
+105	Light / Infinite Range / 1.9 seconds\nBlow away the target and nearby enemies.
+106	Dark / Infinite Range / 1.9 seconds\nBlow away the target and nearby enemies.
+107	ArtsComment_108_UnitedStates
+108	ArtsComment_109_UnitedStates
+109	ArtsComment_110_UnitedStates
+110	Light / Range: 10 feet / 1 Hit / 3.3 seconds\nStatus Effect\nBind the enemy and immobilize them temporarily.
+111	Dark / Range: 10 feet / 1 Hit / 3.3 seconds\nStatus Effect\nBind the enemy and reduce their mobility.
+112	Light / 13 Hits / 3.7 seconds\nMedium Knockback\nMulti-slash attack.
+113	Dark / 13 Hits / 3.7 seconds\nMedium Knockback\nMulti-slash attack.
+114	Light / 4 Hits (+20 feet) /2.9 seconds\nScatter the enemy's shadow and any enemies behind it.
+115	Dark / 3 Hits / 2.9 seconds\nStatus Effect\nReduce the power of the enemy's next attack against you.
+116	Light / Range: 20 feet (+30 feet) / 1.9 seconds\nThrow two circular blades. Ricochets to enemies on the sides as well.
+117	Dark / Range: 20 feet (+30 feet) / 1.9 seconds\nThrow two circular blades. Ricochets to enemies on the sides as well.
+[GBR]
+0	ArtsComment_001_UnitedStates
+1	ArtsComment_002_UnitedStates
+2	ArtsComment_003_UnitedStates
+3	Light / Range: 25 feet (+65 feet) / 2.4 seconds\nBlazing fire stream that engulfs the target and enemies behind it.
+4	Dark / Range: 25 feet (+65 feet) / 2.4 seconds\nIcy breath that engulfs the target and enemies behind it.
+5	Light /6 Hits / 2.8 seconds\nWeak Knockdown\nBasic close combat attack by a knight.
+6	Dark / 6 Hits / 2.8 seconds\nMedium Knockdown\nMedium close combat attack by a knight.
+7	Light / 2 Hits / 1.6 seconds\nMedium Knockback\nSpecial attack that slices the enemy in two.
+8	Dark / 2 Hits / 1.6 seconds\nStrong Knockback\nSends the enemy into another dimension.
+9	Light / 8 Hits / 3.6 seconds\nWeak Knockdown\nA relentless close combat attack that overwhelms the enemy.
+10	Dark / 8 Hits / 3.6 seconds\nMedium Knockdown\nA relentless close combat attack that crushes the enemy.
+11	ArtsComment_012_UnitedStates
+12	ArtsComment_013_UnitedStates
+13	ArtsComment_014_UnitedStates
+14	Light / Healing / Range: 25 feet / 2.3 seconds\nHeal one party member.
+15	Light / Healing / Range: 25 feet / 2.3 seconds\nHeal party members in the vicinity other than yourself.
+16	Light / Healing / Infinite Range / 4.2 seconds\nHeal all party members.
+17	Light / Infinite Range / 2.8 seconds\nAttack all enemies with the power of water.
+18	Dark / Infinite Range / 2.8 seconds\nAttack all enemies with the power of the earth.
+19	Light / Infinite Range / 2.4+ seconds\nMedium Knockdown\nInflict damage on the target and nearby enemies.
+20	Dark / Infinite Range / 2.4+ seconds\nInflict damage on the target and nearby enemies.
+21	Light / 6 Hits (+30 feet) / 2.8 seconds\nClose combat attack with the final attack reaching enemies in the back.
+22	Dark / 6 Hits (+30 feet) / 2.8 seconds\nClose combat attack with the final attack reaching enemies in the back.
+23	Light / Radius: 15 feet / 2.4 seconds\nAttack nearby enemies with magic.
+24	Dark / Radius: 15 feet / 2.4 seconds\nAttack nearby enemies with lightning.
+25	ArtsComment_026_UnitedStates
+26	ArtsComment_027_UnitedStates
+27	ArtsComment_028_UnitedStates
+28	Light / Photo\nPhotos taken will develop gradually and can be sold at shops.
+29	Dark / Photo\nPhotos taken will develop gradually and can be sold at shops.
+30	Light / Range: 80 feet / 1.8 or 2.4 seconds\n4 hits for a target within 40 feet.
+31	Dark / Range: 80 feet / 1.8 or 2.4 seconds\n4 hits for a target within 40 feet.
+32	ArtsComment_033_UnitedStates
+33	ArtsComment_034_UnitedStates
+34	Light / 6 Hits / 3.3 seconds\nMedium Knockback\nPierce the enemy with a sharp hammer.
+35	Dark / 6 Hits / 3.3 seconds\nMedium Knockdown\nPierce the enemy with a hard hammer.
+36	Light / Infinite Range / 3.3 seconds\nA powerful heat blast hits the target and nearby enemies.
+37	Dark / Range: 40 feet / 4.7 seconds\nAbsorb HP from the target and nearby enemies.
+38	ArtsComment_039_UnitedStates
+39	ArtsComment_040_UnitedStates
+40	ArtsComment_041_UnitedStates
+41	Light / Healing / Infinite Range / 1.7 seconds\nHeal all party members.
+42	Light / Healing / Range: 25 feet / 1.7 seconds\nHeal one party member.
+43	Light / Healing / Range: 25 feet / 1.7 seconds\nHeal one party member.
+44	Light / Infinite Range / 1.7 seconds\nDrop a lightning bolt on the target and nearby enemies.
+45	Dark / Infinite Range / 1.7 seconds \nEngulf all enemies in flame.
+46	Light / 3 Hits / 3.4 seconds\nAuras are collected and blown upward.
+47	Dark / 3 Hits / 3.4 seconds\nAuras are collected and shot upward.
+48	Light / 1 Hit / 1.7 seconds\nStrong Knockback\nCompassionate strike.
+49	Dark / 2 Hits (+30 feet) / 1.7 seconds\nA strike in the night. Hits enemies in the back as well.
+50	Light / 5 Hits / Range: 15 feet / 2.2 seconds\nIncrease ATK\nAttack with the light of confusion and increase the enemy's ATK by 20.
+51	Dark / 1 Hit / Range: 15 feet / 1.0 seconds\nDecrease ATK\nAttack with the light of illusion and decrease enemy's ATK by 10.
+52	ArtsComment_053_UnitedStates
+53	ArtsComment_054_UnitedStates
+54	ArtsComment_055_UnitedStates
+55	Light / 7 Hits / 3.7 seconds\nClose combat attack with a finishing blow.
+56	Dark / 7 Hits / 3.7 seconds\nClose combat attack with a finishing blow.
+57	Light / Healing / Infinite Range / 3.5 seconds\nHeal all party members.
+58	Dark / Healing / Infinite Range / 3.2 seconds\nHeal all party members except yourself.
+59	Light / Infinite Range / 2.1+ seconds\nMedium Knockdown\nPierce the enemy with a holy arrow.
+60	Dark / Infinite Range / 2.1+ seconds\nStrong Knockdown\nPierce the enemy with an evil arrow.
+61	Light / Infinite Range / 3.3 seconds\nArrows come down on nearby enemies.
+62	Dark / Infinite Range / 3.5 seconds\nStatus Effect\nMark the target and increase power of the next attack.
+63	ArtsComment_064_UnitedStates
+64	ArtsComment_065_UnitedStates
+65	ArtsComment_066_UnitedStates
+66	Light / 4 Hits (+15 feet) / 3.0 seconds\nRob target of energy and affect enemies behind it as well.
+67	Dark / 3 Hits / 3.0 seconds\nStatus Effect\nRob target of energy and increase power of next special attack.
+68	Light / 1 Hit / 2.0 seconds\nMedium Knockback\nDamage the enemy with fire and light.
+69	Dark / 1 Hit / 2.0 seconds\nStrong Knockback\nAbsorb energy from the atmosphere and attack.
+70	Light / 5 Hits / 1.8 seconds\nMedium Knockback\nQuick spinning attack.
+71	Dark / 5 Hits / 1.8 seconds\nStrong Knockback\nQuick spinning attack.
+72	Light / 12 Hits / 3.1 seconds\nWeak Knockdown\nMulti-hit attack that crushes the enemy.
+73	Dark / 12 Hits / 3.1 seconds\nMedium Knockdown\nMulti-hit attack that slashes the enemy.
+74	ArtsComment_075_UnitedStates
+75	ArtsComment_076_UnitedStates
+76	ArtsComment_077_UnitedStates
+77	Light / 7 Hits / 3.6 seconds\nWeak Knockdown\nThe fire on the blade burns all.
+78	Dark / 7 Hits / 3.6 seconds\nMedium Knockdown\nThe ice on the blade crushes the enemy.
+79	Light / 1 Hit (+30 feet) / 2.0 seconds\nThe second hit damages enemies from behind.
+80	Dark / 1 Hit (+30 feet) 2.0 seconds\nThe second hit damages enemies from behind.
+81	Light / Radius: 20 feet / 1.7 seconds\nAttack nearby enemies.
+82	Dark / Radius: 20 feet / 1.7 seconds\nEmerging lava attacks nearby enemies.
+83	Light / Range: 40 feet / 1.7 seconds\nCreate a tornado and attack the enemy.
+84	Dark / Range: 40 feet / 1.7 seconds\nCreate a maelstrom and attack the enemy.
+85	ArtsComment_086_UnitedStates
+86	ArtsComment_087_UnitedStates
+87	ArtsComment_088_UnitedStates
+88	Light / 2 Hits (+30 feet) / 1.6 seconds\nAttack the target and any enemies behind it.
+89	Dark / 2 Hits (+30 feet) / 1.6 seconds\nAttack the target and any enemies behind it.
+90	Light / 9 Hits / 3.8 seconds\nMedium Knockback\nClose combat multi-hit attack.
+91	Dark / 9 Hits / 3.8 seconds\nStrong Knockback\nClose combat multi-hit attack.
+92	Light / 3 Hits (+15 feet) / 2.1 seconds\nKick creates a horizontal shock wave.
+93	Dark / 3 Hits (+15 feet) / 2.1 seconds\nKick creates a horizontal shock wave.
+94	Light / 1 Hit / 1.6 seconds\nMedium Knockdown\nJump up and attack the enemy in front.
+95	Dark / 1 Hit / 1.6 seconds\nMedium Knockdown\nJump high and attack the enemy in front.
+96	ArtsComment_097_UnitedStates
+97	ArtsComment_098_UnitedStates
+98	ArtsComment_099_UnitedStates
+99	Light / 2 Hits (+15 feet) / 1.8 seconds\nClose-combat attack on the target and any enemies behind it.
+100	Dark / 2 Hits (+15 feet) / 1.8 seconds\nClose-combat attack on the target and any enemies behind it.
+101	Light / Healing / Range: 25 feet / 2.2 seconds\nHeal party members in close proximity other than yourself.
+102	Dark / 1 Hit / 2.2 seconds\nStrong Knockback\nAttack one enemy with the power of the Aiatar.
+103	Light / 7 Hits / 3.5 seconds\nMedium Knockback\nFierce piercing attack.
+104	Dark / 7 Hits / 3.5 seconds\nStrong Knockback\nFierce piercing attack.
+105	Light / Infinite Range / 1.9 seconds\nBlow away the target and nearby enemies.
+106	Dark / Infinite Range / 1.9 seconds\nBlow away the target and nearby enemies.
+107	ArtsComment_108_UnitedStates
+108	ArtsComment_109_UnitedStates
+109	ArtsComment_110_UnitedStates
+110	Light / Range: 10 feet / 1 Hit / 3.3 seconds\nStatus Effect\nBind the enemy and immobilize them temporarily.
+111	Dark / Range: 10 feet / 1 Hit / 3.3 seconds\nStatus Effect\nBind the enemy and reduce their mobility.
+112	Light / 13 Hits / 3.7 seconds\nMedium Knockback\nMulti-slash attack.
+113	Dark / 13 Hits / 3.7 seconds\nMedium Knockback\nMulti-slash attack.
+114	Light / 4 Hits (+20 feet) /2.9 seconds\nScatter the enemy's shadow and any enemies behind it.
+115	Dark / 3 Hits / 2.9 seconds\nStatus Effect\nReduce the power of the enemy's next attack against you.
+116	Light / Range: 20 feet (+30 feet) / 1.9 seconds\nThrow two circular blades. Ricochets to enemies on the sides as well.
+117	Dark / Range: 20 feet (+30 feet) / 1.9 seconds\nThrow two circular blades. Ricochets to enemies on the sides as well.
+[FRA]
+0	
+1	
+2	
+3	Lumière/Portée : 7,5 m (+ 20 m)/2,4 secondes\nVague de feu engloutissant la cible et les ennemis derrière elle.
+4	Ombre/Portée : 7,5 m (+ 20 m)/2,4 secondes\nSouffle glacé engloutissant la cible et les ennemis derrière elle.
+5	Lumière/6 coups/Faible plaquage au sol/2,8 secondes\nAttaque élémentaire de chevalier au corps à corps.
+6	Ombre/6 coups/Plaquage au sol moyen/2,8 secondes\nAttaque moyenne de chevalier au corps à corps.
+7	Lumière/2 coups/Renversement moyen/1,6 secondes\nAttaque spéciale coupant l'ennemi en deux.
+8	Ombre/2 coups/Fort renversement/1,6 secondes\nExpédie l'ennemi dans une autre dimension.
+9	Lumière/8 coups/Faible plaquage au sol/3,6 secondes\nAttaque implacable au corps à corps terrassant l'ennemi.
+10	Ombre/8 coups/Plaquage au sol moyen/3,6 secondes\nAttaque implacable au corps à corps écrasant l'ennemi.
+11	
+12	
+13	
+14	Lumière/Soins/Portée : 7,5 m/2,3 secondes\nSoigne un membre du groupe.
+15	Lumière/Soins/Portée : 7,5 m/2,3 secondes\nSoigne les autres membres du groupe proches.
+16	Lumière/Soins/Portée infinie/4,2 secondes\nSoigne tous les membres du groupe.
+17	Lumière/Portée infinie/2,8 secondes\nInflige à tous les ennemis le pouvoir de l'eau.
+18	Ombre/Portée infinie/2,8 secondes\nInflige à tous les ennemis le pouvoir de la terre.
+19	Lumière/Portée infinie/Plaquage au sol moyen/2,4+ secondes\nInflige des dégâts à la cible et aux ennemis proches.
+20	Ombre/Portée infinie/2,4+ secondes\nInflige des dégâts à la cible et aux ennemis proches.
+21	Lumière/6 coups (+ 9 m)/2,8 secondes\nAttaque au corps à corps dont le coup final atteint les ennemis situés derrière.
+22	Ombre/6 coups (+ 9 m)/2,8 secondes\nAttaque au corps à corps dont le coup final atteint les ennemis situés derrière.
+23	Lumière/Rayon : 4,5 m/2,4 secondes\nInflige une attaque magique aux ennemis proches.
+24	Ombre/Rayon : 4,5 m/2,4 secondes\nFoudroie les ennemis proches.
+25	
+26	
+27	
+28	Lumière/Photo\nLes photos se développent lentement et peuvent être vendues dans les magasins.
+29	Ombre/Photo\nLes photos se développent lentement et peuvent être vendues dans les magasins.
+30	Lumière/Portée : 25 m/1,8 ou 2,4 secondes\n4 coups à la cible à moins de 12,5 m.
+31	Ombre/Portée : 25 m/1,8 ou 2,4 secondes\n4 coups à la cible à moins de 12,5 m.
+32	
+33	
+34	Lumière/6 coups/Renversement moyen/3,3 secondes\nPerfore l'ennemi à l'aide d'un pic.
+35	Ombre/6 coups/Renversement moyen/3,3 secondes\nFrappe l'ennemi à l'aide d'une masse.
+36	Lumière/Portée infinie/3,3 secondes\nUne chaleur intense frappe la cible et les ennemis proches.
+37	Ombre/Portée : 12,5 m/4,7 secondes\nAbsorbe les PV de la cible et des ennemis proches.
+38	
+39	
+40	
+41	Lumière/Soins/Portée infinie/1,7 secondes\nSoigne tous les membres du groupe.
+42	Lumière/Soins/Portée : 7,5 m/1,7 secondes\nSoigne un membre du groupe.
+43	Lumière/Soins/Portée : 7,5 m/1,7 secondes\nSoigne un membre du groupe.
+44	Lumière/Portée infinie/1,7 secondes\nExpédie un éclair sur la cible et les ennemis proches.
+45	Ombre/Portée infinie/1,7 secondes \nPlonge tous les ennemis dans les flammes.
+46	Lumière/3 coups/3,4 secondes\nCollecte l'aura des alentours et l'expédie vers le haut.
+47	Ombre/3 coups/3,4 secondes\nCollecte l'aura des alentours et l'expédie vers le haut.
+48	Lumière/1 coup/Fort renversement/1,7 secondes\nCoup compatissant.
+49	Ombre/2 coups (+ 9 m)/1,7 secondes\nFrappe la nuit et touche aussi les ennemis situés derrière.
+50	Lumière/5 coups/Portée : 4,5 m/2,2 secondes/ATT accrue\nEmploie la lueur de confusion et augmente l'ATT ennemie de 20.
+51	Ombre/1 coup/Portée : 4,5 m/1,0 secondes/ATT réduite\nEmploie la lueur d'illusion et réduit l'ATT ennemie de 10.
+52	
+53	
+54	
+55	Lumière/7 coups/3,7 secondes\nAttaque au corps à corps avec coup final.
+56	Ombre/7 coups/3,7 secondes\nAttaque au corps à corps avec coup final.
+57	Lumière/Soins/Portée infinie/3,5 secondes\nSoigne tous les membres du groupe.
+58	Ombre/Soins/Portée infinie/3,2 secondes\nSoigne tous les autres membres du groupe.
+59	Lumière/Portée infinie/Plaquage au sol moyen/2,1+ secondes\nPerfore l'ennemi d'une flèche sacrée.
+60	Ombre/Portée infinie/Fort plaquage au sol/2,1+ secondes\nFrappe l'ennemi d'une flèche maléfique.
+61	Lumière/Portée infinie/3,3 secondes\nExpédie des flèches aux ennemis alentour.
+62	Ombre/Portée infinie/3,5 secondes/Effet d'état\nMarque la cible et renforce l'attaque suivante.
+63	
+64	
+65	
+66	Lumière/4 coups (+ 4,5 m)/3,0 secondes\nAbsorbe la vie de l'ennemi et atteint ceux situés derrière.
+67	Ombre/3 coups/3,0 secondes/Effet d'état\nAbsorbe la vie de l'ennemi et renforce l'attaque suivante.
+68	Lumière/1 coup/Renversement moyen/2,0 secondes\nCause à l'ennemi des dégâts de feu et de lumière.
+69	Ombre/1 coup/Fort renversement/2,0 secondes\nAbsorbe le pouvoir de l'atmosphère et attaque.
+70	Lumière/5 coups/Renversement moyen/1,8 secondes\nRapide attaque tournoyante.
+71	Ombre/5 coups/Fort renversement/1,8 secondes\nRapide attaque tournoyante.
+72	Lumière/12 coups/Faible plaquage au sol/3,1 secondes\nAttaque multiple écrasant l'ennemi.
+73	Ombre/12 coups/Plaquage au sol moyen/3,1 secondes\nAttaque multiple tailladant l'ennemi.
+74	
+75	
+76	
+77	Lumière/7 coups/Faible plaquage au sol/3,6 secondes\nLe feu de la lame brûle tout.
+78	Ombre/7 coups/Plaquage au sol moyen/3,6 secondes\nLe froid de la lame écrase l'ennemi.
+79	Lumière/1 coup (+ 9 m)/2,0 secondes\nLe deuxième coup frappe l'ennemi par-derrière.
+80	Ombre/1 coup (+ 9 m)/ 2,0 secondes\nLe deuxième coupe frappe l'ennemi par-derrière.
+81	Lumière/Rayon : 6 m/1,7 secondes\nAttaque les ennemis proches.
+82	Ombre/Rayon : 6 m/1,7 secondes\nLa lave qui surgit attaque les ennemis proches.
+83	Lumière/12,5 m/1,7 secondes\nGénère une tornade et attaque l'ennemi.
+84	Ombre/12,5 m/1,7 secondes\nGénère un maelström et attaque l'ennemi.
+85	
+86	
+87	
+88	Lumière/2 coups (+ 9 m)/1,6 secondes\nAttaque la cible et les ennemis derrière elle.
+89	Ombre/2 coups (+ 9 m)/1,6 secondes\nAttaque la cible et les ennemis derrière elle.
+90	Lumière/9 coups/Renversement moyen/3,8 secondes\nAttaque multiple au corps à corps.
+91	Ombre/9 coups/Fort renversement/3,8 secondes\nAttaque multiple au corps à corps.
+92	Lumière/3 coups (+ 4,5 m)/2,1 secondes\nLe coup de pied crée une onde de choc horizontale.
+93	Ombre/3 coups (+ 4,5 m)/2,1 secondes\nLe coup de pied crée une onde de choc horizontale.
+94	Lumière/1 coup/Plaquage au sol moyen/1,6 secondes\nSaut et attaque de l'ennemi situé en face.
+95	Ombre/1 coup/Renversement moyen/1,6 secondes\nSaut et attaque de l'ennemi situé en face.
+96	
+97	
+98	
+99	Lumière/2 coups (+ 4,5 m)/1,8 secondes\nAttaque au corps à corps de la cible et des ennemis derrière elle.
+100	Ombre/2 coups (+ 4,5 m)/1,8 secondes\nAttaque au corps à corps de la cible et des ennemis derrière elle.
+101	Lumière/Soins/7,5 m/2,2 secondes\nSoigne les autres membres du groupe proches.
+102	Ombre/1 coup/Fort renversement/2,2 secondes\nAttaque un ennemi avec le pouvoir d'Aiatar.
+103	Lumière/7 coups/Renversement moyen/3,5 secondes\nPuissante attaque perforante.
+104	Ombre/7 coups/Fort renversement/3,5 secondes\nPuissante attaque perforante.
+105	Lumière/Portée infinie/1,9 secondes\nFait s'envoler la cible et les ennemis proches.
+106	Ombre/Portée infinie/1,9 secondes\nFait s'envoler la cible et les ennemis proches.
+107	
+108	
+109	
+110	Lumière/Portée : 3 m/1 coup/3,3 secondes/Effet d'état\nImmobilise temporairement l'ennemi.
+111	Ombre/Portée : 3 m/1 coup/3,3 secondes/Effet d'état\nRéduit la mobilité de l'ennemi.
+112	Lumière/13 coups/Renversement moyen/3,7 secondes\nAttaque tranchante multiple.
+113	Ombre/13 coups/Renversement moyen/3,7 secondes\nAttaque tranchante multiple.
+114	Lumière/4 coups (+ 6 m) /2,9 secondes\nÉparpille l'ombre de l'ennemi et de ceux derrière lui.
+115	Ombre/3 coups/2,9 secondes /Effet d'état\nÉparpille l'ombre de l'ennemi et de ceux derrière lui.
+116	Lumière/Portée : 6 m (+ 9 m)/1,9 secondes\nEnvoie deux lames circulaires qui ricochent sur les ennemis situés sur les côtés.
+117	Ombre/Portée : 6 m (+ 9 m)/1,9 secondes\nEnvoie deux lames circulaires qui ricochent sur les ennemis situés sur les côtés.
+[ITA]
+0	
+1	
+2	
+3	Luce / Campo d'azione: 7,6 m (+19,8 m) / 2,4 secondi \nFlusso di fuoco ardente che avvolge il bersaglio e i nemici alle loro spalle.
+4	Oscurità / Campo d'azione: 7,6 m (+19,8 m) / 2,4 secondi \nSoffio ghiacciato che avvolge il bersaglio e i nemici alle loro spalle.
+5	Luce / 6 colpi / Leggero atterramento / 2,8 secondi\nAttacco da un cavaliere in combattimento ravvicinato di base.
+6	Oscurità / 6 colpi / Atterramento medio/ 2,8 secondi \nAttacco da un cavaliere in combattimento ravvicinato medio.
+7	Luce / 2 colpi / Respinta media / 1,6 secondi \nAttacco speciale che divide il nemico in due.
+8	Oscurità / 2 colpi / Respinta forte / 1,6 secondi \nSpedisce il nemico in un'altra dimensione.
+9	Luce / 8 colpi / Debole atterramento / 3,6 secondi\nInesorabile attacco ravvicinato che travolge il nemico.
+10	Oscurità / 8 colpi / Atterramento medio / 3,6 secondi\nInesorabile attacco ravvicinato che annienta il nemico.
+11	
+12	
+13	
+14	Luce / Guarigione / Campo d'azione: 7,6 m / 2,3 secondi\nGuarisce un membro del gruppo.
+15	Luce / Guarigione / Campo d'azione: 7,6 m / 2,3 secondi\nGuarisce i membri vicini tranne se stessi.
+16	Luce / Guarigione / Raggio d'azione infinito / 4,2 secondi\nGuarisce tutti i membri del gruppo.
+17	Luce / Raggio d'azione infinito / 2,8 secondi\nAttacco a tutti i nemici con il potere dell'acqua.
+18	Oscurità / Raggio d'azione infinito / 2,8 secondi\nAttacco a tutti i nemici con il potere della terra.
+19	Luce / Raggio d'azione infinito / Atterramento medio / 2,4+ secondi\nInfligge danni al bersaglio e ai nemici intorno.
+20	Oscurità / Raggio d'azione infinito / 2,4+ secondi\nInfligge danni al bersaglio e ai nemici intorno.
+21	Luce / 6 colpi (+9,1 m) / 2,8 secondi\nAttacco ravvicinato che colpisce anche i nemici dietro al bersaglio nell'attacco finale.
+22	Oscurità / 6 colpi (+9,1 m) / 2,8 secondi\nAttacco ravvicinato che colpisce anche i nemici dietro al bersaglio nell'attacco finale.
+23	Luce / Raggio: 4,6 m / 2,4 secondi\nAttacco ai nemici attorno a te con la magia.
+24	Oscurità / Raggio: 4,6 m / 2,4 secondi\nAttacco ai nemici attorno a te con il fulmine.
+25	
+26	
+27	
+28	Luce / Foto\nLe foto riprese si svilupperanno gradualmente e potranno essere vendute nei negozi.
+29	Oscurità / Foto\nLe foto riprese si svilupperanno gradualmente e potranno essere vendute nei negozi.
+30	Luce / Raggio: 24 m / 1,8 o 2,4 secondi\n4 colpi per bersagli entro 12 metri.
+31	Oscurità / Raggio: 24 m / 1,8 o 2,4 secondi\n4 colpi per bersagli entro 12 metri.
+32	
+33	
+34	Luce / 6 Colpi / Respinta media / 3,3 secondi\nTrafigge il nemico con un martello acuminato.
+35	Luce / 6 Colpi / Atterramento medio / 3,3 secondi\nTrafigge il nemico con un martello duro.
+36	Luce / Raggio infinito / 3,3 secondi\nColpisce il bersaglio ed i nemici attorno ad esso con un potente calore.
+37	Oscurità / Raggio: 12,2 m / 4,7 secondi\nAssorbe HP dal bersaglio e dai nemici attorno ad esso.
+38	
+39	
+40	
+41	Luce / Guarigione / Raggio infinito / 1,7 secondi\nGuarisce tutti i membri del gruppo.
+42	Luce / Guarigione / Raggio: 7,6 m / 1,7 secondi\nGuarisce un membro del gruppo.
+43	Luce / Guarigione / Raggio: 7,6 m / 1,7 secondi\nGuarisce un membro del gruppo.
+44	Luce / Raggio infinito / 1,7 secondi\nScaglia un fulmine sul bersaglio e sui nemici attorno ad esso.
+45	Oscurità / Raggio infinito / 1,7 secondi\nCirconda tutti i nemici con un cerchio di fiamme.
+46	Luce / 3 colpi / 3,4 secondi\nRaccoglie l'aura e la scaglia in alto.
+47	Oscurità / 3 colpi / 3,4 secondi\nRaccoglie l'aura e la scaglia verso l'alto.
+48	Luce / 1 colpo / Respinta forte / 1,7 secondi\nColpo di grazia.
+49	Oscurità / 2 colpi (9,1 m) / 1,7 secondi\nAttacco nella notte. Colpisce anche i nemici dietro al bersaglio.
+50	Luce / 5 Colpi / Raggio: 4,6 m / 2,2 secondi / Aumenta ATK\nAttacco con la luce della confusione aumentando l'ATK del nemico di 20.
+51	Oscurità / 1 Colpo / Raggio: 4,6 m / 1,0 secondi / Riduce ATK\nAttacco con la luce dell'illusione riducendo l'ATK del nemico di 10.
+52	
+53	
+54	
+55	Luce / 7 Colpi / 3,7 secondi\nAttacco ravvicinato con un colpo di grazia.
+56	Oscurità / 7 Colpi / 3,7 secondi\nAttacco ravvicinato con un colpo di grazia.
+57	Luce / Guarigione / Raggio infinito / 3,5 secondi\nGuarisce tutti i membri del gruppo.
+58	Oscurità / Guarigione / Raggio infinito / 3,2 secondi\nGuarisce tutti i membri del gruppo tranne sé stessi.
+59	Luce / Raggio infinito / Respinta media / 2,1+ secondi\nTrafigge il nemico con una freccia sacra.
+60	Oscurità / Raggio infinito / Respinta forte / 2,1+ secondi\nTrafigge il nemico con una freccia malefica.
+61	Luce / Raggio infinito / 3,3 secondi\nScaglia frecce in basso sui nemici nelle vicinanze.
+62	Oscurità / Raggio infinito / 3,5 secondi / Effetto di stato\nContrassegna il bersaglio e aumenta la potenza del prossimo attacco.
+63	
+64	
+65	
+66	Luce / 4 colpi (4,6 m) / 3,0 secondi\nAssorbe la vita dal bersaglio e colpisce anche i nemici dietro di esso.
+67	Oscurità / 3 Colpi / 3 secondi / Effetto di stato\nAssorbe la vita dal nemico e aumenta la potenza del prossimo attacco.
+68	Luce / 1 Colpo / Respinta media / 2,0 secondi\nDanneggia il nemico con fuoco e luce.
+69	Oscurità / 1 Colpo / Respinta forte / 2,0 secondi\nAssorbe potere dall'atmosfera e attacca.
+70	Luce / 5 Colpi / Respinta media / 1,8 secondi\nAttacco con rotazione rapida.
+71	Oscurità / 5 Colpi / Respinta forte / 1,8 secondi\nAttacco con rotazione rapida.
+72	Luce / 12 colpi / Atterramento debole / 3,1 secondi\nAttacco multiplo che frantuma il nemico.
+73	Oscurità / 12 colpi / Atterramento medio / 3,1 secondi\nAttacco multiplo che abbatte il nemico.
+74	
+75	
+76	
+77	Luce / 7 colpi / Atterramento debole / 3,6 secondi\nIl fuoco sulla lama brucia tutto.
+78	Oscurità / 7 colpi / Atterramento medio / 3,6 secondi\nIl ghiaccio sulla lama frantuma il nemico.
+79	Luce / 1 colpo (+9,1 m) / 2,0 secondi\nIl secondo colpo attacca i nemici alle spalle.
+80	Oscurità / 1 colpo (+9,1 m) / 2,0 secondi\nIl secondo colpo attacca i nemici alle spalle.
+81	Luce / Raggio: 6 m / 1,7 secondi\nAttacco ai nemici intorno.
+82	Oscurità / Raggio: 6 m / 1,7 secondi\nLa lava eruttata attacca i nemici intorno.
+83	Luce / 12 m / 1,7 secondi\nCrea un tornado e attacca il nemico.
+84	Oscurità / 12 m / 1,7 secondi\nCrea un turbine e attacca il nemico.
+85	
+86	
+87	
+88	Luce / 2 colpi (+9 m) / 1,6 secondi\nAttacca il bersaglio e i nemici alle sue spalle.
+89	Oscurità / 2 colpi (+9 m) / 1,6 secondi\nAttacca il bersaglio e i nemici alle sue spalle.
+90	Luce / 9 colpi / Respinta media / 3,8 secondi\nAttacco in combattimento ravvicinato con più colpi.
+91	Oscurità / 9 Colpi / Respinta forte / 3,8 secondi\nAttacco in combattimento ravvicinato con più colpi.
+92	Luce / 3 colpi (+3,6 m) / 2,1 secondi\nIl calcio crea un'onda d'urto orizzontale.
+93	Oscurità / 3 colpi (+3,6 m) / 2,1 secondi\nIl calcio crea un'onda d'urto orizzontale.
+94	Luce / 1 colpo / Atterramento medio / 1,6 secondi\nSalto con attacco al nemico che si trova di fronte.
+95	Oscurità / 1 colpo / Atterramento medio / 1,6 secondi\nSalto con attacco al nemico che si trova di fronte.
+96	
+97	
+98	
+99	Luce / 2 colpi (+4,6 m) / 1,8 secondi\Attacco ravvicinato sul bersaglio e sui nemici dietro ad esso.
+100	Oscurità / 2 colpi (+4,6 m) / 1.8 secondi\nAttacco ravvicinato sul bersaglio e sui nemici dietro ad esso.
+101	Luce / Guarigione / 7,6 m / 2,2 secondi\nGuarisce i membri del gruppo vicini, tranne sé stessi.
+102	Oscurità / 1 colpo / Respinta forte / 2,2 secondi\nAttacca un nemico con il potere di Aiatar.
+103	Luce / 7 colpi / Respinta media / 3,5 secondi\nAttacco straziante con furia.
+104	Oscurità / 7 Colpi / Respinta forte / 3,5 secondi\nAttacco straziante con furia.
+105	Luce / Raggio infinito / 1,9 secondi\nSbaraglia il bersaglio ed i nemici attorno ad esso.
+106	Oscurità / Raggio infinito / 1,9 secondi\nSbaraglia il bersaglio ed i nemici attorno ad esso.
+107	
+108	
+109	
+110	Luce / Raggio: 3 m / 1 colpo / 3,3 secondi/ Effetto di stato\nLega il nemico e lo immobilizza per un po' di tempo.
+111	Oscurità / Raggio: 3 m / 1 colpo / 3,3 secondi/ Effetto di stato\nLega il nemico riducendone la mobilità.
+112	Luce / 13 Colpi / Respinta media / 3,7 secondi\nAttacco con più fendenti.
+113	Oscurità / 13 Colpi / Respinta media / 3,7 secondi\nAttacco con più fendenti.
+114	Luce / 4 colpi (+6,1 m) /2,9 secondi\nDisperde l'ombra del bersaglio e dei nemici dietro di esso.
+115	Oscurità / 3 Colpi / 2,9 secondi / Effetto di stato\nDisperde l'ombra del nemico e aumenta la potenza del prossimo attacco.
+116	Luce / Raggio: 6,1 m (+9,1 m) / 1,9 secondi\nLancia due lame circolari. Colpisce di rimbalzo anche i nemici ai fianchi del bersaglio.
+117	Luce / Raggio: 6,1 m (+9,1 m) / 1,9 secondi\nLancia due lame circolari. Colpisce di rimbalzo anche i nemici ai fianchi del bersaglio.
+[DEU]
+0	
+1	
+2	
+3	Licht / Reichweite: 25 Fuß (+65 Fuß) / 2,4 Sekunden\nEin Feuerstrom umfängt das Ziel und Gegner dahinter.
+4	Dunkel / Reichweite: 25 Fuß (+65 Fuß) / 2,4 Sekunden\nEin Eishauch umfängt das Ziel und Gegner dahinter.
+5	Licht / 6 Treffer / Schlägt nieder, schwach / 2,8 Sekunden\nEinfacher Nahkampfangriff eines Ritters.
+6	Dunkel / 6 Treffer / Schlägt nieder, mittel / 2,8 Sekunden\nMittlerer Nahkampfangriff eines Ritters.
+7	Licht / 2 Treffer / Schlägt zurück, mittel / 1,6 Sekunden\nSpezialangriff, schneidet den Gegner in zwei Teile.
+8	Dunkel / 2 Treffer / Schlägt zurück, stark / 1,6 Sekunden\nSchickt den Gegner in eine andere Dimension.
+9	Licht / 8 Treffer / Schlägt nieder, schwach / 3,6 Sekunden\nUnerbittlicher Nahkampfangriff, der den Gegner überwältigt.
+10	Dunkel / 8 Treffer / Schlägt nieder, mittel / 3,6 Sekunden\nUnerbittlicher Nahkampfangriff, der den Gegner zerschmettert.
+11	
+12	
+13	
+14	Licht / Heilen / Reichweite: 25 Fuß / 2,3 Sekunden\nHeilt ein Gruppenmitglied.
+15	Licht / Heilen / Reichweite: 25 Fuß / 2,3 Sekunden\nHeilt Gruppenmitglieder in der Nähe, aber nicht dich selbst.
+16	Licht / Heilen / Reichweite unbegrenzt / 4,2 Sekunden\nHeilt alle Gruppenmitglieder.
+17	Licht / Reichweite unbegrenzt / 2,8 Sekunden\nGreift alle Gegner mit der Kraft des Wassers an.
+18	Dunkel / Reichweite unbegrenzt / 2,8 Sekunden\nGreift alle Gegner mit der Kraft der Erde an.
+19	Licht / Reichweite unbegrenzt / Schlägt nieder, mittel / 2,4+ Sekunden\nSchädigt das Ziel und die umgebenden Gegner.
+20	Dunkel / Reichweite unbegrenzt / 2,4+ Sekunden\nSchädigt das Ziel und die umgebenden Gegner.
+21	Licht / 6 Treffer (+30 Fuß) / 2,8 Sekunden\nNahkampfangriff; der letzte Schlag erreicht auch Feinde im Hintergrund.
+22	Dunkel / 6 Treffer (+30 Fuß) / 2,8 Sekunden\nNahkampfangriff; der letzte Schlag erreicht auch Feinde im Hintergrund.
+23	Licht / Radius: 15 Fuß / 2,4 Sekunden\nGreift Gegner in der Umgebung mit Magie an.
+24	Dunkel / Radius: 15 Fuß / 2,4 Sekunden\nGreift Gegner in der Umgebung mit Blitz an.
+25	
+26	
+27	
+28	Licht / Foto\nFotos werden langsam entwickelt und können in Läden verkauft werden.
+29	Dunkel / Foto\nFotos werden langsam entwickelt und können in Läden verkauft werden.
+30	Licht / Reichweite: 80 Fuß / 1,8 oder 2,4 Sekunden\n 4 Treffer an Ziel innerhalb von 40 Fuß.
+31	Dunkel / Reichweite: 80 Fuß / 1,8 or 2,4 Sekunden\n4 Treffer an Ziel innerhalb von 40 Fuß.
+32	
+33	
+34	Licht / 6 Treffer / Schlägt zurück, mittel / 3,3 Sekunden\nDurchbohrt den Gegner mit einem spitzen Hammer.
+35	Dunkel / 6 Treffer / Schlägt nieder, mittel / 3,3 Sekunden\nDurchbohrt den Gegner mit einem harten Hammer.
+36	Licht / Reichweite unbegrenzt / 3,3 Sekunden\nEine mächtige Hitze greift das Ziel und die umgebenden Gegner an.
+37	Dunkel / Reichweite: 40 Fuß / 4,7 Sekunden\nAbsorbiert LP vom Ziel und den umgebenden Gegnern.
+38	
+39	
+40	
+41	Licht / Heilen / Reichweite unbegrenzt / 1,7 Sekunden\nHeilt alle Gruppenmitglieder.
+42	Licht / Heilen / Reichweite: 25 Fuß / 1,7 Sekunden\nHeilt ein Gruppenmitglied.
+43	Licht / Heilen / Reichweite: 25 Fuß / 1,7 Sekunden\nHeilt ein Gruppenmitglied.
+44	Licht / Reichweite unbegrenzt / 1,7 Sekunden\nWirft einen Blitz auf das Ziel und die umgebenden Gegner.
+45	Dunkel / Reichweite unbegrenzt / 1,7s Sekunden \nHüllt alle Gegner in Flammen ein.
+46	Licht / 3 Treffer / 3,4 Sekunden\nZieht Aura aus der Umgebung und schießt sie empor.
+47	Dunkel / 3 Treffer / 3,4 Sekunden\nAura wird der Umgebung entzogen und emporgeschossen.
+48	Licht / 1 Treffer / Schlägt zurück, stark / 1,7 Sekunden\n Hieb des Erbarmens.
+49	Dunkel / 2 Treffer (+30 Fuß) / 1,7 Sekunden\nSchlägt in der Nacht zu. Erwischt auch Gegner im Hintergrund.
+50	Licht / 5 Treffer / Reichweite: 15 Fuß / 2,2 Sekunden / ANG steigern\nAngriff im Licht der Verwirrung erhöht die ANG des Gegners um 20.
+51	Dunkel / 1 Treffer / Reichweite: 15 Fuß / 1,0 Sekunden / ANG verringern\nAngriff im Licht der Verwirrung vermindert die ANG des Gegners um 10.
+52	
+53	
+54	
+55	Licht / 7 Treffer / 3,7 Sekunden\nNahkampfangriff mit Abschluss-Schlag.
+56	Dunkel / 7 Treffer / 3,7 Sekunden\nNahkampfangriff mit Abschluss-Schlag.
+57	Licht / Heilen / Reichweite unbegrenzt / 3,5 Sekunden\nHeilt alle Gruppenmitglieder.
+58	Dunkel / Heilen / Reichweite unbegrenzt / 3,2 Sekunden\nHeilt alle Gruppenmitglieder außer dir selbst.
+59	Licht / Reichweite unbegrenzt / Schlägt nieder, mittel / 2,1+ Sekunden\nDurchbohrt den Gegner mit einem heiligen Pfeil.
+60	Dunkel / Reichweite unbegrenzt / Schlägt nieder, stark / 2,1+ Sekunden\nDurchbohrt den Gegner mit einem bösen Pfeil.
+61	Licht / Reichweite unbegrenzt / 3,3 Sekunden\nRegnet Pfeile auf Feinde in der Umgebung.
+62	Dunkel / Reichweite unbegrenzt / 3,5 Sekunden / Statuseffekt\nMarkiert das Ziel und verstärkt die Kraft des nächsten Angriffs.
+63	
+64	
+65	
+66	Licht / 4 Treffer (+15 Fuß) / 3,0 Sekunden\nAbsorbiert Leben vom Gegner und erwischt auch Feinde im Hintergrund..
+67	Dunkel / 3 Treffer / 3,0 Sekunden / Statuswirkung\nAbsorbiert Leben vom Gegner und verstärkt die Kraft des nächsten Angriffs.
+68	Licht / 1 Treffer / Schlägt zurück, mittel / 2,0 Sekunden\n Schädigt den Gegner mit Feuer und Licht.
+69	Dunkel / 1 Treffer / Schlägt zurück, stark / 2,0 Sekunden\nAbsorbiert Kraft aus der Atmosphäre und attackiert.
+70	Licht / 5 Treffer / Schlägt zurück, mittel / 1,8 Sekunden\nSchneller Wirbelangriff.
+71	Dunkel / 5 Treffer / Schlägt zurück, stark / 1,8 Sekunden\nSchneller Wirbelangriff.
+72	Licht / 12 Treffer / Schlägt nieder, schwach / 3,1 Sekunden\nMehrfachangriff, der den Gegner zerdrückt.
+73	Dunkel / 12 Treffer / Schlägt nieder, mittel / 3,1 Sekunden\nMehrfachangriff, der den Gegner zerschneidet.
+74	
+75	
+76	
+77	Licht / 7 Treffer / Schlägt nieder, schwach / 3,6 Sekunden\nDas Feuer dieser Klinge verbrennt alles.
+78	Dunkel / 7 Treffer /Schlägt nieder, mittel / 3,6 Sekunden\nDas Eis dieser Klinge erledigt den Gegner.
+79	Licht / 1 Treffer (+30 Fuß) / 2,0 Sekunden\nDer zweite Treffer schädigt Feinde von hinten.
+80	Dunkel / 1 Treffer (+30 Fuß) 2,0 Sekunden\nDer zweite Treffer schädigt Feinde von hinten.
+81	Licht / Radius: 20 Fuß / 1,7 Sekunden\nGreift Feinde in der Umgebung an.
+82	Dunkel / Radius: 20 Fuß / 1,7 Sekunden\nAusströmende Lava greift Feinde in der Umgebung an.
+83	Licht / 40 Fuß / 1,7 Sekunden\nVerursacht einen Wirbelwind, der den Gegner angreift.
+84	Dunkel / 40 Fuß / 1,7 Sekunden\nVerursacht einen Mahlstrom, der den Gegner attackiert.
+85	
+86	
+87	
+88	Licht / 2 Treffer (+30 Fuß) / 1,6 Sekunden\nGreift das Ziel und alle Gegner dahinter an.
+89	Dunkel / 2 Treffer (+30 Fuß) / 1,6 Sekunden\nGreift das Ziel und alle Gegner dahinter an.
+90	Licht / 9 Treffer / Schlägt zurück, mittel / 3,8 Sekunden\nNahkampfangriff mit mehreren Treffern.
+91	Dunkel / 9 Treffer / Schlägt zurück, stark / 3,8 Sekunden\nNahkampfangriff mit mehreren Treffern.
+92	Licht / 3 Treffer (+15 Fuß) / 2,1 Sekunden\nDer Tritt löst eine horizontale Schockwelle aus.
+93	Dunkel / 3 Treffer (+15 Fuß) / 2,1 Sekunden\nDer Tritt löst eine horizontale Schockwelle aus.
+94	Licht / 1 Treffer / Schlägt nieder, mittel / 1,6 Sekunden\nSprungangriff auf den vordersten Gegner.
+95	Dunkel / 1 Treffer / Schlägt nieder, mittel / 1,6 Sekunden\nSprungangriff auf den vordersten Gegner.
+96	
+97	
+98	
+99	Licht / 2 Treffer (+15 Fuß) / 1,8 Sekunden\nNahkampfangriff auf Ziel und alle Gegner dahinter.
+100	Dunkel / 2 Treffer (+15 Fuß) / 1,8 Sekunden\nNahkampfangriff auf Ziel und alle Gegner dahinter.
+101	Licht / Heilen / 25 Fuß / 2,2 Sekunden\nHeilt Gruppenmitglieder in unmittelbarer Nähe, außer dir selbst.
+102	Dunkel / 1 Treffer / Schlägt zurück, stark / 2,2 Sekunden\nGreift einen Gegner mit Ajatars Kraft an.
+103	Licht / 7 Treffer / Schlägt zurück, mittel / 3,5 Sekunden\nWütender Stichangriff.
+104	Dunkel / 7 Treffer / Schlägt zurück, stark / 3,5 Sekunden\nWütender Stichangriff.
+105	Licht / Reichweite unbegrenzt / 1,9 Sekunden\nJagt das Ziel und umgebende Feinde in die Luft.
+106	Dunkel / Reichweite unbegrenzt / 1,9 Sekunden\nJagt das Ziel und umgebende Feinde in die Luft.
+107	
+108	
+109	
+110	Licht / Reichweite: 10 Fuß / 1 Treffer / 3,3 Sekunden/ Statuseffekt\nBindet den Gegner und macht ihn eine Zeit lang unbeweglich.
+111	Dunkel / Reichweite: 10 Fuß / 1 Treffer / 3,3 Sekunden/ Statuseffekt\nBindet den Gegner und reduziert seine Beweglichkeit.
+112	Licht / 13 Treffer / Schlägt zurück, mittel / 3,7 Sekunden\nMehrfach schneidender Angriff.
+113	Dunkel / 13 Treffer / Schlägt zurück, mittel / 3,7 Sekunden\nMehrfach schneidender Angriff.
+114	Licht / 4 Treffer (+20 Fuß) /2,9 Sekunden\nZerstreut den Schatten des Gegners und Feinde dahinter.
+115	Dunkel / 3 Treffer / 2,9 Sekunden /Statuseffekt\nZerstreut den Schatten des Gegners und erhöht die Kraft des nächsten Angriffs.
+116	Licht / Reichweite: 20 Fuß (+30 Fuß) / 1,9 Sekunden\nZwei Rundklingen werden geworfen. Prallt auch auf Gegner an der Seite ab.
+117	Dunkel / Reichweite: 20 Fuß (+30 Fuß) / 1,9 Sekunden\nZwei Rundklingen werden geworfen. Prallt auch auf Gegner an der Seite ab.
+[ESP]
+0	
+1	
+2	
+3	Luz / Alcance: 7,5 metros (+20 metros) / 2,4 segundos\nTorrente de fuego abrasador que engulle al objetivo y los enemigos que tenga detrás.
+4	Oscuridad / Alcance: 7,5 metros (+20 metros) / 2,4 segundos\nAliento gélido que engulle al objetivo y los enemigos que tenga detrás.
+5	Luz / 6 golpes / Caída suave / 2,8 segundos\nAtaque cuerpo a cuerpo básico realizado por un caballero.
+6	Oscuridad / 6 golpes / Caída normal / 2,8 segundos\nAtaque cuerpo a cuerpo normal realizado por un caballero.
+7	Luz / 2 golpes / Empujón medio / 1,6 segundos\nAtaque especial que parte al enemigo en dos.
+8	Oscuridad / 2 golpes / Empujón fuerte / 1,6 segundos\nEnvía al enemigo a otra dimensión.
+9	Luz / 8 golpes / Caída suave / 3,6 segundos\nAtaque cuerpo a cuerpo sin tregua que apabulla al enemigo.
+10	Oscuridad / 8 golpes / Caída normal / 3,6 segundos\nAtaque cuerpo a cuerpo sin tregua que aplasta al enemigo.
+11	
+12	
+13	
+14	Luz / Curación / Alcance: 7,5 metros / 2,3 segundos\nCura a un miembro del grupo.
+15	Luz / Curación / Alcance: 7,5 metros / 2,3 segundos\nCura a todos los miembros que haya en las inmediaciones aparte de ti.
+16	Luz / Curación / Alcance infinito / 4,2 segundos\nCura a todos los miembros del grupo.
+17	Luz / Alcance infinito / 2,8 segundos\nAtaca a todos los enemigos con el poder del agua.
+18	Oscuridad / Alcance infinito / 2,8 segundos\nAtaca a todos los enemigos con el poder de la tierra.
+19	Luz / Alcance infinito / Caída normal / 2,4+ segundos\nInflige daños al objetivo y los enemigos que lo rodean.
+20	Oscuridad / Alcance infinito / 2,4+ segundos\nInflige daños al objetivo y los enemigos que lo rodean.
+21	Luz / 6 golpes (+9 metros) / 2,8 segundos\nAtaque de combate cuerpo a cuerpo en el que el ataque final alcanza a los enemigos del fondo.
+22	Oscuridad / 6 golpes (+9 metros) / 2,8 segundos\nAtaque de combate cuerpo a cuerpo en el que el ataque final alcanza a los enemigos del fondo.
+23	Luz / Radio: 15 metros / 2,4 segundos\nAtaca a los enemigos a tu alrededor con magia.
+24	Oscuridad / Radio: 15 metros / 2,4 segundos\nAtaca a los enemigos a tu alrededor con rayos.
+25	
+26	
+27	
+28	Luz / Foto\nLas fotos tomadas se revelan poco a poco y pueden venderse en las tiendas.
+29	Oscuridad / Foto\nLas fotos tomadas se revelan poco a poco y pueden venderse en las tiendas.
+30	Luz / Alcance: 24 metros / 1,8 ó 2,4 segundos\n4 golpes por objetivo a menos de 12 metros.
+31	Oscuridad / Alcance: 24 metros / 1,8 ó 2,4 segundos\n4 golpes por objetivo a menos de 12 metros.
+32	
+33	
+34	Luz / 6 golpes / Empujón medio / 3,3 segundos\nAtraviesa al enemigo de un mazazo seco.
+35	Oscuridad / 6 golpes / Caída normal / 3,3 segundos\nAtraviesa al enemigo de un mazazo.
+36	Luz / Alcance infinito / 3,3 segundos\nUn calor agobiante ataca al objetivo y los enemigos que lo rodean.
+37	Oscuridad / Alcance: 40 metros / 4,7 segundos\nAbsorbe PS del objetivo y los enemigos que lo rodean.
+38	
+39	
+40	
+41	Luz / Curación / Alcance infinito / 1,7 segundos\nCura a todos los miembros del grupo.
+42	Luz / Curación / Alcance: 7,5 metros / 1,7 segundos\nCura a un miembro del grupo.
+43	Luz / Curación / Alcance: 7,5 metros / 1,7 segundos\nCura a un miembro del grupo.
+44	Luz / Alcance infinito / 1,7 segundos\nLanza un rayo al objetivo y los enemigos que lo rodean.
+45	Oscuridad / Alcance infinito / 1,7 segundos \nLas llamas engullen a todos los enemigos.
+46	Luz / 3 golpes / 3,4 segundos\nSe acumulan y disparan las auras de los alrededores.
+47	Oscuridad / 3 golpes / 3,4 segundos\nSe acumulan y disparan las auras de los alrededores.
+48	Luz / 1 golpe / Empujón fuerte / 1,7 segundos\nGolpe de piedad.
+49	Oscuridad / 2 golpes (+9 metros) / 1,7 segundos\nAtaque por la noche. También golpea a los enemigos del fondo.
+50	Luz / 5 golpes / Alcance: 4,5 metros / 2,2 segundos / Aumenta ATQ\nAtaca con la luz de la confusión y aumenta el nivel de ATQ del enemigo en 20.
+51	Oscuridad / 1 golpe / Alcance: 4,5 metros / 1,0 segundos / Reduce ATQ\nAtaca con la luz de la ilusión y reduce el nivel de ATQ del enemigo en 10.
+52	
+53	
+54	
+55	Luz / 7 golpes / 3,7 segundos\nAtaque cuerpo a cuerpo con un golpe final.
+56	Oscuridad / 7 golpes / 3,7 segundos\nAtaque cuerpo a cuerpo con un golpe final.
+57	Luz / Curación / Alcance infinito / 3,5 segundos\nCura a todos los miembros del grupo.
+58	Oscuridad / Curación / Alcance infinito / 3,2 segundos\nCura a todos los miembros del grupo menos a ti.
+59	Luz / Alcance infinito / Caída normal / 2,1+ segundos\nAtraviesa al enemigo con una flecha sagrada.
+60	Oscuridad / Alcance infinito / Caída fuerte / 2,1+ segundos\nAtraviesa al enemigo con una flecha funesta.
+61	Luz / Alcance infinito / 3,3 segundos\nDispara flechas a los enemigos de alrededor.
+62	Oscuridad / Alcance infinito / 3,5 segundos / Efecto de estado\nMarca el objetivo y aumenta la potencia del ataque siguiente.
+63	
+64	
+65	
+66	Luz / 4 golpes (+9 metros) / 3,0 segundos\nAbsorbe vida del enemigo y alcanza también a los enemigos del fondo.
+67	Oscuridad / 3 golpes / 3,0 segundos / Efecto de estado\nAbsorbe vida del enemigo y aumenta la potencia del ataque siguiente.
+68	Luz / 1 golpe / Empujón medio / 2,0 segundos\nDaña al enemigo con luz y fuego.
+69	Oscuridad / 1 golpe / Empujón fuerte / 2,0 segundos\nAbsorbe potencia de la atmósfera y ataca.
+70	Luz / 5 golpes / Empujón medio / 1,8 segundos\nAtaque rápido en espiral.
+71	Oscuridad / 5 golpes / Empujón fuerte / 1,8 segundos\nAtaque rápido en espiral.
+72	Luz / 12 golpes / Caída suave / 3,1 segundos\nAtaque de varios golpes que machaca al enemigo.
+73	Oscuridad / 12 golpes / Caída normal / 3,1 segundos\nAtaque de varios golpes que destroza al enemigo.
+74	
+75	
+76	
+77	Luz / 7 golpes / Caída suave / 3,6 segundos\nLas llamas de la hoja lo queman todo.
+78	Oscuridad / 7 golpes / Caída normal / 3,6 segundos\nEl hielo de la hoja aplasta al enemigo.
+79	Luz / 1 golpe (+9 metros) / 2,0 segundos\nEl segundo golpe daña al enemigo desde atrás.
+80	Oscuridad / 1 golpe (+9 pies) 2,0 segundos\nEl segundo golpe daña al enemigo desde atrás.
+81	Luz / Radio: 20 metros / 1,7 segundos\nAtaca a los enemigos de alrededor.
+82	Oscuridad / Radio: 20 metros / 1,7 segundos\nLa lava que surge ataca a los enemigos de alrededor.
+83	Luz / 12 metros / 1,7 segundos\nProvoca un tornado y ataca al enemigo.
+84	Oscuridad / 12 metros / 1,7 segundos\nCrea una vorágine y ataca al enemigo.
+85	
+86	
+87	
+88	Luz / 2 golpes (+9 metros) / 1,6 segundos\nAtaca al objetivo y los enemigos detrás de éste.
+89	Oscuridad / 2 golpes (+9 metros) / 1,6 segundos\nAtaca al objetivo y los enemigos detrás de éste.
+90	Luz / 9 golpes / Empujón medio / 3,8 segundos\nAtaque cuerpo a cuerpo con múltiples golpes.
+91	Oscuridad / 9 golpes / Empujón fuerte / 3,8 segundos\nAtaque cuerpo a cuerpo con múltiples golpes.
+92	Luz / 3 golpes (+9 metros) / 2,1 segundos\nLa patada provoca una onda expansiva horizontal.
+93	Oscuridad / 3 golpes (+9 metros) / 2,1 segundos\nLa patada provoca una onda expansiva horizontal.
+94	Luz / 1 golpe / Caída normal / 1,6 segundos\nEl personaje salta y ataca al enemigo que tenga delante.
+95	Oscuridad / 1 golpe / Caída normal / 1,6 segundos\nEl personaje salta y ataca al enemigo que tenga delante.
+96	
+97	
+98	
+99	Luz / 2 golpes (+9 metros) / 1,8 segundos\nAtaque cuerpo a cuerpo contra el objetivo y los enemigos que tenga detrás.
+100	Oscuridad / 2 golpes (+9 metros) / 1,8 segundos\nAtaque cuerpo a cuerpo contra el objetivo y los enemigos que tenga detrás.
+101	Luz / Curación / 7,5 metros / 2,2 segundos\nCura a los miembros del grupo en las inmediaciones aparte de ti.
+102	Oscuridad / 1 golpe / Empujón fuerte / 2,2 segundos\nAtaca a un enemigo con el poder de Aiatar.
+103	Luz / 7 golpes / Empujón medio / 3,5 segundos\nAtaque feroz y penetrante.
+104	Oscuridad / 7 golpes / Empujón fuerte / 3,5 segundos\nAtaque feroz y penetrante.
+105	Luz / Alcance infinito / 1,9 segundos\nLanza por los aires al objetivo y los enemigos a su alrededor.
+106	Oscuridad / Alcance infinito / 1,9 segundos\nLanza por los aires al objetivo y los enemigos a su alrededor.
+107	
+108	
+109	
+110	Luz / Alcance: 3 metros / 1 golpe / 3,3 segundos/ Efecto de estado\nAmarra al enemigo y lo deja inmóvil durante un rato.
+111	Oscuridad / Alcance: 3 metros / 1 golpe / 3,3 segundos/ Efecto de estado\nAmarra al enemigo y reduce su movilidad.
+112	Luz / 13 golpes / Empujón medio / 3,7 segundos\nAtaque de varios golpes.
+113	Oscuridad / 13 golpes / Empujón medio / 3,7 segundos\nAtaque de varios golpes.
+114	Luz / 4 golpes (+6 metros) / 2,9 segundos\nDispersa la sombra del adversario y los enemigos que tenga detrás.
+115	Oscuridad / 3 golpes / 2,9 segundos / Efecto de estado\nDispersa la sombra del enemigo y aumenta la potencia del siguiente ataque.
+116	Luz / Alcance: 20 metros (+20 metros) / 1,9 segundos\nLanza dos hojas circulares. Alcanza de rebote a los enemigos que haya a los lados.
+117	Oscuridad / Alcance: 20 metros (+20 metros) / 1,9 segundos\nLanza dos hojas circulares. Alcanza de rebote a los enemigos que haya a los lados.

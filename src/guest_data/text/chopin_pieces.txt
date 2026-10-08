@@ -1,0 +1,575 @@
+0x8203DD60
+[JPN]
+0	<g>雨だれ
+1	<g>革命
+2	<g>幻想即興曲
+3	<g>華麗なる大円舞曲
+4	<g>夜想曲
+5	<g>別れの曲
+6	<g>英雄ポロネーズ
+7	
+8	
+9	<g>? ? ? ? ? ?
+10	<l20><m3>「ジョルジュ・サンド」<m2>ショパンを語る上では、必ず登場する女性である。\nジョルジュ・サンドは、パリでは大変有名な作家であり、既に何冊もの本を出版している著名人であった。\n本名は、オーロール・デュパン。ジョルジュ・サンドとは、ペンネームである。
+11	<l20><m3>ショパンは、１８３８年以降、長い間、彼女と生活を共にすることになるのだが、出会った当初は「あれでも女だろうか？」<m2>と友人に洩らしている。\nサンドは、男勝りな女性であり、ズボンを穿き、堂々と葉巻を吸った。ジョルジュ・サンドという筆名も男性名である。
+12	<l20><m3>世間に流されず、自分の感じたままを物怖じしない歯切れよさで表現した彼女の恋愛小説は、大変な人気となる。もちろんショパンも、パリでは、<m2>既に知らぬものはないピアニストであった。\n天才ピアニストと、人気女流作家の交際ということで、そこかしこで取り沙汰され、心無いゴシップが飛んだ。
+13	<l20><m2>当時、ショパンは体調を崩しており、「世間の興味津々の目」が、<m3>病状をよりいっそう悪化させた。\nそんな中、サンドはショパンを連れて、スペインのマヨルカ島に静養に行くことにする。\n人目に触れぬよう、別々にパリを発ち、国境付近の町で落ち合った。
+14	<l20><m3>マヨルカ島での住む場所も見つかり、ヤシ、オレンジ、ざくろが咲き乱れる中でショパンは幸せな生活を送っていた。\nショパンの健康も回復に向かうと思われたが、島はちょうど雨季に入り、温暖だった気候が一変する。\nショパンは風邪をひき、それが引き金となって結核の症状が再発してしまう。
+15	<l20><m3>当時、結核は不治の病であり、感染を恐れた大家は、ショパン一行を追い出してしまう。\n１８３９年、家を追われたショパンは、ヴァルデモザ修道院にたどり着く。\n相変わらず、外は雨が降っている…。
+16	<l20><m3>いつまで続くとも知れない単調な雨音が連なり、気が滅入るような一定のリズムを刻んでいる。\nそんな状況の中、ヴァルデモザ修道院の一室でこの曲が生まれたと云われている。ショパン２９歳の作品。\n静養のための旅行が、皮肉なことに、結果的には健康を悪化させることにつながってしまった。
+17	<l20><m3>しかし、感染をも恐れずに、献身的にショパンの傍らにいたジョルジュ・サンドはショパンにとって、かけがえのない心の支えであったことは間違いがない。
+18	
+19	
+20	<l20><m3>１８３０年１１月２９日ポーランド首都ワルシャワ<m2>に革命が起こる。<m3>\nワルシャワ蜂起である。\nポーランドは当時その大部分がロシアの統治下にあり独立を求める気運が高まっていた。
+21	<l20><m3>革命が起きる約４週間前の１１月２日ショパンは、タッチの差で危険なワルシャワを発ちウィーンへと向かう。\nこの絶妙なタイミングでの出国は、偶然ではない。\n革命が起きることが確実だったからこそ、ショパンを想う仲間達が出国させたとも云われる。\n
+22	<l20><m3>類稀な才能を持つショパンは、もともと、身体が弱かったこともあり、ピアノを武器に、ポーランドのために戦って欲しいと、友人たちは考えたのだ。\n１１月２３日、約２０日かけてウィーンに到着。\nそして、この６日後にワルシャワで革命が起こるのである。
+23	<l20><m3>翌年、１８３１年９月８日、ワルシャワ陥落。１０ヶ月の戦いの末の敗北であった。\n２１歳のショパンは、革命失敗の知らせをシュトゥットガルトで知る。<m2>このときの感情をピアノに叩きつけたのが、この「革命<m3>」である。\n
+24	<l20><m3>革命が失敗に終わったことは、祖国ポーランドを<m2>純粋に愛したショパン<m3>にとって耐え難いことだった。\nしかし、それ以上に、一人安全な異国の地にいた自分に対してやりきれない想いの方が強かったのかもしれない。\nこの後、ショパンが祖国の土を踏むことは、一度もなかった。
+25	
+26	
+27	
+28	
+29	
+30	<l20><m3>嬰ハ短調の美しく流れるような旋律が連なる。\n１８３５年、ショパン２５歳の作品。\nこれほど美しく、まさに幻想的な名曲であるにも関わらず、ショパンは世の中に発表するつもりはなかった。\nそれどころか、友人であるフォンタナに、自分の死後、楽譜を灰にして欲しいと依頼している。
+31	<l20><m3>その<m2>理由は、ベートーベンの「月光」に似ていたためと云われる。<m3>\nショパンもそれを十分承知しており、当時の批評家たちの酷評を恐れ、出版を諦めたのだろう。\n
+32	<l20><m3>しかし、ショパンが亡くなってから６年後、作品番号６６として、発表されることになる。\nつまり、フォンタナが約束を破ったのだ。\nフォンタナは、親友との約束を優先すべきか、目の前にある名曲を独り占めしてよいのか…。\nおそらく、ずいぶん迷ったことだろう。
+33	<l20><m3>いずれにしろ、我々はフォンタナの決断に感謝すべきである。\nもし、彼が楽譜を処分してしまっていたら、後世に生きる我々が幻想の世界に浸ることは、一生できなかったのだから。
+34	<l20><m3>この曲と同じように、埋もれてしまった名曲はたくさんあったに違いない。\n当時の状況を考え合わせると仕方がないことだが…、\nこの幻想即興曲が残ってくれたことは、我々は幸運だったというべきだろう。
+35	
+36	
+37	
+38	
+39	
+40	<l20><m3>１８３１年、ショパン２１歳の作品。\n祖国ポーランドでは、１８３０年に起きたワルシャワ蜂起が依然として続いている。\nこのとき、ショパンはオーストリアの首都ウィーンにいた。
+41	<l20><m3>その後パリへ向けて出発し、途中のシュトゥットガルトでワルシャワ陥落の知らせを受けることになるのは、「革命」のところで既に述べた。\nこの曲は、その前。パリへ出発する前までの間に、ウィーンで作曲されたものと云われる。
+42	<l20><m3>当時のオーストリアは、ポーランドの独立には反対の立場を\nとっていた。\nポーランドを分かつ当事国であったこともあるが、ワルシャワ蜂起が自国に飛び火することを恐れていたのだ。\nしたがって、ポーランド人であるショパンにとって、ウィーンは、とても生きにくい地であった。
+43	<l20><m3>また、当時のウィーンでは、人々が踊るための<m2>ワルツがもてはやされ、<m3>ショパンの曲は、あまり受け入れられなかった。\nこの曲は、そういった中で作曲されたようで、もちろん名曲には違いないが、いささか、ショパンらしくない。
+44	<l20><m3>このような逆風の中で、ポーランド人であるショパンが生き<m2>ていくには、聴衆の喜ぶ曲を作る必要があったのかもしれない。<m3>\nショパンは、晩餐会や舞踏会などに頻繁に出席し、人々が踊れる曲を演奏した。\nその後、自室に戻ったショパンは、ピアノを荒れ狂うように弾いたと云われる。
+45	<l20><m3>本心を押し殺し、心に仮面をかぶって聴衆が喜ぶであろう曲を演奏しなければならない自分に、やり場の無い怒りを感じていたのだろう。\n心踊る曲調とはうらはらに、この曲を演奏しているショパンの心は、それほど愉快ではなかったのかもしれない。
+46	
+47	
+48	
+49	
+50	<l20><m3>１８３０年、ショパン２０歳の作品。\nこの年の１１月にワルシャワ蜂起が巻き起こり、その混乱の寸前に出国することになる。\nこの作品は、おそらくその前、ショパンがまだワルシャワにいた頃に作曲されたものではないかと思う。
+51	<l20><m3>ショパン自身は、<m4>ワルシャワ蜂起の戦火を免れ、オーストリアに逃れた。\nしかし、渦中のワルシャワには、家族や旧友たちが、まだ多数残されている。
+52	<l20><m3>一人のポーランド人として、共に戦いたかったショパンにとって\nどうすることもできない自分に対して、苛立ちに似たものを感じていたことだろう。\nそのような不安を抱えた状態では、こんなにも甘い旋律を書くことはできなかったのではないかと思う。
+53	<l20><m3>この曲からは、ショパンの安定した心、満たされている心のようなものが感じられる。\nその理由は、ショパンが密かに想いを寄せていた女性、コンスタンツヤにあったのではないか。
+54	<l20><m3>コンスタンツヤ・グワトコフスカは、ショパンと同じ音楽学校に在籍し、歌手を目指していた。\nショパンは、彼女に告白することができず、一年近くの間、ずっと片想いの状態だった。\nその二人が急激に接近するのは、ショパンがワルシャワを発つ直前である。
+55	<l20><m3>二人はロッシーニの「湖上の美人」という演目で共演し<m-10>、<m3>大成功をおさめる。\n自分が弾くピアノに乗って、コンスタンツヤの歌声がコンサートホールに響き渡る。\n<m2>それは、ショパンにとって、コンスタンツヤとの一体感と同時に、\nいつまでも続いて欲しい夢の時間だったに違いない。
+56	<l20><m3>ショパンは、ピアノの詩人と呼ばれているが、彼の心の中に目を向けてみると、普通の二十歳の青年と何ら変わりない。\nただ、自分が感じた気持ちを、素直に、ピアノで表現するのが、上手かっただけなのかもしれない。
+57	
+58	
+59	
+60	<l20><m3>ワルシャワ陥落の翌年、１８３２年。ショパンはパリにいた。\n当時のフランスは、ポーランドに友好的で、ポーランド人亡命者をあたたかく迎えてくれたのは、フランスだけだった。\nそのため、パリはポーランド人亡命者で溢れかえっていた。
+61	<l20><m3>一方、ポーランドでは、ロシアによって、革命の指導者や、中心的な役割をした人たちが、欠席のまま裁判で裁かれ、のきなみ死刑が宣告された。\n<m2>革命軍が敗北した今、祖国に戻れないことが決定的となる。<m3>\n哀愁の漂う旋律には、望郷の念と共に、祖国との永遠の別れが込められている。
+62	<l20><m3>しかし、何故、永遠に戻れないのだろう。\nショパンは革命が起きる前にポーランドを発ち、革命が起きている間ずっと外国にいた。\nつまり、革命に参加していないという完璧なアリバイがある。\nそれにも関わらず、この後、ショパンが祖国に戻ることはない。\nこの謎を解く鍵は、ショパンの愛国心にある。
+63	<l20><m3>おそらく、革命軍と同じ気持ちを持っていながら、革命に参加せず、異国の安全な地にいた自分に負い目を感<m4>じていたのだろう<m3>。\nつまり、ショパンは自ら政治亡命者となり、退路を断ったのだ。それによって、自分も革命軍と同じ気持ちを持った同志なのだということを証明したかったのだろう。
+64	<l20><m3>ポーランドを愛したショパンにとって、祖国に帰れなくなることは苦渋の選択だったに違いない。\nしかし、ポーランドを愛しているからこそ、ポーランドへ帰らないことを選択したのだ。
+65	<l20><m3>２２歳のショパンが、自分の心に祖国を焼き付ける手段として、この曲を作曲したのかもしれない。\n「生涯でこれほど美しい旋律を書いたことはない」と、ショパン自身が語ったと云われる。
+66	<l20><m3>その言葉はそのまま…、\nショパンが幼少のころに過ごしたジェラゾヴァ・ヴォーラ村の風景のことを言っているのかもしれない。
+67	
+68	
+69	
+70	<l20><m3>ポロネーズとはポーランドという意味である。つまり、英雄ポロネーズはポーランドの偉大さを表現している。\n１８４２年、ショパン３２歳。ショパンが亡くなる約７年前の作品である。
+71	<l20><m3>この頃、持病の結核がショパンを襲い、たびたび激しい咳に見舞われ、数週間寝込んでしまうこともあった。\nそんな中、祖国を称えるこの偉大な曲は生まれた。\n
+72	<l20><m3>雄大で、勇ましく、そして誇らしい。\n後ろめたさが微塵も無く、晴れがましい。\n結束して立ち向かう同胞たちの勇気。\n何事にも動じない、ポーランド国民の確固たる強い信念。\nショパンの祖国への誇りが、この曲を勇壮なものにしている。\n
+73	<l20><m3>フランス中部、パリから約３００キロメートルほど南下したベリー地方にノアンという村がある。\nその一面に広がる田園風景は、ショパンが幼少の頃にすごしたジェラゾヴァ・ヴォーラに似ていた。\nマヨルカ島から、マルセイユを経て、命辛々フランスに戻ってきたときも、このノアンの空気に助けられた。
+74	<l20><m3>そんなノアン村のはずれに、一軒の館がある。\nジョルジュ・サンドの祖母である、マリー・オーロール・デュパンが購入したもので、\n外観には、あまり飾り気がなく、比較的大きな石造りの館である。\nマヨルカ島から戻って以来、この頃のショパンとサンドは、基本的には、冬はパリ、夏はノアンで過ごしていた。
+75	<l20><m3>ショパンは、館の二階の一室をあてがわれ、ピアノのこと以外は、何も心配することのない、理想的な環境で生活していた。\n既に誰もが知っている有名人であったショパンは、パリでは、社交界のパーティや、演奏会、レッスンなどの仕事で忙しく、創作活動に集中するのは難しかったのだ。\n
+76	<l20><m3>しかし、ここノアンでは、サンドとその家族たちとの満ち足りた生活によって、そういった煩わしい仕事や付き合いから解放され、故郷に似たのどかなノアンの風景と相まって数々の名曲を生み出す原動力となった。
+77	<l20><m3>この「ノアンの力」は、ショパンの忌まわしい病を、一時、振り払い、故郷を思い出させた。\nそして、この傑作が生まれることとなる。\nショパンの祖国への想いが重なっているためか、ピアノ一台だけで演奏されているとは、とても思えない迫力や<m2>、説得力のようなものを感じる。
+78	<l20><m3>まるでポーランド国民全員の見えない力によって、後押しされているようである。\nショパンにとって、祖国ポーランドがいかに誇りであったか、\nこの曲が雄弁に語っている。
+79	
+80	
+[USA]
+0	<g>Raindrops
+1	<g>Revolution
+2	<g>Fantaisie-Impromptu
+3	<g>Grande Valse Brillante
+4	<g>Nocturne
+5	<g>Tristesse
+6	<g>Heroic
+7	
+8	
+9	<g>???
+10	George Sand. It is impossible to tell the story of Chopin's life without the mention of this woman. George Sand was an extremely famous author in Paris who had already published numerous books. Her real name was Aurore Dudevant. George Sand was her pseudonym.
+11	From 1838, Chopin would share his life with her for a long period, but when they first met, he commented to a friend, "Is that really a woman?" Sand was a somewhat masculine woman who wore pants and smoked cigars in public. Even her pseudonym, "George Sand," was masculine.
+12	She was unswayed by society's mores and expressed herself unabashedly. The romance novels she wrote were extremely popular. Of course, Chopin himself was also famous as a pianist in Paris by this time. The relationship between the genius pianist and the popular author must surely have been the talk of the town.
+13	At the time, Chopin was not in the best of health, and perhaps the attention paid to them by society aggravated his condition. During this time, Sand took Chopin to the Spanish island of Mallorca to allow him to rest. To avoid attention, they left Paris separately and rendezvoused at a village near the border.
+14	They found a place to live on Mallorca, and Chopin lived a happy life amongst the palm trees, orange trees, and pomegranates. Chopin's health appeared to be improving, but the island entered its rainy season and the warm weather vanished. Chopin caught a cold that eventually lead to a relapse of his tuberculosis symptoms.
+15	At the time, tuberculosis was a terminal illness, and Chopin and Sand's landlord evicted them, fearing contagion. After being forced from their home in December of 1838, Chopin and Sand arrived at the Valldemossa monastery. And rain continued to fall outside...
+16	The sound of falling rain continued incessantly, the simple sound of raindrops blended together to form a dreary rhythm. It was under these circumstances that this song is said to have been born in a room in Valldemossa. A work created by Chopin at age twenty-nine. The journey to find rest ironically resulted in the worsening of Chopin's health.
+17	But George Sand devotedly stayed by Chopin's side, never fearing infection. There is little doubt that she was an invaluable source of comfort for Chopin.
+18	
+19	
+20	On November 29th, 1830, an insurrection occurred in Warsaw, the capital of Poland. It was the November Uprising. At the time, most of Poland was Russian territory, and the desire for independence had been growing.
+21	About four weeks before the insurgence, on November 2nd, Chopin left the increasingly dangerous Warsaw and headed for Vienna. It is said that Chopin's friends encouraged him to leave the country, because they knew rebellion was certain. But Chopin was unaware of this, and his trip had been planned many months in advance.
+22	Chopin was unusually talented, as well as physically weak, so his friends wanted him to use the piano as a weapon to fight for Poland. On November 23rd, approximately twenty days later, Chopin arrived in Vienna. And six days after that, the insurrection in Warsaw started. It went on for almost a year. Then, on September 8th, 1831, Warsaw fell. Ten months of fighting had ended in defeat.
+23	Chopin, then age twenty-one, learned of the insurrection's failure while in Stuttgart, Germany. The feelings with which he played the piano at this time took the form of this composition, "The Revolutionary <#201>tude."
+24	To Chopin, who genuinely loved his homeland of Poland, the insurrection's failure was difficult to bear. But perhaps he found it even more difficult to bear the fact that he was safe in a foreign country. Chopin would never set foot in his native land again.
+25	
+26	
+27	
+28	
+29	
+30	This is a beautifully flowing melody in C-sharp minor composed around 1835. Despite its beauty and fantasy--true to its name--Chopin did not intend to release this piece to the public. In fact, it's possible that he had asked his friend, Julian Fontana, to burn the score after his death.
+31	It is said that the reason for this was that it resembled Beethoven's Moonlight Sonata. Chopin might have been aware of that fact and refrained from publishing the piece to avoid such criticism. 
+32	But six years after Chopin's death, it was published by Julian Fontana as opus 66. This must have been a difficult decision for Fontana to make. He probably spent a great deal of time worrying if it was best to respect the wishes of his friend, or if it was right for him to keep this masterpiece from the rest of the world.
+33	In any case, we should be grateful for Fontana's decision. If he had not published that score, we who live in the present day would never have been able to immerse ourselves in this wonderful world of fantasy.
+34	There might have been other compositions that were threatened with destruction just like this one. Though Chopin's request might have seemed reasonable at the time, we should consider ourselves fortunate that pieces like Fantaisie-Impromptu were spared.
+35	
+36	
+37	
+38	
+39	
+40	This is a work composed in 1831, when Chopin was twenty-one years old. In Chopin's homeland of Poland, the insurrection that started in Warsaw in 1830, had ended in defeat.
+41	At this time, Chopin was in Paris, and a strong supporter of Poland. In our discussion of "The Revolutionary <#201>tude," we learned that Chopin received the news of the fall of Warsaw, while en route to Vienna, in Stuttgart, Germany. This song was composed after Chopin had left Vienna to live in Paris.
+42	At the time, Austria was opposed to Polish independence. It was partly because Austria was one of the nations that had divided up Poland, but also because they feared the uprising would spread to Austria. Because of this, living in Vienna had been difficult for the Polish Chopin.
+43	In Vienna, waltzes designed for dancing were in fashion. This piece, while unquestionably a masterpiece, is something of a contrast to Chopin's other works. It seems to reflect the atmosphere in Vienna at that time. Though it was probably not meant to be danced to.
+44	In order for the Polish Chopin to live in the adverse winds of that time, he may have made an effort to be popular. Chopin appeared at salons and dinner parties, performing music for small audiences. It is said that after these performances, Chopin returned to his room and played his piano furiously.
+45	He must have felt a frustrating anger towards himself; forced to suppress his true feelings, put on a mask, and perform music to please people. In contrast to the cheerful style of this piece, Chopin's heart was most likely not nearly as high-spirited.
+46	
+47	
+48	
+49	
+50	This is a work that was composed around 1830, when Chopin was twenty years old. In November of this year, the November Uprising took place in Warsaw, and Chopin left the country just before the chaos. This piece might have been one Chopin composed prior to that, while he was still in Warsaw.
+51	Chopin himself escaped the fires of the November Uprising because he was in Austria. But many of his family members and friends remained in the chaos of Warsaw. 
+52	As a Pol, Chopin had wanted to fight together with them, and was frustrated at his inability to do so. It is hard to imagine that Chopin could have written so sweet a melody while experiencing such emotions.
+53	From this composition we feel something that conjures an image of Chopin's heart, peaceful and fulfilled. Perhaps the reason for that lay with Konstancja Gladkowska, a woman for whom Chopin had a secret affection.
+54	Konstancja attended the same music school as Chopin and was training to become a singer. Chopin was unable to confess his love for her, and spent nearly a year feeling this unrequited love. The two of them suddenly grew close just before Chopin left Warsaw.
+55	They performed a piece together from Rossini's musical, "La Donna del Lago," to great success. Konstancja's voice blended with Chopin's piano and reverberated through the concert hall. It must have given Chopin a feeling of connection to Konstancja, as well as a dream-like experience, that he never wanted to end.
+56	Chopin is called "The Poet of the Piano." But if we look inside his heart, he was just a normal twenty-year-old young man. Perhaps Chopin was simply more skilled at expressing his true feelings through the piano.
+57	
+58	
+59	
+60	In 1832, the year after the fall of Warsaw, Chopin was in Paris. At the time, France was friendly toward Poland, and was the only country that openly welcomed exiles from Poland. For that reason, Paris was filled with Polish refugees.
+61	Meanwhile, back in Poland, the leaders and central figures of the insurrection were judged in court without being present and sentenced to death. With the rebel forces defeated, it was now certain that Chopin could not return to his mother country. This melancholy melody portrays both his homesickness and an eternal farewell to his homeland. 
+62	But why could he never return? Chopin left Poland before the insurrection and was outside the country the entire time it took place. In other words, he had a perfect alibi proving that he had not been involved. In spite of that, Chopin never returned to Poland. The key to this mystery lies in Chopin's patriotism.
+63	It is likely that he had felt the same feelings as the rebels, even though he had not been able to participate in the fighting. He probably felt guilty about having been living safely in foreign countries. Chopin became a political refugee of his own choosing and burned his bridges behind him.
+64	In so doing, he probably wanted to demonstrate that he was a comrade to the rebels and shared their feelings. To Chopin, who loved Poland, the decision not to return to his home must have been a painful one. But it was because he loved Poland that he chose not to return to it. 
+65	The twenty-two-year-old Chopin may have composed this song as a way to burn his homeland into his heart. It is rumored that Chopin himself said, "In my entire life, I have never written another melody as beautiful."
+66	Perhaps these words speak of the view from the village of Zelazowa Wola, the place where he was born.
+67	
+68	
+69	
+70	The word polonaise means "Polish." In other words, the hero Polonaise represents the greatness of Poland. Chopin composed this piece in 1842 at the age of thirty-two, seven years before his death.
+71	During this period, Chopin's tuberculosis flared up and he was sometimes overcome by fierce coughing and forced into bed for weeks at a time. It was amidst these difficulties that this great composition in praise of his homeland was born.
+72	Majestic, strong, and proud. Unabashedly bold. The courage of his comrades who had bound together. The unwavering faith of the Polish people. The pride Chopin felt for the country of his birth could be expressed in no grander or more heroic music than this.
+73	In central France, about two hundred miles south of Paris, in the province of Berry, lies a village called Nohant. The pastoral landscape that spreads across the land there resembled the village of Zelazowa Wola, where Chopin had been born. 
+74	When he left Mallorca and returned to France through Marseille, he was in very poor health. The atmosphere in Nohant gave him strength. On the outskirts of Nohant there lay a mansion. It was a relatively large stone building with a sparse outward appearance, that was purchased by Marie-Aurore Dupin, George Sand's grandmother. 
+75	Chopin and Sand spent the summer in that mansion in Nohant. Chopin was given a room on the second floor where he lived an idyllic life; never needing to worry about anything but his piano playing. By this time he had become a celebrity known to all, and in Paris was kept busy with social parties, performances, and lessons.
+76	It was difficult for him to focus on composing while in Paris. But he lived a contented life away from all that in Nohant with Sand and her family. The power of Nohant temporarily staved off Chopin's terrible illness and revived the memories of his homeland. 
+77	And in that pleasant environment, he composed many famous pieces. It was there that this masterpiece was born. Perhaps it is a cumulation of the feelings that Chopin had for his homeland, but one can feel a kind of power and persuasiveness in this piece that is hard to imagine originating from a performance on a single piano.
+78	It's almost as if one can feel the invisible power of the entire nation of Poland behind it. If one ever wondered just how proud Chopin was of his home country, this piece answers that question eloquently.
+79	
+80	
+[GBR]
+0	<g>Raindrops
+1	<g>Revolution
+2	<g>Fantaisie-Impromptu
+3	<g>Grande Valse Brillante
+4	<g>Nocturne
+5	<g>Tristesse
+6	<g>Heroic
+7	
+8	
+9	<g>???
+10	George Sand. It is impossible to tell the story of Chopin's life without the mention of this woman. George Sand was an extremely famous author in Paris who had already published numerous books. Her real name was Aurore Dudevant. George Sand was her pseudonym.
+11	From 1838, Chopin would share his life with her for a long period, but when they first met, he commented to a friend, "Is that really a woman?" Sand was a somewhat masculine woman who wore pants and smoked cigars in public. Even her pseudonym, "George Sand," was masculine.
+12	She was unswayed by society's mores and expressed herself unabashedly. The romance novels she wrote were extremely popular. Of course, Chopin himself was also famous as a pianist in Paris by this time. The relationship between the genius pianist and the popular author must surely have been the talk of the town.
+13	At the time, Chopin was not in the best of health, and perhaps the attention paid to them by society aggravated his condition. During this time, Sand took Chopin to the Spanish island of Mallorca to allow him to rest. To avoid attention, they left Paris separately and rendezvoused at a village near the border.
+14	They found a place to live on Mallorca, and Chopin lived a happy life amongst the palm trees, orange trees, and pomegranates. Chopin's health appeared to be improving, but the island entered its rainy season and the warm weather vanished. Chopin caught a cold that eventually lead to a relapse of his tuberculosis symptoms.
+15	At the time, tuberculosis was a terminal illness, and Chopin and Sand's landlord evicted them, fearing contagion. After being forced from their home in December of 1838, Chopin and Sand arrived at the Valldemossa monastery. And rain continued to fall outside...
+16	The sound of falling rain continued incessantly, the simple sound of raindrops blended together to form a dreary rhythm. It was under these circumstances that this song is said to have been born in a room in Valldemossa. A work created by Chopin at age twenty-nine. The journey to find rest ironically resulted in the worsening of Chopin's health.
+17	But George Sand devotedly stayed by Chopin's side, never fearing infection. There is little doubt that she was an invaluable source of comfort for Chopin.
+18	
+19	
+20	On November 29th, 1830, an insurrection occurred in Warsaw, the capital of Poland. It was the November Uprising. At the time, most of Poland was Russian territory, and the desire for independence had been growing.
+21	About four weeks before the insurgence, on November 2nd, Chopin left the increasingly dangerous Warsaw and headed for Vienna. It is said that Chopin's friends encouraged him to leave the country, because they knew rebellion was certain. But Chopin was unaware of this, and his trip had been planned many months in advance.
+22	Chopin was unusually talented, as well as physically weak, so his friends wanted him to use the piano as a weapon to fight for Poland. On November 23rd, approximately twenty days later, Chopin arrived in Vienna. And six days after that, the insurrection in Warsaw started. It went on for almost a year. Then, on September 8th, 1831, Warsaw fell. Ten months of fighting had ended in defeat.
+23	Chopin, then age twenty-one, learned of the insurrection's failure while in Stuttgart, Germany. The feelings with which he played the piano at this time took the form of this composition, "The Revolutionary <#201>tude."
+24	To Chopin, who genuinely loved his homeland of Poland, the insurrection's failure was difficult to bear. But perhaps he found it even more difficult to bear the fact that he was safe in a foreign country. Chopin would never set foot in his native land again.
+25	
+26	
+27	
+28	
+29	
+30	This is a beautifully flowing melody in C-sharp minor composed around 1835. Despite its beauty and fantasy--true to its name--Chopin did not intend to release this piece to the public. In fact, it's possible that he had asked his friend, Julian Fontana, to burn the score after his death.
+31	It is said that the reason for this was that it resembled Beethoven's Moonlight Sonata. Chopin might have been aware of that fact and refrained from publishing the piece to avoid such criticism. 
+32	But six years after Chopin's death, it was published by Julian Fontana as opus 66. This must have been a difficult decision for Fontana to make. He probably spent a great deal of time worrying if it was best to respect the wishes of his friend, or if it was right for him to keep this masterpiece from the rest of the world.
+33	In any case, we should be grateful for Fontana's decision. If he had not published that score, we who live in the present day would never have been able to immerse ourselves in this wonderful world of fantasy.
+34	There might have been other compositions that were threatened with destruction just like this one. Though Chopin's request might have seemed reasonable at the time, we should consider ourselves fortunate that pieces like Fantaisie-Impromptu were spared.
+35	
+36	
+37	
+38	
+39	
+40	This is a work composed in 1831, when Chopin was twenty-one years old. In Chopin's homeland of Poland, the insurrection that started in Warsaw in 1830, had ended in defeat.
+41	At this time, Chopin was in Paris, and a strong supporter of Poland. In our discussion of "The Revolutionary <#201>tude," we learned that Chopin received the news of the fall of Warsaw, while en route to Vienna, in Stuttgart, Germany. This song was composed after Chopin had left Vienna to live in Paris.
+42	At the time, Austria was opposed to Polish independence. It was partly because Austria was one of the nations that had divided up Poland, but also because they feared the uprising would spread to Austria. Because of this, living in Vienna had been difficult for the Polish Chopin.
+43	In Vienna, waltzes designed for dancing were in fashion. This piece, while unquestionably a masterpiece, is something of a contrast to Chopin's other works. It seems to reflect the atmosphere in Vienna at that time. Though it was probably not meant to be danced to.
+44	In order for the Polish Chopin to live in the adverse winds of that time, he may have made an effort to be popular. Chopin appeared at salons and dinner parties, performing music for small audiences. It is said that after these performances, Chopin returned to his room and played his piano furiously.
+45	He must have felt a frustrating anger towards himself; forced to suppress his true feelings, put on a mask, and perform music to please people. In contrast to the cheerful style of this piece, Chopin's heart was most likely not nearly as high-spirited.
+46	
+47	
+48	
+49	
+50	This is a work that was composed around 1830, when Chopin was twenty years old. In November of this year, the November Uprising took place in Warsaw, and Chopin left the country just before the chaos. This piece might have been one Chopin composed prior to that, while he was still in Warsaw.
+51	Chopin himself escaped the fires of the November Uprising because he was in Austria. But many of his family members and friends remained in the chaos of Warsaw. 
+52	As a Pol, Chopin had wanted to fight together with them, and was frustrated at his inability to do so. It is hard to imagine that Chopin could have written so sweet a melody while experiencing such emotions.
+53	From this composition we feel something that conjures an image of Chopin's heart, peaceful and fulfilled. Perhaps the reason for that lay with Konstancja Gladkowska, a woman for whom Chopin had a secret affection.
+54	Konstancja attended the same music school as Chopin and was training to become a singer. Chopin was unable to confess his love for her, and spent nearly a year feeling this unrequited love. The two of them suddenly grew close just before Chopin left Warsaw.
+55	They performed a piece together from Rossini's musical, "La Donna del Lago," to great success. Konstancja's voice blended with Chopin's piano and reverberated through the concert hall. It must have given Chopin a feeling of connection to Konstancja, as well as a dream-like experience, that he never wanted to end.
+56	Chopin is called "The Poet of the Piano." But if we look inside his heart, he was just a normal twenty-year-old young man. Perhaps Chopin was simply more skilled at expressing his true feelings through the piano.
+57	
+58	
+59	
+60	In 1832, the year after the fall of Warsaw, Chopin was in Paris. At the time, France was friendly toward Poland, and was the only country that openly welcomed exiles from Poland. For that reason, Paris was filled with Polish refugees.
+61	Meanwhile, back in Poland, the leaders and central figures of the insurrection were judged in court without being present and sentenced to death. With the rebel forces defeated, it was now certain that Chopin could not return to his mother country. This melancholy melody portrays both his homesickness and an eternal farewell to his homeland. 
+62	But why could he never return? Chopin left Poland before the insurrection and was outside the country the entire time it took place. In other words, he had a perfect alibi proving that he had not been involved. In spite of that, Chopin never returned to Poland. The key to this mystery lies in Chopin's patriotism.
+63	It is likely that he had felt the same feelings as the rebels, even though he had not been able to participate in the fighting. He probably felt guilty about having been living safely in foreign countries. Chopin became a political refugee of his own choosing and burned his bridges behind him.
+64	In so doing, he probably wanted to demonstrate that he was a comrade to the rebels and shared their feelings. To Chopin, who loved Poland, the decision not to return to his home must have been a painful one. But it was because he loved Poland that he chose not to return to it. 
+65	The twenty-two-year-old Chopin may have composed this song as a way to burn his homeland into his heart. It is rumored that Chopin himself said, "In my entire life, I have never written another melody as beautiful."
+66	Perhaps these words speak of the view from the village of Zelazowa Wola, the place where he was born.
+67	
+68	
+69	
+70	The word polonaise means "Polish." In other words, the hero Polonaise represents the greatness of Poland. Chopin composed this piece in 1842 at the age of thirty-two, seven years before his death.
+71	During this period, Chopin's tuberculosis flared up and he was sometimes overcome by fierce coughing and forced into bed for weeks at a time. It was amidst these difficulties that this great composition in praise of his homeland was born.
+72	Majestic, strong, and proud. Unabashedly bold. The courage of his comrades who had bound together. The unwavering faith of the Polish people. The pride Chopin felt for the country of his birth could be expressed in no grander or more heroic music than this.
+73	In central France, about two hundred miles south of Paris, in the province of Berry, lies a village called Nohant. The pastoral landscape that spreads across the land there resembled the village of Zelazowa Wola, where Chopin had been born. 
+74	When he left Mallorca and returned to France through Marseille, he was in very poor health. The atmosphere in Nohant gave him strength. On the outskirts of Nohant there lay a mansion. It was a relatively large stone building with a sparse outward appearance, that was purchased by Marie-Aurore Dupin, George Sand's grandmother. 
+75	Chopin and Sand spent the summer in that mansion in Nohant. Chopin was given a room on the second floor where he lived an idyllic life; never needing to worry about anything but his piano playing. By this time he had become a celebrity known to all, and in Paris was kept busy with social parties, performances, and lessons.
+76	It was difficult for him to focus on composing while in Paris. But he lived a contented life away from all that in Nohant with Sand and her family. The power of Nohant temporarily staved off Chopin's terrible illness and revived the memories of his homeland. 
+77	And in that pleasant environment, he composed many famous pieces. It was there that this masterpiece was born. Perhaps it is a cumulation of the feelings that Chopin had for his homeland, but one can feel a kind of power and persuasiveness in this piece that is hard to imagine originating from a performance on a single piano.
+78	It's almost as if one can feel the invisible power of the entire nation of Poland behind it. If one ever wondered just how proud Chopin was of his home country, this piece answers that question eloquently.
+79	
+80	
+[FRA]
+0	<g>Gouttes de pluie
+1	<g>Révolution
+2	<g>Fantaisie-Impromptu
+3	<g>Grande valse brillante
+4	<g>Nocturne
+5	<g>Tristesse
+6	<g>Héroïque
+7	
+8	
+9	<g>???
+10	George Sand. Il est impossible de raconter la vie de Chopin sans évoquer cette femme. George Sand était un écrivain parisien célèbre qui avait déjà publié de nombreux livres. Son vrai nom était Aurore Dupin. George Sand n'était qu'un pseudonyme.
+11	À partir de 1838, Chopin partagea sa vie pendant longtemps, mais... lors de leur première rencontre, il dit à un ami : "C'est vraiment une femme ?" Sand se donnait une apparence masculine : elle portait des pantalons et fumait le cigare en public. Même son pseudonyme, George Sand, était masculin.
+12	Elle rejetait les pressions de la bonne société et s'exprimait sans retenue. Les romans d'amour qu'elle écrivait étaient très appréciés. De son côté, Chopin était déjà un pianiste célèbre à Paris. La liaison entre le pianiste de génie et l'écrivain célèbre devint la discussion à la mode, ce qui fit naître des rumeurs déplaisantes.
+13	Chopin était déjà malade à l'époque, et l'attention que lui portait la société n'arrangea pas son état de santé. À cette époque, Sand emmena Chopin sur l'île de Majorque afin de lui permettre de se reposer. Afin d'éviter l'attention, ils quittèrent Paris séparément et se retrouvèrent dans un village proche de la frontière espagnole.
+14	Ils trouvèrent un logement à Majorque et Chopin vécut heureux parmi les palmiers, les orangers et les grenadiers. La santé de Chopin semblait s'améliorer, mais le temps chaud laissa la place à la saison des pluies. Chopin s'enrhuma, ce qui réveilla les symptômes de la tuberculose.
+15	À l'époque, la tuberculose était une maladie mortelle et leur propriétaire, craignant la contagion, les chassa. Après avoir été chassé de sa maison en 1839, Chopin arriva au monastère de Valdemosa. La pluie continuait à tomber dehors...
+16	La pluie tombait sans cesse et le bruit des gouttes se mêlait pour former un rythme lancinant. On dit que ce bruit présida à la création de cette œuvre, dans une cellule de Valdemosa. Une œuvre créée par Chopin à l'âge de vingt-neuf ans. Le voyage destiné à lui permettre de se remettre aboutit - ironiquement - à l'aggravation de l'état de santé de Chopin.
+17	Mais George Sand resta à ses côtés, indifférente au risque d'infection. Elle fut sans aucun doute une grande source de réconfort pour Chopin.
+18	
+19	
+20	29 novembre 1830\nUne révolution a éclaté à Varsovie, capitale de la Pologne. On l'a appelée l'Insurrection de Novembre. À l'époque, la plus grande partie de la Pologne était territoire russe et le désir d'indépendance ne cessait de croître.
+21	Le 2 novembre, quatre semaines avant le début de l'insurrection, Chopin quitta la dangereuse Varsovie pour Vienne. Le moment de son départ n'était pas une coïncidence. On dit que des amis de Chopin, au courant du déclenchement de la révolution, le poussèrent à quitter le pays.
+22	Chopin était aussi talentueux que fragile et ses amis voulaient qu'il se serve du piano comme d'une arme au service de la Pologne. Le 23 novembre, une vingtaine de jours plus tard, Chopin arriva à Vienne. Six jours après, la révolution éclatait à Varsovie. L'année suivante, le 8 septembre 1831, Varsovie tombait. Dix mois de lutte s'achevaient par la défaite.
+23	Chopin, alors âgé de vingt-et-un ans, apprit l'échec de la révolution à Stuttgart. Les sentiments qui l'animaient alors prirent la forme, au piano, de cette composition appelée "Étude révolutionnaire".
+24	Pour Chopin, qui adorait la Pologne, son pays natal, l'échec de la révolution était difficile à accepter. Mais peut-être trouva-t-il encore plus difficile à supporter le fait d'être le seul en sécurité à l'étranger... Chopin ne retourna jamais dans son pays natal.
+25	
+26	
+27	
+28	
+29	
+30	Il s'agit d'une mélodie très fluide en do dièse mineur composée en 1835, à l'âge de vingt-cinq ans. Malgré sa beauté et sa fantaisie - digne de son nom -, Chopin ne comptait pas rendre publique cette œuvre. En fait, il demanda à son ami Julian Fontana de brûler la partition après sa mort.
+31	On dit qu'il fit cette demande parce que ce morceau ressemblait à la sonate au Clair de lune de Beethoven. Chopin en était conscient et refusa de la publier par crainte des critiques.
+32	Cependant, six ans après la mort de Chopin, elle fut publiée en tant qu'opus 66. En d'autres termes, M. Fontana ne respecta pas sa promesse. M. Fontana se demanda probablement très longtemps s'il valait mieux tenir la promesse qu'il avait faite à son ami ou s'il était juste d'être le seul à connaître ce chef-d'œuvre.
+33	Dans tous les cas, nous devons être reconnaissants à M. Fontana de sa décision. S'il avait détruit cette partition... nous, qui vivons aujourd'hui, n'aurions jamais pu nous immerger dans cet univers fantastique.
+34	De nombreuses autres compositions ont probablement disparu. Si le phénomène est compréhensible compte tenu de la situation de l'époque, nous devons nous estimer heureux de profiter de cette Fantaisie-Impromptu. 
+35	
+36	
+37	
+38	
+39	
+40	Cette œuvre a été composée en 1831, à l'âge de vingt-et-un ans. En Pologne, patrie de Chopin, la révolution entamée en 1830 se poursuivait à Varsovie.
+41	À l'époque, Chopin était à Vienne, capitale de l'Autriche. Plus tard, il partit pour Paris... Dans notre évocation de l'Étude révolutionnaire, nous avons indiqué que Chopin avait appris la chute de Varsovie alors qu'il était en route pour Stuttgart. Ce morceau a été composé auparavant, alors qu'il n'avait pas encore quitté Vienne pour Paris..
+42	À l'époque, l'Autriche s'opposait à l'indépendance de la Pologne. La raison en était que l'Autriche était l'un des pays qui se partageaient la Pologne, mais aussi qu'elle craignait que le soulèvement s'étende à son territoire. Pour toutes ces raisons, il était difficile pour Chopin de vivre à Vienne.
+43	Dans la Vienne de l'époque, les valses écrites pour la danse étaient très en vogue et la musique de Chopin n'était qu'assez mal perçue. Ce morceau a été composé dans ce cadre, et s'il est incontestablement un chef-d'œuvre, il est peu représentatif de Chopin.
+44	Pour le Polonais qu'était Chopin, survivre face à une telle adversité supposait d'écrire une musique plaisant aux masses. Chopin était souvent présent dans les dîners et les bals, où il jouait de la musique de danse. On dit qu'après ce genre de représentations, Chopin jouait du piano avec furie en rentrant chez lui. 
+45	Il devait ressentir une intense frustration, contraint qu'il était de réprimer sa nature réelle, de porter un masque et de jouer une musique plaisant aux plus nombreux. Contrairement au style léger de cette œuvre, le cœur de Chopin devait être lourd lorsqu'il l'interprétait.
+46	
+47	
+48	
+49	
+50	Chopin a composé cette œuvre en 1830, à l'âge de vingt ans. C'est l'année où éclata l'Insurrection de Novembre à Varsovie. Chopin avait quitté le pays juste avant le chaos. Ce morceau a probablement été composé alors qu'il était encore à Varsovie.
+51	Chopin échappa aux événements de l'Insurrection de Novembre en se réfugiant en Autriche. Mais, parmi sa famille et ses amis, nombreux furent ceux qui connurent les troubles à Varsovie.
+52	En tant que Polonais, Chopin aurait aimé lutter à leurs côtés et était probablement frustré de ne pouvoir le faire. Il semble peu probable qu'il ait pu écrire une mélodie aussi douce en étant animé par de telles émotions.
+53	Cette composition nous permet de percevoir une image du cœur paisible et comblé de Chopin. Peut-être Konstancja, une femme que Chopin aimait en secret, en est-elle à l'origine...
+54	Konstancja Gladkowska fréquentait la même école de musique que Chopin ; elle désirait devenir chanteuse. Chopin, incapable de lui avouer ses sentiments, vécut près d'un an cet amour sans retour. Ils devinrent soudain plus proches juste avant le départ de Chopin de Varsovie.
+55	Ils interprétèrent ensemble l'opéra de Rossini intitulé "La Donna del Lago", avec un grand succès. La voix de Konstancja se mêlait au piano de Chopin et emplissait la salle. Cela procurait à Chopin un sentiment de communion avec Konstancja. Ce fut une période de rêve qu'il espérait ne jamais voir s'achever.
+56	On qualifie Chopin de "poète du piano", mais, du point de vue des sentiments, il était un banal jeune homme de vingt ans. Peut-être était-il simplement doué pour exprimer ses sentiments à travers le piano.
+57	
+58	
+59	
+60	En 1832, l'année suivant la chute de Varsovie, Chopin était à Paris. À l'époque, la France était favorable à la Pologne et était le seul pays à accueillir ouvertement les réfugiés polonais. C'est la raison pour laquelle Paris était rempli de réfugiés polonais.
+61	Pendant ce temps, en Pologne, les meneurs de la révolution et les personnages importants étaient jugés en leur absence et condamnés à mort. La défaite des forces révolutionnaires signifiait l'impossibilité, pour Chopin, de rentrer dans son pays. La mélancolie de cette mélodie témoigne de son mal du pays, mais constitue aussi un adieu à sa patrie.
+62	Pourquoi Chopin n'a-t-il jamais pu rentrer chez lui ? Chopin avait quitté la Pologne avant la révolution et en était absent pendant toute la durée des événements. Il disposait par conséquent d'un alibi parfait quant à son absence d'implication. Malgré cela, Chopin n'est jamais retourné en Pologne. La clé de ce mystère est le patriotisme de Chopin.
+63	Il est probable qu'il ait partagé les sentiments des révolutionnaires sans avoir pu prendre part à l'insurrection... Il s'est probablement senti coupable de résider en sûreté à l'étranger. Chopin décida de son plein gré de devenir réfugié politique et de couper les ponts.
+64	Ce faisant, il souhaitait probablement prouver sa solidarité, montrer qu'il partageait les idées des révolutionnaires. Pour Chopin, qui adorait la Pologne, la décision de ne pas rentrer a dû être pénible. Mais c'est parce qu'il aimait la Pologne qu'il a décidé de ne pas y retourner.
+65	C'est probablement afin de graver à jamais la Pologne dans son cœur que Chopin a composé cette œuvre à vingt-deux ans. Chopin aurait déclaré à son sujet : "De toute ma vie, je n'ai jamais composé d'autre mélodie aussi belle."
+66	Peut-être y évoque-t-il le village de Zelazowa Wola où il a passé son enfance.
+67	
+68	
+69	
+70	Cette Polonaise exprime la grandeur de la Pologne. Chopin a composé cette œuvre en 1842, à l'âge de trente-deux ans, sept ans avant sa mort.
+71	Durant cette période, la tuberculose de Chopin était en pleine recrudescence. Il était parfois accablé de toux violentes et contraint de s'aliter pendant plusieurs semaines. C'est à cette époque qu'a été créée cette grande composition en l'honneur de son pays.
+72	Majestueuse, forte et fière. Pleine d'une audace sans retenue. Louant le courage de ses camarades qui se sont ligués, unis par une foi inébranlable dans le peuple polonais. Je ne connais aucune œuvre plus grande ou plus héroïque.
+73	Dans le Berry, à environ trois cents kilomètres de Paris, se trouve un village du nom de Nohant. Le paysage champêtre qui l'entoure ressemble à celui de Zelazowa Wola, où Chopin a passé son enfance.
+74	Après avoir quitté Majorque pour regagner la France via Marseille, presque mourant, Chopin a repris des forces à Nohant. En bordure de Nohant se trouve un manoir. Il avait été acheté par Marie-Aurore Dupin, grand-mère de George Sand.
+75	À leur retour de Majorque, Chopin et Sand prirent l'habitude de passer l'hiver à Paris et l'été à Nohant. Chopin se vit attribuer une pièce à l'étage du manoir, où il mena une vie dépourvue de souci matériel et entièrement consacrée au piano.
+76	Il lui était devenu difficile de composer à Paris, tandis qu'à Nohant, il pouvait mener une existence tranquille avec George Sand et sa famille. L'atmosphère de Nohant accorda à Chopin une rémission et lui rappela les paysages de sa patrie.
+77	Il composa de nombreuses œuvres dans cet environnement plein de charme. C'est ici qu'est né ce chef-d'œuvre. C'est peut-être le fait de l'accumulation des sentiments de Chopin envers son pays natal, mais on peut ressentir une sorte de puissance et de persuasion dont on a du mal à imaginer qu'elle provient d'un seul piano.
+78	On a presque l'impression que l'œuvre est portée par la puissance invisible de l'ensemble de la nation polonaise. Si quelqu'un s'interrogeait sur le degré de fierté que Chopin pouvait ressentir à l'égard de la Pologne, sa patrie, cette œuvre apporterait une réponse éloquente.
+79	
+80	
+[ITA]
+0	<g>La Goccia d'acqua
+1	<g>Rivoluzione
+2	<g>Fantaisie-Impromptu
+3	<g>Grande Valse Brillante
+4	<g>Notturno
+5	<g>Tristesse
+6	<g>Eroica
+7	
+8	
+9	<g>???
+10	George Sand: è impossibile raccontare la storia della vita di Chopin senza la presenza di questa donna. George Sand era una scrittrice molto famosa a Parigi, che aveva già pubblicato numerosi libri. Il suo vero nome era Aurore Dupin. George Sand era il suo pseudonimo.
+11	Dal 1838, Chopin condivise la sua vita con lei per un lungo periodo, ma... Quando si incontrarono per la prima volta, disse ad un amico: "È davvero una donna?". Sand era una donna piuttosto mascolina che indossava pantaloni e fumava sigari in pubblico. Anche il suo pseudonimo, "George Sand", era maschile.
+12	Non si faceva influenzare dalla società ed espresse se stessa senza timore. I romanzi che scrisse ebbero un grandissimo successo. Naturalmente, anche Chopin ormai era famoso a Parigi come pianista. La relazione tra il pianista di talento e la scrittrice di successo era sulla bocca di tutti, dando origine a voci sconsiderate.
+13	A quel tempo, Chopin era ammalato, e l'attenzione che la società rivolgeva loro peggiorò ulteriormente le sue condizioni. In questo periodo, Sand accompagnò Chopin sull'isola spagnola di Mallorca per consentirgli di riposare. Per non attirare l'attenzione, lasciarono Parigi separatamente e si incontrarono in un villaggio vicino al confine.
+14	A Mallorca trovarono un posto dove vivere, e Chopin trascorse una vita felice tra palme, aranci e melograni. La salute di Chopin sembrò migliorare, ma l'isola entrò nella stagione delle piogge e il caldo scomparve. Chopin prese un raffreddore che alla fine causò una ricaduta dei sintomi della tubercolosi.
+15	A quel tempo, la tubercolosi era una malattia mortale, e il loro padrone di casa li sfrattò, per paura del contagio. Dopo essere stato sfrattato da casa nel 1839, Chopin giunse al monastero di Valldemossa. Fuori la pioggia continuava a cadere...
+16	La pioggia continuava incessante, il semplice suono delle gocce di pioggia si fuse in un triste ritmo. Si dice che questa sonata nacque in tali circostanze in una stanza nel monastero di Valldemossa. Un'opera composta da Chopin all'età di ventinove anni. Ironicamente il viaggio per cercare riposo portò ad un peggioramento della salute di Chopin.
+17	Ma George Sand rimase fedelmente accanto a Chopin, senza temere l'infezione. Indubbiamente il suo supporto fu molto prezioso per Chopin.
+18	
+19	
+20	Il 29 Novembre, 1830 a Varsavia, capitale della Polonia, scoppiò una rivoluzione. Fu la Rivolta di Novembre. A quel tempo, la maggior parte della Polonia era territorio Russo, e stava crescendo il desiderio di indipendenza.
+21	Il 2 Novembre, circa quattro settimane prima della rivoluzione, Chopin lasciò la pericolosa Varsavia appena in tempo e si diresse a Vienna. La perfetta tempestività con la quale lasciò il paese non fu una coincidenza. Si dice che gli amici di Chopin, sapendo che la rivoluzione era certa, lo invitarono a lasciare il paese.
+22	Chopin aveva un talento straordinario ma era anche fisicamente debole, così i suoi amici vollero che usasse il pianoforte come arma con cui lottare per la Polonia. Il 23 Novembre, circa venti giorni dopo, Chopin arrivò a Vienna. E sei giorni dopo, scoppiò la rivoluzione a Varsavia. L'otto Settembre dell'anno seguente, 1831, Varsavia cadde.Dieci mesi di battaglia si conclusero con una sconfitta.
+23	Chopin, all'età di ventuno anni, apprese del fallimento della rivoluzione mentre si trovava a Stoccarda. I sentimenti con i quali suonava il pianoforte adesso presero la forma di questa composizione, "Studio Rivoluzionario".
+24	Per Chopin, che amava sinceramente la sua madrepatria Polonia, il fallimento della rivoluzione fu arduo da sopportare. Ma forse trovò anche più difficile sopportare il fatto di essere lui solo al sicuro in un paese straniero. Chopin non avrebbe mai più messo piede nella sua terra natale.
+25	
+26	
+27	
+28	
+29	
+30	È una magnifica melodia in Do diesis minore composta nel 1835 all'età di venticinque anni. Malgrado la sua bellezza e fantasia, come si evince dal titolo, Chopin non voleva presentare quest'opera al pubblico. Ma anzi, chiese al suo amico, Julian Fontana, di bruciare lo spartito dopo la sua morte.
+31	Si dice che la ragione fosse la sua somiglianza a Moonlight Sonata (Sonata al chiaro di luna) di Beethoven. Chopin ne era ben consapevole e probabilmente non pubblicò il pezzo per paura dei critici del tempo. 
+32	Ma sei anni dopo la morte di Chopin, fu pubblicata come opera 66. In altre parole il Signor Fontana infranse la promessa. Il Signor Fontana probabilmente trascorse molto tempo chiedendosi se fosse meglio mantenere la promessa fatta all'amico, o se fosse giusto essere l'unico ad ascoltare quel capolavoro.
+33	In ogni caso, dovremmo essere grati per la decisione presa dal Signor Fontana. Se avesse distrutto lo spartito... noi oggi vivremmo senza aver mai potuto immergerci in quel mondo di fantasia.
+34	Probabilmente vi furono molte altre composizioni che furono nascoste proprio come questa. Per quanto sia comprensibile, considerando la situazione del tempo, dovremmo considerarci fortunati che Fantaisie-Impromptu sia stata conservata.
+35	
+36	
+37	
+38	
+39	
+40	È un'opera composta nel 1831 all'età di ventuno anni. In Polonia, madrepatria di Chopin, la rivoluzione di Varsavia, iniziata nel 1830, continuava.
+41	In quel periodo, Chopin si trovava a Vienna, Capitale dell'Austria.In seguito, partì per Parigi... Nella nostra analisi di Studio Rivoluzionario, abbiamo già spiegato come Chopin ricevette la notizia della caduta di Varsavia mentre era in viaggio per Stoccarda. La sonata fu composta prima di tali eventi, prima che Chopin partisse per Parigi e mentre si trovava ancora a Vienna.
+42	All'epoca, l'Austria si opponeva all'indipendenza della Polonia. In parte perché l'Austria era una delle nazioni che avevano diviso la Polonia, ma anche perché temeva che la rivolta si sarebbe estesa all'Austria. Per tale motivo, vivere a Vienna era difficile per il polacco Chopin.
+43	A quel tempo a Vienna, era di moda il valzer destinato al ballo, e la musica di Chopin non fu accolta con molto favore. Quest'opera fu composta in quelle circostanze, e sebbene sia un indiscutibile capolavoro, si distacca molto dallo spirito di Chopin.
+44	Il polacco Chopin per vivere nel clima avverso dell'epoca, probabilmente ha dovuto comporre musica che fosse gradita alle masse. Chopin si presentava di frequente ai pranzi e ai balli ed eseguiva musica per far danzare la gente. Si dice che, dopo le sue esecuzioni, Chopin tornasse nella sua stanza e suonasse furiosamente il pianoforte.
+45	Deve aver provato una rabbia frustrante verso se stesso, obbligato a soffocare la sua vera natura, indossare una maschera ed eseguire musica per compiacere le masse. In contrasto con lo stile gioioso, il cuore di Chopin mentre eseguiva questo pezzo era probabilmente tutt'altro che allegro.
+46	
+47	
+48	
+49	
+50	È un'opera composta nel 1830 all'età di venti anni. Nel Novembre di quell'anno, a Varsavia scoppiò la Rivolta di Novembre, e Chopin lasciò il paese appena prima che iniziassero i disordini. Probabilmente quest'opera fu composta da Chopin in un periodo precedente mentre si trovava ancora a Varsavia.
+51	Chopin si sottrasse al furore della Rivolta di Novembre e fuggì in Austria. Ma molti membri della sua famiglia e amici rimasero a Varsavia durante i disordini. 
+52	Come polacco, Chopin avrebbe voluto lottare con loro, e probabilmente era frustrato dalla sua impossibilità di farlo. Sembra inverosimile che possa aver scritto una melodia così dolce mentre provava simili sentimenti.
+53	Da questa composizione possiamo percepire qualcosa che rievoca un'immagine del cuore tranquillo e appagato di Chopin. Forse il motivo era Konstancja, una donna dalla quale Chopin era segretamente attratto. 
+54	Konstancja Gladkowska frequentava lo stesso conservatorio di Chopin e stava studiando per diventare cantante. Chopin non riusciva a confessarle il suo amore e trascorse quasi un anno con un amore non corrisposto. I due improvvisamente si avvicinarono appena prima che Chopin lasciasse Varsavia.
+55	Si esibirono insieme nell'opera di Rossini, "La Donna del Lago", con grande successo. La voce di Konstancja si fuse con il pianoforte di Chopin e risuonò nella sala da concerti. In Chopin, ciò creò una sensazione di legame con Konstancja e un'atmosfera di sogno che voleva non finisse mai.
+56	Copin è chiamato il "poeta del pianoforte", ma scrutando dentro la sua anima, era un normale ragazzo di venti anni. Forse era solo bravo ad esprimere i suoi sentimenti semplicemente attraverso il pianoforte.
+57	
+58	
+59	
+60	Nel 1832, l'anno dopo la caduta di Varsavia, Chopin si trovava a Parigi. A quel tempo, la Francia era aperta verso la Polonia, ed era il solo paese che accoglieva apertamente i profughi polacchi. Per tale ragione, Parigi era piena di profughi polacchi.
+61	Intanto, in Polonia i capi della rivoluzione e le figure principali venivano giudicate in tribunale senza la loro presenza e condannate a morte. Con le forze rivoluzionarie sconfitte, ora era certo che Chopin non poteva tornare nel suo paese. Questa malinconica melodia ritrae la sua nostalgia ed un eterno addio alla sua patria. 
+62	Ma perché non poteva più tornare? Chopin lasciò la Polonia prima della rivoluzione e rimase fuori dal paese per tutto il periodo in cui ebbe luogo. In altre parole, aveva un alibi perfetto che provava la sua estraneità. Malgrado ciò, Chopin non tornò mai in Polonia. La chiave di questo mistero risiede nel patriottismo di Chopin.
+63	È probabile che avesse gli stessi sentimenti dei rivoluzionari, sebbene non potesse partecipare. Probabilmente si sentiva in colpa perché si trovava al sicuro in un paese straniero. Chopin divenne un rifugiato politico per sua stessa volontà e tagliò i ponti dietro di sé.
+64	In questo modo, probabilmente voleva dimostrare di essere un compagno che condivideva gli stessi sentimenti rivoluzionari. Per Chopin, che amava la Polonia, la decisione di non tornare in patria dev'essere stata dolorosa. Ma scelse di non tornarvi, proprio perché amava la Polonia. 
+65	A ventidue anni Chopin può aver composto questa sonata per bruciare la sua patria nel suo cuore. Si ritiene che Chopin stesso abbia detto, "In tutta la mia vita, non ho mai scritto un'altra melodia così bella".
+66	Forse quelle parole parlano della vista nel villaggio di Zelazowa Wola, dove trascorse l'infanzia.
+67	
+68	
+69	
+70	Polonaise significa "Polonia". In altre parole, l'eroica Polonaise esprime la grandezza della Polonia. Chopin compose ques'opera nel 1842 all'età di trentadue anni, sette anni prima della sua morte.
+71	Durante questo periodo, la tubercolosi di Chopin si aggravò. Talvolta veniva sopraffatto da un a forte tosse e obbligato a letto per settimane. Fu in questo periodo che nacque questa grande composizione in onore della sua patria.
+72	Maestosa, forte e superba. Imperturbabilmente coraggiosa. Il coraggio dei suoi compagni uniti, l'incrollabile fede del popolo Polacco. Non conosco altre sonate più possenti ed eroiche di questa.
+73	Nella Francia centrale, a circa trecento chilometri a sud di Parigi, nella provincia di Berry, si trova il villaggio di Nohant. Il paesaggio pastorale che si estende per quella terra ricorda il villaggio di Zelazowa Wola, dove Chopin trascorse i primi anni di vita. 
+74	Quando lasciò Mallorca e tornò in Francia passando per Marsiglia, aggrappandosi a stento alla vita, l'atmosfera di Nohant gli diede forza. Nella periferia di Nohant si trova un palazzo. Fu comprato da Marie Aurore Dupin, nonna di George Sand,
+75	Durante questo periodo, dopo il ritorno da Mallorca, Chopin e Sand trascorrevano l'inverno a Parigi e l'estate a Nohant. Chopin occupava una stanza al secondo piano della residenza, dove trascorse una vita ideale senza dover pensare ad altro che al suo pianoforte. 
+76	Ormai era una celebrità conosciuta da tutti, ed era impegnato con pranzi in società, concerti e lezioni. Quando si trovava a Parigi, era difficile per lui concentrarsi sul comporre.  Ma a Nohant ebbe una vita idilliaca lontano da tutto ciò con Sand e la sua famiglia. Il potere di Nohant allontanò temporaneamente la terribile malattia di Chopin e ravvivò i ricordi della sua patria.
+77	Ed in quell'ambiente ideale egli compose numerose opere famose. Fu qui che nacque il suo capolavoro. Forse fu l'insieme dei sentimenti che Chopin provava per la sua patria, ma si può percepire una sorta di potenza e forza di persuasione che è difficile credere possa nascere da un'esecuzione su un solo pianoforte.
+78	È quasi come se dietro ad essa ci fosse la forza invisibile di tutta la Polonia. Se qualcuno si chiedesse mai quanto orgoglio sentisse Chopin per il suo paese, la Polonia, quest'opera risponde eloquentemente a quella domanda.
+79	
+80	
+[DEU]
+0	<g>Regentropfen
+1	<g>Revolution
+2	<g>Fantaisie-Impromptu
+3	<g>Grande Valse Brillante
+4	<g>Nocturne
+5	<g>Tristesse
+6	<g>Héroïque
+7	
+8	
+9	<g>???
+10	George Sand. Die Geschichte von Chopins Leben wäre nicht vollständig, wenn man diese Frau unerwähnt ließe. George Sand war eine sehr berühmte Pariser Schriftstellerin, die bereits zahlreiche Bücher veröffentlicht hatte. In Wirklichkeit hieß sie Aurore Dupin. George Sand war ihr Pseudonym.
+11	Von 1838 an teilte Chopin für lange Zeit sein Leben mit ihr, aber als er ihr zum ersten Mal begegnete, sagte er zu einem Freund: "Ist das wirklich eine Frau?" George Sand war eine etwas maskuline Frau, die Hosen trug und in der Öffentlichkeit Zigarren rauchte. Sogar ihr Pseudonym, "George Sand," war männlich.
+12	Sie ließ sich von der Gesellschaft nicht beirren und tat unerschrocken ihre Meinung kund. Die romantischen Romane, die sie verfasste, waren äußerst beliebt. Auch Chopin war zu dieser Zeit bereits in Paris als hervorragender Pianist bekannt. Die Beziehung zwischen dem begnadeten Pianisten und der beliebten Autorin wurde zum Stadtgespräch und führte auch zu taktlosen Gerüchten.
+13	Zu dieser Zeit ging es Chopin gesundheitlich gar nicht gut, und durch all das Gerede verschlimmerte sich sein Zustand. Daher brachte Sand Chopin auf die spanische Insel Mallorca, damit er Ruhe finden konnte. Um keine Aufmerksamkeit zu erregen, verließen sie Paris getrennt und trafen sich in einem Dorf an der Grenze.
+14	Sie fanden eine Bleibe auf Mallorca, und Chopin lebte dort glücklich inmitten von Palmen, Orangenbäumen und Granatäpfeln. Chopins Gesundheit verbesserte sich zunächst, aber dann setzte auf der Insel die Regenzeit ein, und es wurde kühl. Chopin erkältete sich, und die Symptome der Tuberkulose traten wieder auf.
+15	Damals war Tuberkulose eine tödliche Krankheit, und der Vermieter warf sie aus Angst vor Ansteckung hinaus. Nachdem er 1839 sein Heim verlassen musste, begab sich Chopin in ein Kloster, die Kartause von Valldemossa. Draußen fiel weiter der Regen...
+16	Es regnete unaufhörlich, und der eintönige Klang der Regentropfen bildete alsbald einen bedrückenden Rhythmus. Es heißt, das Stück sei unter diesen Umständen in einem Zimmer in Valldemossa entstanden. Chopin schuf dieses Präludium im Alter von neunundzwanzig Jahren. Leider führte die Reise, die Ruhe bringen sollte, dazu, dass Chopin immer kränker wurde.
+17	Aber George Sand blieb getreu und ohne Angst vor Ansteckung an seiner Seite.Sie war für Chopin ohne jeden Zweifel eine enorme Quelle der Kraft und Unterstützung. 
+18	
+19	
+20	29. November 1830\nAn diesem Tag brach in Warschau, der Hauptstadt Polens, eine Revolution aus. Es war der Novemberaufstand. Zu der Zeit war der größte Teil Polens unter russischer Herrschaft, und das Bestreben nach Unabhängigkeit wuchs.
+21	Am 2. November, etwa vier Wochen vor Ausbruch der Revolution, verließ Chopin rechtzeitig das gefährliche Warschau und begab sich nach Wien. Es war kein Zufall, dass er das Land zu diesem Zeitpunkt verließ. Man sagt, dass Chopins Freunde, die von der bevorstehenden Revolution wussten, ihm zur Ausreise rieten.
+22	Chopin war außerordentlich begabt und körperlich schwach, deshalb wollten seine Freunde, dass er mit dem Klavier als Waffe für Polen kämpfte. Am 23. November, etwa 20 Tage später, kam Chopin in Wien an. Und sechs Tage danach wurde in Warschau die Revolution ausgerufen. Warschau fiel im Jahr darauf, am 8. September 1831. Der zehnmonatige Kampf endete in einer Niederlage.
+23	Der einundzwanzigjährige Chopin erfuhr vom Misslingen der Revolution, als er in Stuttgart weilte. Die Gefühle, mit denen er sich in dieser Zeit ans Klavier setzte, schlugen sich nieder in diesem Stück, der "Revolutionsetüde".
+24	Für Chopin, der seine Heimat Polen wirklich liebte, war der Untergang der Revolution schwer zu ertragen. Aber noch schwerer für ihn war es wohl, dass er sich allein in einem fremden Land in Sicherheit befand. Chopin würde das Land seiner Geburt nie wieder betreten.
+25	
+26	
+27	
+28	
+29	
+30	Diese herrlich fließende Melodie in cis-Moll komponierte Chopin 1835 im Alter von fünfundzwanzig Jahren. Obwohl es - schön und phantasievoll - seinem Namen gerecht wird, hatte Chopin nicht vor, dieses Stück zu veröffentlichen. Er bat sogar seinen Freund Julian Fontana, nach seinem Tod die Noten zu verbrennen.
+31	Der Grund hierfür war vermutlich die Ähnlichkeit des Stücks mit Beethovens Mondscheinsonate. Chopin war sich dessen bewusst und sah vermutlich aus Angst vor zeitgenössischen Kritikern von der Veröffentlichung ab.
+32	Sechs Jahre nach Chopins Tod wurde es dennoch als Opus Nr. 66 herausgegeben. Mit anderen Worten: Herr Fontana hatte sein Versprechen nicht erfüllt. Fontana hat vermutlich sehr lange überlegt, ob er das seinem Freund gegebene Versprechen halten sollte, und ob es recht sei, der Welt dieses Meisterstück vorzuenthalten.
+33	Auf jeden Fall sollten wir ihm für seine Entscheidung dankbar sein. Wenn er diese Partitur zerstört hätte... wir, die wir heute leben, hätten dann niemals in diese Welt der Phantasie eintauchen können.
+34	Es gab vermutlich noch viele andere Kompositionen, die so wie diese nicht veröffentlicht wurden. Wenn man die damaligen Umstände bedenkt, ist das wohl verständlich, aber wir können uns glücklich schätzen, dass das Fantaisie-Impromptu erhalten geblieben ist.
+35	
+36	
+37	
+38	
+39	
+40	Dieses Stück komponierte er 1831, mit einundzwanzig Jahren. In Chopins Heimat Polen war die 1830 in Warschau ausgerufene Revolution noch in vollem Gange.
+41	Zu dieser Zeit befand sich Chopin in Wien, der Hauptstadt von Österreich. Später begab er sich nach Paris. Bei der Erläuterung zur Revolutionsetüde erwähnten wir bereits, dass Chopin die Nachricht von Warschaus Fall auf dem Weg nach Stuttgart erfuhr. Dieses Stück entstand vor dieser Zeit, als Chopin in Wien weilte und noch nicht nach Paris aufgebrochen war.
+42	Zu der Zeit war Österreich gegen die Unabhängigkeit Polens. Österreich gehörte zu den Nationen, die Polen aufgespalten hatten; außerdem hatte man auch Angst, dass der Aufstand auf Österreich übergreifen könne. Deshalb war es für den Polen Chopin nicht einfach, in Wien zu leben.
+43	In Wien waren zu jener Zeit Walzer in Mode, zu denen man tanzen konnte, und Chopins Musik fand keinen großen Anklang. In einem solchen Umfeld entstand das Stück, und obwohl zweifellos ein Meisterwerk, ist es nicht sehr typisch für Chopin.
+44	Der Pole Chopin hatte es unter diesen Umständen nicht gerade leicht und fühlte wohl die Notwendigkeit, Musik zu produzieren, die allgemein gefiel. Chopin erschien häufig bei festlichen Abendessen und Bällen, wo er Musik spielte, zu der die Leute tanzen konnten. Man sagt, dass Chopin nach solchen Vorstellungen in sein Zimmer zurückkehrte und wie wild das Klavier bearbeitete.
+45	Vermutlich war er verärgert und unzufrieden mit sich selbst, weil er seine wahre Natur unterdrücken, eine Maske anlegen und Musik aufführen musste, die bei den Massen ankam. Im Gegensatz zur Fröhlichkeit des Stücks war Chopins Stimmung, als er es spielte, bestimmt viel weniger fröhlich.
+46	
+47	
+48	
+49	
+50	Dieses Stück komponierte er 1830 mit zwanzig Jahren. Es war das Jahr der Novemberrevolution in Warschau, und Chopin verließ das Land, kurz bevor das Chaos ausbrach. Dieses Stück entstand vermutlich vor dieser Zeit, als Chopin noch in Warschau wohnte.
+51	Chopin entkam den Wirren des Novemberaufstands und floh nach Österreich. Aber viele seiner Freunde und Verwandten blieben im Chaos von Warschau zurück. 
+52	Als Pole hätte Chopin gern an ihrer Seite gekämpft und war vermutlich frustriert, weil ihm dies nicht möglich war. Aber mit solchen Gefühlen im Herzen hätte er wohl kaum diese anmutige Melodie komponieren können.
+53	Diese Komposition erweckt eher die Vorstellung eines friedlichen, erfüllten Gemüts. Vielleicht hat das etwas mit Konstancja zu tun, der Frau, zu der Chopin sich heimlich hingezogen fühlte.
+54	Konstancja Gladkowska besuchte dieselbe Musikschule wie Chopin und wurde dort als Sängerin ausgebildet. Chopin brachte es nicht fertig, ihr seine Gefühle zu offenbaren, und schmachtete fast ein Jahr lang in unerwiderter Liebe. Dann kamen sich die beiden plötzlich näher, als Chopin im Begriff war, Warschau zu verlassen.
+55	Sie traten gemeinsam mit großem Erfolg in Rossinis Oper "La Donna del Lago" auf. Konstancjas Stimme vereinte sich mit Chopins Klavier zu einem Schall, der die Konzerthalle füllte. Für Chopin war diese Verbundenheit mit Konstancja ein traumgleicher Zustand, von dem er wünschte, er möge niemals enden.
+56	Chopin wird der "Poet des Klaviers" genannt, aber tief im Herzen war er doch ein ganz normaler junger Mann von zwanzig Jahren. Vielleicht fiel es ihm am Klavier am leichtesten, seine aufrichtigen Gefühle auszudrücken.
+57	
+58	
+59	
+60	1832, im Jahr nach dem Fall von Warschau, befand sich Chopin in Paris. Zu dieser Zeit war Frankreich Polen freundlich gesinnt und hieß als einziges Land die polnischen Flüchtlinge offen willkommen. Daher lebten in Paris zahlreiche Polen im Exil.
+61	Inzwischen wurden in Warschau die Anführer und Hauptfiguren der Revolution in Abwesenheit vor Gericht gestellt und zum Tode verurteilt. Damit war die Revolution beendet, und Chopin konnte nun endgültig nicht mehr nach Hause zurückkehren. Diese melancholische Melodie drückt Heimweh aus und sagt seinem Heimatland auf ewig Lebewohl.
+62	Aber warum konnte er denn nicht zurück? Chopin hatte Polen vor der Revolution verlassen und war die ganze Zeit im Ausland geblieben. Er konnte also ohne weiteres beweisen, dass er mit der Sache überhaupt nichts zu tun hatte. Trotzdem ging Chopin nie mehr zurück nach Polen. Der Schlüssel zu diesem Geheimnis ist wohl Chopins Patriotismus.
+63	Er fühlte vermutlich dasselbe wie die Revolutionäre, aber er konnte sich ihnen nicht anschließen. Wahrscheinlich hatte er Schuldgefühle, weil er sich ins sichere Ausland begeben hatte. Chopin wurde aus eigener Überzeugung zum politischen Flüchtling und verbrannte alle Brücken hinter sich.
+64	Damit wollte er wohl kundtun, dass er sich als Genosse der Revolutionäre fühlte und sie voll und ganz unterstützte. Für Chopin, der Polen liebte, muss die Entscheidung, seiner Heimat auf immer fernzubleiben, schmerzhaft gewesen sein. Aber gerade darum, weil er Polen liebte, kehrte er nicht mehr dorthin zurück.
+65	Vielleicht hat der zweiundzwanzigjährige Chopin dieses Stück komponiert, um sich die Heimat für immer ins Herz zu brennen. Chopin selbst soll gesagt haben: "Dies ist die schönste Melodie, die ich in meinem ganzen Leben geschrieben habe". 
+66	Vielleicht erinnert diese Melodie an die Landschaft um das Dorf Zelazowa Wola, wo er seine Kindheit verbracht hat.
+67	
+68	
+69	
+70	Polonaise bedeutet "aus Polen". Die "Heldenpolonaise" beschreibt die geistige Größe und den Ruhm Polens. Chopin komponierte dieses Stück 1842 im Alter von zweiunddreißig Jahren, sieben Jahre vor seinem Tod.
+71	Zu dieser Zeit trat Chopins Tuberkulose wieder auf, er bekam schwere Hustenanfälle und war manchmal wochenlang bettlägerig. In jener Periode entstand diese herrliche Komposition, die sein Heimatland preist.
+72	Majestätisch, stark und stolz. Tapfer und unerschrocken. Der Mut seiner Kameraden, die fest zusammenhielten, und der standhafte Glaube des polnischen Volkes. Kann es ein großartigeres, heldenhafteres Musikstück geben als dieses?
+73	Mitten in Frankreich, ungefähr dreihundert Kilometer südlich von Paris, liegt in der Provinz Berry das Dorf Nohant. Die ländliche Idylle dort erinnerte Chopin an das Dorf Zelazowa Wola, wo er seine frühen Jahre verbracht hatte.
+74	Als er Mallorca verließ und mehr tot als lebendig über Marseille nach Frankreich zurückkehrte, verlieh ihm die Atmosphäre in Nohant neue Kraft. Am Rand von Nohant steht eine Villa. Sie wurde von Marie-Aurore Dupin gekauft, George Sands Großmutter. Nach außen hin macht das große Steingebäude eher einen kargen Eindruck.
+75	In der Zeit nach ihrer Rückkehr aus Mallorca verbrachten Chopin und Sand den Winter in Paris und den Sommer in Nohant. Chopin bekam ein Zimmer im ersten Stock der Villa. Dort hatte er ein schönes Leben und brauchte sich um nichts zu kümmern als sein Klavier.
+76	Inzwischen hatte er Berühmtheit erlangt und war mit Einladungen, Auftritten und Unterricht ein viel beschäftigter Mann. In Paris fiel es ihm schwer, sich aufs Komponieren zu konzentrieren. Aber in Nohant führte er weit weg von all dem ein zufriedenes Leben mit Sand und ihrer Familie. Nohant weckte alte Erinnerungen an Chopins Heimat und hielt sogar für eine Weile den Verlauf seiner schrecklichen Krankheit auf.
+77	In diesem angenehmen Umfeld komponierte er zahlreiche berühmte Stücke. Hier entstand auch dieses Meisterwerk. All die aufgestauten Gefühle, die Chopin für sein Heimatland hegte, brachen sich hier Bahn, und man fühlt eine derartige Kraft und Überzeugung, wie sie ein einzelnes Klavier eigentlich gar nicht hervorbringen könnte.
+78	Es scheint fast, als bringe es die unsichtbare Macht der ganzen polnischen Nation zum Ausdruck. Wenn man sich jemals gefragt hat, ob Chopin wohl stolz auf seine Heimat Polen war, dann stellt dieses Stück eine beredsame Antwort dar.
+79	
+80	
+[ESP]
+0	<g>Gotas de lluvia
+1	<g>Revolución
+2	<g>Fantasía-Impromptu
+3	<g>Gran Vals Brillante
+4	<g>Nocturno
+5	<g>Tristeza
+6	<g>Heroica
+7	
+8	
+9	<g>???
+10	George Sand. Es imposible relatar la historia de la vida de Chopin sin mencionar a esta mujer. George Sand fue una escritora muy famosa en París que ya había publicado numerosos libros. Su verdadero nombre era Aurore Dupin. George Sand era su pseudónimo.
+11	A partir 1838, Chopin compartiría su vida con ella durante mucho tiempo, pero cuando se conocieron, le comentó a un amigo: "¿De verdad es una mujer?" Sand era una mujer algo masculina, que llevaba pantalones y fumaba en público. Incluso su pseudónimo, "George Sand", era masculino.
+12	No se dejaba influir por la sociedad y expresaba sus opiniones sin ningún reparo. Las novelas románticas que escribía eran muy populares. Obviamente, por aquella época, Chopin también era un famoso pianista en París. La relación entre el genial pianista y la popular escritora fue la comidilla de la ciudad y dio lugar a rumores poco considerados.
+13	En ese momento, Chopin tenía mala salud y el hecho de convertirse en el centro de atención de la sociedad empeoró su enfermedad. Durante este tiempo, Sand llevó a Chopin a España, concretamente a Mallorca, para que pudiera descansar. Para evitar llamar la atención, partieron de París por separado y se reencontraron en un pueblo costero.
+14	Encontraron un lugar donde vivir en Mallorca, y Chopin vivió feliz entre las palmeras, los naranjos y los granados. Parecía que la salud de Chopin mejoraba, pero llegó la estación lluviosa y el buen tiempo desapareció. Chopin cogió un resfriado que hizo que reaparecieran los síntomas de la tuberculosis.
+15	En aquella época, la tuberculosis era una enfermedad mortal, y el casero les echó por miedo al contagio. Después de ser expulsado de su casa en 1839, Chopin fue al monasterio de Valldemossa. La lluvia seguía cayendo fuera...
+16	La lluvia caía sin cesar y el sonido de las gotas de lluvia se mezclaba entre sí para crear un ritmo monótono. Se dice que fue en estas circunstancias cuando compuso esta canción, en una habitación de Valldemossa. Chopin creó esta obra a los 29 años de edad. Irónicamente, ese viaje de descanso acabó empeorando la salud de Chopin.
+17	Sin embargo, George Sand permaneció devotamente a su lado, sin temor al contagio.No hay ninguna duda que fue un valioso apoyo para Chopin.
+18	
+19	
+20	29 de noviembre de 1830 En Varsovia, la capital de Polonia, se produjo una revolución. Fue el llamado Levantamiento de noviembre. En aquella época, la mayor parte de Polonia era territorio ruso, y cada vez era más fuerte el deseo de independencia.
+21	El 2 de noviembre, unas cuatro semanas antes de la revolución, Chopin partió de la peligrosa Varsovia rumbo a Viena. No fue una coincidencia que eligiese ese momento para salir del país. Se dice que los amigos de Chopin, sabiendo que la revolución era un hecho, le pidieron que se fuera del país.
+22	Chopin poseía un gran talento, pero físicamente era débil, por lo que sus amigos querían que usara el piano como arma para luchar por Polonia. El 23 de noviembre, unos 20 días después, Chopin llegó a Viena. Y seis días más tarde se produjo la revolución en Varsovia. El 8 de septiembre del año siguiente, 1831, Varsovia cayó.Los diez meses de lucha culminaron en una derrota.
+23	Chopin, que entonces tenía 21 años, se enteró del fracaso de la revolución en Stuttgart. Los sentimientos con los que tocaba el piano en esa época se plasmaron en la composición "El estudio revolucionario".
+24	A Chopin, que amaba con fervor a su querida Polonia, le resultó difícil asimilar el fracaso de la revolución. Pero quizá aún le resultó más difícil asimilar que se encontraba seguro en un país extranjero. Chopin jamás volvería a pisar su tierra natal.
+25	
+26	
+27	
+28	
+29	
+30	Se trata de una bella melodía en do menor sostenido compuesta en 1835 a la edad de 35 años. A pesar de su belleza y fantasía, que hace honor a su nombre, Chopin no tenía la intención de dar a conocer esta obra al público. De hecho, pidió a su amigo Julián Fontana que quemara la partitura cuando muriera.
+31	Se dice que la razón era que se parecía a la Sonata de luz de luna de Beethoven. Chopin era consciente de este hecho y probablemente no quiso publicarla por miedo a las críticas de la época. 
+32	Sin embargo, seis años después de su muerte, se publicó como Opus 66. Dicho de otro modo, Fontana rompió su promesa. Probablemente, Fontana pasó mucho tiempo reflexionando sobre si era conveniente cumplir la promesa que le hizo a su amigo o si era correcto que él fuera el único que escuchara jamás esa obra maestra.
+33	En cualquier caso, hay que agradecer al Sr. Fontana que tomara esa decisión. Si hubiera destruido esa partitura... nosotros jamás nos habríamos podido sumergir en ese mundo de fantasía.
+34	Seguramente hubo muchas otras composiciones que quedaron enterradas de esa misma forma. Aunque es comprensible, teniendo en cuenta la situación de aquella época, deberíamos considerarnos afortunados de que Fantasía-Impromptu sobreviviera.
+35	
+36	
+37	
+38	
+39	
+40	Se trata de una obra compuesta en 1831 a los 21 años de edad. En la Polonia de Chopin, aún continuaba la revolución de Varsovia que había empezado en 1830.
+41	En esta época, Chopin se encuentra en Viena, la capital de Austria.Más tarde, se iría a París... Cuando hablamos del Estudio revolucionario, ya explicamos lo que le costó a Chopin asimilar las noticias de la caída de Varsovia de camino a Stuttgart. Esta canción la compuso antes de salir de París y mientras aún estaba en Viena.
+42	En aquella época, Austria se oponía a la independencia polaca. En parte, la razón era que Austria había sido una de las naciones que había dividido Polonia, pero también porque temía que el levantamiento se extendiera a Austria. Por esta razón, a Chopin, que era polaco, no le resultó fácil vivir en Viena.
+43	En la Viena de aquella época, estaban de moda los valses compuestos para bailar, y la música de Chopin no era bien recibida. Esta obra se creó en ese contexto y, aunque no hay duda de que es una obra maestra, no es del estilo de Chopin.
+44	Para poder vivir en esos tiempos tan adversos, puede que Chopin tuviera que componer música para complacer a las masas. Chopin asistía con frecuencia a fiestas y bailes, y tocaba música que pudiera bailar la gente. Se dice que, tras esas actuaciones, Chopin regresaba a su habitación y tocaba con furia el piano.
+45	Debía de sentir una ira frustrante hacia sí mismo, obligado a esconder su verdadera naturaleza, a ponerse una máscara y a tocar música para complacer a las masas. A pesar del alegre estilo de esta obra, es probable que Chopin no estuviera tan alegre cuando la tocaba.
+46	
+47	
+48	
+49	
+50	Se trata de una obra compuesta en 1830 a los 20 años de edad. En noviembre de ese año, se produjo el Levantamiento de noviembre en Varsovia y Chopin se fue del país antes de que se desatara el caos. Probablemente, esta obra la compuso antes de ese momento, cuando aún estaba en Varsovia.
+51	Chopin se fue a Austria huyendo del fuego del Levantamiento de noviembre. Sin embargo, gran parte de su familia y amigos se quedaron en el caos de Varsovia. 
+52	Como polaco, Chopin hubiera querido luchar con ellos, y probablemente se sentía frustrado por no poder hacerlo. Es poco probable que hubiera compuesto una melodía tan dulce mientras sentía todas esas emociones.
+53	En esta composición, Chopin nos transmite la imagen de un corazón pacífico y complacido. Quizá se deba a Konstancja, una mujer por la que Chopin se sentía atraído en secreto. 
+54	Konstancja Gladkowska asistía a la misma escuela de música que Chopin. Se estaba formando para ser cantante. Chopin era incapaz de confesarle su amor y se pasó casi un año ocultando sus sentimientos. Justo antes de que Chopin se fuera de Varsovia, se estaba produciendo un acercamiento entre ellos.
+55	Actuaron juntos en el musical de Rossini "La dama del lago", que fue un gran éxito. La voz de Konstancja se fundía con el piano de Chopin y reverberaba en toda la sala de conciertos. A Chopin, eso le hizo sentir una especie de conexión con Konstancja, además de vivir un momento de ensueño que no deseaba que acabara jamás.
+56	A Chopin se le conoce como el "poeta del piano", pero, en el interior de su corazón, era un joven normal de 20 años. Tan sólo se le daba bien expresar sus sentimientos con sinceridad a través del piano.
+57	
+58	
+59	
+60	En 1832, un año después de la caída de Varsovia, Chopin estaba en París. En ese momento, Francia era un país amigo de Polonia, y era el único que admitía abiertamente a los refugiados polacos. Por esa razón, París estaba llena de refugiados polacos.
+61	Mientras tanto, en Polonia, los líderes de la revolución y sus principales figuras, eran juzgados sin su presencia y condenados a muerte. Ahora que las fuerzas revolucionarias habían sido derrotadas, Chopin no podía regresar a su país natal. Esta melancólica melodía retrata esa nostalgia y ese adiós eterno a su tierra natal. 
+62	¿Pero por qué no podía regresar jamás? Chopin se fue de Polonia antes de la revolución y estuvo fuera del país durante el tiempo que duró. Dicho de otro modo, tenía la coartada perfecta para demostrar que no había participado. A pesar de eso, jamás regresó a Polonia. La clave de este misterio se halla en el patriotismo de Chopin.
+63	Es probable que tuviera los mismos sentimientos que los revolucionarios, pero no pudo participar... Seguramente, se sentía culpable por haber buscado la seguridad en países extranjeros. Chopin se convirtió en un refugiado político por voluntad propia y quemó todo vínculo con su patria.
+64	De esta forma, es probable que quisiera demostrar que compartía los mismos sentimientos que los revolucionarios. Para Chopin, que amaba Polonia, debió de ser muy doloroso tomar la decisión de no regresar a Polonia. Pero no regresó precisamente porque amaba Polonia. 
+65	Es posible que Chopin, a sus 22 años, compusiera esta canción como una forma de grabar en su corazón su tierra natal. Se cree que Chopin dijo: "Jamás en mi vida he escrito una melodía tan bella".
+66	Quizá esas palabras describan el pueblo de Zelazowa Wola, donde pasó su infancia.
+67	
+68	
+69	
+70	Polonesa significa "de Polonia". Es decir, el héroe de la Polonesa refleja la grandeza de Polonia. Chopin compuso esta obra en 1842, a la edad de 32 años, siete años antes de morir.
+71	Durante este tiempo, la tuberculosis de Chopin se había recrudecido y, en ocasiones, le asaltaban feroces ataques de tos que le postraban en cama durante semanas. Fue en esta época cuando nació su gran obra en honor de su tierra natal.
+72	Majestuosa, fuerte y orgullosa. Descaradamente valiente. El valor de sus camaradas que unieron la inquebrantable fe del pueblo polaco. No conozco una canción con mayor grandeza o más heroica que ésta.
+73	En el centro de Francia, a unos 300 kilómetros al sur de París, en la provincia de Berry, se halla un pueblo llamado Nohant. El paisaje pastoral que se extiende por su horizonte se parece al del pueblo de Zelazowa Wola, donde Chopin pasó sus primeros años.  
+74	Cuando se fue de Mallorca y regresó a Francia a través de Marsella, luchando entre la vida y la muerte, ese paisaje le dio fuerzas. En los alrededores de Nohant había una mansión. Era propiedad de Marie-Aurore Dupin, la abuela de George Sand. 
+75	Tras regresar de Mallorca, durante este periodo, Chopin y Sand pasaban el invierno en París y el verano en Nohant. Chopin tenía una habitación en la segunda planta de la mansión, donde vivía una vida idílica sin preocuparse de nada, excepto de su piano.
+76	En esta época, era una celebridad, por lo que siempre acudía a fiestas sociales, actuaciones y daba clases. Para él, era difícil concentrarse en componer en París. 
+77	Fue aquí donde nació su obra maestra. Quizá es por la acumulación de sentimientos por su tierra natal, pero transmite una especie de poder y persuasión que es difícil creer que se origine del sonido de un solo piano.
+78	Es como si el poder invisible de toda la nación polaca estuviera detrás de él. Si alguna vez alguien se ha preguntado cuánto orgullo sentía Chopin por su país natal, esta obra responde elocuentemente esa pregunta.
+79	
+80	

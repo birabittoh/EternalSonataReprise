@@ -1,0 +1,1408 @@
+0x8230F640
+[JPN]
+0	通常1
+1	通常2
+2	通常3
+3	ファイアウェイブ
+4	ファントムウェイブ
+5	サンスラッシュ
+6	バサルトバスター
+7	スカイディバイダー
+8	ヴォイドエッジ
+9	スターライトフラッシュ
+10	ブラッディプルーム
+11	通常1
+12	通常2
+13	通常3
+14	オレンジキュア
+15	アースグロウス
+16	ブルームシャワー
+17	ピュアカタラクト
+18	テラエクスターナ
+19	シューティングスター
+20	シェイドコメット
+21	リジョンディスラプター
+22	ネザースレイター
+23	ラウンデル
+24	ゾディアック
+25	通常1
+26	通常2
+27	通常3
+28	ビビッドショット
+29	ナイトショット
+30	ブラストファイア
+31	ソリッドシューター
+32	ブラストファイア
+33	ソリッドシューター
+34	ドライブアクロス
+35	スレッジハンマー
+36	スカイファイア
+37	バイタルドレイン
+38	通常1
+39	通常2
+40	通常3
+41	トリクレメンティア
+42	セイクレッドシグネチャ
+43	スピリッツブレスウェイ
+44	レギオフィルミナンテ
+45	クリムゾンブレイズ
+46	オーゼルヴィアヴィ
+47	ピウ・グラーヴェ
+48	クデグレース
+49	クデジャルナック
+50	イマジナリーウーンズ
+51	ミラージュブロウ
+52	通常1
+53	通常2
+54	通常3
+55	カラバインランジ
+56	ボーンクランブル
+57	ヒールアロー
+58	ナイトブリーズアロー
+59	ホーリーストライク
+60	イービルストライク
+61	フルバラージ
+62	ホークアイ
+63	通常1
+64	通常2
+65	通常3
+66	コロナストリーム
+67	シャドウシルエット
+68	ソーラフレアー
+69	ダークネビュラ
+70	ファイナルホーマー
+71	グランドクロス
+72	デッドリーサークル
+73	デッドリーオービット
+74	通常1
+75	通常2
+76	通常3
+77	ヒートブレイド
+78	ジオブレイド
+79	テザーカッター
+80	ターンディメンジョン
+81	バザードフラッター
+82	ラーバピラー
+83	ワールウィンド
+84	メイルシュトローム
+85	通常1
+86	通常2
+87	通常3
+88	輝竜煌々拳
+89	黒竜瀑淵拳
+90	斬雪爪
+91	哭雷爪
+92	鳳捷脚
+93	払柳脚
+94	舞塵妖光弾
+95	九指払穴殺
+96	通常1
+97	通常2
+98	通常3
+99	フェザーロール
+100	イーグルビル
+101	ユニコーンホーン
+102	アイアタルホーン
+103	牙尖峰
+104	黒曜針
+105	バードストーム
+106	ビーストメテオ
+107	通常1
+108	通常2
+109	通常3
+110	フルムーンバインド
+111	ニュームーンバインド
+112	アルス・ノヴァ
+113	デジェネレイター
+114	ルナストリーム
+115	オーロラカーテン
+116	スーパールミナル
+117	エクリプスグレイズ
+118	ＰＣ技119
+119	ＰＣ技120
+120	ＰＣ技121
+121	ＰＣ技122
+122	ＰＣ技123
+123	ＰＣ技124
+124	ＰＣ技125
+125	ＰＣ技126
+126	ＰＣ技127
+127	ＰＣ技128
+128	ＰＣ技129
+129	ＰＣ技130
+130	ＰＣ技131
+131	ＰＣ技132
+132	ＰＣ技133
+133	ＰＣ技134
+134	ＰＣ技135
+135	ＰＣ技136
+136	ＰＣ技137
+137	ＰＣ技138
+138	ＰＣ技139
+139	ＰＣ技140
+140	ＰＣ技141
+141	ＰＣ技142
+142	ＰＣ技143
+143	ＰＣ技144
+144	ＰＣ技145
+145	ＰＣ技146
+146	ＰＣ技147
+147	ＰＣ技148
+148	ＰＣ技149
+149	ＰＣ技150
+150	ＰＣ技151
+151	ＰＣ技152
+152	ＰＣ技153
+153	ＰＣ技154
+154	ＰＣ技155
+155	ＰＣ技156
+156	ＰＣ技157
+157	ＰＣ技158
+158	ＰＣ技159
+159	ＰＣ技160
+160	ＰＣ技161
+161	ＰＣ技162
+162	ＰＣ技163
+163	ＰＣ技164
+164	ＰＣ技165
+165	ＰＣ技166
+166	ＰＣ技167
+167	ＰＣ技168
+168	ＰＣ技169
+169	ＰＣ技170
+170	ＰＣ技171
+171	ＰＣ技172
+172	ＰＣ技173
+173	ＰＣ技174
+174	ＰＣ技175
+175	ＰＣ技176
+176	ＰＣ技177
+177	ＰＣ技178
+178	ＰＣ技179
+179	ＰＣ技180
+180	ＰＣ技181
+181	ＰＣ技182
+182	ＰＣ技183
+183	ＰＣ技184
+184	ＰＣ技185
+185	ＰＣ技186
+186	ＰＣ技187
+187	ＰＣ技188
+188	ＰＣ技189
+189	ＰＣ技190
+190	ＰＣ技191
+191	ＰＣ技192
+192	ＰＣ技193
+193	ＰＣ技194
+194	ＰＣ技195
+195	ＰＣ技196
+196	ＰＣ技197
+197	ＰＣ技198
+198	ＰＣ技199
+199	ＰＣ技200
+[USA]
+0	PCWaza1_Name_UnitedStates
+1	PCWaza2_Name_UnitedStates
+2	PCWaza3_Name_UnitedStates
+3	Fire Wave
+4	Phantom Wave
+5	Sun Slash
+6	Shadow Assault
+7	Sky Divider
+8	Void Edge
+9	Starlight Blast
+10	Bloody Plume
+11	PCWaza1_Name_UnitedStates
+12	PCWaza2_Name_UnitedStates
+13	PCWaza3_Name_UnitedStates
+14	Orange Glow
+15	Earth Heal
+16	Blossom Shower
+17	Pure Geyser
+18	Terra Externa
+19	Shooting Star
+20	Shade Comet
+21	Disruption Wave
+22	Nether Wave
+23	Roundel
+24	Zodiac
+25	PCWaza1_Name_UnitedStates
+26	PCWaza2_Name_UnitedStates
+27	PCWaza3_Name_UnitedStates
+28	Vivid Shot
+29	Night Shot
+30	Fire Blast
+31	Rapid Shooter
+32	Fire Blast
+33	Rapid Shooter
+34	Power Smash
+35	Sledgehammer
+36	Sky Fire
+37	Vital Drain
+38	PCWaza1_Name_UnitedStates
+39	PCWaza2_Name_UnitedStates
+40	PCWaza3_Name_UnitedStates
+41	Tri-Clementia
+42	Sacred Signature
+43	Spirits Pathway
+44	Legion Fulminante
+45	Crimson Blaze
+46	Orzel Bialy
+47	Piu Grave
+48	Coup de Grace
+49	Coup de Jarnac
+50	Phantom Pain
+51	Mirage Blow
+52	PCWaza1_Name_UnitedStates
+53	PCWaza2_Name_UnitedStates
+54	PCWaza3_Name_UnitedStates
+55	White Dagger
+56	Bone Crumble
+57	Heal Arrow
+58	Night Arrow
+59	Sacred Strike
+60	Evil Strike
+61	Full Barrage
+62	Hawk Eye
+63	PCWaza1_Name_UnitedStates
+64	PCWaza2_Name_UnitedStates
+65	PCWaza3_Name_UnitedStates
+66	Corona Stream
+67	Shadow Silhouette
+68	Solar Flare
+69	Dark Nebula
+70	Grand Slam
+71	Iron Cross
+72	Deadly Circle
+73	Deadly Orbit
+74	PCWaza1_Name_UnitedStates
+75	PCWaza2_Name_UnitedStates
+76	PCWaza3_Name_UnitedStates
+77	Heat Blade
+78	Geo Blade
+79	Plasma Chains
+80	Dimensional Turn
+81	Raven Blast
+82	Magma Pillar
+83	Whirlwind
+84	Maelstrom
+85	PCWaza1_Name_UnitedStates
+86	PCWaza2_Name_UnitedStates
+87	PCWaza3_Name_UnitedStates
+88	Dragon Blow
+89	Night Fist
+90	Snow Claw
+91	Howling Thunder
+92	Phoenix Rising
+93	Willow Strike
+94	Shadow Beam
+95	Death Chasm
+96	PCWaza1_Name_UnitedStates
+97	PCWaza2_Name_UnitedStates
+98	PCWaza3_Name_UnitedStates
+99	Feather Spin
+100	Eagle Wing
+101	Unicorn Horn
+102	Aiatar Horn
+103	Wolf Fang
+104	Obsidian Needle
+105	Bird Swarm
+106	Beast Meteor
+107	PCWaza1_Name_UnitedStates
+108	PCWaza2_Name_UnitedStates
+109	PCWaza3_Name_UnitedStates
+110	Full-Moon Bind
+111	New-Moon Bind
+112	Super Nova
+113	Midnight Cloud
+114	Luna Stream
+115	Aurora Curtain
+116	Illumination
+117	Eclipse Gaze
+118	PCWaza119_Name_UnitedStates
+119	PCWaza120_Name_UnitedStates
+120	PCWaza121_Name_UnitedStates
+121	PCWaza122_Name_UnitedStates
+122	PCWaza123_Name_UnitedStates
+123	PCWaza124_Name_UnitedStates
+124	PCWaza125_Name_UnitedStates
+125	PCWaza126_Name_UnitedStates
+126	PCWaza127_Name_UnitedStates
+127	PCWaza128_Name_UnitedStates
+128	PCWaza129_Name_UnitedStates
+129	PCWaza130_Name_UnitedStates
+130	PCWaza131_Name_UnitedStates
+131	PCWaza132_Name_UnitedStates
+132	PCWaza133_Name_UnitedStates
+133	PCWaza134_Name_UnitedStates
+134	PCWaza135_Name_UnitedStates
+135	PCWaza136_Name_UnitedStates
+136	PCWaza137_Name_UnitedStates
+137	PCWaza138_Name_UnitedStates
+138	PCWaza139_Name_UnitedStates
+139	PCWaza140_Name_UnitedStates
+140	PCWaza141_Name_UnitedStates
+141	PCWaza142_Name_UnitedStates
+142	PCWaza143_Name_UnitedStates
+143	PCWaza144_Name_UnitedStates
+144	PCWaza145_Name_UnitedStates
+145	PCWaza146_Name_UnitedStates
+146	PCWaza147_Name_UnitedStates
+147	PCWaza148_Name_UnitedStates
+148	PCWaza149_Name_UnitedStates
+149	PCWaza150_Name_UnitedStates
+150	PCWaza151_Name_UnitedStates
+151	PCWaza152_Name_UnitedStates
+152	PCWaza153_Name_UnitedStates
+153	PCWaza154_Name_UnitedStates
+154	PCWaza155_Name_UnitedStates
+155	PCWaza156_Name_UnitedStates
+156	PCWaza157_Name_UnitedStates
+157	PCWaza158_Name_UnitedStates
+158	PCWaza159_Name_UnitedStates
+159	PCWaza160_Name_UnitedStates
+160	PCWaza161_Name_UnitedStates
+161	PCWaza162_Name_UnitedStates
+162	PCWaza163_Name_UnitedStates
+163	PCWaza164_Name_UnitedStates
+164	PCWaza165_Name_UnitedStates
+165	PCWaza166_Name_UnitedStates
+166	PCWaza167_Name_UnitedStates
+167	PCWaza168_Name_UnitedStates
+168	PCWaza169_Name_UnitedStates
+169	PCWaza170_Name_UnitedStates
+170	PCWaza171_Name_UnitedStates
+171	PCWaza172_Name_UnitedStates
+172	PCWaza173_Name_UnitedStates
+173	PCWaza174_Name_UnitedStates
+174	PCWaza175_Name_UnitedStates
+175	PCWaza176_Name_UnitedStates
+176	PCWaza177_Name_UnitedStates
+177	PCWaza178_Name_UnitedStates
+178	PCWaza179_Name_UnitedStates
+179	PCWaza180_Name_UnitedStates
+180	PCWaza181_Name_UnitedStates
+181	PCWaza182_Name_UnitedStates
+182	PCWaza183_Name_UnitedStates
+183	PCWaza184_Name_UnitedStates
+184	PCWaza185_Name_UnitedStates
+185	PCWaza186_Name_UnitedStates
+186	PCWaza187_Name_UnitedStates
+187	PCWaza188_Name_UnitedStates
+188	PCWaza189_Name_UnitedStates
+189	PCWaza190_Name_UnitedStates
+190	PCWaza191_Name_UnitedStates
+191	PCWaza192_Name_UnitedStates
+192	PCWaza193_Name_UnitedStates
+193	PCWaza194_Name_UnitedStates
+194	PCWaza195_Name_UnitedStates
+195	PCWaza196_Name_UnitedStates
+196	PCWaza197_Name_UnitedStates
+197	PCWaza198_Name_UnitedStates
+198	PCWaza199_Name_UnitedStates
+199	PCWaza200_Name_UnitedStates
+[GBR]
+0	PCWaza1_Name_UnitedStates
+1	PCWaza2_Name_UnitedStates
+2	PCWaza3_Name_UnitedStates
+3	Fire Wave
+4	Phantom Wave
+5	Sun Slash
+6	Shadow Assault
+7	Sky Divider
+8	Void Edge
+9	Starlight Blast
+10	Bloody Plume
+11	PCWaza1_Name_UnitedStates
+12	PCWaza2_Name_UnitedStates
+13	PCWaza3_Name_UnitedStates
+14	Orange Glow
+15	Earth Heal
+16	Blossom Shower
+17	Pure Geyser
+18	Terra Externa
+19	Shooting Star
+20	Shade Comet
+21	Disruption Wave
+22	Nether Wave
+23	Roundel
+24	Zodiac
+25	PCWaza1_Name_UnitedStates
+26	PCWaza2_Name_UnitedStates
+27	PCWaza3_Name_UnitedStates
+28	Vivid Shot
+29	Night Shot
+30	Fire Blast
+31	Rapid Shooter
+32	Fire Blast
+33	Rapid Shooter
+34	Power Smash
+35	Sledgehammer
+36	Sky Fire
+37	Vital Drain
+38	PCWaza1_Name_UnitedStates
+39	PCWaza2_Name_UnitedStates
+40	PCWaza3_Name_UnitedStates
+41	Tri-Clementia
+42	Sacred Signature
+43	Spirits Pathway
+44	Legion Fulminante
+45	Crimson Blaze
+46	Orzel Bialy
+47	Piu Grave
+48	Coup de Grace
+49	Coup de Jarnac
+50	Phantom Pain
+51	Mirage Blow
+52	PCWaza1_Name_UnitedStates
+53	PCWaza2_Name_UnitedStates
+54	PCWaza3_Name_UnitedStates
+55	White Dagger
+56	Bone Crumble
+57	Heal Arrow
+58	Night Arrow
+59	Sacred Strike
+60	Evil Strike
+61	Full Barrage
+62	Hawk Eye
+63	PCWaza1_Name_UnitedStates
+64	PCWaza2_Name_UnitedStates
+65	PCWaza3_Name_UnitedStates
+66	Corona Stream
+67	Shadow Silhouette
+68	Solar Flare
+69	Dark Nebula
+70	Grand Slam
+71	Iron Cross
+72	Deadly Circle
+73	Deadly Orbit
+74	PCWaza1_Name_UnitedStates
+75	PCWaza2_Name_UnitedStates
+76	PCWaza3_Name_UnitedStates
+77	Heat Blade
+78	Geo Blade
+79	Plasma Chains
+80	Dimensional Turn
+81	Raven Blast
+82	Magma Pillar
+83	Whirlwind
+84	Maelstrom
+85	PCWaza1_Name_UnitedStates
+86	PCWaza2_Name_UnitedStates
+87	PCWaza3_Name_UnitedStates
+88	Dragon Blow
+89	Night Fist
+90	Snow Claw
+91	Howling Thunder
+92	Phoenix Rising
+93	Willow Strike
+94	Shadow Beam
+95	Death Chasm
+96	PCWaza1_Name_UnitedStates
+97	PCWaza2_Name_UnitedStates
+98	PCWaza3_Name_UnitedStates
+99	Feather Spin
+100	Eagle Wing
+101	Unicorn Horn
+102	Aiatar Horn
+103	Wolf Fang
+104	Obsidian Needle
+105	Bird Swarm
+106	Beast Meteor
+107	PCWaza1_Name_UnitedStates
+108	PCWaza2_Name_UnitedStates
+109	PCWaza3_Name_UnitedStates
+110	Full-Moon Bind
+111	New-Moon Bind
+112	Super Nova
+113	Midnight Cloud
+114	Luna Stream
+115	Aurora Curtain
+116	Illumination
+117	Eclipse Gaze
+118	PCWaza119_Name_UnitedStates
+119	PCWaza120_Name_UnitedStates
+120	PCWaza121_Name_UnitedStates
+121	PCWaza122_Name_UnitedStates
+122	PCWaza123_Name_UnitedStates
+123	PCWaza124_Name_UnitedStates
+124	PCWaza125_Name_UnitedStates
+125	PCWaza126_Name_UnitedStates
+126	PCWaza127_Name_UnitedStates
+127	PCWaza128_Name_UnitedStates
+128	PCWaza129_Name_UnitedStates
+129	PCWaza130_Name_UnitedStates
+130	PCWaza131_Name_UnitedStates
+131	PCWaza132_Name_UnitedStates
+132	PCWaza133_Name_UnitedStates
+133	PCWaza134_Name_UnitedStates
+134	PCWaza135_Name_UnitedStates
+135	PCWaza136_Name_UnitedStates
+136	PCWaza137_Name_UnitedStates
+137	PCWaza138_Name_UnitedStates
+138	PCWaza139_Name_UnitedStates
+139	PCWaza140_Name_UnitedStates
+140	PCWaza141_Name_UnitedStates
+141	PCWaza142_Name_UnitedStates
+142	PCWaza143_Name_UnitedStates
+143	PCWaza144_Name_UnitedStates
+144	PCWaza145_Name_UnitedStates
+145	PCWaza146_Name_UnitedStates
+146	PCWaza147_Name_UnitedStates
+147	PCWaza148_Name_UnitedStates
+148	PCWaza149_Name_UnitedStates
+149	PCWaza150_Name_UnitedStates
+150	PCWaza151_Name_UnitedStates
+151	PCWaza152_Name_UnitedStates
+152	PCWaza153_Name_UnitedStates
+153	PCWaza154_Name_UnitedStates
+154	PCWaza155_Name_UnitedStates
+155	PCWaza156_Name_UnitedStates
+156	PCWaza157_Name_UnitedStates
+157	PCWaza158_Name_UnitedStates
+158	PCWaza159_Name_UnitedStates
+159	PCWaza160_Name_UnitedStates
+160	PCWaza161_Name_UnitedStates
+161	PCWaza162_Name_UnitedStates
+162	PCWaza163_Name_UnitedStates
+163	PCWaza164_Name_UnitedStates
+164	PCWaza165_Name_UnitedStates
+165	PCWaza166_Name_UnitedStates
+166	PCWaza167_Name_UnitedStates
+167	PCWaza168_Name_UnitedStates
+168	PCWaza169_Name_UnitedStates
+169	PCWaza170_Name_UnitedStates
+170	PCWaza171_Name_UnitedStates
+171	PCWaza172_Name_UnitedStates
+172	PCWaza173_Name_UnitedStates
+173	PCWaza174_Name_UnitedStates
+174	PCWaza175_Name_UnitedStates
+175	PCWaza176_Name_UnitedStates
+176	PCWaza177_Name_UnitedStates
+177	PCWaza178_Name_UnitedStates
+178	PCWaza179_Name_UnitedStates
+179	PCWaza180_Name_UnitedStates
+180	PCWaza181_Name_UnitedStates
+181	PCWaza182_Name_UnitedStates
+182	PCWaza183_Name_UnitedStates
+183	PCWaza184_Name_UnitedStates
+184	PCWaza185_Name_UnitedStates
+185	PCWaza186_Name_UnitedStates
+186	PCWaza187_Name_UnitedStates
+187	PCWaza188_Name_UnitedStates
+188	PCWaza189_Name_UnitedStates
+189	PCWaza190_Name_UnitedStates
+190	PCWaza191_Name_UnitedStates
+191	PCWaza192_Name_UnitedStates
+192	PCWaza193_Name_UnitedStates
+193	PCWaza194_Name_UnitedStates
+194	PCWaza195_Name_UnitedStates
+195	PCWaza196_Name_UnitedStates
+196	PCWaza197_Name_UnitedStates
+197	PCWaza198_Name_UnitedStates
+198	PCWaza199_Name_UnitedStates
+199	PCWaza200_Name_UnitedStates
+[FRA]
+0	
+1	
+2	
+3	Vague de feu
+4	Vague fantôme
+5	Entaille solaire
+6	Assaut d'ombre
+7	Division céleste
+8	Bord du néant
+9	Coup d'étoile
+10	Panache sanglant
+11	
+12	
+13	
+14	Lueur orange
+15	Soin terrestre
+16	Pluie de fleurs
+17	Pur geyser
+18	Terra Externa
+19	Étoile filante
+20	Comète de l'ombre
+21	Vague troublante
+22	Lame de fond
+23	Ronde
+24	Zodiaque
+25	
+26	
+27	
+28	Photo nette
+29	Photo de nuit
+30	Souffle de feu
+31	Tir rapide
+32	Souffle de feu
+33	Tir rapide
+34	Coup puissant
+35	Masse de forge
+36	Feu du ciel
+37	Épuisement vital
+38	
+39	
+40	
+41	Tri-Clementia
+42	Signature sacrée
+43	Chemin spirituel
+44	Légion Fulminante
+45	Flambée écarlate
+46	Orzel Bialy
+47	Piu Grave
+48	Coup de grâce
+49	Coup de Jarnac
+50	Douleur fantôme
+51	Coup illusoire
+52	
+53	
+54	
+55	Dague blanche
+56	Esquilleur
+57	Flèche de soins
+58	Flèche nocturne
+59	Frappe sacrée
+60	Frappe maléfique
+61	Barrage total
+62	Œil d'aigle
+63	
+64	
+65	
+66	Flux de couronne
+67	Silhouette d'ombre
+68	Lueur solaire
+69	Nébuleuse obscure
+70	Grand jeté
+71	Grande croix
+72	Cercle mortel
+73	Orbite mortelle
+74	
+75	
+76	
+77	Lame brûlante
+78	Lame glacée
+79	Chaînes de plasma
+80	Tour dimensionnel
+81	Coup de corbeau
+82	Colonne de magma
+83	Tourbillon
+84	Maelström
+85	
+86	
+87	
+88	Coup de dragon
+89	Poing nocturne
+90	Griffe de neige
+91	Tonnerre hurlant
+92	Réveil de phénix
+93	Frappe de saule
+94	Bond d'ombre
+95	Abîme de mort
+96	
+97	
+98	
+99	Roulade de plume
+100	Aile d'aigle
+101	Corne de licorne
+102	Corne d'Aiatar
+103	Morsure de loup
+104	Aiguille d'obsidienne
+105	Nuée d'oiseaux
+106	Météore bestial
+107	
+108	
+109	
+110	Fixité de pleine lune
+111	Fixité de nouvelle lune
+112	Supernova
+113	Nuage de minuit
+114	Flux Luna
+115	Rideau d'aurore
+116	Illumination
+117	Regard d'éclipse
+118	
+119	
+120	
+121	
+122	
+123	
+124	
+125	
+126	
+127	
+128	
+129	
+130	
+131	
+132	
+133	
+134	
+135	
+136	
+137	
+138	
+139	
+140	
+141	
+142	
+143	
+144	
+145	
+146	
+147	
+148	
+149	
+150	
+151	
+152	
+153	
+154	
+155	
+156	
+157	
+158	
+159	
+160	
+161	
+162	
+163	
+164	
+165	
+166	
+167	
+168	
+169	
+170	
+171	
+172	
+173	
+174	
+175	
+176	
+177	
+178	
+179	
+180	
+181	
+182	
+183	
+184	
+185	
+186	
+187	
+188	
+189	
+190	
+191	
+192	
+193	
+194	
+195	
+196	
+197	
+198	
+199	
+[ITA]
+0	
+1	
+2	
+3	Onda di fuoco
+4	Onda fantasma
+5	Fendente solare
+6	Assalto delle ombre
+7	Squarcia cielo
+8	Orlo del baratro
+9	Scoppio di luce stellare
+10	Piuma insanguinata
+11	
+12	
+13	
+14	Bagliore arancione
+15	Guarigione terrena
+16	Pioggia in fiore
+17	Geyser puro
+18	Terra esterna
+19	Stella cadente
+20	Scia della cometa
+21	Onda distruttiva
+22	Onda infernale
+23	Rondò
+24	Zodiaco
+25	
+26	
+27	
+28	Foto vivida
+29	Colpo notturno
+30	Esplosione di fuoco
+31	Mitragliatore
+32	Esplosione di fuoco
+33	Mitragliatore
+34	Scontro potente
+35	Mazza
+36	Fuoco dal cielo
+37	Prosciuga vita
+38	
+39	
+40	
+41	Tri-Clementia
+42	Firma sacra
+43	Sentiero degli spiriti
+44	Orda fulminante
+45	Fiamma cremisi
+46	Orzel Bialy
+47	Più Grave
+48	Colpo di grazia
+49	Colpo di Jarnac
+50	Dolore fantasma
+51	Raffica allucinante
+52	
+53	
+54	
+55	Pugnale bianco
+56	Frantuma ossa
+57	Dardo guaritore
+58	Dardo notturno
+59	Attacco sacro
+60	Attacco malefico
+61	Barriera totale
+62	Occhio di falco
+63	
+64	
+65	
+66	Flusso della corona
+67	Profilo d'ombra
+68	Lampo solare
+69	Nebula oscura
+70	Grande Slam
+71	Croce grande
+72	Cerchio mortale
+73	Orbita mortale
+74	
+75	
+76	
+77	Lama rovente
+78	Lama della terra
+79	Catene di plasma
+80	Curva dimensionale
+81	Attacco del corvo
+82	Pilastro di magma
+83	Turbine
+84	Gorgo
+85	
+86	
+87	
+88	Colpo del drago
+89	Pugno notturno
+90	Artiglio nevoso
+91	Tuono terrificante
+92	Resurrezione della fenice
+93	Attacco del salice
+94	Raggio d'ombra
+95	Abisso della morte
+96	
+97	
+98	
+99	Ondeggio di piuma
+100	Ala dell'aquila
+101	Corno di unicorno
+102	Corno di Aiatar
+103	Morso del lupo
+104	Ago d'ossidiana
+105	Stormo d'uccelli
+106	Meteora bestiale
+107	
+108	
+109	
+110	Vincolo della luna piena
+111	Vincolo della luna nuova
+112	Super Nova
+113	Nube di mezzanotte
+114	Flusso della luna
+115	Cortina dell'aurora
+116	Illuminazione
+117	Sguardo eclissante
+118	
+119	
+120	
+121	
+122	
+123	
+124	
+125	
+126	
+127	
+128	
+129	
+130	
+131	
+132	
+133	
+134	
+135	
+136	
+137	
+138	
+139	
+140	
+141	
+142	
+143	
+144	
+145	
+146	
+147	
+148	
+149	
+150	
+151	
+152	
+153	
+154	
+155	
+156	
+157	
+158	
+159	
+160	
+161	
+162	
+163	
+164	
+165	
+166	
+167	
+168	
+169	
+170	
+171	
+172	
+173	
+174	
+175	
+176	
+177	
+178	
+179	
+180	
+181	
+182	
+183	
+184	
+185	
+186	
+187	
+188	
+189	
+190	
+191	
+192	
+193	
+194	
+195	
+196	
+197	
+198	
+199	
+[DEU]
+0	
+1	
+2	
+3	Feuerwelle
+4	Phantomwelle
+5	Sonnenschlitzer
+6	Schattenangriff
+7	Himmelsteiler
+8	Rand des Abgrunds
+9	Sternenexplosion
+10	Blutiger Helmbusch
+11	
+12	
+13	
+14	Orange Glut
+15	Erdheilung
+16	Blütenschauer
+17	Purer Geysir
+18	Terra Externa
+19	Sternschnuppe
+20	Schattenkomet
+21	Störwelle
+22	Unterwelle
+23	Rondell
+24	Zodiak
+25	
+26	
+27	
+28	Lebhafte Aufnahme
+29	Nachtaufnahme
+30	Feuerstoß
+31	Schnellschütze
+32	Feuerstoß
+33	Schnellschütze
+34	Wuchtschmetter
+35	Vorschlaghammer
+36	Himmelsfeuer
+37	Blutsauger
+38	
+39	
+40	
+41	Tri-Clementia
+42	Heilige Unterschrift
+43	Geisterschneise
+44	Fulminante Legion
+45	Purpurflamme
+46	Orzel Bialy
+47	Piu Grave
+48	Gnadenstoß
+49	Schwabenstreich
+50	Phantomschmerz
+51	Trugbild-Stoß
+52	
+53	
+54	
+55	Weißer Dolch
+56	Knochenbrösler
+57	Heilerpfeil
+58	Nachtpfeil
+59	Heiliger Pfeil
+60	Böser Schlag
+61	Geballte Ladung
+62	Falkenauge
+63	
+64	
+65	
+66	Corona-Strömung
+67	Schattenriss
+68	Solarfackel
+69	Dunkler Nebel
+70	Große Sause
+71	Großes Kreuz
+72	Todeskreis
+73	Todesumlaufbahn
+74	
+75	
+76	
+77	Hitzeklinge
+78	Geoklinge
+79	Plasmaketten
+80	Dimensionswende
+81	Rabenknall
+82	Magmasäule
+83	Wirbelwind
+84	Mahlstrom
+85	
+86	
+87	
+88	Drachenschlag
+89	Nachtfaust
+90	Schneeklaue
+91	Heulender Donner
+92	Flug des Phönix
+93	Weidenhieb
+94	Schattenstrahl
+95	Todesabgrund
+96	
+97	
+98	
+99	Federrolle
+100	Adlerschwinge
+101	Einhorn-Horn
+102	Ajatar-Horn
+103	Wolfsreißer
+104	Vulkanglasnadel
+105	Vogelschwarm
+106	Biestmeteor
+107	
+108	
+109	
+110	Vollmondfessel
+111	Neumondfessel
+112	Supernova
+113	Mitternachtswolke
+114	Luna-Strom
+115	Aurora-Vorhang
+116	Illumination
+117	Eklipsenblick
+118	
+119	
+120	
+121	
+122	
+123	
+124	
+125	
+126	
+127	
+128	
+129	
+130	
+131	
+132	
+133	
+134	
+135	
+136	
+137	
+138	
+139	
+140	
+141	
+142	
+143	
+144	
+145	
+146	
+147	
+148	
+149	
+150	
+151	
+152	
+153	
+154	
+155	
+156	
+157	
+158	
+159	
+160	
+161	
+162	
+163	
+164	
+165	
+166	
+167	
+168	
+169	
+170	
+171	
+172	
+173	
+174	
+175	
+176	
+177	
+178	
+179	
+180	
+181	
+182	
+183	
+184	
+185	
+186	
+187	
+188	
+189	
+190	
+191	
+192	
+193	
+194	
+195	
+196	
+197	
+198	
+199	
+[ESP]
+0	
+1	
+2	
+3	Onda pírica
+4	Onda fantasma
+5	Corte solar
+6	Asalto fantasma
+7	Separador celestial
+8	La nada
+9	Ráfaga estelar
+10	Pluma sangrienta
+11	
+12	
+13	
+14	Resplandor anaranjado
+15	Cura terrenal
+16	Lluvia florida
+17	Géiser puro
+18	Terra Externa
+19	Estrella fugaz
+20	Cometa sombrío
+21	Onda de confusión
+22	Onda rasa
+23	Rondel
+24	Zodíaco
+25	
+26	
+27	
+28	Foto intensa
+29	Foto nocturna
+30	Explosión ígnea
+31	Pistola rápida
+32	Explosión ígnea
+33	Pistola rápida
+34	Golpe potente
+35	Almádena
+36	Cielo en llamas
+37	Drenaje vital
+38	
+39	
+40	
+41	Clemencia triple
+42	Firma sagrada
+43	Senda de los espíritus
+44	Legión fulminante
+45	Llamarada carmesí
+46	Orzel Bialy
+47	Più grave
+48	Golpe de piedad
+49	Golpe de Jarnac
+50	Dolor fantasmagórico
+51	Golpe de espejismo
+52	
+53	
+54	
+55	Daga blanca
+56	Quebrantahuesos
+57	Flecha curativa
+58	Flecha nocturna
+59	Ataque sagrado
+60	Ataque demoníaco
+61	Descarga total
+62	Ojo de halcón
+63	
+64	
+65	
+66	Torrente
+67	Silueta sombría
+68	Destello solar
+69	Nébula oscura
+70	Golpetazo
+71	Grand cross
+72	Círculo mortal
+73	Órbita mortal
+74	
+75	
+76	
+77	Hoja ardiente
+78	Hoja gélida
+79	Cadenas de plasma
+80	Giro dimensional
+81	Embestida del cuervo
+82	Columna de magma
+83	Torbellino
+84	Vorágine
+85	
+86	
+87	
+88	Golpe de dragón
+89	Puño de la noche
+90	Garra de nieve
+91	Trueno huracanado
+92	Fénix naciente
+93	Ataque del sauce
+94	Haz de sombra
+95	Abismo de la muerte
+96	
+97	
+98	
+99	Redoble de plumas
+100	Ala de águila
+101	Cuerno de unicornio
+102	Cuerno de Aiatar
+103	Colmillo de lobo
+104	Aguja obsidiana
+105	Bandada de pájaros
+106	Meteoro bestial
+107	
+108	
+109	
+110	Vínculo de luna llena
+111	Vínculo de luna nueva
+112	Supernova
+113	Nube de medianoche
+114	Arroyo de luna
+115	Cortina de la aurora
+116	Iluminación
+117	Mirada eclipsada
+118	
+119	
+120	
+121	
+122	
+123	
+124	
+125	
+126	
+127	
+128	
+129	
+130	
+131	
+132	
+133	
+134	
+135	
+136	
+137	
+138	
+139	
+140	
+141	
+142	
+143	
+144	
+145	
+146	
+147	
+148	
+149	
+150	
+151	
+152	
+153	
+154	
+155	
+156	
+157	
+158	
+159	
+160	
+161	
+162	
+163	
+164	
+165	
+166	
+167	
+168	
+169	
+170	
+171	
+172	
+173	
+174	
+175	
+176	
+177	
+178	
+179	
+180	
+181	
+182	
+183	
+184	
+185	
+186	
+187	
+188	
+189	
+190	
+191	
+192	
+193	
+194	
+195	
+196	
+197	
+198	
+199	

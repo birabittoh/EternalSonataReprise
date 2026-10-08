@@ -1,0 +1,120 @@
+0x82385C98
+[JPN]
+0	ショップ１
+1	ショップ２
+2	ショップ３
+3	ショップ４
+4	ショップ５
+5	ショップ６
+6	ショップ７
+7	ショップ８
+8	ショップ９
+9	ショップ１０
+10	ショップ１１
+11	ショップ１２
+12	ショップ１３
+13	ショップ１４
+14	ショップ１５
+15	ショップ１６
+[USA]
+0	Shop 1
+1	Shop 2
+2	Shop 3
+3	Shop 4
+4	Shop 5
+5	Shop 6
+6	Shop 7
+7	Shop 8
+8	Shop 9
+9	Shop 10
+10	Shop 11
+11	Shop 12
+12	Shop 13
+13	Shop 14
+14	Shop 15
+15	Shop 16
+[GBR]
+0	Shop 1
+1	Shop 2
+2	Shop 3
+3	Shop 4
+4	Shop 5
+5	Shop 6
+6	Shop 7
+7	Shop 8
+8	Shop 9
+9	Shop 10
+10	Shop 11
+11	Shop 12
+12	Shop 13
+13	Shop 14
+14	Shop 15
+15	Shop 16
+[FRA]
+0	Magasin 1
+1	Magasin 2
+2	Magasin 3
+3	Magasin 4
+4	Magasin 5
+5	Magasin 6
+6	Magasin 7
+7	Magasin 8
+8	Magasin 9
+9	Magasin 10
+10	Magasin 11
+11	Magasin 12
+12	Magasin 13
+13	Magasin 14
+14	Magasin 15
+15	Magasin 16
+[ITA]
+0	Negozio 1
+1	Negozio 2
+2	Negozio 3
+3	Negozio 4
+4	Negozio 5
+5	Negozio 6
+6	Negozio 7
+7	Negozio 8
+8	Negozio 9
+9	Negozio 10
+10	Negozio 11
+11	Negozio 12
+12	Negozio 13
+13	Negozio 14
+14	Negozio 15
+15	Negozio 16
+[DEU]
+0	Laden 1
+1	Laden 2
+2	Laden 3
+3	Laden 4
+4	Laden 5
+5	Laden 6
+6	Laden 7
+7	Laden 8
+8	Laden 9
+9	Laden 10
+10	Laden 11
+11	Laden 12
+12	Laden 13
+13	Laden 14
+14	Laden 15
+15	Laden 16
+[ESP]
+0	Tienda 1
+1	Tienda 2
+2	Tienda 3
+3	Tienda 4
+4	Tienda 5
+5	Tienda 6
+6	Tienda 7
+7	Tienda 8
+8	Tienda 9
+9	Tienda 10
+10	Tienda 11
+11	Tienda 12
+12	Tienda 13
+13	Tienda 14
+14	Tienda 15
+15	Tienda 16

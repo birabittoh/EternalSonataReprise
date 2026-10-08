@@ -1,0 +1,561 @@
+0x822F43F8
+[JPN]
+0	デバッグセーブ
+1	ゲームクリア
+2	テヌートの獣道・南
+3	テヌート村
+4	リタルダント
+5	リタルダント用水路・西
+6	鏡天花の森・北中央
+7	アゴゴの森・南中央
+8	アゴゴの森・北
+9	アゴゴの村
+10	サビ平原・湖東側
+11	フェルマータの砦・中央道北
+12	フェルマータの砦・中央道上
+13	ハノンの丘・中央
+14	フォルテ城下町
+15	絶壁グリッサンド・２
+16	<d32>アンダンティーノの抜け穴・北部２<d>
+17	アダージョ湿原・西側
+18	宿屋カンタービレ前
+19	ウッドブロックの大滝
+20	レント墓地・泉前
+21	海賊船ドルチェ・奥廊下
+22	バロック城下町・大通り
+23	バロック城・１階西廊下
+24	シャープ大雪山・８合目
+25	ワウ溶岩洞・南口
+26	マンドリン教会地下・北
+27	アリア神殿・入口
+28	アリア神殿・光の間
+29	バロック城下町・転送の間
+30	トゥコーダ遺跡・誠心の島
+31	ロック山・入口
+32	ロック山・山頂付近
+33	エレジー・東側
+34	シロフォン・３階踊場
+35	夢幻砂丘・ノイズの果て
+36	ダブルリード・西塔１階
+37	ダブルリード・西塔７階
+38	ダブルリード・東塔７階
+39	ダブルリード・命脈への道
+40	ユニゾン・エントランス
+41	バロック城・庭園
+42	ダブルリード・胸間
+43	リタルダント・アジト
+44	アゴゴの森・北中央
+45	サビ平原・北
+46	フェルマータの砦・中央道南
+47	フェルマータの砦・西側
+48	フェルマータの砦・東側
+49	ハノンの丘・南
+50	フォルテ城・地下牢
+51	アダージョ湿原・東側
+52	ウッドブロックの林・北中央
+53	アンダンテの町・入口
+54	レント墓地・中央道
+55	バロック船・西廊下
+56	海賊船ドルチェ・甲板
+57	海賊船ドルチェ・地下４階
+58	シャープ大雪山・ふもと
+59	ワウ溶岩洞・北口
+60	ワウ溶岩洞・北側２
+61	ワウ溶岩洞・中央２
+62	マンドリン教会地下・南
+63	チェレスタの森・西
+64	アリア神殿・回廊
+65	トゥコーダ遺跡・虚勢の島
+66	トゥコーダ遺跡・利己の島
+67	トゥコーダ遺跡・憤慨の島
+68	トゥコーダ遺跡・嫉妬の島
+69	トゥコーダ遺跡・猜疑の島
+70	トゥコーダ遺跡・貧苦の島
+71	カウベル平原・チェロの木
+72	シロフォン・１階踊場
+73	シロフォン・２階踊場
+74	ダブルリード・西塔３階
+75	ダブルリード・東塔３階
+76	海賊船ドルチェ・地下３階
+77	<d30>アンダンティーノの抜け穴・大空洞南<d>
+78	<d32>アンダンティーノの抜け穴・南部<d>
+[USA]
+0	Debug Save
+1	Game Clear
+2	Path to Tenuto\n<d35>South Section
+3	Tenuto Village
+4	Ritardando
+5	Ritardando Sewers
+6	Heaven's Mirror Forest\n<d35>Middle North
+7	Agogo Forest\n<d35>Middle South
+8	Agogo Forest\n<d35>North
+9	Agogo Village
+10	Chorus Plains\n<d35>East Lake
+11	Fort Fermata\n<d35>Central Road - North
+12	Fort Fermata\n<d35>Over Central Road
+13	Hanon Hills\n<d35>Midway
+14	Forte City
+15	Glissando Cliffs\n<d35>Area 2
+16	<d39>Andantino's Secret Passage\n<d35>North Section 2<d>
+17	Adagio Swamp\n<d35>West Side
+18	Cantabile Inn
+19	Woodblock Groves\n<d35>Waterfall
+20	Lento Cemetery\n<d35>Entrance to Spring
+21	Pirate Ship Dolce\n<d35>Back Hallway
+22	Baroque City\n<d35>Main Street
+23	Baroque Castle\n<d35>First Floor - West Hallway
+24	Sharp Mountains\n<d35>Eighth Point
+25	Wah Lava Cave\n<d35>South Entrance
+26	Mandolin Church Grotto\n<d35>North Section
+27	Aria Temple\n<d35>Entrance
+28	Aria Temple\n<d35>Gallery of Light
+29	Baroque City\n<d35>Warp Room
+30	To Coda Ruins\n<d35>Sincerity Island
+31	Mt. Rock\n<d35>Entrance
+32	Mt. Rock\n<d35>Near the Summit
+33	Elegy of the Moon
+34	Xylophone Tower\n<d35>Third Floor
+35	Noise Dunes
+36	Double Reed Tower\n<d35>West Tower - First Floor
+37	Double Reed Tower\n<d35>West Tower - Seventh Floor
+38	Double Reed Tower\n<d35>East Tower - Seventh Floor
+39	Double Reed Tower\n<d35>Hourglass Road
+40	Mysterious Unison
+41	Baroque Castle\n<d35>Side Garden
+42	Double Reed Tower\n<d35>Core
+43	Ritardando\n<d35>Secret Hideout
+44	Agogo Forest\n<d35>Middle North
+45	Chorus Plains\n<d35>North Side
+46	Fort Fermata\n<d35>Central Road - South
+47	Fort Fermata\n<d35>West Side
+48	Fort Fermata\n<d35>East Side
+49	Hanon Hills\n<d35>South Section
+50	Forte Castle\n<d35>Dungeon
+51	Adagio Swamp\n<d35>East Side
+52	Woodblock Groves\n<d35>North Center
+53	Andante\n<d35>Entrance
+54	Lento Cemetery\n<d35>Main Road
+55	Baroque Ship\n<d35>West Hallway
+56	Pirate Ship Dolce\n<d35>Deck
+57	Pirate Ship Dolce\n<d35>Basement Level 4
+58	Sharp Mountains\n<d35>Base
+59	Wah Lava Cave\n<d35>North Entrance
+60	Wah Lava Cave\n<d35>North Side
+61	Wah Lava Cave\n<d35>Middle
+62	Mandolin Church Grotto\n<d35>South Area
+63	Celesta Forest\n<d35>West Side
+64	Aria Temple\n<d35>Hallway
+65	To Coda Ruins\n<d35>False Pride Island
+66	To Coda Ruins\n<d35>Conceit Island
+67	To Coda Ruins\n<d35>Resentment Island
+68	To Coda Ruins\n<d35>Jealousy Island
+69	To Coda Ruins\n<d35>Suspicion Island
+70	To Coda Ruins\n<d35>Distress Island
+71	Cowbell Heights\n<d35>Cello Tree
+72	Xylophone Tower\n<d35>First Floor - Landing
+73	Xylophone Tower\n<d35>Second Floor - Landing
+74	Double Reed Tower\n<d35>West Tower - Third Floor
+75	Double Reed Tower\n<d35>East Tower - Third Floor
+76	Pirate Ship Dolce\n<d35>Basement Level 3
+77	<d39>Andantino's Secret Passage\n<d35>Cavern - South<d>
+78	<d39>Andantino's Secret Passage\n<d35>South Section<d>
+[GBR]
+0	Debug Save
+1	Game Clear
+2	Path to Tenuto\n<d35>South Section
+3	Tenuto Village
+4	Ritardando
+5	Ritardando Sewers
+6	Heaven's Mirror Forest\n<d35>Middle North
+7	Agogo Forest\n<d35>Middle South
+8	Agogo Forest\n<d35>North
+9	Agogo Village
+10	Chorus Plains\n<d35>East Lake
+11	Fort Fermata\n<d35>Central Road - North
+12	Fort Fermata\n<d35>Over Central Road
+13	Hanon Hills\n<d35>Midway
+14	Forte City
+15	Glissando Cliffs\n<d35>Area 2
+16	<d39>Andantino's Secret Passage\n<d35>North Section 2<d>
+17	Adagio Swamp\n<d35>West Side
+18	Cantabile Inn
+19	Woodblock Groves\n<d35>Waterfall
+20	Lento Cemetery\n<d35>Entrance to Spring
+21	Pirate Ship Dolce\n<d35>Back Hallway
+22	Baroque City\n<d35>Main Street
+23	Baroque Castle\n<d35>First Floor - West Hallway
+24	Sharp Mountains\n<d35>Eighth Point
+25	Wah Lava Cave\n<d35>South Entrance
+26	Mandolin Church Grotto\n<d35>North Section
+27	Aria Temple\n<d35>Entrance
+28	Aria Temple\n<d35>Gallery of Light
+29	Baroque City\n<d35>Warp Room
+30	To Coda Ruins\n<d35>Sincerity Island
+31	Mt. Rock\n<d35>Entrance
+32	Mt. Rock\n<d35>Near the Summit
+33	Elegy of the Moon
+34	Xylophone Tower\n<d35>Third Floor
+35	Noise Dunes
+36	Double Reed Tower\n<d35>West Tower - First Floor
+37	Double Reed Tower\n<d35>West Tower - Seventh Floor
+38	Double Reed Tower\n<d35>East Tower - Seventh Floor
+39	Double Reed Tower\n<d35>Hourglass Road
+40	Mysterious Unison
+41	Baroque Castle\n<d35>Side Garden
+42	Double Reed Tower\n<d35>Core
+43	Ritardando\n<d35>Secret Hideout
+44	Agogo Forest\n<d35>Middle North
+45	Chorus Plains\n<d35>North Side
+46	Fort Fermata\n<d35>Central Road - South
+47	Fort Fermata\n<d35>West Side
+48	Fort Fermata\n<d35>East Side
+49	Hanon Hills\n<d35>South Section
+50	Forte Castle\n<d35>Dungeon
+51	Adagio Swamp\n<d35>East Side
+52	Woodblock Groves\n<d35>North Center
+53	Andante\n<d35>Entrance
+54	Lento Cemetery\n<d35>Main Road
+55	Baroque Ship\n<d35>West Hallway
+56	Pirate Ship Dolce\n<d35>Deck
+57	Pirate Ship Dolce\n<d35>Basement Level 4
+58	Sharp Mountains\n<d35>Base
+59	Wah Lava Cave\n<d35>North Entrance
+60	Wah Lava Cave\n<d35>North Side
+61	Wah Lava Cave\n<d35>Middle
+62	Mandolin Church Grotto\n<d35>South Area
+63	Celesta Forest\n<d35>West Side
+64	Aria Temple\n<d35>Hallway
+65	To Coda Ruins\n<d35>False Pride Island
+66	To Coda Ruins\n<d35>Conceit Island
+67	To Coda Ruins\n<d35>Resentment Island
+68	To Coda Ruins\n<d35>Jealousy Island
+69	To Coda Ruins\n<d35>Suspicion Island
+70	To Coda Ruins\n<d35>Distress Island
+71	Cowbell Heights\n<d35>Cello Tree
+72	Xylophone Tower\n<d35>First Floor - Landing
+73	Xylophone Tower\n<d35>Second Floor - Landing
+74	Double Reed Tower\n<d35>West Tower - Third Floor
+75	Double Reed Tower\n<d35>East Tower - Third Floor
+76	Pirate Ship Dolce\n<d35>Basement Level 3
+77	<d39>Andantino's Secret Passage\n<d35>Cavern - South<d>
+78	<d39>Andantino's Secret Passage\n<d35>South Section<d>
+[FRA]
+0	Sauvegarde de débogage
+1	Jeu terminé
+2	Chemin vers Tenuto
+3	Village de Tenuto
+4	Ritardando
+5	Égouts de Ritardando
+6	Miroir du paradis\n<d35>centre nord
+7	Forêt d'Agogo\n<d35>centre sud
+8	Forêt d'Agogo\n<d35>nord
+9	Village d'Agogo
+10	Plaine de Chorus\n<d35>lac est
+11	Fort de Fermata\n<d35>grand-route N
+12	Fort de Fermata\n<d35>sur la grand-route
+13	Collines de Hanon\n<d35>centre
+14	Ville de Forte
+15	Falaises de Glissando
+16	<d39>Passage secret\n<d35>nord<d>
+17	Marais d'Adagio\n<d35>ouest
+18	Auberge de Cantabile
+19	Bois de Wood-block\n<d35>cascade
+20	Cimetière de Lento\n<d35>source
+21	Bateau pirate de Dolce\n<d35>coursive arrière
+22	Ville de Baroque\n<d35>grand-rue
+23	Château Baroque
+24	Monts Aigus\n<d35>8e point
+25	Grottes de lave Wah-wah\n<d35>entrée S
+26	Église de Mandoline\n<d35>nord
+27	Temple d'Aria\n<d35>entrée
+28	Temple d'Aria\n<d35>galerie de la Lumière
+29	Ville de Baroque\n<d35>salle de téléportation
+30	Ruines de Coda\n<d35>Sincérité
+31	Mont Rock\n<d35>entrée
+32	Mont Rock\n<d35>sommet
+33	Élégie de la Lune
+34	Tour du Xylophone\n<d35>N3
+35	Dunes du Bruit
+36	Anche double\n<d35>N1 ouest
+37	Anche double\n<d35>N7 ouest
+38	Anche double\n<d35>N7 est
+39	Anche double\n<d35>route du sablier
+40	Unisson mystérieux
+41	Ville de Baroque\n<d35>jardins
+42	Anche double\n<d35>niveau supérieur
+43	Ritardando\n<d35>planque
+44	Forêt d'Agogo\n<d35>centre nord
+45	Plaine de Chorus\n<d35>nord
+46	Fort de Fermata\n<d35>grand-route S
+47	Fort de Fermata\n<d35>ouest
+48	Fort de Fermata\n<d35>est
+49	Collines de Hanon\n<d35>sud
+50	Château Forte
+51	Marais d'Adagio\n<d35>est
+52	Bois de Wood-block\n<d35>nord
+53	Andante\n<d35>entrée de grotte
+54	Cimetière de Lento\n<d35>grand-route
+55	Navire de Baroque
+56	Bateau pirate de Dolce\n<d35>pont
+57	Bateau pirate de Dolce\n<d35>PI4
+58	Monts Aigus\n<d35>base
+59	Grottes de lave Wah-wah\n<d35>entrée N
+60	Grottes de lave Wah-wah\n<d35>partie nord
+61	Grottes de lave Wah-wah\n<d35>centre
+62	Église de Mandoline\n<d35>sud
+63	Forêt de Célesta\n<d35>partie ouest
+64	Temple d'Aria\n<d35>couloir
+65	Ruines de Coda\n<d35>Vanité
+66	Ruines de Coda\n<d35>Égoïsme
+67	Ruines de Coda\n<d35>Ressentiment
+68	Ruines de Coda\n<d35>Jalousie
+69	Ruines de Coda\n<d35>Suspicion
+70	Ruines de Coda\n<d35>Détresse
+71	Hauteurs de Cencerro\n<d35>arbre du Violoncelle
+72	Tour du Xylophone\n<d35>N1
+73	Tour du Xylophone\n<d35>N2
+74	Anche double\n<d35>N3 ouest
+75	Anche double\n<d35>N2 est
+76	Bateau pirate de Dolce\n<d35>C3
+77	<d39>Passage secret\n<d35>grotte<d>
+78	<d39>Passage secret\n<d35>sud<d>
+[ITA]
+0	Salva debug
+1	Termine partita
+2	Sentiero per Tenuto
+3	Villaggio di Tenuto
+4	Ritardando
+5	Fogne di Ritardando
+6	Specchio del paradiso\n<d35>centro nord
+7	Foresta di Agogo\n<d35>centro sud
+8	Foresta di Agogo nord
+9	Villaggio di Agogo
+10	Piane del ritornello\n<d35>Lago orientale
+11	Forte Fermata\n<d35>Strada centrale nord
+12	Forte Fermata\n<d35>oltre Strada centrale
+13	Colline di Hanon\n<d35>metà strada 
+14	Città di Forte
+15	Rupe Glissando
+16	<d39>Passaggio segreto\n<d35>sud<d> Nord<d>
+17	Palude di Adagio ovest
+18	Locanda Cantabile
+19	Boschetti di Woodblock cascata
+20	Cimitero di Lento sorgente
+21	Nave pirata Dolce\n<d35>corridoio di poppa
+22	Città di Barocco\n<d35>strada principale
+23	Castello di Barocco
+24	Montagne di Acuto 8° punto
+25	Grotte di lava Wah\n<d35>entrata sud
+26	Chiesa mandolino\n<d35>nord
+27	Tempio di aria\n<d35>entrata
+28	Tempio di aria\n<d35>galleria della luce
+29	Città di Barocco\n<d35>Stanza t
+30	Alle rovine Coda\n<d35>sincerità
+31	Monte Rock entrata
+32	Monte Rock vetta
+33	Elegia della luna
+34	Torre xilofono\n<d35>3° piano
+35	Dune del Rumore
+36	Ancia doppia\n<d35>ovest 1F
+37	Ancia doppia\n<d35>ovest 7F
+38	Ancia doppia\n<d35>est 7F
+39	Ancia doppia\n<d35>via della clessidra
+40	Unisono misterioso
+41	Città di Barocco\n<d35>giardini
+42	Ancia doppia\n<d35>ultimo piano
+43	Ritardando\n<d35>nascondiglio
+44	For. di Agogo: Strada (nord)
+45	Piane del ritornello\n<d35>nord
+46	Forte Fermata\n<d35>Strada centrale sud
+47	Forte Fermata\n<d35>ovest
+48	Forte Fermata\n<d35>est
+49	Colline di Hanon\n<d35>sud
+50	Castello Forte
+51	Palude di Adagio est
+52	Boschetti di Woodblock nord
+53	Andante\n<d35>entrata delle grotte
+54	Cimitero di Lento strada princ.
+55	Nave Barocco atrio ovest
+56	Nave dei pirati Dolce\n<d35> ponte
+57	Nave dei pirati Dolce\n<d35> Livello basamento 4
+58	Montagne di Acuto Base
+59	Grotte di lava Wah\n<d35>entrata Nord
+60	Grotte di lava Wah\n<d35>lato nord
+61	Grotte di lava Wah\n<d35>parte centrale
+62	Chiesa di Mandolino\n<d35>sud
+63	Foresta di Celesta\n<d35>Lato ovest
+64	Tempio di aria\n<d35>atrio
+65	Alle rovine Coda\n<d35>orgoglio inutile
+66	Alle rovine Coda\n<d35>egotistico
+67	Alle rovine Coda\n<d35>rancore
+68	Alle rovine Coda\n<d35>gelosia
+69	Alle rovine Coda\n<d35>sospetto
+70	Alle rovine Coda\n<d35>angoscia
+71	Alture Campanaccio\n<d35>Albero del violoncello
+72	Torre xilofono\n<d35>1° piano
+73	Torre xilofono\n<d35>2° piano
+74	Ancia doppia\n<d35>ovest 3° piano
+75	Ancia doppia\n<d35>est 2° piano
+76	Nave dei pirati Dolce\n<d35>Livello basamento 3
+77	<d39>Passaggio segreto\n<d35>grotta<d>
+78	<d39>Passaggio segreto\n<d35> Sud<d>
+[DEU]
+0	Debug-Speichern
+1	Spiel abgeschlossen
+2	Weg nach Tenuto
+3	Tenuto
+4	Ritardando
+5	Ritardando, Kanalisation
+6	Himmelsspiegel\n<d35>Nördliche Mitte
+7	Agogo-Wald\n<d35>Südliche Mitte
+8	Agogo-Wald\n<d35>Nord
+9	Dorf Agogo
+10	Ebene von Refrain\n<d35>Östlicher See
+11	Fort Fermate\n<d35>Hauptstraße Nord
+12	Fort Fermate\n<d35>Über Hauptstraße
+13	Hanon-Hügel\n<d35>Mitte
+14	Stadt Forte
+15	Glissando-Klippen
+16	<d39>Geheimgang\n<d35>Nord<d>
+17	Adagio-Sumpf\n<d35>West
+18	Cantabile-Gasthaus
+19	Holzblock-Hain\n<d35>Wasserfall
+20	Lento-Friedhof\n<d35>Quelle
+21	Dolces Piratenschiff\n<d35>Hinterer Korridor
+22	Stadt Barock\n<d35>Hauptstraße
+23	Schloss Barock
+24	Assai-Gebirge\n<d35>8. Wegpunkt
+25	Wah-Wah-Lavahöhlen\n<d35>Südeingang
+26	Mandolinenkirche\n<d35>Nord
+27	Aria-Tempel\n<d35>Eingang
+28	Aria-Tempel\n<d35>Lichtgalerie
+29	Stadt Barock\n<d35>Teleport-Raum
+30	Coda-Ruinen\n<d35>Aufrichtigkeit
+31	Mt. Rock\n<d35>Eingang
+32	Mt. Rock\n<d35>Gipfel
+33	Elegie des Mondes
+34	Xylophon-Turm\n<d35>Dritte Etage
+35	Lärmdünen
+36	Doppelrohrblatt\n<d35>West, Erste Etage
+37	Doppelrohrblatt\n<d35>West, Siebte Etage
+38	Doppelrohrblatt\n<d35>Ost, Siebte Etage
+39	Doppelrohrblatt\n<d35>Stundenglas-Straße
+40	Mysteriöses Unisono
+41	Stadt Barock\n<d35>Gärten
+42	Doppelrohrblatt\n<d35>Oberste Etage
+43	Ritardando\n<d35>Versteck
+44	Agogo-Wald\n<d35>Nördliche Mitte
+45	Ebene von Refrain\n<d35>Nord
+46	Fort Fermate\n<d35>Hauptstraße Süd
+47	Fort Fermate\n<d35>West
+48	Fort Fermate\n<d35>Ost
+49	Hanon-Hügel\n<d35>Süd
+50	Schloss Forte
+51	Adagio-Sumpf\n<d35>Ost
+52	Holzblock-Hain\n<d35>Nord
+53	Andante\n<d35>Höhleneingang
+54	Lento-Friedhof\n<d35>Hauptweg
+55	Barock-Schiff\n<d35>Korridor West
+56	Dolces Piratenschiff\n<d35>Deck
+57	Dolces Piratenschiff\n<d35>Viertes Unterdeck
+58	Assai-Gebirge\n<d35>Fuß
+59	Wah-Wah-Lavahöhlen\n<d35>Nordeingang
+60	Wah-Wah-Lavahöhlen\n<d35>Nordseite
+61	Wah-Wah-Lavahöhle\n<d35>Mitte
+62	Mandolinenkirche\n<d35>Süd
+63	Celesta-Wald\n<d35>Westseite
+64	Aria-Tempel\n<d35>Korridor
+65	Coda-Ruinen\n<d35>Hochmut
+66	Coda-Ruinen\n<d35>Eitelkeit
+67	Coda-Ruinen\n<d35>Verbitterung
+68	Coda-Ruinen\n<d35>Eifersucht
+69	Coda-Ruinen\n<d35>Misstrauen
+70	Coda-Ruinen\n<d35>Bedrängnis
+71	Kuhglocken-Kuppe\n<d35>Cellobaum
+72	Xylophon-Turm\n<d35>Erste Etage
+73	Xylophon-Turm\n<d35>Zweite Etage
+74	Doppelrohrblatt\n<d35>West, Dritte Etage
+75	Doppelrohrblatt\n<d35>Ost, Zweite Etage
+76	Dolces Piratenschiff\n<d35>Drittes Unterdeck
+77	<d39>Geheimgang\n<d35>Höhle<d>
+78	<d39>Geheimgang\n<d35>Süd<d>
+[ESP]
+0	Guardar modo de pruebas
+1	Partida completada
+2	Senda hacia Tenuto
+3	Aldea Tenuto
+4	Ritardando
+5	Cloacas de Ritardando
+6	Espejo celestial\n<d35>mitad camino N
+7	Bosque Agogó\n<d35>mitad camino S
+8	Bosque Agogó\n<d35>norte
+9	Aldea Agogó
+10	Llanura del Coro\n<d35>lago este
+11	Fuerte Fermata\n<d35>camino central N
+12	Fuerte Fermata\n<d35>en camino central
+13	Colinas Hanon\n<d35>mitad camino
+14	Ciudad de Forte
+15	Acantilado de Glissando
+16	<d39>Pasadizo secreto\n<d35>norte<d>
+17	Pantano Adagio\n<d35>oeste
+18	Posada Cantabile
+19	Arboleda de la Caja China\n<d35>cascada
+20	Cementerio Lento\n<d35>manantial
+21	Barco pirata Dolce\n<d35>pasillo del fondo
+22	Ciudad Barroca\n<d35>calle principal
+23	Castillo Barroco
+24	Montañas Agudas\n<d35>8º punto
+25	Cuevas de Lava Wah\n<d35>entrada sur
+26	Iglesia de Mandolina\n<d35>norte
+27	Templo de Aria\n<d35>entrada
+28	Templo de Aria\n<d35>galería de luz
+29	Ciudad Barroca\n<d35>sala de teletransporte
+30	Ruinas de Coda\n<d35>sinceridad
+31	Monte Roca\n<d35>entrada
+32	Monte Roca\n<d35>cima
+33	Elegía de la Luna
+34	Torres Xilófono\n<d35>2º piso
+35	Dunas Ruidosas
+36	Doble Lengüeta\n<d35>bajo oeste
+37	Doble Lengüeta\n<d35>6º piso oeste
+38	Doble Lengüeta\n<d35>6º piso este
+39	Doble Lengüeta\n<d35>camino del Reloj de Arena
+40	Unísono Misterioso
+41	Ciudad Barroca\n<d35>jardines
+42	Doble Lengüeta\n<d35>ático
+43	Ritardando\n<d35>escondite
+44	Bosque Agogó\n<d35>mitad camino N
+45	Llanura del Coro\n<d35>norte
+46	Fuerte Fermata\n<d35>camino Central S
+47	Fuerte Fermata\n<d35>oeste
+48	Fuerte Fermata\n<d35>este
+49	Colinas Hanon\n<d35>sur
+50	Castillo Forte 
+51	Pantano Adagio\n<d35>este
+52	Arboleda de la Caja China\n<d35>norte
+53	Andante\n<d35>entrada de la cueva
+54	Cementerio Lento\n<d35>camino principal
+55	Barco Barroco\n<d35>pasillo oeste
+56	Barco pirata Dolce\n<d35>cubierta
+57	Barco pirata Dolce\n<d35>nivel 4
+58	Montañas Agudas\n<d35>base
+59	Cuevas de Lava Wah\n<d35>entrada N
+60	Cuevas de Lava Wah\n<d35>lado norte
+61	Cuevas de Lava Wah\n<d35>centro
+62	Iglesia de Mandolina\n<d35>sur
+63	Bosque de Celesta\n<d35>lado oeste
+64	Templo de Aria\n<d35>pasillo
+65	Ruinas de Coda\n<d35>orgullo vacío
+66	Ruinas de Coda\n<d35>egoísmo
+67	Ruinas de Coda\n<d35>rencor
+68	Ruinas de Coda\n<d35>envidia
+69	Ruinas de Coda\n<d35>recelo
+70	Ruinas de Coda\n<d35>angustia
+71	Cumbres del Cencerro\n<d35>árbol de violonchelo
+72	Torres Xilófono\n<d35>bajo
+73	Torres Xilófono\n<d35>1er piso
+74	Doble Lengüeta\n<d35>2º piso oeste
+75	Doble Lengüeta\n<d35>1er piso este
+76	Barco pirata Dolce\n<d35>nivel 3
+77	<d39>Pasadizo secreto\n<d35>cueva<d>
+78	<d39>Pasadizo secreto\n<d35>sur<d>

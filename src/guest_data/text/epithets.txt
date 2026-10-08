@@ -1,0 +1,239 @@
+0x8202A188
+[JPN]
+0	せれぶマルカート
+1	マラカスせんにん
+2	おばあちゃんっこケーナ
+3	おさんぽウラ
+4	おっとりポップ
+5	うぬぼれクワイア
+6	ひねくれマリンバ
+7	とうぞくスラー
+8	ここうのコキュウ
+9	おませなフルート
+10	へっぽこウクレレ
+11	がんばりやペット
+12	ふきげんメロディ
+13	きょうさいかフィルちち
+14	ぐらまーオーボエ
+15	たそがれジュジュ
+16	さびしがりやロコ
+17	いもうとおもいのトラン
+18	ろんりーピッチ
+19	しんぱいしょうホルン
+20	ぽつんとサブロー？
+21	くいしんぼうドラ
+22	やんわりハープ
+23	がっかりノート
+24	にんじゃベルリラ
+25	いっぴきねこゲン
+26	せっかちピチカート
+27	とらわれコンガ
+28	きちょうめんゴスペル
+29	うわっつらスウィート
+30	したっぱウード
+31	きらくなフラット
+32	ぽつんとゴロー
+[USA]
+0	Celebrity Marcato
+1	Wiseman Maracas
+2	Granny's Girl Quena
+3	Strolling Ghost Note
+4	Gentlemanly Pop
+5	Conceited Choir
+6	Contrary Marimba
+7	Thief Slur
+8	Aloof Fiddle
+9	Precocious Flute
+10	Quack Ukulele
+11	Tenacious Cornet
+12	Sullen Melody
+13	Henpecked Phil's Dad
+14	Glamorous Oboe
+15	Twilight JuJu
+16	Lonesome Loco
+17	Sister Loving Trumpet
+18	Lonely Pitch
+19	Worrywart Horn
+20	Desolate Saburo
+21	Hungry Drum
+22	Gentle Harp
+23	Disappointed Note
+24	Killer Bell Lyre
+25	Solitary String
+26	Impatient Pizzicato
+27	Captive Conga
+28	Methodical Gospel
+29	Shallow Sweet
+30	Petty Oud
+31	Easygoing Flat
+32	Desolate Goro
+[GBR]
+0	Celebrity Marcato
+1	Wiseman Maracas
+2	Granny's Girl Quena
+3	Strolling Ghost Note
+4	Gentlemanly Pop
+5	Conceited Choir
+6	Contrary Marimba
+7	Thief Slur
+8	Aloof Fiddle
+9	Precocious Flute
+10	Quack Ukulele
+11	Tenacious Cornet
+12	Sullen Melody
+13	Henpecked Phil's Dad
+14	Glamorous Oboe
+15	Twilight JuJu
+16	Lonesome Loco
+17	Sister Loving Trumpet
+18	Lonely Pitch
+19	Worrywart Horn
+20	Desolate Saburo
+21	Hungry Drum
+22	Gentle Harp
+23	Disappointed Note
+24	Killer Bell Lyre
+25	Solitary String
+26	Impatient Pizzicato
+27	Captive Conga
+28	Methodical Gospel
+29	Shallow Sweet
+30	Petty Oud
+31	Easygoing Flat
+32	Desolate Goro
+[FRA]
+0	Marcato de célébrité
+1	Maracas du sage
+2	Petite fille, Quena
+3	Note fantôme en balade
+4	Pop de gentilhomme
+5	Chœur élaboré
+6	Marimba contraire
+7	Slur le voleur
+8	Violon distant
+9	Flûte précoce
+10	Cancan de ukulélé
+11	Cornet tenace
+12	Mélodie obstinée
+13	Père de Phil manipulé
+14	Prestigieux hautbois
+15	Grigri du soir
+16	Loco solitaire
+17	Trompette amoureuse
+18	Ton solitaire
+19	Cor soucieux
+20	Loco solitaire
+21	Tambour affamé
+22	Douce harpe
+23	Note déçue
+24	Lyre tueuse
+25	Corde solitaire
+26	Pizzicato impatient
+27	Conga captive
+28	Gospel méthodique
+29	Douceur superficielle
+30	Petit Oud
+31	Bémol insouciant
+32	Loco solitaire
+[ITA]
+0	Marcato delle celebrità
+1	Maracas dell'uomo saggio
+2	Quena della nonnina
+3	Nota dello spettro errante
+4	Pop del gentiluomo
+5	Coro presuntuoso
+6	Marimba ostinata
+7	Legatura del ladro
+8	Fiddle distaccato
+9	Flauto precoce
+10	Ukulele fasullo
+11	Cornetta tenace
+12	Tetra melodia
+13	Il padre di Phil bistrattato
+14	Oboe incantevole
+15	Juju del crepuscolo
+16	Loco malinconico
+17	Tromba della sorella innamorata
+18	Pitch solitario
+19	Corno inquieto
+20	Basso malinconico
+21	Tamburo affamato
+22	Arpa gentile
+23	Nota delusa
+24	Lyra dell'assassino
+25	Corda solitaria
+26	Pizzicato impaziente
+27	Conga prigioniera
+28	Gospel metodico
+29	Dolce frivolezza
+30	Oud misero
+31	Monotono indulgente
+32	Pazzo malinconico
+[DEU]
+0	Prominenz-Marcato
+1	Weise Maracas
+2	Oma-Kind Quena
+3	Schlender-Geisternote
+4	Gentleman-Pop
+5	Eitler Chor
+6	Zänkische Marimba
+7	Diebischer Bindebogen
+8	Unnahbare Fiedel
+9	Vorwitzige Flöte
+10	Schnatter-Ukulele
+11	Beharrliches Kornett
+12	Mürrische Melodie
+13	Phils drangsalierter Papa
+14	Bezaubernde Oboe
+15	Zwielichts-JuJu
+16	Einsamer Loco
+17	Brüderliche Trompete
+18	Einsame Tonlage
+19	Unken-Horn
+20	Einsamer Loco
+21	Hunger-Trommel
+22	Sanfte Harfe
+23	Enttäuschte Note
+24	Mords-Glockenspiel
+25	Einzelne Saite
+26	Ungedulds-Pizzicato
+27	Conga hinter Gittern
+28	Gospel mit System
+29	Seichtesüß
+30	Kleinlicher Oud
+31	Lässiger Halbton
+32	Einsamer Loco
+[ESP]
+0	Celebridad Marcato
+1	Sabio Maracas
+2	Quena, la niña de la abuela
+3	Fantasma errante Nota
+4	Ruido Caballeroso
+5	Coro Engreído
+6	Contrario Marimba
+7	Ladrón Injurio
+8	Violín Lejano
+9	Flauta precoz
+10	Quack Ukulele
+11	Corneta Tenaz
+12	Melodía Sombría
+13	El calzonazos del padre de Phil
+14	Oboe Elegante
+15	Juju Crepuscular
+16	Loco Solitario
+17	Trompeta Cariñosa
+18	Tono Solitario
+19	Cuerno de las angustias
+20	Soplo Solitario
+21	Tambor Hambriento
+22	Arpa gentil
+23	Nota Decepcionada
+24	Lira Campana Asesina
+25	Cuerda Solitaria
+26	Pizzicato Impaciente
+27	Cautivo Conga
+28	Gospel Metódico
+29	Frívolo Caramelo
+30	Laúd Insignificante
+31	Bemol Sencillo
+32	Loco Solitario
