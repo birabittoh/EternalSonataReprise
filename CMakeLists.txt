@@ -328,6 +328,7 @@ add_custom_command(
         ${ETERNALSONATA_GUEST_TEXT}
         ${CMAKE_SOURCE_DIR}/src/guest_data/strings.txt
         ${CMAKE_SOURCE_DIR}/src/guest_data/wide_strings.txt
+        ${CMAKE_SOURCE_DIR}/src/guest_data/pal50_messages.txt
         ${CMAKE_SOURCE_DIR}/assets/default.xex
     COMMENT "Stripping the guest image"
     VERBATIM

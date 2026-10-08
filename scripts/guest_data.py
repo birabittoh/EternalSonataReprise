@@ -22,9 +22,15 @@ src/guest_data/strings.txt, `address<TAB>text`, with `\\\\`, `\\t`, `\\n`,
 UTF-16 strings in WIDE_RANGES are the same in wide_strings.txt. They are
 written in place, so one may not grow.
 
+The PAL-50 refusal (XAPI's sub_82254060) picks its button label and message
+by index from a table of UTF-16 strings, each after a 16 bit length; that
+table is src/guest_data/pal50_messages.txt, laid out like a text file's
+single language block. It may not outgrow the retail table.
+
     python scripts/guest_data.py check assets/default.xex
     python scripts/guest_data.py extract-text assets/default.xex      # one time
     python scripts/guest_data.py extract-strings assets/default.xex   # one time
+    python scripts/guest_data.py extract-pal50 assets/default.xex     # one time
 """
 import argparse
 import os
@@ -37,6 +43,8 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "gu
 TEXT_DIR = os.path.join(ROOT, "text")
 STRINGS_FILE = os.path.join(ROOT, "strings.txt")
 WIDE_STRINGS_FILE = os.path.join(ROOT, "wide_strings.txt")
+PAL50_FILE = os.path.join(ROOT, "pal50_messages.txt")
+PAL50_ADDRESS = 0x82000698
 
 LANGS = ["JPN", "USA", "GBR", "FRA", "ITA", "DEU", "ESP"]
 CODEC = {"JPN": "cp932"}
@@ -80,7 +88,9 @@ DROPPED = [
 # The image's data sections, as (start, end) guest addresses.
 # UTF-16 strings, NUL terminated and 4 aligned, with nothing else between
 # them: the sign-in change and save file messages in six languages.
-WIDE_RANGES = [(0x820AA058, 0x820AA430),(0x820AA56C, 0x820AA652)]
+# XContent's file and field names follow the PAL-50 table.
+WIDE_RANGES = [(0x82001188, 0x820011A8), (0x820011C4, 0x820011FC),
+               (0x820AA058, 0x820AA430), (0x820AA56C, 0x820AA652)]
 
 DATA_RANGES = [(0x82000400, 0x820AB81C), (0x822F0000, 0x82566B3C),
                (0x82566C00, 0x82566C0C), (0x82570000, 0x8257D593)]
@@ -293,6 +303,48 @@ def overlay_strings(image, base):
             image[off:off + size + width] = raw + bytes(size + width - len(raw))
 
 
+def parse_counted(data, off, count):
+    out = []
+    for _ in range(count):
+        n = struct.unpack_from(">H", data, off)[0] * 2
+        out.append(bytes(data[off + 2:off + 2 + n]))
+        off += 2 + n
+    return out
+
+
+def encode_counted(strings):
+    return b"".join(struct.pack(">H", len(s) // 2) + s for s in strings)
+
+
+def read_pal50():
+    """[string bytes] in id order."""
+    with open(PAL50_FILE, encoding="utf-8") as f:
+        lines = [line for line in f.read().split("\n") if line]
+    if int(lines[0], 16) != PAL50_ADDRESS:
+        raise ValueError(f"{PAL50_FILE}: the table lives at 0x{PAL50_ADDRESS:08X}")
+    out = []
+    for n, line in enumerate(lines[1:], 2):
+        sid, _, text = line.partition("\t")
+        if int(sid) != len(out):
+            raise ValueError(f"{PAL50_FILE}:{n}: expected id {len(out)}")
+        out.append(unescape(text, "utf-16-be"))
+    return out
+
+
+def pal50_retail_size(data, base, count):
+    return len(encode_counted(parse_counted(data, PAL50_ADDRESS - base, count)))
+
+
+def overlay_pal50(image, base):
+    strings = read_pal50()
+    data = encode_counted(strings)
+    off = PAL50_ADDRESS - base
+    size = pal50_retail_size(image, base, len(strings))
+    if len(data) > size:
+        raise ValueError(f"PAL-50 messages are {len(data)} bytes, {size} available")
+    image[off:off + size] = data + bytes(size - len(data))
+
+
 def retail_size(data, off):
     """Bytes the retail blob at `off` takes, which a replacement must fit in."""
     return len(encode_btx(parse_btx(data, off)))
@@ -344,6 +396,16 @@ def cmd_extract_strings(args):
     return 0
 
 
+def cmd_extract_pal50(args):
+    xex = XexImage.load(args.xex)
+    strings = parse_counted(xex.data, PAL50_ADDRESS - xex.base, 18)
+    with open(PAL50_FILE, "w", encoding="utf-8", newline="\n") as f:
+        f.write(f"0x{PAL50_ADDRESS:08X}\n")
+        f.writelines(f"{i}\t{escape(s, 'utf-16-be')}\n" for i, s in enumerate(strings))
+    print(f"{len(strings)} PAL-50 strings in {PAL50_FILE}")
+    return 0
+
+
 def cmd_check(args):
     xex = XexImage.load(args.xex)
     covered = bytearray(len(xex.data))
@@ -377,6 +439,17 @@ def cmd_check(args):
                 print(f"OVERLAP string at 0x{address:08X}")
                 failures += 1
             covered[off:off + size] = b"\1" * size
+    pal50 = read_pal50()
+    off = PAL50_ADDRESS - xex.base
+    size = pal50_retail_size(xex.data, xex.base, len(pal50))
+    if len(encode_counted(pal50)) > size:
+        print(f"TOO BIG PAL-50 messages: {len(encode_counted(pal50))} bytes, {size} available")
+        failures += 1
+    edited += sum(a != b for a, b in zip(pal50, parse_counted(xex.data, off, len(pal50))))
+    if any(covered[off:off + size]):
+        print("OVERLAP PAL-50 messages")
+        failures += 1
+    covered[off:off + size] = b"\1" * size
     for start, end, _ in DROPPED:
         covered[start - xex.base:end - xex.base] = b"\1" * (end - start)
     total = done = 0
@@ -395,7 +468,8 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name, fn in (("check", cmd_check), ("extract-text", cmd_extract_text),
-                     ("extract-strings", cmd_extract_strings)):
+                     ("extract-strings", cmd_extract_strings),
+                     ("extract-pal50", cmd_extract_pal50)):
         p = sub.add_parser(name)
         p.add_argument("xex")
         p.set_defaults(fn=fn)

@@ -1,3 +1,9 @@
+0x82001188	Name
+0x82001194	TitleName
+0x820011C4	[Default]
+0x820011D8	\r\n
+0x820011E0	NoCopy=1\r\n
+0x820011F8	=
 0x820AA058	Terminar juego
 0x820AA078	Se ha actualizado el estado de inicio de sesión. Regresarás a la pantalla del título.
 0x820AA124	Spiel beenden
