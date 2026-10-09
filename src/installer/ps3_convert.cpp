@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <list>
 #include <set>
 #include <stdexcept>
 #include <string_view>
@@ -801,13 +800,6 @@ class Region {
         Pad(0x1000);
         rb_.Mark(o);
         tables_.push_back(o);
-        const auto offs = CslBanks(d_, o);
-        groups_.emplace_back();
-        auto& group = groups_.back();
-        for (size_t b : offs)
-          group.push_back(Slice(d_, b, b + Rd32(d_, b + 4)));
-        for (size_t i = 0; i < offs.size(); ++i)
-          members_[offs[i]] = {o, i, &group};
         copied = o;
         o += 8 + 4 * size_t(Rd32(d_, o + 4));
         continue;
@@ -819,9 +811,7 @@ class Region {
         // their clip payloads are aligned from the bank start.
         Pad(0x1000);
         rb_.Mark(o);
-        const auto member = members_.find(o);
-        Append(rb_.out, (*audio_)(banks_, Slice(d_, o, o + size),
-                                  member == members_.end() ? nullptr : &member->second));
+        Append(rb_.out, (*audio_)(banks_, Slice(d_, o, o + size)));
         ++banks_;
         o = copied = o + size;
         continue;
@@ -870,9 +860,6 @@ class Region {
   size_t banks_ = 0;
   std::vector<size_t> tables_;
   std::vector<size_t> olds_;
-  // Stable addresses: members point into these.
-  std::list<std::vector<Bytes>> groups_;
-  std::map<size_t, BankMember> members_;
 };
 
 Bytes ConvertRegionBody(const Bytes& d, size_t start, size_t end, Report& report,
@@ -987,11 +974,41 @@ Bytes ConvertScp(const Bytes& d, Report& report, const AudioConverter* audio) {
   return out;
 }
 
+// A 2D animation (.tex): magic, u16 entry count plus one, then {u32 kind,
+// u32 offset}; kind 1 is a texture, the rest small records. Laid out as the
+// 360's: entries 32 byte aligned.
+Bytes ConvertTex(const Bytes& d, Report& report) {
+  const size_t count = Rd16(d, 4) - 1;
+  Bytes out = Slice(d, 0, 8 + 8 * count);
+  for (size_t i = 0; i < count; ++i) {
+    const size_t at = 8 + 8 * i;
+    const size_t o = Rd32(d, at + 4);
+    if (!o)
+      continue;
+    size_t end = d.size();
+    for (size_t j = 0; j < count; ++j) {
+      const size_t other = Rd32(d, 12 + 8 * j);
+      if (other > o)
+        end = std::min(end, other);
+    }
+    std::optional<Bytes> body;
+    if (At(d, at) == 1)
+      body = ConvertNtx3(d, o, report);
+    if (!body || body->empty())
+      body = Slice(d, o, end);
+    out.resize(out.size() + PadTo(int64_t(out.size()), 32));
+    Wr32(out, at + 4, out.size());
+    Append(out, *body);
+  }
+  return out;
+}
+
 // BattleKeep.bop is addressed by slot. The PS3 dropped the effects at 360
 // slots 26..33 and moved every later slot down by eight, but its battle files
-// still name those eight; the game reorders the slots into the 360's layout
-// (ps3_battlekeep.cpp) and finds them appended after the PS3's own.
-constexpr size_t kBattleKeepDroppedFirst = 26;
+// keep the 360's ids; the game reorders the slots into the 360's layout
+// (ps3_battlekeep.cpp), expecting eight more after the PS3's own. No PS3 data
+// or executable constant names those eight, and every reader skips a null
+// slot, so they stay empty.
 constexpr size_t kBattleKeepDropped = 8;
 
 std::pair<size_t, std::vector<std::optional<Bytes>>> BopEntries(const Bytes& d) {
@@ -1030,17 +1047,10 @@ bool EndsWith(std::string_view s, std::string_view suffix) {
 
 const char* const kBattleKeep = "btldata/battlekeep.bop";
 
-Bytes AppendDroppedBattleKeep(const Bytes& ps3, const Bytes& x360, Report& report) {
-  auto [dir_at, slots] = BopEntries(ps3);
-  auto [_, want] = BopEntries(x360);
-  if (slots.size() + kBattleKeepDropped != want.size()) {
-    report.Warn(std::string(kBattleKeep) + ": " + std::to_string(slots.size()) +
-                " entries, expected " + std::to_string(want.size() - 8) + "; kept as is");
-    return ps3;
-  }
-  for (size_t i = 0; i < kBattleKeepDropped; ++i)
-    slots.push_back(want[kBattleKeepDroppedFirst + i]);
-  Bytes out = Slice(ps3, 0, dir_at);
+Bytes AppendEmptyBattleKeep(const Bytes& d, Report& report) {
+  auto [dir_at, slots] = BopEntries(d);
+  slots.resize(slots.size() + kBattleKeepDropped);
+  Bytes out = Slice(d, 0, dir_at);
   Put32(out, slots.size());
   out.resize(out.size() + 4 * slots.size());
   for (size_t i = 0; i < slots.size(); ++i) {
@@ -1052,7 +1062,7 @@ Bytes AppendDroppedBattleKeep(const Bytes& ps3, const Bytes& x360, Report& repor
   }
   out.resize(out.size() + PadTo(int64_t(out.size()), 0x1000));
   Wr32(out, 4, out.size());
-  report.counts["BattleKeep effects appended from the 360"] += kBattleKeepDropped;
+  report.counts["BattleKeep null slots appended"] += kBattleKeepDropped;
   return out;
 }
 
@@ -1089,13 +1099,15 @@ std::optional<Output> ConvertFile(const std::string& rel, const Bytes& d, Report
   std::string low = rel;
   std::transform(low.begin(), low.end(), low.begin(),
                  [](unsigned char c) { return char(std::tolower(c)); });
-  // Formats nothing converts yet: the 360 file is kept for these.
-  if (EndsWith(low, ".fnt") || EndsWith(low, ".tex"))
-    return std::nullopt;
   // Credits: same records on both releases, read through the same three of
   // its ten lists (sub_82131E18, PS3 0x32287C), and nothing to convert.
-  if (low == "op.bmd" || low == "ed1.bmd" || low == "ed2.bmd")
+  // Fonts: the same format, the PS3's a superset of the 360's glyphs.
+  if (low == "op.bmd" || low == "ed1.bmd" || low == "ed2.bmd" || low == "p1.fnt" ||
+      low == "p1_g.fnt")
     return Output{rel, d};
+  if (EndsWith(low, ".tex") && d.size() >= 4 && d[0] == 0x03 && d[1] == 0x33 && d[2] == 0x90 &&
+      d[3] == 0x10)
+    return Output{rel, ConvertTex(d, report)};
   // Battle effects and title.bmd carry banks too: one ATRAC3 clip left in
   // them stalls the XMA decoder and silences all audio after it.
   if (EndsWith(low, ".e") && d.size() >= 4 && d[0] == 0 && d[1] == 0 && d[2] == 1 &&

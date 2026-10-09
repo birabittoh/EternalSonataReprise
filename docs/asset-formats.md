@@ -448,7 +448,7 @@ long as it exists on disk and something references its path.
 | `.wav` | Xbox 360 **big-endian** RIFF/WAVE, 16-bit BE PCM. Convert with `scripts/convert_wav.py`. |
 | `.cxs` | Music. Flag 0, readable headers. |
 | `.csf` | Sound banks (flag 0, 60 map banks) and compressed voice audio (flag 3, 60 files). Referenced via `"%spc%03d.csf"` / `"%spc%03d_usa.csf"` at ~`0x820872C8`. |
-| `.x3tex`, `.tex` | Textures. Not investigated. |
+| `.x3tex`, `.tex` | Textures; `.tex` is a 2D animation container, see `ps3-assets.md` §4. |
 
 ---
 

@@ -5,7 +5,7 @@ Layout (big endian): "FILE", u32 archive size, u32 entry count, u32 0,
 then count 0x30 byte entries: char path[32], u32 offset, u32 size, 8 bytes 0.
 Entry data is stored raw; paths use backslashes and are relative to USRDIR.
 
-usage: unpack_ps3.py ARCHIVES_DIR_OR_FILE... [-o OUT] [--list] [--case-from DIR]
+usage: unpack_ps3.py ARCHIVES_DIR_OR_FILE... [-o OUT] [--list]
 """
 import argparse
 import os
@@ -35,17 +35,7 @@ def main():
     ap.add_argument("inputs", nargs="+")
     ap.add_argument("-o", "--out", default="assets-ps3")
     ap.add_argument("--list", action="store_true")
-    ap.add_argument("--case-from", metavar="DIR",
-                    help="reuse this tree's (e.g. the 360 assets) casing; PS3 paths are all lowercase")
     args = ap.parse_args()
-
-    casing = {}
-    if args.case_from:
-        for root, dirs, files in os.walk(args.case_from):
-            rel = os.path.relpath(root, args.case_from).replace("\\", "/")
-            for n in dirs + files:
-                p = n if rel == "." else f"{rel}/{n}"
-                casing[p.lower()] = p
 
     archives = []
     for p in args.inputs:
@@ -62,7 +52,7 @@ def main():
                 if args.list:
                     print(f"  {off:#010x} {length:>10}  {name}")
                     continue
-                dst = os.path.join(args.out, casing.get(name.lower(), name))
+                dst = os.path.join(args.out, name)
                 os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
                 f.seek(off)
                 with open(dst, "wb") as o:

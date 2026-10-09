@@ -6,14 +6,11 @@
 #include <cstring>
 #include <fstream>
 #include <map>
-#include <optional>
-#include <set>
 #include <unordered_map>
 #include <vector>
 
 #include <rex/logging.h>
 
-#include "eternalsonata_asset_container.h"
 #include "ps3_bytes.h"
 #include "ps3_convert.h"
 
@@ -30,12 +27,9 @@ constexpr const char* kOriginal = ".orig";
 constexpr const char* kShipped = "ps3-shipped.txt";
 // Bumped with every conversion change, here and in ps3_convert.py.
 constexpr const char* kStamp = "ps3-convert.stamp";
-constexpr const char* kStampVersion = "1";
+constexpr const char* kStampVersion = "2";
 constexpr std::array kNotData = {".i64", ".idb", ".id0", ".id1", ".id2",
                                  ".nam", ".til", ".bak", ".orig", ".stamp"};
-// Never served from the game directory: the guest image is built in, and the
-// release patch bundle is the 360 installer's.
-constexpr std::array kNotDonor = {"index.vmtoc", "default.xex", "release-patches.bin"};
 
 std::string Lower(std::string s) {
   std::transform(s.begin(), s.end(), s.begin(),
@@ -125,8 +119,8 @@ std::map<std::string, std::string> ShippedFiles(const fs::path& root) {
 }
 
 void MakeRoom(const fs::path& path, bool shipped) {
-  // A shipped file is kept beside its replacement. Anything else may be a
-  // hard link to the 360 tree: unlink it so a write never reaches the 360 file.
+  // A shipped file is kept beside its replacement. Anything else is unlinked
+  // first: an older converter hard linked files in from a 360 copy.
   std::error_code ec;
   const fs::path original = WithSuffix(path, kOriginal);
   if (shipped && !fs::exists(original, ec)) {
@@ -145,18 +139,6 @@ void ReplaceFile(const fs::path& path, const Bytes& data, bool shipped = false) 
   WriteFile(path, data);
 }
 
-void LinkFile(const fs::path& src, const fs::path& dst, bool shipped = false) {
-  MakeRoom(dst, shipped);
-  std::error_code ec;
-  fs::create_hard_link(src, dst, ec);
-  if (ec) {
-    ec.clear();
-    fs::copy_file(src, dst, ec);
-    if (ec)
-      throw std::runtime_error("Could not copy " + src.string() + " (" + ec.message() + ").");
-  }
-}
-
 // The shipped file's bytes, from before any earlier run.
 Bytes ReadShipped(const fs::path& path) {
   std::error_code ec;
@@ -171,21 +153,6 @@ Bytes ReadShipped(const fs::path& path) {
 // name, binary searched by sub_8210D080.
 class TocBuilder {
  public:
-  bool Load(const fs::path& path) {
-    Bytes data;
-    if (!ReadFile(path, data))
-      return false;
-    for (size_t i = 0; i + 48 <= data.size(); i += 48) {
-      Record rec;
-      std::memcpy(rec.data(), data.data() + i, 48);
-      const size_t n = strnlen(reinterpret_cast<const char*>(rec.data()), 32);
-      std::string key = Lower(std::string(reinterpret_cast<const char*>(rec.data()), n));
-      std::replace(key.begin(), key.end(), '\\', '/');
-      records_[key] = rec;
-    }
-    return true;
-  }
-
   bool SetStored(const std::string& path, uint32_t size) {
     const std::string key = Lower(path);
     auto it = records_.find(key);
@@ -223,139 +190,29 @@ class TocBuilder {
   std::unordered_map<std::string, Record> records_;
 };
 
-// Embedded banks: each pairs with a bank of the 360 container of the same
-// name, found by clip shapes.
-class EmbeddedAudio {
- public:
-  EmbeddedAudio(std::function<std::optional<Bytes>(const std::string&)> decode360,
-                ps3::PcmWriter write_pcm, ps3::Report& report)
-      : decode360_(std::move(decode360)), write_pcm_(std::move(write_pcm)), report_(report) {}
-
-  Bytes Convert(const std::string& rel, size_t index, const Bytes& bank,
-                const ps3::BankMember* member) {
-    const std::string low = Lower(rel);
-    Twin& twin_file = Load(low);
-    const Bytes* twin = nullptr;
-    if (member) {
-      // Each language is a directory of banks, and a bank alone can match the
-      // other language's, so directories are paired whole.
-      const auto key = std::make_pair(low, member->directory);
-      auto it = paired_.find(key);
-      if (it == paired_.end())
-        it = paired_.emplace(key, ps3::BestGroup(*member->group, twin_file.groups)).first;
-      const std::vector<Bytes>* x = it->second;
-      if (x && member->position < x->size())
-        twin = &(*x)[member->position];
-    }
-    if (!twin)
-      twin = ps3::BestTwin(bank, twin_file.banks, index);
-    return ps3::ConvertCsf(rel + "#" + std::to_string(index), bank, twin, write_pcm_, report_);
-  }
-
- private:
-  struct Twin {
-    std::vector<Bytes> banks;
-    std::vector<std::vector<Bytes>> groups;
-  };
-
-  Twin& Load(const std::string& low) {
-    auto it = twins_.find(low);
-    if (it != twins_.end())
-      return it->second;
-    Twin& t = twins_[low];
-    if (const auto x = decode360_(low)) {
-      for (size_t o = 0; o + 16 < x->size(); o += 0x1000) {
-        if (ps3::IsCsf(*x, o, x->size()))
-          t.banks.push_back(ps3::Slice(*x, o, o + ps3::Rd32(*x, o + 4)));
-      }
-      for (size_t o = 0; o + 16 < x->size(); o += 0x1000) {
-        if (!ps3::IsCsl(*x, o, x->size()))
-          continue;
-        std::vector<Bytes> group;
-        for (size_t b : ps3::CslBanks(*x, o))
-          group.push_back(ps3::Slice(*x, b, b + ps3::Rd32(*x, b + 4)));
-        t.groups.push_back(std::move(group));
-      }
-    }
-    return t;
-  }
-
-  std::function<std::optional<Bytes>(const std::string&)> decode360_;
-  ps3::PcmWriter write_pcm_;
-  ps3::Report& report_;
-  std::map<std::string, Twin> twins_;
-  std::map<std::pair<std::string, size_t>, const std::vector<Bytes>*> paired_;
-};
-
-std::string Run(const fs::path& root, const fs::path& base, const ExtractProgress& progress) {
+std::string Run(const fs::path& root, const ExtractProgress& progress) {
   std::error_code ec;
   const auto shipped = ShippedFiles(root);
-  TocBuilder toc;
-  if (!toc.Load(base / "index.vmtoc"))
-    return "The Xbox 360 files at " + base.string() + " have no index.vmtoc.";
-
-  // Lowercase path -> the 360 spelling, for every 360 file.
-  std::map<std::string, std::string> base_names;
-  for (std::string& rel : Walk(base)) {
-    const std::string name = Lower(rel.substr(rel.find_last_of('/') + 1));
-    if (std::find(kNotDonor.begin(), kNotDonor.end(), name) == kNotDonor.end())
-      base_names[Lower(rel)] = std::move(rel);
+  // Start from the unpacked tree: an earlier run's outputs, or files an older
+  // converter linked in from a 360 copy, would linger otherwise.
+  for (const std::string& rel : Walk(root)) {
+    if (rel != kShipped && !shipped.count(Lower(rel)))
+      fs::remove(root / rel, ec);
   }
-  if (progress)
-    progress("Converting game files...", -1.0f, "Adding the Xbox 360 files");
-  for (const auto& [low, rel] : base_names) {
-    if (!shipped.count(low))
-      LinkFile(base / rel, root / rel);
-  }
-  // Converted files keep the PS3 spelling, added ones the 360's.
-  auto names = base_names;
-  for (const auto& [low, rel] : shipped)
-    names[low] = rel;
   fs::remove_all(root / "pcm", ec);
 
-  assets::Toc base_toc;
-  if (!base_toc.Load(base / "index.vmtoc"))
-    return "The Xbox 360 index.vmtoc could not be read.";
-  auto decode360 = [&](const std::string& low) -> std::optional<Bytes> {
-    const assets::TocEntry* entry = base_toc.Find(low);
-    if (!entry)
-      return std::nullopt;
-    const auto spelled = base_names.find(low);
-    Bytes encoded;
-    if (!ReadFile(base / (spelled != base_names.end() ? spelled->second : low), encoded))
-      return std::nullopt;
-    if (entry->flag == 0)
-      return encoded;
-    Bytes out;
-    if (!assets::DecodeAsset(encoded.data(), encoded.size(), entry->size, entry->flag, out))
-      throw std::runtime_error("Could not decode the Xbox 360 " + low + ".");
-    return out;
-  };
-
-  ps3::CxsDonors donors;
-  for (const auto& entry : fs::directory_iterator(base / "sound" / "cxs", ec)) {
-    const std::string name = entry.path().filename().string();
-    Bytes d;
-    if (EndsWith(Lower(name), ".cxs") && ReadFile(entry.path(), d) && d.size() >= 4 &&
-        std::memcmp(d.data(), "CXS ", 4) == 0)
-      donors.emplace_back(name, std::move(d));
-  }
-  const auto battlekeep = decode360(ps3::kBattleKeep);
-  if (!battlekeep)
-    return "The Xbox 360 files have no BattleKeep.bop.";
-
+  TocBuilder toc;
   ps3::Report report;
   auto write_pcm = [&](const ps3::Token& tok, const Bytes& wav) {
     ReplaceFile(root / "pcm" / (ps3::TokenHex(tok) + ".wav"), wav);
   };
-  EmbeddedAudio embedded(decode360, write_pcm, report);
   auto emit = [&](std::string out_rel, const Bytes& data) {
-    std::string low = Lower(out_rel);
-    if (!base_names.count(low))
-      ++report.counts["new files"];
-    if (const auto it = names.find(low); it != names.end())
-      out_rel = it->second;
-    ReplaceFile(root / out_rel, data, shipped.count(low) != 0);
+    const std::string low = Lower(out_rel);
+    // Converted files keep the PS3 spelling.
+    const auto spelled = shipped.find(low);
+    if (spelled != shipped.end())
+      out_rel = spelled->second;
+    ReplaceFile(root / out_rel, data, spelled != shipped.end());
     if (!toc.SetStored(out_rel, uint32_t(data.size())))
       report.Warn(out_rel + ": path too long for an index.vmtoc record");
   };
@@ -364,42 +221,30 @@ std::string Run(const fs::path& root, const fs::path& base, const ExtractProgres
   for (const auto& [low, rel] : shipped) {
     if (progress)
       progress("Converting game files...", float(done++) / float(shipped.size()), rel);
-    const fs::path path = root / rel;
-    const Bytes d = ReadShipped(path);
+    const Bytes d = ReadShipped(root / rel);
     if (EndsWith(low, ".csf")) {
-      const auto x360 = decode360(low);
-      emit(rel, ps3::ConvertCsf(rel, d, x360 ? &*x360 : nullptr, write_pcm, report));
+      emit(rel, ps3::ConvertCsf(rel, d, write_pcm, report));
       continue;
     }
     if (EndsWith(low, ".cps")) {
-      const auto has_base = [&](const std::string& p) { return base_names.count(p) != 0; };
-      for (const auto& out : ps3::ConvertCps(rel, d, has_base, donors, write_pcm, report))
+      for (const auto& out : ps3::ConvertCps(rel, d, write_pcm, report))
         emit(out.path, out.data);
       continue;
     }
-    const ps3::AudioConverter audio = [&](size_t index, const Bytes& bank,
-                                          const ps3::BankMember* member) {
-      return embedded.Convert(rel, index, bank, member);
+    const ps3::AudioConverter audio = [&](size_t index, const Bytes& bank) {
+      return ps3::ConvertCsf(rel + "#" + std::to_string(index), bank, write_pcm, report);
     };
     auto result = ps3::ConvertFile(rel, d, report, &audio);
-    const std::string ext = [&] {
+    if (!result) {
       const std::string name = low.substr(low.find_last_of('/') + 1);
       const size_t dot = name.find_last_of('.');
-      return dot == std::string::npos || dot == 0 ? name : name.substr(dot);
-    }();
-    if (!result) {
-      const auto twin = base_names.find(low);
-      if (twin == base_names.end()) {
-        ++report.counts["kept PS3 " + ext];
-        continue;
-      }
-      ++report.counts["kept 360 " + ext];
-      LinkFile(base / twin->second, path, true);
+      ++report.counts["served as is " + (dot == std::string::npos || dot == 0 ? name : name.substr(dot))];
+      toc.SetStored(rel, uint32_t(d.size()));
       continue;
     }
     ++report.counts["converted"];
     if (low == ps3::kBattleKeep)
-      result->data = ps3::AppendDroppedBattleKeep(result->data, *battlekeep, report);
+      result->data = ps3::AppendEmptyBattleKeep(result->data, report);
     emit(result->path, result->data);
   }
   ReplaceFile(root / "index.vmtoc", toc.bytes());
@@ -452,9 +297,9 @@ bool IsPs3Converted(const fs::path& dir) {
   return fs::is_regular_file(dir / "index.vmtoc", ec) && !fs::exists(dir / kShipped, ec);
 }
 
-std::string ConvertPs3(const fs::path& dir, const fs::path& donor, const ExtractProgress& progress) {
+std::string ConvertPs3(const fs::path& dir, const ExtractProgress& progress) {
   try {
-    return Run(dir, donor, progress);
+    return Run(dir, progress);
   } catch (const std::exception& e) {
     return std::string("Converting the PS3 files failed: ") + e.what();
   }
@@ -471,17 +316,9 @@ fs::path FindPs3Archives(const fs::path& picked) {
   return SameName(at.filename().string(), "archives") && HasArchives(at) ? at : fs::path();
 }
 
-std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir, const fs::path& case_from,
+std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir,
                       const ExtractProgress& progress) {
   std::error_code ec;
-  std::unordered_map<std::string, std::string> casing;
-  if (!case_from.empty()) {
-    for (auto it = fs::recursive_directory_iterator(case_from, ec); !ec && it != fs::end(it);
-         it.increment(ec)) {
-      const std::string rel = it->path().lexically_relative(case_from).generic_string();
-      casing[Lower(rel)] = rel;
-    }
-  }
   std::vector<fs::path> inputs;
   for (const auto& entry : fs::directory_iterator(archives, ec)) {
     if (EndsWith(entry.path().filename().string(), ".files"))
@@ -525,8 +362,7 @@ std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir, const f
         return inputs[a].filename().string() + " names an unsafe path: " + e.name;
       if (progress)
         progress("Unpacking game files...", float(a) / float(inputs.size()), e.name);
-      const auto spelled = casing.find(Lower(e.name));
-      const fs::path dst = partial / (spelled != casing.end() ? spelled->second : e.name);
+      const fs::path dst = partial / e.name;
       fs::create_directories(dst.parent_path(), ec);
       std::ofstream out(dst, std::ios::binary | std::ios::trunc);
       in.seekg(e.offset);
