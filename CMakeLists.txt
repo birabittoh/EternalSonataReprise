@@ -286,39 +286,6 @@ add_custom_target(eternalsonata_guest_shaders
     DEPENDS ${ETERNALSONATA_GUEST_SHADER_PACK} ${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
             ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK} ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM})
 
-# The patches that let USA and JP copies play (scripts/gen-release-patches.py),
-# applied to the layout-sensitive containers at install. Generating them takes every release's full data, so the
-# bundle is prebuilt and fetched like default.xex; without it those copies are
-# refused.
-set(ETERNALSONATA_RELEASE_PATCHES ${CMAKE_SOURCE_DIR}/assets/release-patches.bin CACHE FILEPATH
-    "Prebuilt USA and JP to PAL patch bundle")
-if(NOT EXISTS ${ETERNALSONATA_RELEASE_PATCHES})
-    set(ETERNALSONATA_RELEASE_PATCHES ${CMAKE_BINARY_DIR}/release-patches.empty)
-    file(TOUCH ${ETERNALSONATA_RELEASE_PATCHES})
-endif()
-set(ETERNALSONATA_RELEASE_PATCHES_ASM ${CMAKE_BINARY_DIR}/release-patches.S)
-file(CONFIGURE OUTPUT ${ETERNALSONATA_RELEASE_PATCHES_ASM} CONTENT [=[
-#if defined(__APPLE__)
-#define SYM(name) _##name
-.section __TEXT,__const
-#elif defined(_WIN32)
-#define SYM(name) name
-.section .rdata,"dr"
-#else
-#define SYM(name) name
-.section .rodata
-#endif
-
-.p2align 4
-.global SYM(kReleasePatchData)
-SYM(kReleasePatchData):
-.incbin "@ETERNALSONATA_RELEASE_PATCHES@"
-.global SYM(kReleasePatchDataEnd)
-SYM(kReleasePatchDataEnd):
-]=] @ONLY)
-set_source_files_properties(${ETERNALSONATA_RELEASE_PATCHES_ASM}
-    PROPERTIES OBJECT_DEPENDS ${ETERNALSONATA_RELEASE_PATCHES})
-
 # The guest image, linked in so a game directory needs only the data files
 # (src/core/guest_image.h). Built from src/guest_data; code sections are empty.
 set(ETERNALSONATA_GUEST_IMAGE ${CMAKE_BINARY_DIR}/guest-image.xex)
@@ -454,7 +421,6 @@ set(ETERNALSONATA_SOURCES
     src/core/settings.cpp
     ${ETERNALSONATA_GUEST_SHADER_PACK_ASM}
     ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM}
-    ${ETERNALSONATA_RELEASE_PATCHES_ASM}
     ${ETERNALSONATA_GUEST_IMAGE_ASM}
     ${ETERNALSONATA_AREA_NAMES_HEADER}
     ${ETERNALSONATA_PS3_TABLES}
