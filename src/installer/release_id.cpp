@@ -9,17 +9,21 @@ namespace {
 // The PAL default.xex is the retail file the guest image is built from.
 constexpr std::array kReleases = {
     Release{"Xbox 360, Europe", "default.xex",
-            "91184e7765172a358ecaa6e5ca1784db1ae796c60f25051a45c5206f8949501e", true},
+            "91184e7765172a358ecaa6e5ca1784db1ae796c60f25051a45c5206f8949501e", true,
+            kTextAll},
     Release{"Xbox 360, North America", "default.xex",
-            "d830c451cac4a913e3bcee54cf62a7c7541834b8a751adc4ef37483d78165aee", true},
+            "d830c451cac4a913e3bcee54cf62a7c7541834b8a751adc4ef37483d78165aee", true, kTextJa | kTextEn},
     Release{"Xbox 360, Japan", "default.xex",
-            "32a00e6537ff4dbb160b97f7a6e427c205ddecb1aab5f38d77d556d35cfc61ef", true},
+            "32a00e6537ff4dbb160b97f7a6e427c205ddecb1aab5f38d77d556d35cfc61ef", true, kTextJa},
     Release{"PS3, Europe (BLES00444)", "EBOOT.BIN",
-            "a825a19dcbbad655b31f892f8fedc11fb356aab0cbb68cf0eb77395f48b43ba9", true},
+            "a825a19dcbbad655b31f892f8fedc11fb356aab0cbb68cf0eb77395f48b43ba9", true,
+            kTextAll},
     Release{"PS3, North America (BLUS30161)", "EBOOT.BIN",
-            "d2a140dfbc84b1f4e2354c21ec51c00fe517f1f8bb83559115fde3efbcdbba02", true},
+            "d2a140dfbc84b1f4e2354c21ec51c00fe517f1f8bb83559115fde3efbcdbba02", true,
+            kTextAll},
     Release{"PS3, Japan (Trusty Bell Reprise)", "EBOOT.BIN",
-            "fe26949166337744af04d31567b3c55533ed537a6b4907f5c3cb9cf8e35580a4", true},
+            "fe26949166337744af04d31567b3c55533ed537a6b4907f5c3cb9cf8e35580a4", true,
+            kTextJa},
 };
 
 constexpr std::array<uint32_t, 64> kRound = {
@@ -66,6 +70,16 @@ void Block(std::array<uint32_t, 8>& h, const uint8_t* p) {
 }
 
 }  // namespace
+
+uint32_t TextLanguageBit(std::string_view code) {
+  if (code == "ja") return kTextJa;
+  if (code == "en") return kTextEn;
+  if (code == "fr") return kTextFr;
+  if (code == "it") return kTextIt;
+  if (code == "de") return kTextDe;
+  if (code == "es") return kTextEs;
+  return 0;
+}
 
 const Release* FindRelease(std::string_view file_sha256) {
   for (const Release& release : kReleases) {

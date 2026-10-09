@@ -30,6 +30,8 @@ struct GameDataPrompt {
   std::string error;
   // The release picked, once identified.
   std::string release;
+  // The text it ships (release_id.h bits); 0 offers every language.
+  uint32_t languages = 0;
   // A supported source is picked: Extract is enabled.
   bool can_extract = false;
   // Every phase is done: Start is enabled.

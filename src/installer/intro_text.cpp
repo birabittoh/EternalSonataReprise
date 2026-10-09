@@ -30,7 +30,7 @@ constexpr std::array<const char*, size_t(IntroText::kCount)> kKeys = {
     "quit",          "language",      "ready",           "ready_release",
     "found",         "found_release", "press_extract",   "need_files",
     "select_iso_or_folder",           "select_iso_only", "copy_hint",
-    "selected",      "title",
+    "selected",      "title",         "unsupported_language",
 };
 constexpr std::array<const char*, kInstallPhaseCount> kPhaseKeys = {
     "phase_extract", "phase_convert", "phase_patch"};
@@ -46,6 +46,7 @@ struct Language {
 std::vector<Language> g_languages;
 int g_current = -1;
 int g_launch = -1;
+bool g_confirmed = false;
 std::filesystem::path g_config_path;
 
 const std::vector<Language>& Languages() {
@@ -165,6 +166,10 @@ const char* IntroLanguageName(int index) {
   return Languages()[size_t(index)].name.c_str();
 }
 
+const char* IntroLanguageCodeAt(int index) {
+  return Languages()[size_t(index)].code.c_str();
+}
+
 int IntroLanguage() {
   return Current();
 }
@@ -192,6 +197,14 @@ const char* LaunchIntroLanguageCode() {
     return "en";
   Current();
   return languages[size_t(g_launch)].code.c_str();
+}
+
+void ConfirmIntroLanguage() {
+  g_confirmed = true;
+}
+
+bool IntroLanguageConfirmed() {
+  return g_confirmed;
 }
 
 void BindIntroLanguageConfig(const std::filesystem::path& config_path) {
