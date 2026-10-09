@@ -81,7 +81,7 @@ which clear and count ten entries) are rewritten on the host instead
 Entries 10 and 11 are kept in each slot's save record (`party.<array>` keys);
 a save without them gets what the last new game set up. On PS3 data the
 template's entries 10 and 11 are the PS3's Crescendo and Serenade records
-(`0x479A98` in the EBOOT, same 136 byte layout), generated at build time by
+(`0x479A98` in the EBOOT, same 136 byte layout), extracted by
 `scripts/ps3_party_template.py`.
 
 The camp menu's member panels (`src/engine/party_camp_menu.cpp`) name a

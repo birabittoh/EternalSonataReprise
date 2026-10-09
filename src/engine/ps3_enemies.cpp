@@ -32,14 +32,12 @@ struct Enemy {
   std::array<uint32_t, 13> rest;
 };
 
-// Generated from the PS3 EBOOT at build time (scripts/ps3_enemy_table.py);
-// empty without it. The last element only keeps the array valid then.
+// Extracted from the PS3 EBOOT by scripts/ps3_enemy_table.py.
 constexpr Enemy kPs3Enemies[] = {
-#include "ps3_enemy_table.generated.inc"
-    {},
+#include "ps3_enemy_table.inc"
 };
-constexpr size_t kEnemyCount = std::size(kPs3Enemies) - 1;
-static_assert(kEnemyCount == 0 || kEnemyCount == 336);
+constexpr size_t kEnemyCount = std::size(kPs3Enemies);
+static_assert(kEnemyCount == 336);
 constexpr uint32_t kRecordSize = 80;
 
 std::once_flag g_once;
@@ -54,10 +52,6 @@ void BuildTable() {
   auto* memory = runtime ? runtime->memory() : nullptr;
   if (!memory)
     return;
-  if (!kEnemyCount) {
-    REXLOG_ERROR("ps3 enemies: built without the PS3 EBOOT, keeping the 360 table");
-    return;
-  }
 
   std::unordered_map<std::string_view, uint32_t> names;
   uint32_t names_size = 0;

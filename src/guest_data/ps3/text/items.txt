@@ -1,0 +1,3025 @@
+0x82376400
+[JPN]
+0	ハンティングナイフ
+1	サーベル
+2	太刀
+3	ポイズンブラッド
+4	ワルーンソード
+5	ブランチソード
+6	えん月刀
+7	バックソード
+8	ドラグーンブレード
+9	ハルストライカー
+10	スクラマサクス
+11	ジェイドファルコン
+12	ドゥームガード
+13	クラウ・ソラス
+14	サンブリンガー
+15	イェクルスナウト
+16	レクの剣
+17	ニードホグの牙
+18	ヴェルムンズ・ラスト
+19	冥星剣
+20	七支刀
+21	おしゃれ傘
+22	さんぽ傘
+23	雪白の日傘
+24	あぶら紙の傘
+25	あさぎの日傘
+26	こうもり傘
+27	若葉の傘
+28	ぬれ羽の傘
+29	桃花の日傘
+30	山吹の日傘
+31	破れ雨傘
+32	碧天の傘
+33	アークゥイバス
+34	サーペンタイン・ロック
+35	ジェザイル
+36	ウルフズファング
+37	ホールージュガン
+38	ロハーカノン
+39	ウォーハンマーピストル
+40	ハチェットマスケット
+41	セイバートゥース
+42	フリントロックピック
+43	マッチロックマトック
+44	マグナムアーム
+45	ケルベロスケイナイン
+46	（欠番）ドレイクトゥース
+47	（欠番）ザグナルマズル
+48	（欠番）クロウドライフル
+49	ナグルファング
+50	パインタクト
+51	竹製シャフト
+52	コルクタクト
+53	メイプルタクト
+54	オークバレル
+55	バッファローホーン
+56	共鳴の小枝
+57	プロフェティックケーン
+58	ゴールドタクト
+59	和音の小枝
+60	ミューズタクト
+61	エボニーシャフト
+62	アポロンリカノス
+63	ミスルトゥ
+64	セプターオブボイスレス
+65	フロイデヘルシャ
+66	角落としの弓
+67	ラピッドファイア
+68	きゃらの弓
+69	スワローシューター
+70	ましら追いの弓
+71	サンダーステアー
+72	トゥクレセント
+73	護皇弓
+74	エルヴンサイト
+75	アルテミスの弓
+76	ルウ・ラムファダ
+77	ティターニアの弓
+78	ラリカス
+79	マーシーブレス
+80	チャクラム
+81	トークァタス
+82	オルビス
+83	ウィルダネスホラー
+84	ムーンイレイザー
+85	ムスペルヘイム
+86	ルースレス
+87	ノドゥス
+88	アルフヘイム
+89	（欠番）クマラサクス
+90	ファルシオン
+91	（欠番）クレイモア
+92	ブロードソード
+93	バスタードソード
+94	ヘレブラ
+95	リブクラッシャー
+96	ツヴァイハンダー
+97	ソウルクレメイト
+98	パイロブレード
+99	バンキッシャー
+100	ヘカトゥーム
+101	シアスィの骨剣
+102	タイラントスレイヤー
+103	スコヴヌング
+104	ベズワルの剣
+105	（欠番）ハーフ・ナックル
+106	ミートフック
+107	ブラス・ナックル
+108	（欠番）
+109	（欠番）ブラッディタロン
+110	ブレンシャッター
+111	角珠
+112	パワーストローク
+113	デスズ・ヘッド
+114	セレスティアルグラブ
+115	ティールの左腕
+116	（欠番）ハンズ・オブ・ミダス
+117	ティールの右腕
+118	メイルドフィスト
+119	（欠番）バグ・ナウ
+120	（欠番）マドゥー
+121	神鉄の手袋
+122	ロード・オブ・レイン
+123	フェンサーセイバー
+124	（欠番）ブレイジングレイピア
+125	エスパダ・レイピア
+126	（欠番）アストラルセイバー
+127	ソードオブネメシス
+128	セラフィックタッチ
+129	リタリエイター
+130	ナイトウォッチャー
+131	ルナティカス
+132	イルニス
+133	ノーネーム
+134	サンイレイザー
+135	アークストライク
+136	ホイール・オブ・ウィル
+137	アルヴィスフープ
+138	ニヴルヘイム
+139	ペルビウス
+140	てぬいの服
+141	クロースドレス
+142	シルクドレス
+143	クラウドケープ
+144	ミストケープ
+145	鷹の衣
+146	羊毛の衣
+147	レザースキン
+148	レザージャケット
+149	レザーガード
+150	レッド・ベルベット
+151	ブラック・ベルベット
+152	凍原のベスト
+153	（欠番）天頂のベスト
+154	烏の外套
+155	雲霧の外套
+156	蒼月の外套
+157	ミッドナイトシェル
+158	虚無の服
+159	払暁の外套
+160	ステュクスベール
+161	メイルシャツ
+162	ライトガード
+163	ブレストガード
+164	チャームドスケイル
+165	シヴァルリ・アーマー
+166	バトルシャツ
+167	赤虎の鎧
+168	大象の具足
+169	獅子の鎧
+170	レイヨウの鎧
+171	クリスタルスーツ
+172	ランドスケイル
+173	フレイタニエル
+174	カースドアーマー
+175	フラグメント
+176	聖竜の鎧
+177	レクの鎧
+178	フルプレート
+179	ストームシュラウド
+180	アキレスの鎧
+181	こぎれいな服
+182	じょうとうの服
+183	しゃれ者の服
+184	あつらえの服
+185	夜会服
+186	拝借した服
+187	御者のコート
+188	ハンティングコート
+189	紳士のコート
+190	森番の服
+191	ハードジャケット
+192	ペアジャケット
+193	コンシールジャケット
+194	オブスキュラ
+195	キャプテンセーラー
+196	ラックレス
+197	スカル・アンド・クロス
+198	トランシオ
+199	ぎんぎらの服
+200	クジャクのドレス
+201	みじめな服
+202	天使のラッパ
+203	女神のブーケ
+204	春桃クッキー
+205	秋星クッキー
+206	綿雪クッキー
+207	陽蜜クッキー
+208	花封薬
+209	花滴薬
+210	花封心薬
+211	クラブクローバー
+212	ダイヤクローバー
+213	ハートクローバー
+214	スペードクローバー
+215	獅子のたてがみ
+216	竜のうろこ
+217	ねずみのメトロノーム
+218	へなチョコ
+219	へなへなチョコ
+220	魚のお香
+221	くつ下のお香
+222	光るしっぽ
+223	忍ぶしっぽ
+224	しゃぼんストロー
+225	（欠番）黒ひまわりの種
+226	どくつるたけ
+227	にがよもぎ
+228	サソリの尾
+229	ヘルマスタード
+230	大うちわ
+231	暮れ鳥の羽
+232	明け鳥の羽
+233	落ち鳥の羽
+234	（欠番）ゴキゲン鳥の羽
+235	清鳥の羽
+236	刻鳥の羽
+237	冷鳥の羽
+238	勇鳥の羽
+239	機鳥の羽
+240	クジャクの羽
+241	聖者の鏡
+242	天壌の砂時計
+243	（欠番）破人のコイン
+244	（欠番）聖母のパン
+245	天外の星時計
+246	パワーリング
+247	プロテクトピアス
+248	スピードシューズ
+249	光輝のブローチ
+250	暗黒のブローチ
+251	蒼天のブローチ
+252	（欠番）明暗のブローチ
+253	深紅のブローチ
+254	エメラルドの腕輪
+255	オニキスの腕輪
+256	アメジストの腕輪
+257	ルビーの腕輪
+258	トパーズの腕輪
+259	ダイヤモンドの腕輪
+260	（欠番）鉄の紋章
+261	フェザーハット
+262	バブリーハット
+263	リカバリーグローブ
+264	リカバリーオーブ
+265	獅子神楽の鈴
+266	鬼仮面
+267	懐中時計
+268	アリスの時計
+269	魔狼の首飾り
+270	七星の霊符
+271	レースの髪飾り
+272	ハートペンダント
+273	覇王の宝冠
+274	魔道書
+275	銅のネックレス
+276	銀のネックレス
+277	金のネックレス
+278	勾玉
+279	サムポの破片
+280	ブリーシンガメン
+281	太陽のすね当て
+282	黒曜石の鏡
+283	隠れ兜
+284	アテナの涙
+285	石剣の柄
+286	精霊の矢じり
+287	ヒッポリュテーの帯
+288	ホルスの目
+289	ソロモンの指輪
+290	泉の石
+291	（欠番）
+292	（欠番）
+293	ふち飾りの傘
+294	ジョーナスの日傘
+295	ウィンドブロウ
+296	フォキャスターケーン
+297	海賊船のカギ
+298	砦のカギ
+299	涙の傘
+300	英雄の紋章
+301	アリアのカギ
+302	ネズミのしっぽ
+303	棒っきれ
+304	入れ歯
+305	パンツ
+306	緑の絵の具
+307	ヤギミルク
+308	ブタの貯金箱
+309	果物カゴ
+310	ぜんまい
+311	からっぽのつぼ
+312	水がめ
+313	カゼ薬
+314	鍋
+315	ヤギ鍋
+316	引換券
+317	ハチミツ
+318	ヘンカンディ
+319	ガラス玉
+320	宝珠
+321	海賊が落とした紙
+322	海賊が落とした紙２枚目
+323	海賊が落とした紙３枚目
+324	リードスラッグ
+325	ピアーシングシェル
+326	シルバーブレット
+327	ベストロット
+328	フレアヘッド
+329	（欠番）フロストヘッド
+330	ラプチュアヘッド
+331	キューピッドヘッド
+332	輝くしっぽ
+333	闇夜のしっぽ
+334	しゃぼんリング
+335	アゴゴのフン
+336	レント墓地の炎・赤
+337	（欠番）
+338	レント墓地の炎・青
+339	（欠番）
+340	レント墓地の炎・緑
+341	転送の間のカギ
+342	飛燕の衣
+343	ゴージャスな服
+344	魂の欠片
+345	サブイ様まんじゅう
+346	サブイ様おしおき棒
+347	シルバスター
+348	金月の傘
+349	スコアピース０１
+350	スコアピース０２
+351	スコアピース０３
+352	スコアピース０４
+353	スコアピース０５
+354	スコアピース０６
+355	スコアピース０７
+356	スコアピース０８
+357	スコアピース０９
+358	スコアピース１０
+359	スコアピース１１
+360	スコアピース１２
+361	スコアピース１３
+362	スコアピース１４
+363	スコアピース１５
+364	スコアピース１６
+365	スコアピース１７
+366	スコアピース１８
+367	スコアピース１９
+368	スコアピース２０
+369	スコアピース２１
+370	スコアピース２２
+371	スコアピース２３
+372	スコアピース２４
+373	スコアピース２５
+374	スコアピース２６
+375	スコアピース２７
+376	スコアピース２８
+377	スコアピース２９
+378	スコアピース３０
+379	スコアピース３１
+380	スコアピース３２
+381	サブイ様パジャマ
+382	サブイ様せんべい
+383	サブイ様認定書
+384	サブイ様の卵
+385	週刊サブイ様マガジン
+386	サブイ様糸電話
+387	サブイ様ブロマイド
+388	ほほえみのサブイ様
+389	サブイ様スカーフ
+390	サブイ様ハンカチ
+391	サブイ様ペンダント
+392	サブイ様手帳
+393	さくらんぼサブイ様
+394	チャペルサブイ様
+395	スイミングサブイ様
+396	うっふんサブイ様
+397	エリートサブイ様
+398	スモールサブイ様
+399	レインボーサブイ様
+400	和毒石
+401	ノーブルメイス
+402	ローチン
+403	狼牙棒
+404	ホワイトスター
+405	モルゲンシュテルン
+406	ロイヤルストレート
+407	ミョルニル
+408	プリンセスロッド
+409	マーズロッド
+410	アルカナワンド
+411	セイジロッド
+412	フォースロッド
+413	グロリアス
+414	コレクトアーマー
+415	幻魔の鎧
+416	セイクリッドメイル
+417	コケティッシュドレス
+418	セイントピース
+419	ノーブルホワイト
+420	ホプロンシールド
+421	ルーンシールド
+422	御鏡の盾
+423	スクデット
+424	朝露の傘
+425	ヘルズカノン
+426	アレグレットの新衣装Ｖ２
+427	ポルカの新衣装Ｖ２
+428	ポルカの新衣装Ｖ３
+429	ビートの新衣装Ｖ２
+430	サブイ様フリーパス券
+[USA]
+0	Hunting Knife
+1	Saber
+2	Long Sword
+3	Poison Blood
+4	Walloon Sword
+5	Branch Sword
+6	Crescent Blade
+7	Back Sword
+8	Dragoon Blade
+9	Hellstriker
+10	Scramasax
+11	Jade Falcon
+12	Doom Guard
+13	Claimh Solais
+14	Sunbringer
+15	Jokulsnaut
+16	Lech Blade
+17	Nidhogg's Fang
+18	Velmungdd's Lust
+19	Sheol Sword
+20	Seven-Branched
+21	Cute Umbrella
+22	Walking Parasol
+23	Snow White
+24	Paper Umbrella
+25	Saffron Parasol
+26	Bat Umbrella
+27	Leaf Umbrella
+28	Wet Umbrella
+29	Blossom Parasol
+30	Golden Parasol
+31	Torn Umbrella
+32	Azure Umbrella
+33	Arquebus 
+34	Serpentine Lock
+35	Jezail
+36	Wolf's Fang
+37	Hoolurge Gun
+38	Lohar Cannon
+39	Warhammer Gun
+40	Hatchet Musket
+41	Sabertooth
+42	Flintlock Pick
+43	Matchlock Axe
+44	Magnum Arm
+45	Cerberus Canine
+46	None
+47	None
+48	None
+49	Nagul Fang
+50	Pine Baton
+51	Bamboo Shaft
+52	Cork Baton
+53	Maple Baton
+54	Oak Barrel
+55	Buffalo Horn
+56	Resonating Stick
+57	Prophetic Cane
+58	Gold Baton
+59	Harmonic Stick
+60	Muse Baton
+61	Ebony Shaft
+62	Apollo's Lichanos
+63	Mistilteinn
+64	Voiceless Scepter
+65	Freudhersch
+66	Worn Bow
+67	Rapid Fire
+68	Reed Bow
+69	Swallow Shooter
+70	Monkey Bow
+71	Thunder Stir
+72	Double Crescent
+73	Imperial Bow
+74	Elven Sight
+75	Artemis's Bow
+76	Lugh Lamhfhada
+77	Titania's Bow
+78	Laricus
+79	Mercy Breath
+80	Chakram
+81	Torquatus
+82	Orbis
+83	Wilderness
+84	Lunar Eclipse
+85	Muspelheim
+86	Ruthless
+87	Nodus
+88	Alfheim
+89	None
+90	Falchion
+91	None
+92	Broad Sword
+93	Bastard Sword
+94	Herebra
+95	Rib Crusher
+96	Zweih<#228>nder
+97	Soul Cremator
+98	Pyro Blade
+99	Vanquisher
+100	Hecatomb
+101	Thiassi's Bone
+102	Tyrant Slayer
+103	Skofnung
+104	Bezwell's Sword
+105	None
+106	Meat Hook
+107	Brass Knuckle
+108	None
+109	None
+110	Brain Shatterer
+111	Jiao Zhu
+112	Power Stroke
+113	Death's Head
+114	Celestial Gloves
+115	Tyr's Left Arm
+116	None
+117	Tyr's Right Arm
+118	Mailed Fist
+119	None
+120	None
+121	Iron Gloves
+122	Lord's Reign
+123	Fencing Saber
+124	None
+125	Espada Rapier
+126	None
+127	Nemesis Sword
+128	Seraphic Touch
+129	Retaliator
+130	Night Watcher
+131	Lunaticus
+132	Illunis
+133	No Name
+134	Solar Eclipse
+135	Arc Strike
+136	Wheel of Will
+137	Alvis Hoop
+138	Niflheim
+139	Pervius
+140	Handmade Clothes
+141	Cloth Dress
+142	Silk Dress
+143	Cloud Cape
+144	Mist Cape
+145	Eagle Robe
+146	Wool Robe
+147	Leather Hide
+148	Leather Jacket
+149	Leather Guard
+150	Red Velvet
+151	Black Velvet
+152	Tundra Vest
+153	None
+154	Bird Cloak
+155	Fog Cloak
+156	Crescent Cloak
+157	Midnight Shell
+158	Nil Coat
+159	Daybreak Cloak
+160	Styx's Veil
+161	Mail Shirt
+162	Light Guard
+163	Breast Guard
+164	Charmed Scales
+165	Chivalry Armor
+166	Battle Shirt
+167	Tiger Armor
+168	Mammoth Armor
+169	Lion Armor
+170	Antelope Armor
+171	Crystal Suit
+172	Land Scales
+173	Freiturnier
+174	Cursed Armor
+175	Fragment
+176	Dragon Armor
+177	Lech Armor
+178	Full Plate
+179	Storm Shroud
+180	Achilles's Armor
+181	Pretty Clothes
+182	Elegant Clothes
+183	Fancy Clothes
+184	Tailored Clothes
+185	Evening Clothes
+186	Stolen Clothes
+187	Coachman's Coat
+188	Hunting Coat
+189	Gentleman's Coat
+190	Guardian Clothes
+191	Hard Jacket
+192	Pair Jacket
+193	Concealing Jacket
+194	Obscure Jacket
+195	Sailor's Uniform
+196	Luckless
+197	Skull and Bones
+198	Transeo
+199	Sparkling Clothes
+200	Peacock Dress
+201	Ugly Clothes
+202	Angel Trumpet
+203	Goddess Bouquet
+204	Peach Cookie
+205	Star Cookie
+206	Snowpuff Cookie
+207	Honey Cookie
+208	Floral Powder
+209	Floral Extract
+210	Floral Essence
+211	Club Clover
+212	Diamond Clover
+213	Heart Clover
+214	Spade Clover
+215	Lion's Mane
+216	Dragon Scale
+217	Mouse Metronome
+218	Odd Chocolate
+219	Very Odd Chocolate
+220	Fish Incense
+221	Sock Incense
+222	Glowing Tail
+223	Shadow Tail
+224	Bubble Straw
+225	None
+226	Poison Whitecap
+227	Wormwood
+228	Scorpion's Tail
+229	Hell Mustard
+230	Big Paper Fan
+231	Twilight Feather
+232	Dawn Feather
+233	Fallen Feather
+234	None
+235	Pure Feather
+236	Time Feather
+237	Icy Feather
+238	Heroic Feather
+239	Chance Feather
+240	Peacock's Feather
+241	Saint's Mirror
+242	Celestial Hourglass
+243	None
+244	None
+245	Star Clock
+246	Power Ring
+247	Peace Earring
+248	Speed Shoes
+249	Brilliant Brooch
+250	Dark Brooch
+251	Sky Blue Brooch
+252	None
+253	Crimson Brooch
+254	Emerald Bracelet
+255	Onyx Bracelet
+256	Amethyst Bracelet
+257	Ruby Bracelet
+258	Topaz Bracelet
+259	Diamond Bracelet
+260	None
+261	Feathered Hat
+262	Bubbly Hat
+263	Recovery Gloves
+264	Recovery Orb
+265	Lion's Chime
+266	Demonic Mask
+267	Pocket Watch
+268	Alice's Watch
+269	Werewolf Choker
+270	Seven Stars
+271	Lace Veil
+272	Heart Pendant
+273	Tyrant's Crown
+274	Spell Book
+275	Copper Necklace
+276	Silver Necklace
+277	Gold Necklace
+278	Magatama
+279	Shard of Sampo
+280	Brisingamen
+281	Sunlight Guards
+282	Obsidian Mirror
+283	Shadow Helm
+284	Athena's Tear
+285	Stone Sword Hilt
+286	Spirit Arrowhead
+287	Hippolyte's Belt
+288	Eye of Horus
+289	Solomon's Ring
+290	Stone of the Spring
+291	None
+292	None
+293	Frilly Umbrella
+294	Jonas's Parasol
+295	Windblow
+296	Oracle Cane
+297	Pirate's Key
+298	Fort Fermata Key
+299	Teardrop Umbrella
+300	Hero's Crest
+301	Aria Temple Key
+302	Rat Tail
+303	Stick
+304	Dentures
+305	Long Johns
+306	Green Paint
+307	Goat's Milk
+308	Piggy Bank
+309	Fruit Basket
+310	Winder
+311	Empty Vase
+312	Water Jug
+313	Cold Medicine
+314	Pot
+315	Goat Stew
+316	Coupon
+317	Honey
+318	Odd Candy
+319	Glass Ball
+320	Orb
+321	Pirate's Paper 1
+322	Pirate's Paper 2
+323	Pirate's Paper 3
+324	Lead Slug
+325	Piercing Shell
+326	Silver Bullet
+327	Best Lot
+328	Flare Head
+329	None
+330	Rapture Head
+331	Cupid's Head
+332	Shining Tail
+333	Dark Tail
+334	Bubble Ring
+335	Agogo Droppings
+336	Red Lento Flame
+337	None
+338	Blue Lento Flame
+339	None
+340	Green Lento Flame
+341	Warp Room Key
+342	Larkspur Robe
+343	Gorgeous Clothes
+344	Soul Shard
+345	EZI Bun
+346	EZI Paddle
+347	Silver Star
+348	Gold Moon
+349	Score Piece 01
+350	Score Piece 02
+351	Score Piece 03
+352	Score Piece 04
+353	Score Piece 05
+354	Score Piece 06
+355	Score Piece 07
+356	Score Piece 08
+357	Score Piece 09
+358	Score Piece 10
+359	Score Piece 11
+360	Score Piece 12
+361	Score Piece 13
+362	Score Piece 14
+363	Score Piece 15
+364	Score Piece 16
+365	Score Piece 17
+366	Score Piece 18
+367	Score Piece 19
+368	Score Piece 20
+369	Score Piece 21
+370	Score Piece 22
+371	Score Piece 23
+372	Score Piece 24
+373	Score Piece 25
+374	Score Piece 26
+375	Score Piece 27
+376	Score Piece 28
+377	Score Piece 29
+378	Score Piece 30
+379	Score Piece 31
+380	Score Piece 32
+381	EZI Pajamas
+382	EZI Cracker
+383	EZI Certificate
+384	EZI Egg
+385	Weekly EZI Magazine
+386	EZI String Phone
+387	EZI Photo
+388	Smiling EZI
+389	EZI Scarf
+390	EZI Handkerchief
+391	EZI Pendant
+392	EZI Pocketbook
+393	Cherry EZI
+394	Chapel EZI
+395	Swimming EZI
+396	Laughing EZI
+397	Elite EZI
+398	Small EZI
+399	Rainbow EZI
+400	Neutralizing Stone
+401	Noble Mace
+402	Rochin
+403	Langya Bang
+404	White Star
+405	Morgenstern
+406	Royal Staff
+407	Mjolnir
+408	Princess Staff
+409	Ares Staff
+410	Arcana Wand
+411	Sage's Staff
+412	Power Staff
+413	Glory
+414	Proper Armor
+415	Dark Armor
+416	Sacred Mail
+417	Regal Dress
+418	Saint's Vestment
+419	Noble White
+420	Hoplon Shield
+421	Rune Shield
+422	Mirror Shield
+423	Scudetto
+424	Dewdrop Umbrella
+425	Hell's Cannon
+426	Allegretto's New Costume
+427	Polka's New Costume
+428	Polka's New Costume 2
+429	Beat's New Costume
+430	EZI Free Pass
+[GBR]
+0	Hunting Knife
+1	Saber
+2	Long Sword
+3	Poison Blood
+4	Walloon Sword
+5	Branch Sword
+6	Crescent Blade
+7	Back Sword
+8	Dragoon Blade
+9	Hellstriker
+10	Scramasax
+11	Jade Falcon
+12	Doom Guard
+13	Claimh Solais
+14	Sunbringer
+15	Jokulsnaut
+16	Lech Blade
+17	Nidhogg's Fang
+18	Velmungdd's Lust
+19	Sheol Sword
+20	Seven-Branched
+21	Cute Umbrella
+22	Walking Parasol
+23	Snow White
+24	Paper Umbrella
+25	Saffron Parasol
+26	Bat Umbrella
+27	Leaf Umbrella
+28	Wet Umbrella
+29	Blossom Parasol
+30	Golden Parasol
+31	Torn Umbrella
+32	Azure Umbrella
+33	Arquebus 
+34	Serpentine Lock
+35	Jezail
+36	Wolf's Fang
+37	Hoolurge Gun
+38	Lohar Cannon
+39	Warhammer Gun
+40	Hatchet Musket
+41	Sabertooth
+42	Flintlock Pick
+43	Matchlock Axe
+44	Magnum Arm
+45	Cerberus Canine
+46	None
+47	None
+48	None
+49	Nagul Fang
+50	Pine Baton
+51	Bamboo Shaft
+52	Cork Baton
+53	Maple Baton
+54	Oak Barrel
+55	Buffalo Horn
+56	Resonating Wand
+57	Prophetic Cane
+58	Gold Baton
+59	Harmonic Wand
+60	Muse Rod
+61	Ebony Shaft
+62	Apollo's Staff
+63	Mistilteinn
+64	Voiceless Scepter
+65	Freudhersch
+66	Worn Bow
+67	Rapid Fire
+68	Reed Bow
+69	Swallow Shooter
+70	Monkey Bow
+71	Thunder Stir
+72	Double Crescent
+73	Imperial Guard
+74	Elven Sight
+75	Artemis's Bow
+76	Lugh Lamhfhada
+77	Titania's Bow
+78	Laricus
+79	Mercy Breath
+80	Chakram
+81	Torquatus
+82	Orbis
+83	Wilderness
+84	Lunar Eclipse
+85	Muspelheim
+86	Ruthless
+87	Nodus
+88	Alfheim
+89	None
+90	Falchion
+91	None
+92	Broad Sword
+93	Bastard Sword
+94	Herebra
+95	Rib Crusher
+96	Zweih<#228>nder
+97	Soul Cremator
+98	Pyro Blade
+99	Vanquisher
+100	Hecatomb
+101	Thiassi's Bone
+102	Tyrant Slayer
+103	Skofnung
+104	Bezwell's Sword
+105	None
+106	Meat Hook
+107	Brass Knuckle
+108	None
+109	None
+110	Brain Shatterer
+111	Jiao Zhu
+112	Power Stroke
+113	Death's Head
+114	Celestial Gloves
+115	Tyr's Left Arm
+116	None
+117	Tyr's Right Arm
+118	Mailed Fist
+119	None
+120	None
+121	Iron Gloves
+122	Lord's Reign
+123	Fencing Saber
+124	None
+125	Espada Rapier
+126	None
+127	Nemesis Sword
+128	Seraphic Touch
+129	Retaliator
+130	Night Watcher
+131	Lunaticus
+132	Illunis
+133	No Name
+134	Solar Eclipse
+135	Arc Strike
+136	Wheel of Will
+137	Alvis Hoop
+138	Niflheim
+139	Pervius
+140	Handmade Clothes
+141	Cloth Dress
+142	Silk Dress
+143	Cloud Cape
+144	Mist Cape
+145	Eagle Robe
+146	Wool Robe
+147	Leather Hide
+148	Leather Jacket
+149	Leather Guard
+150	Red Velvet
+151	Black Velvet
+152	Tundra Vest
+153	None
+154	Bird Cloak
+155	Fog Cloak
+156	Crescent Cloak
+157	Midnight Shell
+158	Nil Coat
+159	Daybreak Cloak
+160	Styx's Veil
+161	Mail Shirt
+162	Light Guard
+163	Breast Guard
+164	Charmed Scales
+165	Chivalry Armor
+166	Battle Shirt
+167	Tiger Armor
+168	Mammoth Armor
+169	Lion Armor
+170	Antelope Armor
+171	Crystal Suit
+172	Land Scales
+173	Freiturnier
+174	Cursed Armor
+175	Fragment
+176	Dragon Armor
+177	Lech Armor
+178	Full Plate
+179	Storm Shroud
+180	Achilles's Armor
+181	Pretty Clothes
+182	Elegant Clothes
+183	Fancy Clothes
+184	Tailored Clothes
+185	Evening Clothes
+186	Stolen Clothes
+187	Coachman's Coat
+188	Hunting Coat
+189	Gentleman's Coat
+190	Guardian Clothes
+191	Hard Jacket
+192	Pair Jacket
+193	Concealing Jacket
+194	Obscure Jacket
+195	Sailor's Uniform
+196	Luckless
+197	Skull and Bones
+198	Transeo
+199	Sparkling Clothes
+200	Peacock Dress
+201	Ugly Clothes
+202	Angel Trumpet
+203	Goddess Bouquet
+204	Peach Cookie
+205	Star Cookie
+206	Snowpuff Cookie
+207	Honey Cookie
+208	Floral Powder
+209	Floral Extract
+210	Floral Essence
+211	Club Clover
+212	Diamond Clover
+213	Heart Clover
+214	Spade Clover
+215	Lion's Mane
+216	Dragon Scale
+217	Mouse Metronome
+218	Odd Chocolate
+219	Very Odd Chocolate
+220	Fish Incense
+221	Sock Incense
+222	Glowing Tail
+223	Shadow Tail
+224	Bubble Straw
+225	None
+226	Poison Whitecap
+227	Wormwood
+228	Scorpion's Tail
+229	Hell Mustard
+230	Big Paper Fan
+231	Twilight Feather
+232	Dawn Feather
+233	Fallen Feather
+234	None
+235	Pure Feather
+236	Time Feather
+237	Icy Feather
+238	Heroic Feather
+239	Chance Feather
+240	Peacock's Feather
+241	Saint's Mirror
+242	Celestial Hourglass
+243	None
+244	None
+245	Star Clock
+246	Power Ring
+247	Peace Earring
+248	Speed Shoes
+249	Brilliant Brooch
+250	Dark Brooch
+251	Sky Blue Brooch
+252	None
+253	Crimson Brooch
+254	Emerald Bracelet
+255	Onyx Bracelet
+256	Amethyst Bracelet
+257	Ruby Bracelet
+258	Topaz Bracelet
+259	Diamond Bracelet
+260	None
+261	Feathered Hat
+262	Bubbly Hat
+263	Recovery Gloves
+264	Recovery Orb
+265	Lion's Chime
+266	Demonic Mask
+267	Pocket Watch
+268	Alice's Watch
+269	Werewolf Choker
+270	Seven Stars
+271	Lace Veil
+272	Heart Pendant
+273	Tyrant's Crown
+274	Spell Book
+275	Copper Necklace
+276	Silver Necklace
+277	Gold Necklace
+278	Magatama
+279	Shard of Sampo
+280	Brisingamen
+281	Sunlight Guards
+282	Obsidian Mirror
+283	Shadow Helm
+284	Athena's Shield
+285	Stone Sword Hilt
+286	Spirit Arrowhead
+287	Hippolyte's Belt
+288	Eye of Horus
+289	Solomon's Ring
+290	Stone of the Spring
+291	None
+292	None
+293	Frilly Umbrella
+294	Jonas's Parasol
+295	Windblow
+296	Oracle Cane
+297	Pirate's Key
+298	Fort Fermata Key
+299	Teardrop
+300	Hero's Crest
+301	Aria Temple Key
+302	Rat Tail
+303	Stick
+304	Dentures
+305	Long Johns
+306	Green Paint
+307	Goat's Milk
+308	Piggy Bank
+309	Fruit Basket
+310	Winder
+311	Empty Vase
+312	Water Jug
+313	Cold Medicine
+314	Pot
+315	Goat Stew
+316	Coupon
+317	Honey
+318	Odd Candy
+319	Glass Ball
+320	Orb
+321	Pirate's Paper 1
+322	Pirate's Paper 2
+323	Pirate's Paper 3
+324	Lead Slug
+325	Piercing Shell
+326	Silver Bullet
+327	Best Lot
+328	Flare Head
+329	None
+330	Rapture Head
+331	Cupid's Head
+332	Shining Tail
+333	Dark Tail
+334	Bubble Ring
+335	Agogo Droppings
+336	Red Lento Flame
+337	None
+338	Blue Lento Flame
+339	None
+340	Green Lento Flame
+341	Warp Room Key
+342	Larkspur Robe
+343	Gorgeous Clothes
+344	Soul Shard
+345	EZI Bun
+346	EZI Paddle
+347	Silver Star
+348	Gold Moon
+349	Score Piece 01
+350	Score Piece 02
+351	Score Piece 03
+352	Score Piece 04
+353	Score Piece 05
+354	Score Piece 06
+355	Score Piece 07
+356	Score Piece 08
+357	Score Piece 09
+358	Score Piece 10
+359	Score Piece 11
+360	Score Piece 12
+361	Score Piece 13
+362	Score Piece 14
+363	Score Piece 15
+364	Score Piece 16
+365	Score Piece 17
+366	Score Piece 18
+367	Score Piece 19
+368	Score Piece 20
+369	Score Piece 21
+370	Score Piece 22
+371	Score Piece 23
+372	Score Piece 24
+373	Score Piece 25
+374	Score Piece 26
+375	Score Piece 27
+376	Score Piece 28
+377	Score Piece 29
+378	Score Piece 30
+379	Score Piece 31
+380	Score Piece 32
+381	EZI Pajamas
+382	EZI Cracker
+383	EZI Certificate
+384	EZI Egg
+385	Weekly EZI Magazine
+386	EZI String Phone
+387	EZI Photo
+388	Smiling EZI
+389	EZI Scarf
+390	EZI Handkerchief
+391	EZI Pendant
+392	EZI Pocketbook
+393	Cherry EZI
+394	Chapel EZI
+395	Swimming EZI
+396	Laughing EZI
+397	Elite EZI
+398	Small EZI
+399	Rainbow EZI
+400	Neutralizing Stone
+401	Noble Mace
+402	Rochin
+403	Langya Bang
+404	White Star
+405	Morgenstern
+406	Royal Staff
+407	Mjolnir
+408	Princess Staff
+409	Ares Staff
+410	Arcana Wand
+411	Sage's Staff
+412	Power Staff
+413	Glory
+414	Proper Armor
+415	Dark Armor
+416	Sacred Mail
+417	Regal Dress
+418	Saint's Vestment
+419	Noble White
+420	Hoplon Shield
+421	Rune Shield
+422	Mirror Shield
+423	Scudetto
+424	Dewdrop Umbrella
+425	Hell's Cannon
+426	Allegretto's New Costume
+427	Polka's New Costume
+428	Polka's New Costume 2
+429	Beat's New Costume
+430	EZI Free Pass
+[FRA]
+0	Couteau de chasse
+1	Sabre
+2	Épée longue
+3	Sang de poison
+4	Épée wallonne
+5	Épée à branche
+6	Lame en croissant
+7	Sabre de cavalerie
+8	Lame de dragon
+9	Inferno
+10	Scramasax
+11	Faucon de jade
+12	Gardien du sort
+13	Claimh Solais
+14	Morsure du Soleil
+15	Jokulsnaut
+16	Lame de Lek
+17	Croc de Nidhogg
+18	Désir de Velmungdd
+19	Épée de Sheol
+20	Épée à sept branches
+21	Jolie ombrelle
+22	Ombrelle de marche
+23	Ombrelle blanche
+24	Parapluie en papier
+25	Ombrelle pastel
+26	Parapluie chauve-souris
+27	Ombrelle bourgeon
+28	Ombrelle mouillée
+29	Ombrelle fleur
+30	Ombrelle dorée
+31	Ombrelle déchirée
+32	Ombrelle azur
+33	Arquebuse
+34	Serpentine
+35	Jezail
+36	Croc de loup
+37	Hoolurge
+38	Arme de Lohar
+39	Pistolet marteau
+40	Mousquet hache
+41	Dent de sabre
+42	Pioche à silex
+43	Pioche à mèche
+44	Magnum de chasse
+45	Croc de Cerbère
+46	
+47	
+48	
+49	Croc de Nagul
+50	Bâton de pin
+51	Bambou
+52	Bâton de liège
+53	Bâton d'érable
+54	Fût de chêne
+55	Corne de bison
+56	Baguette résonnante
+57	Canne prophétique
+58	Bâton d'or
+59	Baguette harmonique
+60	Badine de muse
+61	Batte d'ébène
+62	Crosse d'Apollon
+63	Mistilteinn
+64	Sceptre muet
+65	Freudhersch
+66	Arc usé
+67	Tir rapide
+68	Arc en roseau
+69	Tireur d'hirondelles
+70	Arc de singe
+71	Arc à chimère
+72	Double croissant
+73	Arc impérial
+74	Vue d'elfe
+75	Arc d'Artémis
+76	Lugh Lamhfhada
+77	Arc de Titania
+78	Laricus
+79	Souffle de pitié
+80	Chakram
+81	Torquatus
+82	Orbis
+83	Horreur sauvage
+84	Éclipse de lune
+85	Muspelheim
+86	Implacable
+87	Nodus
+88	Alfheim
+89	Néant
+90	Falchion
+91	
+92	Épée large
+93	Épée bâtarde
+94	Herebra
+95	Brise-côtes
+96	Espadon
+97	Brûleur d'âme
+98	Lame pyro
+99	Vainqueur
+100	Hécatombe
+101	Épée en os de Thiassi
+102	Tueur de tyran
+103	Skofnung
+104	Épée de Bezwell
+105	
+106	Croc de boucher
+107	Poing en laiton
+108	
+109	
+110	Casse-tête
+111	Jiao Zhu
+112	Gant puissant
+113	Tête de mort
+114	Gants célestes
+115	Bras gauche de Tyr
+116	
+117	Bras droit de Tyr
+118	Poing en maille
+119	
+120	
+121	Gants de fer
+122	Règne du seigneur
+123	Sabre d'escrime
+124	
+125	Rapière Espada
+126	
+127	Épée de Némésis
+128	Toucher angélique
+129	Représailles
+130	Veilleuse nocturne
+131	Lunaticas
+132	Illunis
+133	Sans nom
+134	Éclipse de soleil
+135	Frappeuse
+136	Roue de volonté
+137	Cerceau d'Alvis
+138	Niflheim
+139	Pervius
+140	Vêtements artisanaux
+141	Robe en étoffe
+142	Robe en soie
+143	Cape de nuage
+144	Cape de brume
+145	Robe aigle
+146	Robe en laine
+147	Masque de cuir
+148	Veste en cuir
+149	Protection de cuir
+150	Velours rouge
+151	Velours noir
+152	Gilet toundra
+153	
+154	Cape d'oiseau
+155	Cape de brouillard
+156	Cape croissant de lune
+157	Tenue de minuit
+158	Manteau de néant
+159	Cape de l'aube
+160	Voile du Styx
+161	Cotte de mailles
+162	Armure légère
+163	Armure de torse
+164	Écailles enchantées
+165	Armure de chevalier
+166	Chemise de combat
+167	Armure tigre
+168	Armure mammouth
+169	Armure lion
+170	Armure antilope
+171	Tenue de cristal
+172	Écailles de terre
+173	Freiturnier
+174	Armure maudite
+175	Fragments
+176	Armure dragon
+177	Armure de Lek
+178	Plates
+179	Linceul tempête
+180	Armure d'Achille
+181	Beaux vêtements
+182	Vêtements élégants
+183	Vêtements chics
+184	Vêtements sur mesure
+185	Tenue de soirée
+186	Vêtements volés
+187	Manteau de cocher
+188	Manteau de chasse
+189	Manteau de gentilhomme
+190	Vêtements de gardien
+191	Veste épaisse
+192	Veste double
+193	Veste occultante
+194	Veste obscure
+195	Uniforme de marin
+196	Poisse
+197	Crâne et tibias
+198	Transeo
+199	Vêtements étincelants
+200	Robe paon
+201	Vêtements laids
+202	Trompette d'ange
+203	Bouquet de déesse
+204	Biscuit pêche
+205	Biscuit étoile
+206	Biscuit flocon
+207	Biscuit miel
+208	Poudre florale
+209	Extrait floral
+210	Essence florale
+211	Trèfle de trèfle
+212	Trèfle de carreau
+213	Trèfle de cœur
+214	Trèfle de pique
+215	Crinière de lion
+216	Écaille de dragon
+217	Métronome souris
+218	Chocolat étrange
+219	Chocolat très étrange
+220	Encens de poisson
+221	Encens de chaussettes
+222	Queue flamboyante
+223	Queue d'ombre
+224	Paille bulle
+225	
+226	Chapeau blanc vénéneux
+227	Armoise
+228	Queue de scorpion
+229	Moutarde de l'enfer
+230	Grand éventail de papier
+231	Plume du crépuscule
+232	Plume de l'aube
+233	Plume perdue
+234	
+235	Pure plume
+236	Plume du temps
+237	Plume glacée
+238	Plume héroïque
+239	Plume de chance
+240	Plume de paon
+241	Miroir de saint
+242	Sablier céleste
+243	
+244	
+245	Horloge stellaire
+246	Anneau de pouvoir
+247	Boucle d'oreille pacifique
+248	Chaussures rapides
+249	Broche brillante
+250	Broche sombre
+251	Broche bleu ciel
+252	
+253	Broche écarlate
+254	Bracelet émeraude
+255	Bracelet onyx
+256	Bracelet améthyste
+257	Bracelet rubis
+258	Bracelet topaze
+259	Bracelet diamant
+260	
+261	Chapeau à plume
+262	Chapeau bulle
+263	Gants de récupération
+264	Orbe de récupération
+265	Carillon du lion
+266	Masque démoniaque
+267	Montre de poche
+268	Montre d'Alice
+269	Collier loup-garou
+270	Sept étoiles
+271	Voilette
+272	Pendentif cœur
+273	Couronne de tyran
+274	Livre de sorts
+275	Collier cuivre
+276	Collier argent
+277	Collier or
+278	Magatama
+279	Fragment de Sampo
+280	Brisingamen
+281	Armure solaire
+282	Miroir d'obsidienne
+283	Casque d'ombre
+284	Larme d'Athéna
+285	Garde d'épée en pierre
+286	Pointe de flèche d'esprit
+287	Ceinture d'Hippolyte
+288	Œil d'Horus
+289	Anneau de Salomon
+290	Pierre de source
+291	
+292	
+293	Ombrelle à froufrous
+294	Parasol de Jonas
+295	Coup de vent
+296	Canne d'Oracle
+297	Clé de pirate
+298	Clé de forteresse
+299	Ombrelle larme
+300	Blason de héros
+301	Clé du temple d'Aria
+302	Queue de rat
+303	Bâton
+304	Dentier
+305	Caleçon long
+306	Peinture verte
+307	Lait de chèvre
+308	Tirelire
+309	Corbeille de fruits
+310	Remontoir
+311	Vase vide
+312	Cruche
+313	Remède contre le rhume
+314	Marmite
+315	Ragoût de chèvre
+316	Bon
+317	Miel
+318	Bonbon étrange
+319	Boule de verre
+320	Orbe
+321	Document de pirate 1
+322	Document de pirate 2
+323	Document de pirate 3
+324	Balle en plomb
+325	Balle perforante
+326	Balle en argent
+327	Balle de qualité
+328	Pointe ardente
+329	Néant
+330	Pointe explosive
+331	Pointe de Cupidon
+332	Queue brillante
+333	Queue sombre
+334	Anneau bulle
+335	Déjections d'agogo
+336	Flamme rouge Lento
+337	
+338	Flamme bleue Lento
+339	
+340	Flamme verte Lento
+341	Clé de la salle de téléportation
+342	Tenue d'hirondelle
+343	Vêtements somptueux
+344	Fragment d'âme
+345	Pain EZI
+346	Spatule EZI
+347	Étoile d'argent
+348	Lune d'or
+349	Partition 01
+350	Partition 02
+351	Partition 03
+352	Partition 04
+353	Partition 05
+354	Partition 06
+355	Partition 07
+356	Partition 08
+357	Partition 09
+358	Partition 10
+359	Partition 11
+360	Partition 12
+361	Partition 13
+362	Partition 14
+363	Partition 15
+364	Partition 16
+365	Partition 17
+366	Partition 18
+367	Partition 19
+368	Partition 20
+369	Partition 21
+370	Partition 22
+371	Partition 23
+372	Partition 24
+373	Partition 25
+374	Partition 26
+375	Partition 27
+376	Partition 28
+377	Partition 29
+378	Partition 30
+379	Partition 31
+380	Partition 32
+381	Pyjama EZI
+382	Biscuit EZI
+383	Certificat EZI
+384	Œuf EZI
+385	Magazine EZI
+386	Téléphone ficelle EZI
+387	Photo EZI
+388	EZI souriant
+389	Écharpe EZI
+390	Mouchoir EZI
+391	Pendentif EZI
+392	Carnet EZI
+393	EZI cerise
+394	Chapelle EZI
+395	EZI nageant
+396	EZI riant
+397	EZI élite
+398	Petit EZI
+399	EZI arc-en-ciel
+400	Pierre de neutralisation
+401	Massue noble
+402	Rochin
+403	Langya Bang
+404	Étoile blanche
+405	Morgenstern
+406	Bâton royal
+407	Mjöllnir
+408	Canne de princesse
+409	Bâton martial
+410	Baguette d'arcane
+411	Bâton de sage
+412	Bâton de pouvoir
+413	Gloire
+414	Armure solide
+415	Armure sombre
+416	Cotte de mailles sacrée
+417	Robe suggestive
+418	Parure de Saint
+419	Parure blanche
+420	Aspis
+421	Bouclier rune
+422	Bouclier miroir
+423	Scudetto
+424	Ombrelle de rosée
+425	Canons de l'enfer
+426	Nouveau costume d'Allegretto
+427	Nouveau costume de Polka
+428	Nouveau costume de Polka 2
+429	Nouveau costume de Piccolo
+430	Sauf-conduit EZI
+[ITA]
+0	Coltello da caccia
+1	Sciabola
+2	Spada lunga
+3	Sangue velenoso
+4	Spada Vallone
+5	Spada ramificata
+6	Falce di luna
+7	Spada posteriore
+8	Lama del drago
+9	Percussore infernale
+10	Scramasax
+11	Falco di giada
+12	Guardia del destino
+13	Claimh Solais
+14	Portatore di sole
+15	Jokulsnaut
+16	Lama di Lek
+17	Zanna di Nidhogg
+18	Bramosia di Velmungdd
+19	Spada di Sheol
+20	Spada dai sette rami
+21	Ombrello grazioso
+22	Ombrellino da passeggio
+23	Ombrellino niveo
+24	Ombrello di carta
+25	Ombrellino zafferano
+26	Ombrello pipistrello
+27	Ombrello nuove foglie
+28	Ombrello bagnato
+29	Ombrellino fioritura
+30	Ombrellino d'oro
+31	Ombrello logoro
+32	Ombrello azzurro
+33	Archibugio
+34	Serratura a serpentina
+35	Jezail
+36	Zanna di lupo
+37	Fucile di Hoolurge
+38	Cannone Lohar
+39	Pistola Warhammer
+40	Moschetto ascia
+41	Dentesciabola
+42	Piccone fucile
+43	Moschetto ascia
+44	Braccio magnum
+45	Canino di Cerbero
+46	
+47	
+48	
+49	Zanna di Nagul
+50	Bastone di pino
+51	Asta di bambù
+52	Bastone di sughero
+53	Bastone d'acero
+54	Barile di quercia
+55	Corno di bisonte
+56	Bacchetta risuonante
+57	Verga profetica
+58	Bastone d'oro
+59	Bacchetta armonica
+60	Bacchetta della musa
+61	Asta d'ebano
+62	Asta di Apollo
+63	Mistilteinn
+64	Scettro muto
+65	Freudhersch
+66	Arco logoro
+67	Fuoco rapido
+68	Arco di canna
+69	Cacciatore di rondini
+70	Arco di scimmia
+71	Rombo di tuono
+72	Doppia falce di luna
+73	Arco imperiale
+74	Mira Elfica
+75	Arco di Artemide
+76	Lamhfhada di Lugh 
+77	Arco di Titania
+78	Laricus
+79	Alito di pietà
+80	Chakram
+81	Torquatus
+82	Orbis
+83	Orrore del deserto
+84	Eclissi lunare
+85	Muspelheim
+86	Implacabile
+87	Nodus
+88	Alfheim
+89	Nessuno
+90	Falcione
+91	
+92	Spadone
+93	Spada ibrida
+94	Herebra
+95	Frantuma-costole
+96	Zwihander
+97	Brucia anima
+98	Spada di Pyro 
+99	Conquistatore
+100	Ecatombe
+101	Spada d'osso di Thiassi
+102	Tiranno assassino
+103	Skofnung
+104	Spada di Bezwell
+105	
+106	Uncino per carne
+107	Nocca d'ottone
+108	
+109	
+110	Fracassa cervello
+111	Jiao Zhu
+112	Colpo possente
+113	Lama di morte
+114	Guanti celestiali
+115	Braccio sinistro di Tyr
+116	
+117	Braccio destro di Tyr
+118	Pugno di maglia metallica
+119	
+120	
+121	Guanti di ferro
+122	Regno del sovrano
+123	Sciabola da scherma
+124	
+125	Spada rapier
+126	
+127	Spada nemesi
+128	Tocco serafico
+129	Vendicatore
+130	Guardiano della notte
+131	Lunaticas
+132	Illunis
+133	Nessun nome
+134	Eclissi solare
+135	Attacco con arco
+136	Ruota della volontà
+137	Anello di Alvis
+138	Niflheim
+139	Precedente
+140	Abiti fatti a mano
+141	Abito di stoffa
+142	Abito di seta
+143	Mantello di nuvola
+144	Mantello di nebbia
+145	Veste d'aquila
+146	Veste di lana
+147	Casacca di cuoio
+148	Giacca di cuoio
+149	Corpetto di cuoio
+150	Velluto rosso
+151	Velluto nero
+152	Paramento Tundra
+153	
+154	Manto d'uccello
+155	Mantello di nebbia
+156	Mantello luna crescente
+157	Guscio di mezzanotte
+158	Giacca di niente
+159	Mantello dell'alba
+160	Velo dello Stige
+161	Casacca di maglia
+162	Custode della luce
+163	Pettorale
+164	Scaglie incantate
+165	Armatura di cavalleria
+166	Casacca da battaglia
+167	Armatura tigre
+168	Armatura mammut
+169	Armatura leone
+170	Armatura di antilope
+171	Abito di cristallo
+172	Scaglie di terra
+173	Freiturnier
+174	Armatura maledetta
+175	Frammento
+176	Armatura del drago
+177	Armatura di Lek
+178	Piastra intera
+179	Velo di tempesta
+180	Armatura d'Achille
+181	Abiti carini
+182	Abiti eleganti
+183	Abiti fantasia
+184	Abiti su misura
+185	Abiti da sera
+186	Abiti rubati
+187	Giacca del cocchiere
+188	Giacca da caccia
+189	Giacca da signore
+190	Abiti custode
+191	Giacca robusta
+192	Giacca due strati
+193	Giacca occultante
+194	Giacca oscura
+195	Uniforme da marinaio
+196	Veste eterna
+197	Teschio e ossa incrociate
+198	Transeo
+199	Abiti vivaci
+200	Vestito pavone
+201	Abiti brutti
+202	Tromba d'angelo
+203	Mazzolino della dea
+204	Biscotto alla pesca
+205	Biscotto stella
+206	Biscotto soffio di neve
+207	Biscotto al miele
+208	Polvere floreale
+209	Estratto floreale
+210	Essenza floreale
+211	Trifoglio clava
+212	Trifoglio diamante
+213	Trifoglio cuore
+214	Trifoglio vanga
+215	Criniera di leone
+216	Scaglia di drago
+217	Metronomo topo
+218	Cioccolato strano
+219	Cioccolato molto strano
+220	Fragranza di pesce
+221	Fragranza di calzino
+222	Coda lucente
+223	Coda ombra
+224	Cannuccia per bolle
+225	
+226	Capobianco velenoso
+227	Assenzio
+228	Coda di scorpione
+229	Senape degli inferi
+230	Grande ventaglio di carta
+231	Piuma crepuscolo
+232	Piuma aurora
+233	Piuma caduta
+234	
+235	Piuma pura
+236	Piuma del tempo
+237	Piuma gelata
+238	Piuma eroica
+239	Piuma del fato
+240	Piuma di pavone
+241	Specchio del santo
+242	Clessidra celestiale
+243	
+244	
+245	Orologio a stella
+246	Anello del potere
+247	Orecchini protettori
+248	Scarpe velocità
+249	Spilla lucente
+250	Spilla oscura
+251	Spilla azzurra
+252	
+253	Spilla cremisi
+254	Braccialetto di smeraldo
+255	Braccialetto di onice
+256	Braccialetto di ametista
+257	Braccialetto di rubino
+258	Braccialetto di topazio
+259	Braccialetto di diamante
+260	
+261	Cappello piumato
+262	Cappello a bolla
+263	Guanti del recupero
+264	Sfera della guarigione
+265	Rintocco di leone
+266	Maschera demoniaca
+267	Orologio da tasca
+268	Orologio di Alice
+269	Collana di licantropo
+270	Sette stelle
+271	Velo di pizzo
+272	Ciondolo con cuore
+273	Corona del tiranno
+274	Libro degli incantesimi
+275	Collana di rame
+276	Collana d'argento
+277	Collana d'oro
+278	Magatama
+279	Scheggia di Sampo
+280	Brisingamen
+281	Custodi della luce del sole
+282	Specchio d'ossidiana
+283	Elmo d'ombra
+284	Lacrima di Atena
+285	Elsa di pietra
+286	Punta di freccia dello spirito
+287	Cintura di Ippolita
+288	Occhio di Horus
+289	Anello di Salomone
+290	Pietra di sorgente
+291	
+292	
+293	Ombrello con gale
+294	Parasole di Jonas
+295	Soffio di vento
+296	Verga del veggente
+297	Chiave del pirata
+298	Chiave della fortezza
+299	Ombrello di lacrime
+300	Cimiero dell'eroe
+301	Chiave del Tempio di Aria 
+302	Coda di ratto
+303	Bastoncino
+304	Dentiera
+305	Mutandoni
+306	Vernice verde
+307	Latte di capra
+308	Salvadanaio
+309	Cesto per frutta
+310	Manovella
+311	Vaso vuoto
+312	Brocca d'acqua
+313	Medicina per il raffreddore
+314	Pentola
+315	Stufato di capra
+316	Buono
+317	Miele
+318	Caramella bizzarra
+319	Palla di vetro
+320	Sfera
+321	Appunti del pirata 1
+322	Appunti del pirata 2
+323	Appunti del pirata 3
+324	Proiettile di piombo
+325	Conchiglia perforante
+326	Proiettile d'argento
+327	Miglior fortuna
+328	Testa di Fiamma
+329	Nessuno
+330	Testa dell'estasi
+331	Testa di Cupido
+332	Coda lucente
+333	Coda oscura
+334	Anello a bolla
+335	Escrementi di Agogo
+336	Fiamma rossa di Lento
+337	
+338	Fiamma blu di Lento
+339	
+340	Fiamma verde di Lento
+341	Chiave stanza teletrasporto
+342	Veste speronella
+343	Abiti sontuosi
+344	Frammento d'anima
+345	Panino di EZI
+346	Pagaia di EZI
+347	Stella d'argento
+348	Luna d'oro
+349	Brano musicale 01
+350	Brano musicale 02
+351	Brano musicale 03
+352	Brano musicale 04
+353	Brano musicale 05
+354	Brano musicale 06
+355	Brano musicale 07
+356	Brano musicale 08
+357	Brano musicale 09
+358	Brano musicale 10
+359	Brano musicale 11
+360	Brano musicale 12
+361	Brano musicale 13
+362	Brano musicale 14
+363	Brano musicale 15
+364	Brano musicale 16
+365	Brano musicale 17
+366	Brano musicale 18
+367	Brano musicale 19
+368	Brano musicale 20
+369	Brano musicale 21
+370	Brano musicale 22
+371	Brano musicale 23
+372	Brano musicale 24
+373	Brano musicale 25
+374	Brano musicale 26
+375	Brano musicale 27
+376	Brano musicale 28
+377	Brano musicale 29
+378	Brano musicale 30
+379	Brano musicale 31
+380	Brano musicale 32
+381	Pigiama di EZI
+382	Cracker di EZI
+383	Certificato di EZI
+384	Uovo di EZI
+385	Rivista settimanale di EZI
+386	Telefono a filo di EZI
+387	Foto di EZI
+388	EZI sorridente
+389	Sciarpa di EZI
+390	Fazzoletto di EZI
+391	Ciondolo di EZI
+392	Agenda di EZI
+393	Ciliegia EZI
+394	Cappella di EZI
+395	EZI che nuota
+396	EZI gioioso
+397	EZI élite
+398	Piccolo EZI
+399	EZI arcobaleno
+400	Pietra neutralizzante
+401	Bastone nobile
+402	Rochin
+403	Mazza dente di lupo
+404	Stella bianca
+405	Stella del mattino
+406	Ramo reale
+407	Mjolnir
+408	Ramo della principessa
+409	Ramo di Marte
+410	Bacchetta arcana
+411	Ramo del saggio
+412	Ramo del potere
+413	Gloria
+414	Armatura appropriata
+415	Armatura scura
+416	Maglia di ferro sacra
+417	Vestito per flirtare
+418	Abito del santo
+419	Nobile bianco
+420	Scudo hoplon
+421	Scudo rune
+422	Scudo specchio
+423	Piccolo scudo
+424	Ombrello goccia di rugiada
+425	Cannone infernale
+426	Nuovo costume di Allegretto
+427	Nuovo costume di Polka
+428	Secondo nuovo costume di Polka
+429	Nuovo costume di Beat
+430	Ingresso gratuito EZI
+[DEU]
+0	Jagdmesser
+1	Säbel
+2	Langschwert
+3	Blutvergifter
+4	Wallonenschwert
+5	Zweigschwert
+6	Krummsäbel
+7	Korbschwert
+8	Dragonerklinge
+9	Höllenschläger
+10	Scramasax
+11	Jadefalke
+12	Schicksalshüter
+13	Claimh Solais
+14	Sonnenbringer
+15	Jokulsnaut
+16	Lech-Klinge
+17	Nidhoggs Zahn
+18	Vermunds Lust
+19	Scheol-Schwert
+20	Siebenzweig-Schwert
+21	Niedlicher Schirm
+22	Spazier-Schirm
+23	Schneeweißer Schirm
+24	Papierschirm
+25	Wasserschirm
+26	Flederschirm
+27	Neuer Blattschirm
+28	Nasser Regenschirm
+29	Blütenschirm
+30	Goldener Schirm
+31	Zerrissener Schirm
+32	Himmelblauer Schirm
+33	Arkebuse
+34	Radschlosspistole
+35	Jezail-Muskete
+36	Wolfszahn
+37	Rabenschnabel-Gewehr
+38	Lohar-Kanone
+39	Kriegshammer-Pistole
+40	Beilmuskete
+41	Säbelzahn
+42	Steinschlosspickel
+43	Luntenschlossaxt
+44	Magnumwaffe
+45	Zerberus-Reißzahn
+46	
+47	
+48	
+49	Nagul-Reißzahn
+50	Kiefern-Taktstock
+51	Bambusschaft
+52	Kork-Taktstock
+53	Ahorn-Taktstock
+54	Eichenstock
+55	Büffelhorn
+56	Widerhallstab
+57	Prophetenstock
+58	Gold-Taktstock
+59	Harmoniestab
+60	Musenstab
+61	Ebenholzschaft
+62	Apollos Stab
+63	Mistilteinn
+64	Stimmloses Zepter
+65	Karanini
+66	Abgenutzter Bogen
+67	Schnellfeuer
+68	Riedbogen
+69	Schwalbenschießer
+70	Affenbogen
+71	Donnerrührer
+72	Doppelter Halbmond
+73	Kaiserlicher Bogen
+74	Elfensicht
+75	Bogen der Artemis
+76	Lugh Lamhfhada
+77	Bogen der Titania
+78	Laricus
+79	Gnadenhauch
+80	Chakram
+81	Torquatus
+82	Orbis
+83	Grauen der Wildnis
+84	Mondfinsternis
+85	Muspelheim
+86	Erbarmungslos
+87	Nodus
+88	Alfheim
+89	Keine
+90	Falchion
+91	
+92	Breitschwert
+93	Bastardschwert
+94	Herebra
+95	Rippenbrecher
+96	Bidenhänder
+97	Seelenbrenner
+98	Pyroklinge
+99	Überwinder
+100	Hekatombe
+101	Thiassis Knochenschwert
+102	Tyrannenmörder
+103	Skofnung
+104	Bödvars Schwert
+105	
+106	Fleischhaken
+107	Schlagring
+108	
+109	
+110	Hirnzerschmetterer
+111	Xiao Zhu
+112	Kraftstreich
+113	Totenkopf
+114	Himmlische Handschuhe
+115	Tyrs linker Arm
+116	
+117	Tyrs rechter Arm
+118	Kettenfaust
+119	
+120	
+121	Eisenhandschuhe
+122	Regentschaft
+123	Fechtsäbel
+124	
+125	Espada Degen
+126	
+127	Nemesis-Schwert
+128	Engelsberührung
+129	Heimzahler
+130	Nachtwächter
+131	Lunaticus
+132	Illunis
+133	Namenlos
+134	Sonnenfinsternis
+135	Bogenstreich
+136	Rad des Willens
+137	Alvis-Reifen
+138	Niflheim
+139	Durchdringer
+140	Handgemachte Kleidung
+141	Waschkleid
+142	Seidenkleid
+143	Wolkencape
+144	Dunstcape
+145	Adlergewand
+146	Wollenes Gewand
+147	Lederhaut
+148	Lederjacke
+149	Lederschutz
+150	Roter Samt
+151	Schwarzer Samt
+152	Tundra-Weste
+153	
+154	Vogelumhang
+155	Nebelumhang
+156	Halbmond-Umhang
+157	Mitternachtshülle
+158	Nullmantel
+159	Tagesanbruchs-Umhang
+160	Schleier von Styx
+161	Kettenhemd
+162	Leichter Schutz
+163	Brustschutz
+164	Gesegneter Schuppenpanzer
+165	Kavaliersrüstung
+166	Kriegshemd
+167	Tigerrüstung
+168	Mammutrüstung
+169	Löwenrüstung
+170	Antilopenrüstung
+171	Kristallrüstung
+172	Land-Schuppenpanzer
+173	Freiturnier
+174	Verfluchte Rüstung
+175	Fragment
+176	Drachenrüstung
+177	Lechs Rüstung
+178	Volle Plattenrüstung
+179	Sturm-Hülltuch
+180	Achilles' Rüstung
+181	Hübsche Kleider
+182	Elegante Kleider
+183	Vornehme Kleider
+184	Maßgeschneiderte Kleider
+185	Abendgarderobe
+186	Gestohlene Kleider
+187	Kutschermantel
+188	Jagdmantel
+189	Herrenmantel
+190	Wächterkleidung
+191	Derbe Jacke
+192	Doppeljacke
+193	Tarnjacke
+194	Verschwindejacke
+195	Seemannsuniform
+196	Glückshaut
+197	Jolly Roger
+198	Chamäleon
+199	Glitzerkleider
+200	Pfauenkleid
+201	Hässliche Kleider
+202	Engelstrompete
+203	Bukett der Göttin
+204	Pfirsichplätzchen
+205	Sternplätzchen
+206	Schneekrustenkeks
+207	Honigplätzchen
+208	Blütenpulver
+209	Blütenextrakt
+210	Blütenessenz
+211	Kreuz-Klee
+212	Karo-Klee
+213	Herz-Klee
+214	Pik-Klee
+215	Löwenmähne
+216	Drachenschuppe
+217	Mäuse-Metronom
+218	Seltsame Schokolade
+219	Sehr seltsame Schokolade
+220	Fischaroma
+221	Sockenaroma
+222	Leuchtschwanz
+223	Schattenschwanz
+224	Blasenstrohhalm
+225	
+226	Gift-Weißkappe
+227	Wermut
+228	Skorpionschwanz
+229	Höllensenf
+230	Großer Papierfächer
+231	Zwielichtfeder
+232	Dämmerungsfeder
+233	Gefallene Feder
+234	
+235	Makellose Feder
+236	Zeit-Feder
+237	Eis-Feder
+238	Helden-Feder
+239	Zufallsfeder
+240	Pfauenfeder
+241	Heiligenspiegel
+242	Himmlisches Stundenglas
+243	
+244	
+245	Sternenuhr
+246	Kraftring
+247	Friedens-Ohrring
+248	Temposchuhe
+249	Brillantbrosche
+250	Dunkle Brosche
+251	Himmelsblau-Brosche
+252	
+253	Purpurbrosche
+254	Smaragd-Armband
+255	Onyx-Armband
+256	Amethyst-Armband
+257	Rubin-Armband
+258	Topas-Armband
+259	Diamant-Armband
+260	
+261	Federhut
+262	Sprudelhut
+263	Handschuhe der Erholung
+264	Kugel der Erholung
+265	Löwenglöckchen
+266	Dämonische Maske
+267	Taschenuhr
+268	Alices Uhr
+269	Werwolf-Halsband
+270	Siebenstern-Amulett
+271	Spitzenschleier
+272	Herz-Anhänger
+273	Tyrannenkrone
+274	Zauberbuch
+275	Kupferkette
+276	Silberkette
+277	Goldkette
+278	Magatama
+279	Scherbe von Sampo
+280	Brisingamen
+281	Sonnenlicht-Schützer
+282	Vulkanglas-Spiegel
+283	Schattenhelm
+284	Schild der Athene
+285	Steinerner Schwertknauf
+286	Geister-Pfeilspitze
+287	Gürtel der Hippolyte
+288	Auge des Horus
+289	Salomos Ring
+290	Quellenstein
+291	
+292	
+293	Rüschen-Schirm
+294	Jonas' Schirm
+295	Blasewind
+296	Orakelstock
+297	Piratenschlüssel
+298	Festungsschlüssel
+299	Tränen-Schirm
+300	Helden-Emblem
+301	Aria-Tempelschlüssel
+302	Rattenschwanz
+303	Stock
+304	Gebiss
+305	Lange Unterhose
+306	Grüne Farbe
+307	Ziegenmilch
+308	Sparschwein
+309	Obstkorb
+310	Aufziehschlüssel
+311	Leere Vase
+312	Wasserkrug
+313	Grippemittel
+314	Topf
+315	Ziegengulasch
+316	Gutschein
+317	Honig
+318	Seltsames Konfekt
+319	Glaskugel
+320	Sphäre
+321	Piratenpapier 1
+322	Piratenpapier 2
+323	Piratenpapier 3
+324	Bleigeschoss
+325	Bohrhülse
+326	Silberkugel
+327	Bester Guss
+328	Flammenspitze
+329	Keine
+330	Taumelspitze
+331	Amorspitze
+332	Schimmerschwanz
+333	Finsterschwanz
+334	Blasenring
+335	Agogo-Köttel
+336	Rote Lento-Flamme
+337	
+338	Blaue Lento-Flamme
+339	
+340	Grüne Lento-Flamme
+341	Schlüssel zum Teleporter-Raum
+342	Schwalbengewand
+343	Schicke Klamotten
+344	Seelenscherbe
+345	Scherzo-Semmel
+346	Scherzo-Paddel
+347	Silberstern
+348	Goldmond
+349	Partitur 01
+350	Partitur 02
+351	Partitur 03
+352	Partitur 04
+353	Partitur 05
+354	Partitur 06
+355	Partitur 07
+356	Partitur 08
+357	Partitur 09
+358	Partitur 10
+359	Partitur 11
+360	Partitur 12
+361	Partitur 13
+362	Partitur 14
+363	Partitur 15
+364	Partitur 16
+365	Partitur 17
+366	Partitur 18
+367	Partitur 19
+368	Partitur 20
+369	Partitur 21
+370	Partitur 22
+371	Partitur 23
+372	Partitur 24
+373	Partitur 25
+374	Partitur 26
+375	Partitur 27
+376	Partitur 28
+377	Partitur 29
+378	Partitur 30
+379	Partitur 31
+380	Partitur 32
+381	Scherzo-Schlafanzug
+382	Scherzo-Cracker
+383	Scherzo-Zertifikat
+384	Scherzo-Ei
+385	Scherzo-Wochenzeitschrift
+386	Scherzo-Schnurtelefon
+387	Foto von Scherzo
+388	Lächelnder Scherzo
+389	Scherzo-Schal
+390	Scherzo-Taschentuch
+391	Scherzo-Anhänger
+392	Scherzo-Notizbuch
+393	Kirsch-Scherzo
+394	Kapellen-Scherzo
+395	Schwimmbad-Scherzo
+396	Lachender Scherzo
+397	Manager-Scherzo
+398	Kleiner Scherzo
+399	Regenbogen-Scherzo
+400	Neutralisierstein
+401	Edlen-Keule
+402	Rochin
+403	Langya Bang
+404	Weißer Stern
+405	Morgenstern
+406	Herrscher-Zweig
+407	Mjölnir
+408	Prinzessinnen-Zweig
+409	Mars-Zweig
+410	Arcana-Stab
+411	Stab des Weisen
+412	Kraftzweig
+413	Ruhm
+414	Passende Rüstung
+415	Dunkle Rüstung
+416	Heiliger Kettenpanzer
+417	Kokettes Kleid
+418	Heiligengewand
+419	Edles Weiß
+420	Hoplon-Schild
+421	Runenschild
+422	Spiegelschild
+423	Scudetto
+424	Tautropfenschirm
+425	Höllenkanone
+426	Allegretto Neues Kostüm
+427	Polkas neues Kostüm
+428	Polkas neues Kostüm 2
+429	Beats neues Kostüm
+430	Gratiskarte für Scherzo
+[ESP]
+0	Cuchillo de caza
+1	Sable
+2	Espada larga
+3	Sangre venenosa
+4	Espada valona
+5	Espada de rama
+6	Espada creciente
+7	Espada del revés
+8	Hoja de dragoon
+9	Inferno
+10	Hachagrito
+11	Halcón de jade
+12	Guardián maldito
+13	Claimh Solais
+14	Soleador
+15	Jokulsnaut
+16	Hoja lek
+17	Colmillo de Nidhogg
+18	Lujuria de Velmungdd
+19	Espada sheol
+20	Espada de siete ramas
+21	Paraguas gracioso
+22	Paraguas andante
+23	Paraguas Blancanieves
+24	Paraguas de papel
+25	Paraguas de azafrán
+26	Paraguas murciélago
+27	Paraguas de hoja nueva
+28	Paraguas mojado
+29	Paraguas florido
+30	Paraguas dorado
+31	Paraguas desgarrado
+32	Paraguas azul
+33	Arcabuz 
+34	Rizo serpenteante
+35	Jezail
+36	Colmillo de lobo
+37	Pistola hoolurge
+38	Cañón lohar
+39	Pistola warhammer
+40	Mosquetón hacha
+41	Diente de sable
+42	Trabuco de chispa
+43	Hacha matchlock
+44	Brazo magno
+45	Colmillo de Cerberus
+46	
+47	
+48	
+49	Colmillo de Nagul
+50	Batuta de pino
+51	Vara de bambú
+52	Batuta de corcho
+53	Batuta de arce
+54	Barril de roble
+55	Asta de búfalo
+56	Varita resonante
+57	Bastón profético
+58	Batuta de oro
+59	Varita armónica
+60	Varilla musa
+61	Vara de ébano
+62	Lichanos de Apolo
+63	Mistilteinn
+64	Cetro mudo
+65	Freudhersch
+66	Arco desgastado
+67	Fuego rápido
+68	Arco de junco
+69	Tragadisparos
+70	Arco de mono
+71	Giratruenos
+72	Doble creciente
+73	Arco imperial
+74	Visión élfica
+75	Arco de Artemisa
+76	Lugh Lamhfhada
+77	Arco de Titania
+78	Laricus
+79	Aliento misericordioso
+80	Chakram
+81	Torcuato
+82	Orbis
+83	Horror salvaje
+84	Eclipse lunar
+85	Muspelheim
+86	Sin piedad
+87	Nodo
+88	Alfheim
+89	Ninguno
+90	Falchion
+91	
+92	Espada ancha
+93	Espada bastarda
+94	Herebra
+95	Machacacostillas
+96	Zwihander
+97	Cremador de almas
+98	Hoja pírica
+99	Vencedor
+100	Hecatombe
+101	Espada de hueso de Thiassi
+102	Asesino tirano
+103	Skofnung
+104	Espada de Bezwell
+105	
+106	Garfio de carne
+107	Nudillo de latón
+108	
+109	
+110	Revientacerebros
+111	Jiao Zhu
+112	Golpe potente
+113	Cabeza de la muerte
+114	Guantes celestiales
+115	Brazo izquierdo de Tyr
+116	
+117	Brazo derecho de Tyr
+118	Puño de malla
+119	
+120	
+121	Guantes de hierro
+122	Reino del señor
+123	Sable de esgrima
+124	
+125	Espada Rapier
+126	
+127	Espada Némesis
+128	Toque seráfico
+129	Represaliador
+130	Vigilante nocturno
+131	Lunaticus
+132	Illunis
+133	Sin nombre
+134	Eclipse solar
+135	Ataque de arco
+136	Rueda de la fortuna
+137	Aro alvis
+138	Niflheim
+139	Pervius
+140	Prendas hechas a mano
+141	Vestido de paño
+142	Vestido de seda
+143	Capa nublada
+144	Capa mística
+145	Toga de águila
+146	Toga de lana
+147	Pellejo de cuero
+148	Chaqueta de cuero
+149	Guarnición de cuero
+150	Terciopelo rojo
+151	Terciopelo negro
+152	Chaleco de tundra
+153	
+154	Manto de pájaro
+155	Manto de niebla
+156	Manto de luna creciente
+157	Caparazón de medianoche
+158	Abrigo de Nil
+159	Manto del alba
+160	Velo de Styx
+161	Camisa de malla
+162	Protector ligero
+163	Pechera
+164	Escamas encantadas
+165	Armadura de caballería
+166	Camisa de batalla
+167	Armadura de tigre
+168	Armadura de mamut
+169	Armadura de león
+170	Armadura de antílope
+171	Traje de cristal
+172	Escamas de tierra
+173	Freiturnier
+174	Armadura maldita
+175	Fragmento
+176	Armadura de dragón
+177	Armadura de Lek
+178	Armadura blindada completa
+179	Sudario tormentoso
+180	Armadura de Aquiles
+181	Prendas hermosas
+182	Prendas elegantes
+183	Prendas modernas
+184	Prendas a medida
+185	Prendas de noche
+186	Prendas robadas
+187	Abrigo de cochero
+188	Abrigo de caza
+189	Abrigo de caballero
+190	Prendas de guardián
+191	Chaqueta rígida
+192	Chaqueta doble
+193	Chaqueta sigilosa
+194	Chaqueta oscura
+195	Uniforme de marino
+196	Desafortunado
+197	Huesos y calavera
+198	Transeo
+199	Prendas brillantes
+200	Vestido de pavo real
+201	Prendas feas
+202	Trompeta de ángel
+203	Ramo de diosa
+204	Galleta de melocotón
+205	Galleta estelar
+206	Galleta nevada
+207	Galleta de miel
+208	Polvo de flor
+209	Extracto floral
+210	Esencia floral
+211	Trébol de bastos
+212	Trébol de diamantes
+213	Trébol de corazones
+214	Trébol de espadas
+215	Crin de león
+216	Escama de dragón
+217	Metrónomo de ratón
+218	Chocolate raro
+219	Chocolate rarísimo
+220	Incienso de pez
+221	Incienso de calcetín
+222	Cola luminosa
+223	Cola sombría
+224	Pajita de burbujas
+225	
+226	Gorra venenosa
+227	Ajenjo
+228	Cola de escorpión
+229	Mostaza infernal
+230	Megabanico de papel
+231	Pluma crepuscular
+232	Pluma alborear
+233	Pluma caída
+234	
+235	Pluma pura
+236	Pluma del tiempo
+237	Pluma glacial
+238	Pluma heroica
+239	Pluma de la suerte
+240	Pluma de pavo real
+241	Espejo del santo
+242	Reloj de arena celestial
+243	
+244	
+245	Reloj estelar
+246	Anillo de poder
+247	Pendiente de la paz
+248	Zapatos veloces
+249	Broche brillante
+250	Broche oscuro
+251	Broche celeste
+252	
+253	Broche carmesí
+254	Brazalete esmeralda
+255	Brazalete de ónix
+256	Brazalete de amatista
+257	Brazalete de rubí
+258	Brazalete de topacio
+259	Brazalete de diamante
+260	
+261	Sombrero de plumas
+262	Sombrero burbujeante
+263	Guantes de recuperación
+264	Orbe de recuperación
+265	Campana de león
+266	Máscara demoníaca
+267	Reloj de bolsillo
+268	Reloj de Alicia
+269	Collar de hombre lobo
+270	Siete Estrellas
+271	Velo de encaje
+272	Colgante de corazón
+273	Corona de tirano
+274	Libro de hechizos
+275	Collar de cobre
+276	Collar de plata
+277	Collar de oro
+278	Magatama
+279	Fragmento de Sampo
+280	Brisingamen
+281	Protectores rayo de sol
+282	Espejo obsidiano
+283	Casco de sombra
+284	Lágrima de Atenas
+285	Empuñadura de piedra
+286	Cabeza de flecha espiritual
+287	Cinturón de Hipólito
+288	Ojo de Horus
+289	Anillo de Salomón
+290	Piedra de la fuente
+291	
+292	
+293	Paraguas de volantes
+294	Paraguas de Jonás
+295	Ventolera
+296	Bastón oracular
+297	Llave de pirata
+298	Llave de la fortaleza
+299	Paraguas de gotas
+300	Emblema de héroe
+301	Llave del templo de Aria
+302	Cola de rata
+303	Palo
+304	Dentadura postiza
+305	Calzones largos
+306	Pintura verde
+307	Leche de cabra
+308	Hucha de cerdito
+309	Cesta de fruta
+310	Manivela
+311	Jarrón vacío
+312	Jarra de agua
+313	Medicina para el resfriado
+314	Olla
+315	Caldo de cabra
+316	Cupón
+317	Miel
+318	Caramelo raro
+319	Bola de cristal
+320	Orbe
+321	Papel de pirata 1
+322	Papel de pirata 2
+323	Papel de pirata 3
+324	Babosa de plomo
+325	Proyectil punzante
+326	Bala de plata
+327	Munición superior
+328	Cabeza de bengala
+329	Ninguno
+330	Cabeza embelesada
+331	Cabeza de Cupido
+332	Cola brillante
+333	Cola oscura
+334	Aro de burbujas
+335	Excrementos de agogó
+336	Llama lenta roja
+337	
+338	Llama lenta azul
+339	
+340	Llama lenta verde
+341	Llave sala de teletransporte
+342	Toga de larkspur
+343	Prendas estupendas
+344	Fragmento de alma
+345	Bollito EZI
+346	Pala EZI
+347	Estrella de plata
+348	Luna dorada 
+349	Fragmento partitura 01
+350	Fragmento partitura 02
+351	Fragmento partitura 03
+352	Fragmento partitura 04
+353	Fragmento partitura 05
+354	Fragmento partitura 06
+355	Fragmento partitura 07
+356	Fragmento partitura 08
+357	Fragmento partitura 09
+358	Fragmento partitura 10
+359	Fragmento partitura 11
+360	Fragmento partitura 12
+361	Fragmento partitura 13
+362	Fragmento partitura 14
+363	Fragmento partitura 15
+364	Fragmento partitura 16
+365	Fragmento partitura 17
+366	Fragmento partitura 18
+367	Fragmento partitura 19
+368	Fragmento partitura 20
+369	Fragmento partitura 21
+370	Fragmento partitura 22
+371	Fragmento partitura 23
+372	Fragmento partitura 24
+373	Fragmento partitura 25
+374	Fragmento partitura 26
+375	Fragmento partitura 27
+376	Fragmento partitura 28
+377	Fragmento partitura 29
+378	Fragmento partitura 30
+379	Fragmento partitura 31
+380	Fragmento partitura 32
+381	Pijama EZI 
+382	Galleta salada EZI
+383	Certificado EZI
+384	Huevo EZI
+385	Semanario EZI
+386	Teléfono de cordel EZI
+387	Foto EZI
+388	EZI sonriente
+389	Bufanda EZI
+390	Pañuelo EZI
+391	Colgante EZI 
+392	Libro de bolsillo EZI 
+393	EZI de cereza
+394	Capilla EZI
+395	EZI nadador
+396	EZI riendo
+397	EZI elite
+398	EZI pequeño
+399	EZI arco iris
+400	Piedra neutralizadora
+401	Maza noble
+402	Lanza rochin
+403	Langya Bang
+404	Estrella blanca
+405	Lucero del alba
+406	Báculo real
+407	Mjolnir
+408	Báculo de princesa
+409	Báculo de Marte
+410	Varita arcana
+411	Báculo de sabio
+412	Báculo poderoso
+413	Gloria
+414	Armadura apropiada
+415	Armadura oscura
+416	Malla sagrada
+417	Vestido coqueto
+418	Vestimenta de santo
+419	Blanco nobiliario
+420	Escudo hoplon
+421	Escudo de runas
+422	Escudo de espejo
+423	Scudetto
+424	Paraguas de gota de rocío
+425	Cañón del infierno
+426	Traje nuevo de Allegretto
+427	Traje nuevo de Polka
+428	Traje nuevo de Polka
+429	Traje nuevo de Beat
+430	Pase gratuito EZI

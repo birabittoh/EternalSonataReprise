@@ -350,8 +350,8 @@ same.
 The native (5012, `sub_8222C190`) is the same. The stock table differs: the
 PS3 keeps 16 records of 74 bytes (`{u16 id, u16 count, u16 items[35]}`) at VA
 `0x47A0F8` (file offset `0x46A0F8`), with restocked shops, new items and shop
-13 (`sbi05`, a PS3 only map). `scripts/ps3_shop_stock.py` writes it at build
-time into `ps3_shop_stock.generated.inc`. Shops 10 and 12 stock 35 items but
+13 (`sbi05`, a PS3 only map). `scripts/ps3_shop_stock.py` extracts it into
+the committed `src/engine/ps3_shop_stock.inc`. Shops 10 and 12 stock 35 items but
 the 360's list holds 32, so `src/engine/shop_stock.cpp` remaps the list
 (`word_82560114` through the id byte at `0x82560199`) into a buffer with room
 for 35. Accesses to the count and id bytes are told apart from records 33..35
@@ -650,10 +650,10 @@ are appended (`em27`, `bos11`, `bos13`, `_v4`/`_v5` variants, ...) and 25
 shared records differ. An encounter on a PS3 only map reads past the 360
 table and never starts (`ep771.bop`). PS3 mode points the three readers
 (`sub_821A0628`, `sub_821BD480`, `sub_821BD778`) at a guest copy of the
-PS3's (`src/engine/ps3_enemies.cpp`). The EBOOT is not redistributed, so
-the build reads that table from `assets/EBOOT.elf` (`scripts/ps3_enemy_table.py`;
-CI fetches it with `default.xex`); built without it, PS3 mode keeps the 360
-table.
+PS3's (`src/engine/ps3_enemies.cpp`), extracted from the EBOOT by
+`scripts/ps3_enemy_table.py` into the committed `src/engine/ps3_enemy_table.inc`.
+Every EBOOT table the build uses is committed that way, so building needs no
+EBOOT; the item and magic text lives in `src/guest_data/ps3/text/`.
 
 The effects a hit shows come from record n of `unk_82078B00`
 (`sub_8218E480`; `sub_8218E558` reads its two trailing floats): 25 entries
@@ -665,7 +665,7 @@ shared records gives the slot maps this table needs: `BattleKeep` 360 = PS3
 + 8 from slot 26, and fourteen `AppKeep` slots in PS3 65..92, each 360 =
 PS3 + 1; translated, 105 records are the 360's byte for byte. PS3 mode
 reads a guest copy in 360 numbering (`src/engine/ps3_hit_effects.cpp`),
-generated from the EBOOT at build time like the enemy table
+extracted from the EBOOT like the enemy table
 (`scripts/ps3_hit_effect_table.py`).
 
 360 slot 38 (PS3 30) is the battle voice table (`BMD `), read by

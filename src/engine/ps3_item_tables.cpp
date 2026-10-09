@@ -33,8 +33,10 @@ struct Ps3TextBlock {
   uint32_t size;
 };
 
-// Generated from the PS3 EBOOT at build time (scripts/ps3_item_tables.py).
-#include "ps3_item_tables.generated.inc"
+// Extracted from the PS3 EBOOT by scripts/ps3_item_tables.py; the text is
+// built from src/guest_data/ps3/text.
+#include "ps3_item_tables.inc"
+#include "ps3_item_text.generated.inc"
 
 constexpr uint32_t kMasterTable = 0x82017630u;
 constexpr uint32_t kMagicTable = 0x82015380u;
@@ -42,16 +44,6 @@ constexpr uint32_t kIconTable = 0x8202C9C8u;  // word_8202C9C8
 constexpr int kRetailBaseItemMax = 402;
 constexpr int kPs3BaseItemMax = 431;
 constexpr uint32_t kPs3MagicCount = 132;
-
-#if ETERNALSONATA_PS3_ITEM_TABLES
-constexpr bool kHaveTables = true;
-#else
-constexpr bool kHaveTables = false;
-constexpr uint8_t kPs3MagicOrder[1] = {};
-constexpr Ps3TextBlock kPs3TextBlocks[1] = {};
-constexpr uint32_t kPs3ItemIconFirst = 0;
-constexpr uint16_t kPs3ItemIcons[1] = {};
-#endif
 
 // The lhz of every item icon lookup, word_8202C9C8[icon - 1].
 constexpr uint32_t kIconReaders[] = {
@@ -109,11 +101,6 @@ namespace eternalsonata {
 void ApplyPs3ItemTables() {
   if (!IsPs3Target())
     return;
-  if (!kHaveTables) {
-    REXLOG_ERROR("ps3 items: built without the PS3 EBOOT, keeping the 360 tables");
-    return;
-  }
-#if ETERNALSONATA_PS3_ITEM_TABLES
   auto* memory = Memory();
   if (!memory)
     return;
@@ -123,7 +110,6 @@ void ApplyPs3ItemTables() {
     return;
   }
   g_applied = true;
-#endif
 }
 
 uint32_t Ps3TextBlockFor(uint32_t block) {

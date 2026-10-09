@@ -24,14 +24,12 @@ namespace {
 
 constexpr uint32_t kRecordWords = 77;
 
-// Generated from the PS3 EBOOT at build time (scripts/ps3_hit_effect_table.py);
-// empty without it. The last record only keeps the array valid then.
+// Extracted from the PS3 EBOOT by scripts/ps3_hit_effect_table.py.
 constexpr uint32_t kPs3HitEffects[][kRecordWords] = {
-#include "ps3_hit_effect_table.generated.inc"
-    {},
+#include "ps3_hit_effect_table.inc"
 };
-constexpr size_t kRecordCount = std::size(kPs3HitEffects) - 1;
-static_assert(kRecordCount == 0 || kRecordCount == 119);
+constexpr size_t kRecordCount = std::size(kPs3HitEffects);
+static_assert(kRecordCount == 119);
 
 std::once_flag g_once;
 uint32_t g_table = 0;
@@ -41,10 +39,6 @@ void BuildTable() {
   auto* memory = runtime ? runtime->memory() : nullptr;
   if (!memory)
     return;
-  if (!kRecordCount) {
-    REXLOG_ERROR("ps3 hit effects: built without the PS3 EBOOT, keeping the 360 table");
-    return;
-  }
   const uint32_t size = static_cast<uint32_t>(4 * kRecordWords * kRecordCount);
   const uint32_t table = memory->SystemHeapAlloc(size, 16);
   if (!table) {

@@ -176,31 +176,21 @@ add_custom_command(
     VERBATIM
 )
 
-# PS3 tables read from the decrypted PS3 EBOOT, which is not redistributed:
-# CI fetches it into assets/ with default.xex. Without it they are empty and
-# PS3 mode keeps the 360's.
-set(ETERNALSONATA_PS3_EBOOT ${CMAKE_SOURCE_DIR}/assets/EBOOT.elf)
-if(NOT EXISTS ${ETERNALSONATA_PS3_EBOOT}
-   AND EXISTS ${CMAKE_SOURCE_DIR}/assets-ps3-pal-raw/eboot-decrypt/EBOOT.elf)
-    set(ETERNALSONATA_PS3_EBOOT ${CMAKE_SOURCE_DIR}/assets-ps3-pal-raw/eboot-decrypt/EBOOT.elf)
-endif()
-set(ETERNALSONATA_PS3_EBOOT_DEPENDS)
-if(EXISTS ${ETERNALSONATA_PS3_EBOOT})
-    set(ETERNALSONATA_PS3_EBOOT_DEPENDS ${ETERNALSONATA_PS3_EBOOT})
-endif()
-set(ETERNALSONATA_PS3_TABLES)
-foreach(table ps3_enemy_table ps3_hit_effect_table ps3_item_tables ps3_party_template ps3_shop_stock)
-    set(output ${CMAKE_SOURCE_DIR}/src/engine/${table}.generated.inc)
-    add_custom_command(
-        OUTPUT ${output}
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/${table}.py
-                ${ETERNALSONATA_PS3_EBOOT} ${output}
-        DEPENDS ${CMAKE_SOURCE_DIR}/scripts/${table}.py ${ETERNALSONATA_PS3_EBOOT_DEPENDS}
-        COMMENT "Generating src/engine/${table}.generated.inc"
-        VERBATIM
-    )
-    list(APPEND ETERNALSONATA_PS3_TABLES ${output})
-endforeach()
+# The PS3's item and magic text. Its tables are extracted from the EBOOT
+# once and committed (src/engine/ps3_*.inc), so the build needs no EBOOT.
+file(GLOB ETERNALSONATA_PS3_TEXT CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/guest_data/ps3/text/*.txt)
+set(ETERNALSONATA_PS3_TABLES ${CMAKE_SOURCE_DIR}/src/engine/ps3_item_text.generated.inc)
+add_custom_command(
+    OUTPUT ${ETERNALSONATA_PS3_TABLES}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-ps3-item-text.py
+            ${ETERNALSONATA_PS3_TABLES}
+    DEPENDS
+        ${CMAKE_SOURCE_DIR}/scripts/gen-ps3-item-text.py
+        ${CMAKE_SOURCE_DIR}/scripts/guest_data.py
+        ${ETERNALSONATA_PS3_TEXT}
+    COMMENT "Generating src/engine/ps3_item_text.generated.inc"
+    VERBATIM
+)
 
 # Plume's shader helper, used both for the overlay shaders below and for the
 # DXC it fetches -- the Windows SDK's DXC has no SPIR-V backend, so it cannot
