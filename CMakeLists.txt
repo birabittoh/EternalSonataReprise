@@ -146,11 +146,17 @@ set(ETERNALSONATA_IMAGES_HEADER ${CMAKE_SOURCE_DIR}/src/images.generated.h)
 file(GLOB ETERNALSONATA_IMAGE_SOURCES CONFIGURE_DEPENDS
      ${CMAKE_SOURCE_DIR}/src/images/*.png
      ${CMAKE_SOURCE_DIR}/res/*.png)
+# Renaming or removing a .png changes no timestamp the header is older than,
+# so the list itself is an input; file(CONFIGURE) only rewrites it on change.
+set(ETERNALSONATA_IMAGE_LIST ${CMAKE_BINARY_DIR}/image_sources.txt)
+string(REPLACE ";" "\n" _image_list "${ETERNALSONATA_IMAGE_SOURCES}")
+file(CONFIGURE OUTPUT ${ETERNALSONATA_IMAGE_LIST} CONTENT "${_image_list}\n")
 add_custom_command(
     OUTPUT ${ETERNALSONATA_IMAGES_HEADER}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-images.py
     DEPENDS
         ${CMAKE_SOURCE_DIR}/scripts/gen-images.py
+        ${ETERNALSONATA_IMAGE_LIST}
         ${ETERNALSONATA_IMAGE_SOURCES}
     COMMENT "Generating src/images.generated.h"
     VERBATIM
