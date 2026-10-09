@@ -4,6 +4,8 @@
 
 #include <rex/logging.h>
 
+#include "install_pipeline.h"
+
 namespace eternalsonata {
 namespace {
 
@@ -29,6 +31,15 @@ bool IsPs3Target() {
 
 const std::filesystem::path& GameDataRoot() {
   return g_root;
+}
+
+const std::string& TargetRelease() {
+  static const std::string release = [] {
+    constexpr std::string_view kTitle = "Eternal Sonata, ";
+    std::string name = IdentifySource(g_root.string()).release;
+    return name.starts_with(kTitle) ? name.substr(kTitle.size()) : name;
+  }();
+  return release;
 }
 
 }  // namespace eternalsonata

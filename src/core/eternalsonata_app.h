@@ -390,6 +390,9 @@ class EternalsonataApp : public rex::ReXApp {
         ImGui::TextUnformatted("GPU: not timed");
       }
       ImGui::Text("Frame: %.2f ms", bound.frame_ms);
+      const std::string& release = eternalsonata::TargetRelease();
+      ImGui::Separator();
+      ImGui::Text("Release: %s", release.empty() ? "unknown" : release.c_str());
     });
 
     // Discord Rich Presence: reports the field area the player is currently
