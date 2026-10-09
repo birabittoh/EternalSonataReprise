@@ -117,17 +117,12 @@ class EternalsonataApp : public rex::ReXApp {
 
     eternalsonata::GameDataOptions options;
     options.config_path = config_path();
-    if (eternalsonata::PlumeBackendReady()) {
-      options.progress = [](const std::string& title, float fraction, const std::string& detail) {
-        eternalsonata::UpdateLoadingScreen(title, fraction, detail);
-      };
-    }
-    std::string error;
-    if (eternalsonata::UsePreparedGameData(options, error))
+    std::string pending;
+    if (eternalsonata::UsePreparedGameData(options, pending))
       return FinishGameDataPaths();
 
     // Asynchronous, so the main loop runs and feeds the intro screen input.
-    eternalsonata::AskForGameData(options, app_context(), error, [this, resume](bool ready) {
+    eternalsonata::AskForGameData(options, app_context(), pending, [this, resume](bool ready) {
       if (!ready) {
         // Teardown takes a moment; nothing is left to show meanwhile.
         window()->Hide();
@@ -140,22 +135,21 @@ class EternalsonataApp : public rex::ReXApp {
   }
 
   rex::PathConfig FinishGameDataPaths() {
-    eternalsonata::HideLoadingScreen();
     eternalsonata::ReleaseIntroScreen();
     RefreshPathDefaultsIfCvarsChanged();
     eternalsonata::DetectTarget(resolved_path_defaults().game_data_root);
     return resolved_path_defaults();
   }
 
-  // Closing from the intro quits through it; during extraction the UI thread is
-  // busy in the copy, so closing waits for it to finish.
+  // Closing from the intro quits through it; during the install phases the UI
+  // thread is busy, so closing waits for them to finish.
   bool OnWindowCloseRequested() override {
-    if (eternalsonata::RequestIntroQuit())
-      return false;
     if (eternalsonata::IsExtractingGameData()) {
-      REXLOG_INFO("Close requested while extracting game files; ignoring until it finishes");
+      REXLOG_INFO("Close requested while installing game files; ignoring until it finishes");
       return false;
     }
+    if (eternalsonata::RequestIntroQuit())
+      return false;
     return true;
   }
 
