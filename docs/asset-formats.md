@@ -470,6 +470,19 @@ does that once, in place, from the release's own data:
 * `title_jpn.bmd`, PAL's own addition: USA's `title.bmd` carries the Trusty
   Bell art as PAL's does, and JP's is that screen already.
 
+The installer tells the releases apart by the SHA-256 of one file
+(`src/installer/release_id.cpp`), read straight out of a disc image, so an
+image is never hashed whole. Image hashes are of the full dump; every 360
+image is 7,835,492,352 bytes.
+
+| Release | Identifying file | File SHA-256 | Image SHA-256 / SHA-1 |
+|---|---|---|---|
+| 360 Europe | `default.xex` | `91184e7765172a358ecaa6e5ca1784db1ae796c60f25051a45c5206f8949501e` | |
+| 360 North America | `default.xex` | `d830c451cac4a913e3bcee54cf62a7c7541834b8a751adc4ef37483d78165aee` | `470eeb3ff54e92e0fe62e9a313f05104c9c99ae889cac88257de3dfc84805e6c` / `158c105a6e05228144f14fa77049e2af254af9d6` |
+| 360 Japan | `default.xex` | `32a00e6537ff4dbb160b97f7a6e427c205ddecb1aab5f38d77d556d35cfc61ef` | `50b54f73aea7cd57bd3d34a887b8818396a60f653b77a019f20a54ce99be9501` / `96bb2bd6ac6e2ac4fd1bca0d0935688b1df0a99e` |
+| PS3 Europe (BLES00444) | `PS3_GAME/USRDIR/EBOOT.BIN` | `a825a19dcbbad655b31f892f8fedc11fb356aab0cbb68cf0eb77395f48b43ba9` | |
+| PS3 Japan (Reprise), not supported | `PS3_GAME/USRDIR/EBOOT.BIN` | `fe26949166337744af04d31567b3c55533ed537a6b4907f5c3cb9cf8e35580a4` | |
+
 Everything else runs as shipped. AppKeep matches PAL slot for slot apart from
 three single language effects (231, 350, 352) and the camp art; JP lacks
 slots 353..356, the `<ar N>` arrows, which only PAL's scripts use. Both fit

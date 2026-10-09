@@ -84,6 +84,8 @@ struct Flow {
   rex::ui::WindowedAppContext* context = nullptr;
   std::function<void(bool)> done;
   GameDataPrompt prompt;
+  // The identified source Extract installs.
+  std::string picked;
   bool finished = false;
 };
 
@@ -162,10 +164,15 @@ GameDataChoice MessageBoxPrompt(const GameDataPrompt& prompt) {
   message += prompt.can_pick_folder ? ", or a folder with the extracted files or a PS3 disc dump." : ".";
   if (!prompt.copy_hint.empty())
     message += "\n\nAlready extracted? Copy them to\n" + prompt.copy_hint;
-  SDL_MessageBoxButtonData buttons[3];
+  if (prompt.can_extract)
+    message = "Found " + prompt.release + ".\n\n" + message;
+  SDL_MessageBoxButtonData buttons[4];
   int count = 0;
-  buttons[count++] = {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, int(GameDataChoice::kDiscImage),
-                      "Select Disc Image..."};
+  if (prompt.can_extract)
+    buttons[count++] = {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, int(GameDataChoice::kExtract),
+                        "Extract"};
+  buttons[count++] = {prompt.can_extract ? 0u : SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,
+                      int(GameDataChoice::kDiscImage), "Select Disc Image..."};
   if (prompt.can_pick_folder)
     buttons[count++] = {0, int(GameDataChoice::kFolder), "Select Folder..."};
   buttons[count++] = {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, int(GameDataChoice::kQuit), "Quit"};
@@ -187,29 +194,49 @@ void Finish(const std::shared_ptr<Flow>& flow, bool ready) {
 
 void Ask(std::shared_ptr<Flow> flow);
 
+// Runs the phases on the identified source.
+void Extract(std::shared_ptr<Flow> flow) {
+  if (flow->finished)
+    return;
+  flow->prompt.can_extract = false;
+  try {
+    flow->prompt.error = Prepare(flow->options, flow->picked);
+  } catch (const std::exception& e) {
+    g_extracting = false;
+    EndIntroWork();
+    flow->prompt.error = std::string("Preparing the game files failed: ") + e.what();
+  }
+  if (flow->prompt.error.empty()) {
+    // The player starts the game from the intro once every phase is done.
+    if (!IntroScreenAvailable()) {
+      Finish(flow, true);
+      return;
+    }
+    flow->prompt.ready = true;
+  } else {
+    REXLOG_ERROR("{}: {}", flow->picked, flow->prompt.error);
+    // Extract again after fixing what went wrong, such as disk space.
+    flow->prompt.can_extract = true;
+  }
+  Ask(flow);
+}
+
+// Identifies the pick; extracting waits for the player.
 void OnPicked(std::shared_ptr<Flow> flow, std::string picked) {
   if (flow->finished)
     return;
   if (!picked.empty()) {
     REXLOG_INFO("Selected {}", picked);
+    const SourceInfo info = IdentifySource(picked);
     flow->prompt.ready = false;
-    try {
-      flow->prompt.error = Prepare(flow->options, picked);
-    } catch (const std::exception& e) {
-      g_extracting = false;
-      EndIntroWork();
-      flow->prompt.error = std::string("Preparing the game files failed: ") + e.what();
-    }
-    if (flow->prompt.error.empty()) {
-      // The player starts the game from the intro once every phase is done.
-      if (!IntroScreenAvailable()) {
-        Finish(flow, true);
-        return;
-      }
-      flow->prompt.ready = true;
-    } else {
-      REXLOG_ERROR("{}: {}", picked, flow->prompt.error);
-    }
+    flow->prompt.release = info.release;
+    flow->prompt.error = info.error;
+    flow->prompt.can_extract = info.error.empty();
+    flow->picked = info.error.empty() ? picked : std::string();
+    if (!info.release.empty())
+      REXLOG_INFO("Identified {}", info.release);
+    if (!info.error.empty())
+      REXLOG_ERROR("{}: {}", picked, info.error);
   }
   Ask(flow);
 }
@@ -220,6 +247,13 @@ void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice) {
   flow->prompt.error.clear();
   if (choice == GameDataChoice::kQuit || choice == GameDataChoice::kStart) {
     Finish(flow, choice == GameDataChoice::kStart);
+    return;
+  }
+  if (choice == GameDataChoice::kExtract) {
+    if (flow->prompt.can_extract)
+      Extract(flow);
+    else
+      Ask(flow);
     return;
   }
   SetIntroBusy(true);
@@ -275,7 +309,9 @@ void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext&
     ShowIntroScreen(flow->prompt, [flow](GameDataChoice choice) { OnChoice(flow, choice); });
     SetIntroBusy(true);
   }
-  context.CallInUIThreadDeferred([flow, pending]() { OnPicked(flow, pending); });
+  flow->picked = pending;
+  flow->prompt.release = IdentifySource(pending).release;
+  context.CallInUIThreadDeferred([flow]() { Extract(flow); });
 }
 
 bool IsExtractingGameData() {

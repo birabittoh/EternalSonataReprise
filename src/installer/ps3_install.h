@@ -30,6 +30,9 @@ bool IsPs3Converted(const std::filesystem::path& dir);
 // another region is refused. Returns why it failed, for the player, or empty.
 std::string ConvertPs3(const std::filesystem::path& dir, const ExtractProgress& progress);
 
+// TITLE_ID from a disc's PARAM.SFO, or empty.
+std::string ReadTitleId(const std::filesystem::path& sfo);
+
 // The archives folder of a PS3 disc folder, given the disc root, PS3_GAME,
 // USRDIR or archives itself; empty when there is none.
 std::filesystem::path FindPs3Archives(const std::filesystem::path& picked);

@@ -372,6 +372,7 @@ set(ETERNALSONATA_SOURCES
     src/installer/ps3_audio.cpp
     src/installer/ps3_convert.cpp
     src/installer/ps3_install.cpp
+    src/installer/release_id.cpp
     src/installer/release_patch.cpp
     src/engine/flag_system.cpp
     src/core/guest_main_thread.cpp

@@ -6,6 +6,7 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace eternalsonata {
 
@@ -28,5 +29,10 @@ bool SameFileName(std::string_view a, std::string_view b);
 // for the player, or empty.
 std::string ExtractDiscImage(const std::string& image, const std::filesystem::path& out_dir,
                              std::string_view required_entry, const ExtractProgress& progress);
+
+// Reads the file `name` from the root of `image` into `out`. Returns why it
+// could not, for the player, or empty.
+std::string ReadDiscImageFile(const std::string& image, std::string_view name,
+                              std::vector<uint8_t>& out);
 
 }  // namespace eternalsonata
