@@ -26,6 +26,7 @@
 #include "intro_text.h"
 #include "loading_screen.h"
 #include "native_renderer_plume.h"
+#include "release_id.h"
 
 namespace eternalsonata {
 namespace {
@@ -296,6 +297,13 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     int row;
   };
 
+  // Whether the picked release has text in language `index`; any does
+  // before one is picked.
+  bool Supported(int index) const {
+    return !prompt_.languages ||
+           (prompt_.languages & TextLanguageBit(IntroLanguageCodeAt(index))) != 0;
+  }
+
   int StartIndex() const {
     for (size_t i = 0; i < options_.size(); ++i) {
       if (options_[i].choice == GameDataChoice::kStart)
@@ -375,9 +383,11 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const int count = int(options_.size());
     // Start stays out of reach until there is something to extract or start.
     auto enabled = [&](int i) {
-      return options_[size_t(i)].choice != GameDataChoice::kStart || prompt_.ready ||
-             prompt_.can_extract;
+      return options_[size_t(i)].choice != GameDataChoice::kStart ||
+             ((prompt_.ready || prompt_.can_extract) && Supported(IntroLanguage()));
     };
+    if (!enabled(selected_))
+      selected_ = 0;
     auto choice_of = [&](int i) {
       const GameDataChoice choice = options_[size_t(i)].choice;
       return choice == GameDataChoice::kStart && !prompt_.ready ? GameDataChoice::kExtract
@@ -560,6 +570,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     draw->AddRectFilled(min, max, IM_COL32(0, 0, 0, int((focused ? 150 : 100) * a)), rounding);
     draw->AddRect(min, max, focused ? Color(kAccent, a) : IM_COL32(255, 255, 255, int(60 * a)),
                   rounding, 0, std::max(1.0f, (focused ? 2.0f : 1.0f) * unit));
+    if (!Supported(current))
+      DrawLanguageWarning(draw, font, size, unit, min, h, a);
     const char* name = IntroLanguageName(current);
     const float text_y = std::floor(min.y + (h - text_size) * 0.5f);
     draw->AddText(font, text_size, ImVec2(min.x + pad, text_y), Color(kText, a), name);
@@ -590,13 +602,49 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         ImGui::PopID();
         if (i == picker_highlight_)
           draw->AddRectFilled(item_min, item_max, Color(kAccent, 0.45f * a), rounding);
+        // Still selectable; the warning says why Start is off.
+        const float shade = Supported(i) ? (i == current ? 1.0f : 0.8f) : 0.35f;
         draw->AddText(font, text_size,
                       ImVec2(item_min.x + pad, std::floor(item_min.y + (item_h - text_size) * 0.5f)),
-                      Color(kText, (i == current ? 1.0f : 0.8f) * a), IntroLanguageName(i));
+                      Color(kText, shade * a), IntroLanguageName(i));
       }
       if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !over_picker)
         picker_open_ = false;
     }
+  }
+
+  // A warning sign left of the picker at `min`; hovering it, or the picker
+  // having the keys, shows why.
+  void DrawLanguageWarning(ImDrawList* draw, ImFont* font, ImVec2 size, float unit, ImVec2 min,
+                           float h, float a) {
+    const float s = 13.0f * unit;
+    const ImVec2 center(min.x - 12.0f * unit - s, min.y + h * 0.5f);
+    const ImVec2 top(center.x, center.y - s), left(center.x - s, center.y + s * 0.8f),
+        right(center.x + s, center.y + s * 0.8f);
+    draw->AddTriangleFilled(top, left, right, Color(kError, a));
+    const float mark = 16.0f * unit;
+    const ImVec2 extent = font->CalcTextSizeA(mark, FLT_MAX, 0.0f, "!");
+    draw->AddText(font, mark, ImVec2(std::floor(center.x - extent.x * 0.5f),
+                                     std::floor(center.y + s * 0.15f - extent.y * 0.5f)),
+                  IM_COL32(0, 0, 0, int(255 * a)), "!");
+    ImGui::SetCursorScreenPos(ImVec2(center.x - s, center.y - s));
+    ImGui::InvisibleButton("##language_warning", ImVec2(2.0f * s, 2.0f * s));
+    if (!ImGui::IsItemHovered() && !(on_picker_ && !picker_open_))
+      return;
+
+    const std::string text = Tr(IntroText::kUnsupportedLanguage, prompt_.release);
+    const float text_size = 18.0f * unit;
+    const float pad = 12.0f * unit;
+    const float wrap = std::min(420.0f * unit, size.x - 32.0f);
+    const ImVec2 box = font->CalcTextSizeA(text_size, FLT_MAX, wrap, text.c_str());
+    const float right_edge = size.x - 24.0f * unit;
+    const ImVec2 box_max(right_edge, min.y - 34.0f * unit);
+    const ImVec2 box_min(box_max.x - box.x - 2.0f * pad, box_max.y - box.y - 2.0f * pad);
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
+    fg->AddRectFilled(box_min, box_max, IM_COL32(16, 10, 4, int(235 * a)), 6.0f * unit);
+    fg->AddRect(box_min, box_max, Color(kError, a), 6.0f * unit, 0, std::max(1.0f, unit));
+    fg->AddText(font, text_size, ImVec2(box_min.x + pad, box_min.y + pad), Color(kText, a),
+                text.c_str(), nullptr, wrap);
   }
 
   GameDataPrompt prompt_;

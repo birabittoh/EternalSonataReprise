@@ -89,7 +89,7 @@ SourceInfo FromHash(const std::vector<uint8_t>& file, const std::string& unknown
     REXLOG_WARN("Unknown dump: {}", hash);
     return {{}, unknown};
   }
-  SourceInfo info{std::string("Eternal Sonata, ") + release->name, {}};
+  SourceInfo info{std::string("Eternal Sonata, ") + release->name, {}, release->languages};
   if (!release->supported)
     info.error = info.release + " is not supported yet.";
   return info;
@@ -136,7 +136,8 @@ SourceInfo IdentifyPs3Folder(const fs::path& archives) {
 SourceInfo IdentifyGameDirectory(const fs::path& dir) {
   if (IsPs3Directory(dir)) {
     const Ps3Region region = ReadPs3Region(dir);
-    return {std::string("Eternal Sonata, PS3, ") + RegionName(region), {}};
+    return {std::string("Eternal Sonata, PS3, ") + RegionName(region), {},
+            region == Ps3Region::kJapan ? uint32_t(kTextJa) : uint32_t(kTextAll)};
   }
   std::vector<uint8_t> file;
   fs::path xex = ChildNamed(dir, "default.xex.orig");

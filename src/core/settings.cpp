@@ -2326,11 +2326,12 @@ void ApplyBootTextLanguage() {
   auto* entry = rex::cvar::GetFlagInfo("user_language");
   if (!entry || !entry->setter)
     return;
-  // Linked when no config named a text language yet, or it matched the
-  // interface language the start screen opened in.
+  // Linked when no config named a text language yet, it matched the
+  // interface language the start screen opened in, or the start screen
+  // started the game, which it only allows in a language the release has.
   const std::string id = entry->getter();
   const bool linked = rex::cvar::GetFlagSource("user_language") == rex::cvar::Source::kDefault ||
-                      SameLanguage(id, LaunchIntroLanguageCode());
+                      SameLanguage(id, LaunchIntroLanguageCode()) || IntroLanguageConfirmed();
   const char* target = kBuiltinLanguages[UiLanguageEntry()].id;
   if (!linked || id == target)
     return;

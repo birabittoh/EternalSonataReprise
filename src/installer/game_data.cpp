@@ -236,6 +236,7 @@ void OnPicked(std::shared_ptr<Flow> flow, std::string picked) {
     const SourceInfo info = IdentifySource(picked);
     flow->prompt.ready = false;
     flow->prompt.release = info.release;
+    flow->prompt.languages = info.languages;
     flow->prompt.error = info.error;
     flow->prompt.can_extract = info.error.empty();
     flow->picked = info.error.empty() ? picked : std::string();
@@ -252,6 +253,8 @@ void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice) {
     return;
   flow->prompt.error.clear();
   if (choice == GameDataChoice::kQuit || choice == GameDataChoice::kStart) {
+    if (choice == GameDataChoice::kStart)
+      ConfirmIntroLanguage();
     Finish(flow, choice == GameDataChoice::kStart);
     return;
   }
@@ -317,7 +320,9 @@ void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext&
     SetIntroBusy(true);
   }
   flow->picked = pending;
-  flow->prompt.release = IdentifySource(pending).release;
+  const SourceInfo info = IdentifySource(pending);
+  flow->prompt.release = info.release;
+  flow->prompt.languages = info.languages;
   context.CallInUIThreadDeferred([flow]() { Extract(flow); });
 }
 

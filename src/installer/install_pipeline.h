@@ -47,6 +47,8 @@ struct SourceInfo {
   std::string release;
   // Why `picked` cannot be installed, or empty.
   std::string error;
+  // The text it ships (release_id.h bits), 0 when not known.
+  uint32_t languages = 0;
 };
 
 // Identifies `picked` (as Install takes it) without extracting anything.

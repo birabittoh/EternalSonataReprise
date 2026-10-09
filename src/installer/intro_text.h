@@ -32,6 +32,7 @@ enum class IntroText {
   kCopyHint,
   kSelected,
   kTitle,
+  kUnsupportedLanguage,
   kCount,
 };
 
@@ -48,6 +49,7 @@ std::string TrProgress(const std::string& title);
 // The languages, each named in itself, for the screen's language picker.
 int IntroLanguageCount();
 const char* IntroLanguageName(int index);
+const char* IntroLanguageCodeAt(int index);
 int IntroLanguage();
 
 // Switches and persists to `config_path` when one was bound.
@@ -57,6 +59,11 @@ void SetIntroLanguage(int index);
 // the process started in.
 const char* IntroLanguageCode();
 const char* LaunchIntroLanguageCode();
+
+// The player started the game from the start screen in the interface
+// language, which the release has text for, so the text follows it.
+void ConfirmIntroLanguage();
+bool IntroLanguageConfirmed();
 void BindIntroLanguageConfig(const std::filesystem::path& config_path);
 
 // Every language file's text, for baking the glyphs the screen needs.
