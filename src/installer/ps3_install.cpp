@@ -28,6 +28,8 @@ constexpr const char* kShipped = "ps3-shipped.txt";
 // Bumped with every conversion change, here and in ps3_convert.py.
 constexpr const char* kStamp = "ps3-convert.stamp";
 constexpr const char* kStampVersion = "2";
+// The disc's title id, in a name Walk skips so no conversion touches it.
+constexpr const char* kTitleId = "ps3-title-id.stamp";
 constexpr std::array kNotData = {".i64", ".idb", ".id0", ".id1", ".id2",
                                  ".nam", ".til", ".bak", ".orig", ".stamp"};
 
@@ -287,6 +289,18 @@ bool IsPs3Directory(const fs::path& dir) {
   return !dir.empty() && fs::is_regular_file(dir / kProbe, ec);
 }
 
+Ps3Region ReadPs3Region(const fs::path& dir) {
+  Bytes id;
+  if (!ReadFile(dir / kTitleId, id) || id.size() < 3)
+    return Ps3Region::kPal;
+  // BLES/BCES Europe, BLUS/BCUS America, BLJS/BCJS/BLJM/BCJM Japan.
+  if (id[2] == 'U')
+    return Ps3Region::kUsa;
+  if (id[2] == 'J')
+    return Ps3Region::kJapan;
+  return Ps3Region::kPal;
+}
+
 bool IsPs3Converted(const fs::path& dir) {
   Bytes stamp;
   if (ReadFile(dir / kStamp, stamp))
@@ -298,6 +312,8 @@ bool IsPs3Converted(const fs::path& dir) {
 }
 
 std::string ConvertPs3(const fs::path& dir, const ExtractProgress& progress) {
+  if (ReadPs3Region(dir) != Ps3Region::kPal)
+    return "Only the European PS3 release can be converted so far.";
   try {
     return Run(dir, progress);
   } catch (const std::exception& e) {
@@ -314,6 +330,29 @@ fs::path FindPs3Archives(const fs::path& picked) {
       at = next;
   }
   return SameName(at.filename().string(), "archives") && HasArchives(at) ? at : fs::path();
+}
+
+// TITLE_ID from the disc's PARAM.SFO, or empty.
+std::string ReadTitleId(const fs::path& sfo) {
+  Bytes d;
+  if (!ReadFile(sfo, d) || d.size() < 20 || std::memcmp(d.data(), "\0PSF", 4) != 0)
+    return {};
+  auto le32 = [&](size_t o) {
+    return uint32_t(d[o]) | uint32_t(d[o + 1]) << 8 | uint32_t(d[o + 2]) << 16 |
+           uint32_t(d[o + 3]) << 24;
+  };
+  const size_t keys = le32(8), values = le32(12), count = le32(16);
+  for (size_t i = 0; i < count && 20 + 16 * (i + 1) <= d.size(); ++i) {
+    const size_t entry = 20 + 16 * i;
+    const size_t key = keys + (size_t(d[entry]) | size_t(d[entry + 1]) << 8);
+    const size_t value = values + le32(entry + 12);
+    if (key >= d.size() || value >= d.size())
+      continue;
+    if (std::strncmp(reinterpret_cast<const char*>(&d[key]), "TITLE_ID", 9) == 0)
+      return std::string(reinterpret_cast<const char*>(&d[value]),
+                         strnlen(reinterpret_cast<const char*>(&d[value]), d.size() - value));
+  }
+  return {};
 }
 
 std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir,
@@ -376,6 +415,10 @@ std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir,
       }
     }
   }
+  // archives is PS3_GAME/USRDIR/archives.
+  const std::string title_id = ReadTitleId(archives.parent_path().parent_path() / "PARAM.SFO");
+  if (!title_id.empty())
+    WriteFile(partial / kTitleId, Bytes(title_id.begin(), title_id.end()));
   if (fs::exists(out_dir, ec) && !MoveAside(out_dir))
     return "Could not move the existing " + out_dir.string() + " out of the way.";
   fs::rename(partial, out_dir, ec);

@@ -16,10 +16,18 @@ namespace eternalsonata {
 // Whether `dir` holds the PS3 release's files, converted or not.
 bool IsPs3Directory(const std::filesystem::path& dir);
 
+// The disc's region, from its title id.
+enum class Ps3Region { kPal, kUsa, kJapan };
+
+// Region of the disc `dir` was unpacked from; PAL when unknown, which is
+// every tree unpacked before the id was recorded.
+Ps3Region ReadPs3Region(const std::filesystem::path& dir);
+
 // Whether `dir` was converted by this build.
 bool IsPs3Converted(const std::filesystem::path& dir);
 
-// Converts `dir` in place. Returns why it failed, for the player, or empty.
+// Converts `dir` in place. Only the PAL release's tables are compiled in, so
+// another region is refused. Returns why it failed, for the player, or empty.
 std::string ConvertPs3(const std::filesystem::path& dir, const ExtractProgress& progress);
 
 // The archives folder of a PS3 disc folder, given the disc root, PS3_GAME,

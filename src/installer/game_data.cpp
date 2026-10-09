@@ -14,10 +14,8 @@
 #include <rex/runtime.h>
 #include <rex/ui/windowed_app_context.h>
 
-#include "disc_image.h"
+#include "install_pipeline.h"
 #include "intro_screen.h"
-#include "ps3_install.h"
-#include "release_patch.h"
 
 // The storage probes come from the SDK's GameDataSelector
 // (src/system/game_data_selector.cpp), which this replaces.
@@ -27,17 +25,11 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr const char* kTableOfContents = "index.vmtoc";
-
 #if REX_PLATFORM_ANDROID
 constexpr bool kCanPickFolder = false;
 #else
 constexpr bool kCanPickFolder = true;
 #endif
-
-bool IsContentUri(std::string_view path) {
-  return path.starts_with("content://");
-}
 
 // Same folder the SDK extracted into, so earlier installs are still found.
 fs::path WritableBaseDir() {
@@ -85,15 +77,6 @@ std::string CopyHint() {
 #endif
 }
 
-std::string CheckFolder(const fs::path& dir) {
-  if (IsGameDirectory(dir) || !FindPs3Archives(dir).empty())
-    return {};
-  std::error_code ec;
-  if (fs::exists(dir / "PS3_GAME", ec) || fs::exists(dir / "PARAM.SFO", ec))
-    return "This PS3 disc folder has no USRDIR/archives.";
-  return "This folder does not hold the extracted game files (no index.vmtoc).";
-}
-
 // Kept alive by every callback still pending, so a dialog answering after
 // the player quit lands nowhere.
 struct Flow {
@@ -118,22 +101,27 @@ void Use(const GameDataOptions& options, const fs::path& dir) {
   REXLOG_INFO("Game data set to {}", dir.string());
 }
 
-// The second install step, separate from extraction so a folder extracted
-// earlier needs only this one.
-std::string PatchGameData(const GameDataOptions& options, const fs::path& dir) {
-  if (IsPs3Directory(dir)) {
-    if (IsPs3Converted(dir))
-      return {};
-    g_extracting = true;
-    std::string error = ConvertPs3(dir, options.progress);
-    g_extracting = false;
-    return error;
+InstallHooks MakeHooks() {
+  InstallHooks hooks;
+  // Without the intro the SDK's progress window shows it.
+  if (IntroScreenAvailable()) {
+    hooks.progress = ReportIntroProgress;
+    hooks.phase = SetIntroPhase;
   }
-  if (IsReleasePatched(dir))
-    return {};
+  return hooks;
+}
+
+// Runs the install phases on `picked` and makes the result game_data_root.
+// Empty when it worked, else why not.
+std::string Prepare(const GameDataOptions& options, const std::string& picked) {
+  fs::path dir;
+  BeginIntroWork();
   g_extracting = true;
-  std::string error = PatchRelease(dir, options.progress);
+  std::string error = Install(picked, WritableBaseDir() / "assets", MakeHooks(), dir);
   g_extracting = false;
+  EndIntroWork();
+  if (error.empty())
+    Use(options, dir);
   return error;
 }
 
@@ -171,7 +159,7 @@ void ShowDialog(std::shared_ptr<Flow> flow, bool folder,
 GameDataChoice MessageBoxPrompt(const GameDataPrompt& prompt) {
   std::string message = prompt.error.empty() ? "" : prompt.error + "\n\n";
   message += "Eternal Sonata needs the original game files. Select an Xbox 360 disc image to extract";
-  message += prompt.can_pick_folder ? ", or a folder with the extracted files." : ".";
+  message += prompt.can_pick_folder ? ", or a folder with the extracted files or a PS3 disc dump." : ".";
   if (!prompt.copy_hint.empty())
     message += "\n\nAlready extracted? Copy them to\n" + prompt.copy_hint;
   SDL_MessageBoxButtonData buttons[3];
@@ -197,58 +185,6 @@ void Finish(const std::shared_ptr<Flow>& flow, bool ready) {
   flow->done(ready);
 }
 
-// Empty when the pick is now game_data_root, else why not.
-std::string Prepare(const GameDataOptions& options, const std::string& picked) {
-  fs::path path(picked);
-  std::error_code ec;
-  const bool local = !IsContentUri(picked);
-  // Picking a file inside an extracted folder means the folder.
-  if (local && fs::is_regular_file(path, ec) &&
-      (SameFileName(path.filename().string(), kTableOfContents) ||
-       SameFileName(path.extension().string(), ".xex")))
-    path = path.parent_path();
-
-  if (local && fs::is_directory(path, ec) && !IsGameDirectory(path)) {
-    if (const fs::path archives = FindPs3Archives(path); !archives.empty()) {
-      HideIntroScreen();
-      const fs::path out_dir = WritableBaseDir() / "assets";
-      g_extracting = true;
-      std::string error = UnpackPs3(archives, out_dir, options.progress);
-      g_extracting = false;
-      if (error.empty())
-        error = PatchGameData(options, out_dir);
-      if (error.empty())
-        Use(options, out_dir);
-      return error;
-    }
-  }
-
-  if (local && fs::is_directory(path, ec)) {
-    std::string error = CheckFolder(path);
-    if (error.empty()) {
-      HideIntroScreen();
-      error = PatchGameData(options, path);
-    }
-    if (error.empty())
-      Use(options, path);
-    return error;
-  }
-
-  // The loading screen draws the extraction; the intro would draw over it.
-  HideIntroScreen();
-  const fs::path out_dir = WritableBaseDir() / "assets";
-  g_extracting = true;
-  std::string error = ExtractDiscImage(picked, out_dir, kTableOfContents, options.progress);
-  g_extracting = false;
-  if (error.empty() && !IsGameDirectory(out_dir))
-    error = "The extracted files are incomplete.";
-  if (error.empty())
-    error = PatchGameData(options, out_dir);
-  if (error.empty())
-    Use(options, out_dir);
-  return error;
-}
-
 void Ask(std::shared_ptr<Flow> flow);
 
 void OnPicked(std::shared_ptr<Flow> flow, std::string picked) {
@@ -256,17 +192,24 @@ void OnPicked(std::shared_ptr<Flow> flow, std::string picked) {
     return;
   if (!picked.empty()) {
     REXLOG_INFO("Selected {}", picked);
+    flow->prompt.ready = false;
     try {
       flow->prompt.error = Prepare(flow->options, picked);
     } catch (const std::exception& e) {
       g_extracting = false;
+      EndIntroWork();
       flow->prompt.error = std::string("Preparing the game files failed: ") + e.what();
     }
     if (flow->prompt.error.empty()) {
-      Finish(flow, true);
-      return;
+      // The player starts the game from the intro once every phase is done.
+      if (!IntroScreenAvailable()) {
+        Finish(flow, true);
+        return;
+      }
+      flow->prompt.ready = true;
+    } else {
+      REXLOG_ERROR("{}: {}", picked, flow->prompt.error);
     }
-    REXLOG_ERROR("{}: {}", picked, flow->prompt.error);
   }
   Ask(flow);
 }
@@ -275,8 +218,8 @@ void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice) {
   if (flow->finished)
     return;
   flow->prompt.error.clear();
-  if (choice == GameDataChoice::kQuit) {
-    Finish(flow, false);
+  if (choice == GameDataChoice::kQuit || choice == GameDataChoice::kStart) {
+    Finish(flow, choice == GameDataChoice::kStart);
     return;
   }
   SetIntroBusy(true);
@@ -294,12 +237,7 @@ void Ask(std::shared_ptr<Flow> flow) {
 
 }  // namespace
 
-bool IsGameDirectory(const fs::path& dir) {
-  std::error_code ec;
-  return !dir.empty() && (fs::is_regular_file(dir / kTableOfContents, ec) || IsPs3Directory(dir));
-}
-
-bool UsePreparedGameData(const GameDataOptions& options, std::string& error) {
+bool UsePreparedGameData(const GameDataOptions& options, std::string& pending) {
   std::vector<fs::path> dirs;
   const std::string value = REXCVAR_GET(game_data_root);
   if (!value.empty())
@@ -310,14 +248,8 @@ bool UsePreparedGameData(const GameDataOptions& options, std::string& error) {
     if (!IsGameDirectory(dir))
       continue;
     REXLOG_INFO("Found game data at {}", dir.string());
-    try {
-      error = PatchGameData(options, dir);
-    } catch (const std::exception& e) {
-      g_extracting = false;
-      error = std::string("Patching the game files failed: ") + e.what();
-    }
-    if (!error.empty()) {
-      REXLOG_ERROR("{}: {}", dir.string(), error);
+    if (NeedsConversion(dir) || NeedsPatching(dir)) {
+      pending = dir.string();
       return false;
     }
     Use(options, dir);
@@ -327,15 +259,23 @@ bool UsePreparedGameData(const GameDataOptions& options, std::string& error) {
 }
 
 void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext& context,
-                    std::string error, std::function<void(bool ready)> done) {
+                    std::string pending, std::function<void(bool ready)> done) {
   auto flow = std::make_shared<Flow>();
-  flow->prompt.error = std::move(error);
   flow->options = options;
   flow->context = &context;
   flow->done = std::move(done);
   flow->prompt.can_pick_folder = kCanPickFolder;
   flow->prompt.copy_hint = CopyHint();
-  Ask(flow);
+  if (pending.empty()) {
+    Ask(flow);
+    return;
+  }
+  // Found but not through every phase: the intro shows the rest running.
+  if (IntroScreenAvailable()) {
+    ShowIntroScreen(flow->prompt, [flow](GameDataChoice choice) { OnChoice(flow, choice); });
+    SetIntroBusy(true);
+  }
+  context.CallInUIThreadDeferred([flow, pending]() { OnPicked(flow, pending); });
 }
 
 bool IsExtractingGameData() {

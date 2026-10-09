@@ -1,15 +1,15 @@
 #pragma once
 
-// Resolves game_data_root before the runtime starts, in two steps: extraction
-// of an Xbox 360 disc image into the writable base dir, then patching
-// (release_patch.h). A folder picked or found already extracted only goes
-// through the second.
+// Resolves game_data_root before the runtime starts, through the install
+// phases of install_pipeline.h, shown on the intro screen. The game starts
+// only when the player presses Start after every phase is done; a prepared
+// directory with nothing left to do skips the screen.
 
 #include <filesystem>
 #include <functional>
 #include <string>
 
-#include "disc_image.h"
+#include "install_pipeline.h"
 
 namespace rex::ui {
 class WindowedAppContext;
@@ -17,7 +17,7 @@ class WindowedAppContext;
 
 namespace eternalsonata {
 
-enum class GameDataChoice { kQuit, kDiscImage, kFolder };
+enum class GameDataChoice { kQuit, kDiscImage, kFolder, kStart };
 
 // What the prompt is asked to offer.
 struct GameDataPrompt {
@@ -27,31 +27,29 @@ struct GameDataPrompt {
   std::string copy_hint;
   // Why the previous selection failed, empty on the first call.
   std::string error;
+  // Every phase is done: Start is enabled.
+  bool ready = false;
 };
 
 struct GameDataOptions {
   // The config game_data_root is persisted to; relative values resolve against
   // its folder.
   std::filesystem::path config_path;
-  ExtractProgress progress;
 };
 
-// Whether `dir` holds game data this build can run, once patched or converted.
-bool IsGameDirectory(const std::filesystem::path& dir);
-
-// Sets and persists game_data_root from the cvar or an earlier extraction,
-// patching it first if it has not been. False when neither holds game data,
-// or with `error` set when patching failed.
-bool UsePreparedGameData(const GameDataOptions& options, std::string& error);
+// Sets and persists game_data_root from the cvar or an earlier extraction when
+// it needs no more work. False otherwise, with `pending` set to a directory
+// that still needs conversion or patching, or left empty when none was found.
+bool UsePreparedGameData(const GameDataOptions& options, std::string& pending);
 
 // Asks through the intro screen (a message box where it cannot draw) until
-// game data is ready or the player quits, showing `error` first if not empty.
-// Returns at once: the main loop has to run for the screen to get input.
-// `done` runs on the UI thread.
+// game data is ready and started, or the player quits. A non empty `pending`
+// runs the phases on that directory first. Returns at once: the main loop has
+// to run for the screen to get input. `done` runs on the UI thread.
 void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext& context,
-                    std::string error, std::function<void(bool ready)> done);
+                    std::string pending, std::function<void(bool ready)> done);
 
-// Whether game files are being extracted or patched; the window must not
+// Whether game files are being installed; the window must not
 // close then.
 bool IsExtractingGameData();
 

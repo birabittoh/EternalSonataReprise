@@ -393,6 +393,7 @@ set(ETERNALSONATA_SOURCES
     src/core/loading_screen.cpp
     src/installer/disc_image.cpp
     src/installer/game_data.cpp
+    src/installer/install_pipeline.cpp
     src/installer/intro_screen.cpp
     src/installer/ps3_audio.cpp
     src/installer/ps3_convert.cpp
