@@ -48,6 +48,7 @@
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
 #include "intro_screen.h"
+#include "intro_text.h"
 #include "loading_screen.h"
 #include "music_system.h"
 #include "native_renderer.h"
@@ -176,20 +177,29 @@ class EternalsonataApp : public rex::ReXApp {
     atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kPTSerifRegularTTF),
                                 static_cast<int>(eternalsonata::kPTSerifRegularTTFSize), 64.0f,
                                 &loading_cfg, latin_glyphs);
+    // The start screen draws with it and can switch to Japanese. The atlas is
+    // baked once, so only the characters its text uses, not every kanji at 64px.
+    static ImVector<ImWchar> intro_glyphs;
+    if (intro_glyphs.empty()) {
+      ImFontGlyphRangesBuilder builder;
+      builder.AddText(eternalsonata::IntroGlyphText().c_str());
+      builder.BuildRanges(&intro_glyphs);
+    }
+    MergeJapaneseFont(atlas, 64.0f, intro_glyphs.Data);
 
     ImFontConfig cfg;
     cfg.FontDataOwnedByAtlas = false;
     atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kPTSerifRegularTTF),
                                 static_cast<int>(eternalsonata::kPTSerifRegularTTFSize), 16.0f, &cfg);
-    MergeJapaneseFont(atlas);
+    if (REXCVAR_GET(user_language) == 2)
+      MergeJapaneseFont(atlas, 16.0f, atlas->GetGlyphRangesJapanese());
   }
 
-  // The overlays and the unlock toast draw achievement names, which are
-  // Japanese when the game boots in Japanese. Only then, since the kana and
-  // kanji ranges grow the atlas considerably. Uses whatever the system ships.
-  static void MergeJapaneseFont(ImFontAtlas* atlas) {
-    if (REXCVAR_GET(user_language) != 2)
-      return;
+  // Into the font added last. The overlays and the unlock toast draw
+  // achievement names, which are Japanese when the game boots in Japanese.
+  // Only when needed, since the kana and kanji ranges grow the atlas
+  // considerably. Uses whatever the system ships.
+  static void MergeJapaneseFont(ImFontAtlas* atlas, float size, const ImWchar* ranges) {
     static constexpr const char* kCandidates[] = {
         "C:\\Windows\\Fonts\\YuGothM.ttc",
         "C:\\Windows\\Fonts\\meiryo.ttc",
@@ -203,7 +213,7 @@ class EternalsonataApp : public rex::ReXApp {
         continue;
       ImFontConfig merge;
       merge.MergeMode = true;
-      atlas->AddFontFromFileTTF(path, 16.0f, &merge, atlas->GetGlyphRangesJapanese());
+      atlas->AddFontFromFileTTF(path, size, &merge, ranges);
       return;
     }
     REXLOG_WARN("No Japanese system font found; the overlays will draw Japanese as boxes");
