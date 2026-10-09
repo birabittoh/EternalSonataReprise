@@ -16,6 +16,7 @@
 
 #include "install_pipeline.h"
 #include "intro_screen.h"
+#include "intro_text.h"
 
 // The storage probes come from the SDK's GameDataSelector
 // (src/system/game_data_selector.cpp), which this replaces.
@@ -160,23 +161,23 @@ void ShowDialog(std::shared_ptr<Flow> flow, bool folder,
 // Where no intro screen can draw.
 GameDataChoice MessageBoxPrompt(const GameDataPrompt& prompt) {
   std::string message = prompt.error.empty() ? "" : prompt.error + "\n\n";
-  message += "Eternal Sonata needs the original game files. Select an Xbox 360 disc image to extract";
-  message += prompt.can_pick_folder ? ", or a folder with the extracted files or a PS3 disc dump." : ".";
+  message += std::string(Tr(IntroText::kNeedFiles)) + " ";
+  message += Tr(prompt.can_pick_folder ? IntroText::kSelectIsoOrFolder : IntroText::kSelectIsoOnly);
   if (!prompt.copy_hint.empty())
-    message += "\n\nAlready extracted? Copy them to\n" + prompt.copy_hint;
+    message += "\n\n" + Tr(IntroText::kCopyHint, prompt.copy_hint);
   if (prompt.can_extract)
-    message = "Found " + prompt.release + ".\n\n" + message;
+    message = Tr(IntroText::kFoundRelease, prompt.release) + "\n\n" + message;
   SDL_MessageBoxButtonData buttons[4];
   int count = 0;
   if (prompt.can_extract)
     buttons[count++] = {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, int(GameDataChoice::kExtract),
-                        "Extract"};
+                        Tr(IntroText::kExtract)};
   buttons[count++] = {prompt.can_extract ? 0u : SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,
-                      int(GameDataChoice::kDiscImage), "Select Disc Image..."};
+                      int(GameDataChoice::kDiscImage), Tr(IntroText::kSelectIso)};
   if (prompt.can_pick_folder)
-    buttons[count++] = {0, int(GameDataChoice::kFolder), "Select Folder..."};
-  buttons[count++] = {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, int(GameDataChoice::kQuit), "Quit"};
-  const SDL_MessageBoxData box = {SDL_MESSAGEBOX_INFORMATION, nullptr, "Game Files Required",
+    buttons[count++] = {0, int(GameDataChoice::kFolder), Tr(IntroText::kSelectFolder)};
+  buttons[count++] = {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, int(GameDataChoice::kQuit), Tr(IntroText::kQuit)};
+  const SDL_MessageBoxData box = {SDL_MESSAGEBOX_INFORMATION, nullptr, Tr(IntroText::kTitle),
                                   message.c_str(), count, buttons, nullptr};
   int id = int(GameDataChoice::kQuit);
   if (!SDL_ShowMessageBox(&box, &id))
@@ -300,6 +301,7 @@ void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext&
   flow->done = std::move(done);
   flow->prompt.can_pick_folder = kCanPickFolder;
   flow->prompt.copy_hint = CopyHint();
+  BindIntroLanguageConfig(options.config_path);
   if (pending.empty()) {
     Ask(flow);
     return;
