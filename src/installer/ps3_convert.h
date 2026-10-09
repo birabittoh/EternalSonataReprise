@@ -25,18 +25,9 @@ struct Report {
   void Warn(std::string message) { warnings.push_back(std::move(message)); }
 };
 
-// A bank inside a CSL directory: the directory's offset, the bank's position
-// in it and every bank of the directory.
-struct BankMember {
-  size_t directory = 0;
-  size_t position = 0;
-  const std::vector<Bytes>* group = nullptr;
-};
-
-// Converts one sound bank embedded in a container: its ordinal in the
-// container, its bytes and its directory, if any.
-using AudioConverter =
-    std::function<Bytes(size_t index, const Bytes& bank, const BankMember* member)>;
+// Converts one sound bank embedded in a container, given its ordinal in the
+// container and its bytes.
+using AudioConverter = std::function<Bytes(size_t index, const Bytes& bank)>;
 
 using Token = std::array<uint8_t, 8>;
 // Receives a sidecar WAV for pcm/<token as hex>.wav.
@@ -47,16 +38,16 @@ struct Output {
   Bytes data;
 };
 
-// Mirrors convert_file: the 360 path and bytes, or nothing to keep the 360
-// file. `audio` converts the banks inside containers, null to copy them.
+// Mirrors convert_file: the 360 path and bytes, or nothing to serve the PS3
+// file as is. `audio` converts the banks inside containers, null to copy them.
 std::optional<Output> ConvertFile(const std::string& rel, const Bytes& d, Report& report,
                                   const AudioConverter* audio);
 
 extern const char* const kBattleKeep;
-// Converted PS3 BattleKeep with the 360's dropped effects at its end.
-Bytes AppendDroppedBattleKeep(const Bytes& ps3, const Bytes& x360, Report& report);
+// Converted PS3 BattleKeep with null slots for the 360's dropped effects.
+Bytes AppendEmptyBattleKeep(const Bytes& d, Report& report);
 
-// Container scanning shared with the bank pairing.
+// Sound bank (CSF) and bank directory (CSL) detection.
 bool IsCsf(const Bytes& d, size_t o, size_t end);
 bool IsCsl(const Bytes& d, size_t o, size_t end);
 std::vector<size_t> CslBanks(const Bytes& d, size_t o);
@@ -64,20 +55,18 @@ std::vector<size_t> CslBanks(const Bytes& d, size_t o);
 // Audio (ps3_audio.cpp).
 Token MakeToken(const std::string& key);
 std::string TokenHex(const Token& token);
-// `x360` is the decoded 360 bank of the same name, or null.
-Bytes ConvertCsf(const std::string& rel, const Bytes& ps3, const Bytes* x360,
-                 const PcmWriter& write_pcm, Report& report);
-const Bytes* BestTwin(const Bytes& bank, const std::vector<Bytes>& candidates, size_t index);
-const std::vector<Bytes>* BestGroup(const std::vector<Bytes>& group,
-                                    const std::vector<std::vector<Bytes>>& candidates);
-
-// One 360 .cxs that a new track's tag is written into, by file name.
-using CxsDonors = std::vector<std::pair<std::string, Bytes>>;
-// Music: what to add, empty when the 360 track serves. `has_base` tells
-// whether the 360 directory has a path (lowercase).
-std::vector<Output> ConvertCps(const std::string& rel, const Bytes& d,
-                               const std::function<bool(const std::string&)>& has_base,
-                               const CxsDonors& donors, const PcmWriter& write_pcm,
+Bytes ConvertCsf(const std::string& rel, const Bytes& ps3, const PcmWriter& write_pcm,
+                 Report& report);
+// Music: the files to add for one .cps.
+std::vector<Output> ConvertCps(const std::string& rel, const Bytes& d, const PcmWriter& write_pcm,
                                Report& report);
+
+// The encoded sidecars' WAV format tags: ATRAC3's registered one, and a
+// private one for PS-ADPCM.
+constexpr uint16_t kWaveAtrac3 = 0x0270;
+constexpr uint16_t kWavePsxAdpcm = 0x5053;
+// PS-ADPCM, channels interleaved per 16 byte frame of 28 samples, to
+// interleaved PCM.
+std::vector<int16_t> DecodePsxAdpcm(const uint8_t* data, size_t size, uint32_t channels);
 
 }  // namespace eternalsonata::ps3

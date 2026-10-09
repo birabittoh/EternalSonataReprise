@@ -25,6 +25,7 @@
 
 #include <rex/filesystem/devices/host_path_device.h>
 #include <rex/filesystem/devices/null_device.h>
+#include <rex/audio/atrac3.h>
 #include <rex/audio/audio_system.h>
 #include <rex/audio/xma/decoder.h>
 #include <rex/filesystem/vfs.h>
@@ -37,6 +38,7 @@
 #include "eternalsonata_asset_mesh.h"
 #include "eternalsonata_asset_texture.h"
 #include "loading_screen.h"
+#include "ps3_convert.h"
 #include "settings.h"
 #include "target.h"
 
@@ -1305,19 +1307,21 @@ bool LoadPcmWav(const std::filesystem::path& path, AudioPatch& patch, std::strin
   }
   const uint8_t* pcm = nullptr;
   size_t pcm_size = 0;
-  uint16_t bits = 0;
+  uint16_t format = 0, block_align = 0, bits = 0;
   for (size_t at = 12; at + 8 <= bytes.size();) {
     const uint32_t size = ReadLe32(bytes.data() + at + 4);
     if (size > bytes.size() - at - 8)
       break;
     const uint8_t* body = bytes.data() + at + 8;
     if (std::memcmp(bytes.data() + at, "fmt ", 4) == 0 && size >= 16) {
-      if (ReadLe16(body) != 1) {
+      format = ReadLe16(body);
+      if (format != 1 && format != ps3::kWaveAtrac3 && format != ps3::kWavePsxAdpcm) {
         *error = "must contain uncompressed PCM";
         return false;
       }
       patch.channels = ReadLe16(body + 2);
       patch.sample_rate = ReadLe32(body + 4);
+      block_align = ReadLe16(body + 12);
       bits = ReadLe16(body + 14);
     } else if (std::memcmp(bytes.data() + at, "data", 4) == 0) {
       pcm = body;
@@ -1329,6 +1333,23 @@ bool LoadPcmWav(const std::filesystem::path& path, AudioPatch& patch, std::strin
       patch.inherit_loop_points = false;
     }
     at += 8 + size + (size & 1);
+  }
+  // The PS3 converter's sidecars keep the clips encoded (ps3_audio.cpp).
+  if (pcm && patch.channels && patch.sample_rate && format == ps3::kWaveAtrac3) {
+    if (!rex::audio::DecodeAtrac3(pcm, pcm_size, patch.sample_rate, uint16_t(patch.channels),
+                                  block_align, patch.samples) ||
+        patch.samples.empty()) {
+      *error = "holds ATRAC3 that does not decode";
+      patch.samples.clear();
+      return false;
+    }
+    patch.frame_count = uint32_t(patch.samples.size() / patch.channels);
+    return true;
+  }
+  if (pcm && patch.channels && format == ps3::kWavePsxAdpcm) {
+    patch.samples = ps3::DecodePsxAdpcm(pcm, pcm_size, patch.channels);
+    patch.frame_count = uint32_t(patch.samples.size() / patch.channels);
+    return !patch.samples.empty();
   }
   if (!pcm || !patch.channels || !patch.sample_rate || bits != 16 ||
       pcm_size % (patch.channels * sizeof(int16_t)) != 0) {

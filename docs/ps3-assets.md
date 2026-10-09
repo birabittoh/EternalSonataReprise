@@ -27,8 +27,8 @@ therefore a **second target** of this executable:
   read, once, at install (`src/installer/ps3_install.cpp`, with
   `scripts/ps3_convert.py` as its reference).
 
-The 360 fonts and `.tex` files kept in §1 and the eight 360 effects appended
-to BattleKeep (§4) are stopgaps that go away as PS3 slot addressing replaces them.
+The eight null slots appended to BattleKeep (§4) are a stopgap that goes away
+as PS3 slot addressing replaces the 360's.
 
 The 360 decoded tree (`scripts/unpack_e.exe` output under `extracted/`) is the
 reference for format work: almost every PS3 file has a 360 counterpart, so a
@@ -49,35 +49,38 @@ All big endian, data stored raw. Paths are lowercase with `\`, relative to
 `USRDIR`, and mirror the 360 `assets/` tree.
 
 ```bash
-python scripts/unpack_ps3.py assets-ps3-raw/PS3_GAME/USRDIR/archives -o assets-ps3 --case-from assets
+python scripts/unpack_ps3.py assets-ps3-raw/PS3_GAME/USRDIR/archives -o assets-ps3
 ```
 
-`--case-from` borrows the 360 tree's spelling where a file exists on both.
-Unlike the 360 the PS3 applies no codec: every file is already decoded, which
+The guest asks for mixed case names (`btldata\BattleKeep.bop`), but every
+host lookup folds case (the SDK's `HostPathDevice`, the asset system's
+`ResolveUnderRoot`), so the lowercase names serve as they are. Unlike the 360 the PS3 applies no codec: every file is already decoded, which
 is the form `ps3_convert.py` and the 360 tools work on.
 
 Then convert the tree in place and point `game_data_root` in
 `eternalsonata.toml` at it:
 
 ```bash
-python scripts/ps3_convert.py assets-ps3 --base assets
+python scripts/ps3_convert.py assets-ps3
 ```
 
 Like a USA or JP copy, the tree is converted where it lies: each convertible
 PS3 file is written over itself, the shipped file kept as `*.orig`, and every
 run starts from those (`ps3-shipped.txt` lists what the PS3 shipped, so files
-a run added are never taken for PS3 data). The converter still needs a 360
-tree (`--base`, hard linked) for every file the conversion does not replace
-yet; kept from the 360 for now: fonts and `.tex`. `index.vmtoc` is the 360's
-with a stored record for every converted file. Audio needs `ffmpeg` on `PATH`
-(§5).
+a run added are never taken for PS3 data, and a run first deletes every
+other file). No 360 file is needed. `index.vmtoc` is built from scratch, a
+stored record for every file. The PS3 only lacks seven files the 360 lists
+(`cfdata/e0041.e`, `e1101.e`, `e7080_010.e`, `e8020.e`,
+`btldata/map/zzz90..92.bop`); nothing PS3 mode runs opens them: the first
+two were start events the PS3 tables replace, the others are reached only
+from 360 scripts.
 
 The game does the same itself (`src/installer/ps3_install.cpp`, a port that
-must match the script byte for byte on every non audio file): pick a PS3 disc
-folder (or point `game_data_root` at an unpacked tree) with `ps3_donor_root`
-set to an extracted 360 folder, and it unpacks and converts once, then writes
-`ps3-convert.stamp`. ATRAC3 is decoded through the SDK's FFmpeg instead of
-the `ffmpeg` executable.
+must match the script byte for byte): pick a PS3 disc folder (or point
+`game_data_root` at an unpacked tree), and it unpacks and converts once,
+then writes `ps3-convert.stamp`. `ps3_convert.py --check` converts without
+writing and compares every output with the tree, which is the regression
+test for the port.
 
 The game runs in PS3 mode when `game_data_root` holds `pcalg_v1.p3obj`, a
 file only the PS3 ships (`src/core/target.cpp`, `IsPs3Target()`). PS3 mode
@@ -95,8 +98,7 @@ refuse such a save. It holds the costumes worn, the PS3's costume unlocks and
 its camp menu flags so far.
 
 `--verify extracted/e --verify extracted/other` compares converted models
-against the decoded 360 release; without an output directory it only
-converts and reports.
+against the decoded 360 release.
 
 | PS3 | 360 | Notes |
 |---|---|---|
@@ -105,6 +107,8 @@ converts and reports.
 | `.p3obj` | none | Field character models and costumes, moved out of `AppKeep.bmd` |
 | `.cps` | `.cxs` / `.wav` | Music, PS-ADPCM or PCM; see §5 |
 | `.csf` | `.csf` | Same banks, ATRAC3 clips; see §5 |
+| `.fnt` | same | Same format; the PS3's glyphs are a superset, served as they are |
+| `.tex` | same | 2D animation: `NTX3` textures where the 360 has `NTEX`; see §4 |
 
 ## 2. Scripts
 
@@ -618,12 +622,23 @@ slots from it, and battle records name slots by negative id (`-n` is slot
 parser (`sub_15ED60`) and record reader (`sub_15EF90`) copy and index the
 array directly, so where the PS3 maps those ids is not found yet.
 
-So the array has to be in the 360's layout. The converter appends the 360's
-eight dropped effects after the PS3's entries (`append_dropped_battlekeep`),
-and in PS3 mode `src/engine/ps3_battlekeep.cpp` reorders the array after the
-parser runs: 360 slots below 26 are the file's, 26..33 the appended eight,
-34 and up the file's slot minus 8. A PS3 only install still needs those
-eight.
+So the array has to be in the 360's layout. The converter appends eight null
+slots after the PS3's entries (`append_empty_battlekeep`), and in PS3 mode
+`src/engine/ps3_battlekeep.cpp` reorders the array after the parser runs:
+360 slots below 26 are the file's, 26..33 the appended eight, 34 and up the
+file's slot minus 8. Nothing reaches 26..33 in PS3 mode: the executable's
+constant ids through the slot accessor `sub_821A5148` (1 based) are 35, 45,
+49, 50, 52, 76..79 and 96..98, the hit effect table is translated around
+them, and every reader (`sub_821CD0D8`, `sub_821CDCB0`, the accessor's
+callers) skips a null slot.
+
+`.tex` (`btl_exit_text.tex`, `levelup_JPN.tex`) is a 2D animation: magic
+`03 33 90 10`, u16 entry count plus one, u16 0, then {u32 kind, u32 offset}
+entries; kind 1 is a texture (`NTX3` on the PS3, `NTEX` on the 360), 2 a
+0x140..0x1C0 byte record, 9 the last. The converter converts the textures
+and lays the entries out 32 byte aligned as the 360 does, which reproduces
+the 360 files apart from the PS3's own animation values and the redrawn
+first texture of `levelup_JPN.tex`.
 
 Enemy n (1 based) is the 80 byte record n - 1 of `off_82024100`: word 0
 holds n and a kind, words 1..6 model name pointers, the u16 at +40 the
@@ -687,11 +702,15 @@ from the next 0x1000.
 
 ## 5. Audio
 
-No XMA encoder exists, so audio the 360 does not already have is shipped as
-PCM: `pcm/<16 hex digits>.wav` in the game directory. The converter writes a
-16 byte tag (`RXPcmSub` plus those eight bytes) at the start of the clip's
-payload, and the host (`ScanGamePcm`) substitutes the WAV when the XMA decoder
-meets it, the same way mod audio works.
+No XMA encoder exists, so every clip and new track ships as a sidecar,
+`pcm/<16 hex digits>.wav` in the game directory. The converter writes a 16
+byte tag (`RXPcmSub` plus those eight bytes) at the start of the clip's
+payload, and the host (`ScanGamePcm`) substitutes the sidecar when the XMA
+decoder meets it, the same way mod audio works. Sidecars keep the PS3
+encoding: WAV format 0x0270 (ATRAC3, decoded through the SDK's FFmpeg) or
+the private 0x5053 (PS-ADPCM), decoded by `LoadPcmWav` when the clip first
+plays, with an optional `smpl` loop in samples. About 1 GB on disk, where PCM
+would take about 3.5 GB.
 
 ### Sound banks (`.csf`)
 
@@ -714,11 +733,10 @@ payloads to 0x1000 and the header to 0x1000.
   cumulative sample count per block.
 
 The PS3 appended its new clips: `pc001` keeps all of the 360's 173 in place and
-adds 29. A clip whose 360 twin at the same ordinal has the same flags and a
-length within 3000 samples keeps the 360 `TIM` and XMA; about 1400 MB of PCM
-comes down to about 210 MB. That reuse needs a 360 copy; a PS3 only install
-has to decode every clip. The `BOOK`s differ in a few sequencer timing bytes
-and the PS3's are kept.
+adds 29. Each clip becomes a 360 `TIM` with the PS3 clip's parameters and
+`LIP `, and one 0x800 byte tagged packet of payload described as the clip's
+length. The `BOOK`s differ in a few sequencer timing bytes and the PS3's are
+kept.
 
 ### Banks inside `.e` files
 
@@ -732,16 +750,12 @@ boundaries of the file; on the PS3 they are packed.
 A voiced event has one directory per voice language, in the opposite order
 on the two releases (`t0001.e`: two of 24 one line banks).
 
-The converter converts each bank as a standalone one, against a bank of the
-360 `.e` of the same name, so shared clips keep the 360's XMA. Banks in a
-directory take the same position in the 360 directory whose clips line up
-best; one line banks alone fit either language within the slack, and pairing
-them one by one gave each event's first line in the other language. Directories and banks are realigned to 0x1000, and the directory
-offsets are rewritten (`convert_region`).
+The converter converts each bank as a standalone one. Directories and banks
+are realigned to 0x1000, and the directory offsets are rewritten
+(`convert_region`).
 
 Battle `.bop` files (an `SE_0` bank in each attack's `Mefc`) and `title.bmd`
-carry banks the same way and are converted against the 360 file of the same
-name. One ATRAC3 clip left anywhere reaches the XMA decoder, which stalls,
+carry banks the same way. One ATRAC3 clip left anywhere reaches the XMA decoder, which stalls,
 and the game plays no sound again until it restarts.
 
 ### Music (`.cps`)
@@ -752,17 +766,25 @@ byte frame, 0 is big endian PCM. Every track both releases share has the same
 sample count, so only names differ. PS3 scripts ask for `MP139.cps`, and
 `sub_820F80F8` builds `sound\cxs\<name>` from whatever the script says. PS3
 mode turns `.cps` into `.cxs` where the stream starts (`sub_82142070`,
-`sub_82142360`, path in `r4`), so the 360 tracks serve; a PS3 only install
-needs the `.cps` tracks decoded.
+`sub_82142360`, path in `r4`).
 
-New PS3 tracks: `MP109_us`, `MP166..168` become a 360 `.cxs` of the nearest
-length with a tagged payload plus a PCM sidecar (`smpl` loop); `MP187..189`
-and their 5.1 versions `MP197..199` are PCM already and become plain big
-endian `.wav`, which scripts ask for by that name.
+The 66 PS-ADPCM tracks become a `.cxs` written from scratch plus an ADPCM
+sidecar. Every 360 `.cxs` has the same header, all u32 big endian: `"CXS "`,
+header size 0x800, rate, channels, samples, loop start and end in samples
+(end rounded up to 512, both 0 when the track does not loop), payload size in
+0x10000 byte blocks rounded up, payload offset 0x1000, payload size, then
+0x800 twice. From 0x800, one u32 per block: the samples played by its end,
+in whole XMA frames; the last is the sample count rounded up to 512, plus
+one frame. The guest does not start a track whose table is empty, nor a
+looping one whose loop end is not below the last entry. The guest streams the
+payload while the track plays, so it gets a quarter byte per sample and
+channel (the 360's XMA takes 0.11 to 0.28), zero but for the tag in its first
+packet. The 20 kind 0 tracks (`MP180..199`, the 5.1 versions among them) are
+PCM already and become plain big endian `.wav`, which scripts ask for by
+that name, as the 360 ships them.
 
 ## 6. Not done yet
 
-* Running from a PS3 copy alone; moving the conversion into the asset system.
 * The PS3 script VM: natives compared one by one (§2).
 * Twelve party slots.
 * Last, since the game plays without them: the PS3 only camp screens, the
