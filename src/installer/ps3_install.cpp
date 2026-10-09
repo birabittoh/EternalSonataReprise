@@ -22,12 +22,15 @@ using ps3::Bytes;
 
 constexpr const char* kProbe = "pcalg_v1.p3obj";
 constexpr const char* kOriginal = ".orig";
-// The unpacked PS3 files, listed on the first run: what later runs added has
-// no .orig and must not be taken for PS3 data.
+// The unpacked PS3 files, listed on the first run: what the conversion added
+// must not be taken for PS3 data.
 constexpr const char* kShipped = "ps3-shipped.txt";
 // Bumped with every conversion change, here and in ps3_convert.py.
 constexpr const char* kStamp = "ps3-convert.stamp";
 constexpr const char* kStampVersion = "2";
+// Present while a conversion runs. Inputs are deleted as they are converted,
+// so an interrupted run cannot be resumed.
+constexpr const char* kBusy = "ps3-converting.stamp";
 // The disc's title id, in a name Walk skips so no conversion touches it.
 constexpr const char* kTitleId = "ps3-title-id.stamp";
 constexpr std::array kNotData = {".i64", ".idb", ".id0", ".id1", ".id2",
@@ -120,28 +123,16 @@ std::map<std::string, std::string> ShippedFiles(const fs::path& root) {
   return out;
 }
 
-void MakeRoom(const fs::path& path, bool shipped) {
-  // A shipped file is kept beside its replacement. Anything else is unlinked
-  // first: an older converter hard linked files in from a 360 copy.
+void ReplaceFile(const fs::path& path, const Bytes& data) {
+  // Unlink first: an older converter hard linked files in from a 360 copy.
   std::error_code ec;
-  const fs::path original = WithSuffix(path, kOriginal);
-  if (shipped && !fs::exists(original, ec)) {
-    fs::rename(path, original, ec);
-    if (ec)
-      throw std::runtime_error("Could not keep the original " + path.string() + " (" +
-                               ec.message() + ").");
-  } else if (fs::exists(fs::symlink_status(path, ec))) {
+  if (fs::exists(fs::symlink_status(path, ec)))
     fs::remove(path, ec);
-  }
   fs::create_directories(path.parent_path(), ec);
-}
-
-void ReplaceFile(const fs::path& path, const Bytes& data, bool shipped = false) {
-  MakeRoom(path, shipped);
   WriteFile(path, data);
 }
 
-// The shipped file's bytes, from before any earlier run.
+// The shipped file's bytes. An older converter kept them in a .orig.
 Bytes ReadShipped(const fs::path& path) {
   std::error_code ec;
   const fs::path original = WithSuffix(path, kOriginal);
@@ -149,6 +140,13 @@ Bytes ReadShipped(const fs::path& path) {
   if (!ReadFile(fs::exists(original, ec) ? original : path, out))
     throw std::runtime_error("Could not read " + path.string() + ".");
   return out;
+}
+
+// Drops a converted input so the tree never holds both it and its output.
+void DiscardShipped(const fs::path& path) {
+  std::error_code ec;
+  fs::remove(path, ec);
+  fs::remove(WithSuffix(path, kOriginal), ec);
 }
 
 // index.vmtoc as ps3_convert.py's Toc writes it: 48 byte records sorted by
@@ -194,6 +192,9 @@ class TocBuilder {
 
 std::string Run(const fs::path& root, const ExtractProgress& progress) {
   std::error_code ec;
+  if (fs::exists(root / kBusy, ec))
+    return "An earlier conversion was interrupted. Unpack the game files again.";
+  WriteFile(root / kBusy, {});
   const auto shipped = ShippedFiles(root);
   // Start from the unpacked tree: an earlier run's outputs, or files an older
   // converter linked in from a 360 copy, would linger otherwise.
@@ -214,7 +215,7 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
     const auto spelled = shipped.find(low);
     if (spelled != shipped.end())
       out_rel = spelled->second;
-    ReplaceFile(root / out_rel, data, spelled != shipped.end());
+    ReplaceFile(root / out_rel, data);
     if (!toc.SetStored(out_rel, uint32_t(data.size())))
       report.Warn(out_rel + ": path too long for an index.vmtoc record");
   };
@@ -224,11 +225,15 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
     if (progress)
       progress("Converting game files...", float(done++) / float(shipped.size()), rel);
     const Bytes d = ReadShipped(root / rel);
+    // Files served as is stay; converted ones go before their output is written.
+    auto discard = [&] { DiscardShipped(root / rel); };
     if (EndsWith(low, ".csf")) {
+      discard();
       emit(rel, ps3::ConvertCsf(rel, d, write_pcm, report));
       continue;
     }
     if (EndsWith(low, ".cps")) {
+      discard();
       for (const auto& out : ps3::ConvertCps(rel, d, write_pcm, report))
         emit(out.path, out.data);
       continue;
@@ -247,10 +252,12 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
     ++report.counts["converted"];
     if (low == ps3::kBattleKeep)
       result->data = ps3::AppendEmptyBattleKeep(result->data, report);
+    discard();
     emit(result->path, result->data);
   }
   ReplaceFile(root / "index.vmtoc", toc.bytes());
   ReplaceFile(root / kStamp, Bytes(kStampVersion, kStampVersion + std::strlen(kStampVersion)));
+  fs::remove(root / kBusy, ec);
 
   for (const auto& [what, count] : report.counts)
     REXLOG_INFO("PS3 conversion: {:8}  {}", count, what);

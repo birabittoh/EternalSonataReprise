@@ -68,7 +68,9 @@ Like a USA or JP copy, the tree is converted where it lies: each convertible
 PS3 file is written over itself, the shipped file kept as `*.orig`, and every
 run starts from those (`ps3-shipped.txt` lists what the PS3 shipped, so files
 a run added are never taken for PS3 data, and a run first deletes every
-other file). No 360 file is needed. `index.vmtoc` is built from scratch, a
+other file). The installer's C++ converter keeps no `.orig`: each input is
+deleted as it is converted, and an interrupted run (`ps3-converting.stamp`)
+needs a fresh unpack. No 360 file is needed. `index.vmtoc` is built from scratch, a
 stored record for every file. The PS3 only lacks seven files the 360 lists
 (`cfdata/e0041.e`, `e1101.e`, `e7080_010.e`, `e8020.e`,
 `btldata/map/zzz90..92.bop`); nothing PS3 mode runs opens them: the first
