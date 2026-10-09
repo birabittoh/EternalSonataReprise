@@ -2289,6 +2289,20 @@ bool BtxLanguageAvailable(const char* fourcc, bool count_mods) {
       shipped.reset();
       return true;
     }
+    // sub_8223B780 walks a blob's language blocks until it finds the selected
+    // one and never stops at the end, so a story blob without a language hangs
+    // the guest. The JP PS3 disc has full lib.e text but Japanese only story
+    // blobs, so the first story file decides too.
+    std::vector<uint8_t> story;
+    if (LoadDecodedContainer("cfdata/adg01.e", story)) {
+      for (const auto& blob : assets::FindBtxBlobs(story)) {
+        std::set<std::string> present;
+        for (const auto& lang : blob.langs)
+          present.insert(lang.fourcc);
+        for (auto it = shipped->begin(); it != shipped->end();)
+          it = present.count(*it) ? std::next(it) : shipped->erase(it);
+      }
+    }
   }
   if (shipped->count(fourcc))
     return true;
