@@ -7,6 +7,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 
 namespace eternalsonata {
 
@@ -18,5 +19,9 @@ bool IsPs3Target();
 
 // The directory DetectTarget latched.
 const std::filesystem::path& GameDataRoot();
+
+// The console and region that directory was installed from, as "Xbox 360,
+// Europe", or empty when unknown. Hashes default.xex on first call.
+const std::string& TargetRelease();
 
 }  // namespace eternalsonata
