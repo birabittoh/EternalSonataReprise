@@ -66,12 +66,7 @@ guest_shaders_debug.bin
 # Game assets extracted from the user's ISO
 # (the ISO itself and anything derived from it must NEVER be committed)
 /*.iso
-/assets/
-/assets-usa/
-/assets-jp/
-/assets-ps3/
-/assets-ps3-raw/
-/assets-ps3-360/
+/assets*/
 !/assets/.gitkeep
 /out/iso_extract/
 *.vert
