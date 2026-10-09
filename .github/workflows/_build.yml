@@ -25,9 +25,6 @@ on:
 env:
   ASSETS_REPO: ${{ vars.ASSETS_REPO }}
   ASSET_PATH: default.xex
-  # The decrypted PS3 executable, read for the PS3 target's tables
-  # (scripts/ps3_*_table.py). Optional: without it PS3 mode keeps the 360's.
-  PS3_ASSET_PATH: EBOOT.elf
   ASSET_CACHE_KEY: codegen-assets-v4
 
 jobs:
@@ -162,7 +159,6 @@ jobs:
         with:
           path: |
             assets/${{ env.ASSET_PATH }}
-            assets/${{ env.PS3_ASSET_PATH }}
           key: ${{ env.ASSET_CACHE_KEY }}
 
       # On a cold cache all 6 matrix legs hit the assets repo's contents API
@@ -190,7 +186,6 @@ jobs:
             return 1
           }
           fetch "${{ env.ASSET_PATH }}" 1048576
-          fetch "${{ env.PS3_ASSET_PATH }}" 1048576 || echo "::warning::${{ env.PS3_ASSET_PATH }} unavailable; PS3 mode will lack the PS3's enemy and hit effect tables"
 
       - name: Build (desktop)
         if: matrix.platform != 'android-arm64'

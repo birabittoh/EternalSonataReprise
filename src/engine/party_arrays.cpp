@@ -72,13 +72,12 @@ constexpr rex::memory::GuestAddressRange kRanges[] = {
     {0x82560114u, 0x825601A2u},
 };
 
-// Crescendo's and Serenade's starting stats, from the PS3 EBOOT at build
-// time (scripts/ps3_party_template.py); empty without it.
+// Crescendo's and Serenade's starting stats, extracted from the PS3 EBOOT
+// by scripts/ps3_party_template.py.
 constexpr uint8_t kPs3Templates[][136] = {
-#include "ps3_party_template.generated.inc"
-    {},
+#include "ps3_party_template.inc"
 };
-constexpr size_t kPs3TemplateCount = std::size(kPs3Templates) - 1;
+constexpr size_t kPs3TemplateCount = std::size(kPs3Templates);
 
 // New arrays keep their retail address modulo 16, so an aligned vector access
 // that stays inside an array stays inside it after the move.

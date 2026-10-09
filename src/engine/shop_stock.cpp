@@ -45,10 +45,9 @@ constexpr uint32_t kByteAccessors[] = {
 constexpr uint32_t kPs3ShopCount = 16;
 constexpr uint32_t kPs3ShopSize = 74;
 constexpr uint8_t kPs3Stock[][kPs3ShopSize] = {
-#include "ps3_shop_stock.generated.inc"
-    {},
+#include "ps3_shop_stock.inc"
 };
-constexpr bool kHavePs3Stock = std::size(kPs3Stock) - 1 == kPs3ShopCount;
+static_assert(std::size(kPs3Stock) == kPs3ShopCount);
 
 std::once_flag g_buffer_once;
 uint32_t g_buffer = 0;
@@ -96,7 +95,7 @@ void EternalSonataShopStockEnd(PPCRegister& r8) {
 extern "C++" void EternalSonataShopStockSource(PPCRegister& r10, PPCRegister& r28);
 
 void EternalSonataShopStockSource(PPCRegister& r10, PPCRegister& r28) {
-  if (!eternalsonata::IsPs3Target() || !kHavePs3Stock)
+  if (!eternalsonata::IsPs3Target())
     return;
   std::call_once(g_stock_once, [] {
     g_stock = Allocate(sizeof(kPs3Stock));
