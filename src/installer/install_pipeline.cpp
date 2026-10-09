@@ -134,10 +134,7 @@ SourceInfo IdentifyPs3Folder(const fs::path& archives) {
 SourceInfo IdentifyGameDirectory(const fs::path& dir) {
   if (IsPs3Directory(dir)) {
     const Ps3Region region = ReadPs3Region(dir);
-    SourceInfo info{std::string("Eternal Sonata, PS3, ") + RegionName(region), {}};
-    if (region != Ps3Region::kPal && NeedsConversion(dir))
-      info.error = info.release + " is not supported yet.";
-    return info;
+    return {std::string("Eternal Sonata, PS3, ") + RegionName(region), {}};
   }
   std::vector<uint8_t> file;
   fs::path xex = ChildNamed(dir, "default.xex.orig");

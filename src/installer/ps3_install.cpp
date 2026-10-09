@@ -319,8 +319,6 @@ bool IsPs3Converted(const fs::path& dir) {
 }
 
 std::string ConvertPs3(const fs::path& dir, const ExtractProgress& progress) {
-  if (ReadPs3Region(dir) != Ps3Region::kPal)
-    return "Only the European PS3 release can be converted so far.";
   try {
     return Run(dir, progress);
   } catch (const std::exception& e) {

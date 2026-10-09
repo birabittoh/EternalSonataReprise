@@ -181,8 +181,8 @@ add_custom_command(
 # PS3 mode keeps the 360's.
 set(ETERNALSONATA_PS3_EBOOT ${CMAKE_SOURCE_DIR}/assets/EBOOT.elf)
 if(NOT EXISTS ${ETERNALSONATA_PS3_EBOOT}
-   AND EXISTS ${CMAKE_SOURCE_DIR}/assets-ps3-raw/eboot-decrypt/EBOOT.elf)
-    set(ETERNALSONATA_PS3_EBOOT ${CMAKE_SOURCE_DIR}/assets-ps3-raw/eboot-decrypt/EBOOT.elf)
+   AND EXISTS ${CMAKE_SOURCE_DIR}/assets-ps3-pal-raw/eboot-decrypt/EBOOT.elf)
+    set(ETERNALSONATA_PS3_EBOOT ${CMAKE_SOURCE_DIR}/assets-ps3-pal-raw/eboot-decrypt/EBOOT.elf)
 endif()
 set(ETERNALSONATA_PS3_EBOOT_DEPENDS)
 if(EXISTS ${ETERNALSONATA_PS3_EBOOT})
