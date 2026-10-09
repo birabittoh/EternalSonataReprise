@@ -30,7 +30,7 @@ namespace fs = std::filesystem;
 constexpr const char* kToc = "index.vmtoc";
 constexpr const char* kStamp = "release-patches.stamp";
 constexpr const char* kOriginal = ".orig";
-// PS3 data is converted, never patched (target.cpp has the same probe).
+// PS3 data is converted, not patched (target.cpp has the same probe).
 constexpr const char* kPs3Probe = "pcalg_v1.p3obj";
 // Not a release's file: the Japanese title screen, patched from PAL's
 // title.bmd, since PAL's has no Japanese logo.
@@ -191,6 +191,31 @@ bool BuildCampGroup(const std::vector<uint8_t>& keep, std::vector<uint8_t>& grou
   return true;
 }
 
+// Converted PS3 data is PAL's already, so only the Japanese title screen is
+// added, from the converted title.bmd, which has no Japanese logo either.
+std::string PatchPs3Title(const fs::path& dir, const std::vector<Patch>& bundle) {
+  const fs::path toc_path = dir / kToc;
+  assets::Toc toc;
+  std::vector<uint8_t> title, japanese;
+  if (!toc.Load(toc_path) || !ReadFile(Resolve(dir, "title.bmd"), title))
+    return "The converted game files are incomplete: title.bmd could not be read.";
+  if (ApplyAny(bundle, kJapaneseTitle, title, japanese)) {
+    if (!WriteFile(Resolve(dir, kJapaneseTitle), japanese))
+      return "Could not write title_jpn.bmd.";
+    const uint32_t size = uint32_t(japanese.size());
+    if (!(toc.Find(kJapaneseTitle) ? toc.SetStored(kJapaneseTitle, size)
+                                   : toc.AddStored(kJapaneseTitle, size)))
+      return "title_jpn.bmd does not fit an index.vmtoc record.";
+    if (!WriteFile(toc_path, toc.bytes()))
+      return "Could not write index.vmtoc.";
+  } else {
+    REXLOG_WARN("No Japanese title screen matches this PS3 copy's title.bmd");
+  }
+  const std::string stamp = Fingerprint();
+  WriteFile(dir / kStamp, std::span(reinterpret_cast<const uint8_t*>(stamp.data()), stamp.size()));
+  return {};
+}
+
 }  // namespace
 
 bool IsReleasePatched(const fs::path& dir) {
@@ -207,8 +232,10 @@ std::string PatchRelease(const fs::path& dir, const ExtractProgress& progress) {
     REXLOG_WARN("No release patches in this build; USA and JP copies will not run");
     return {};
   }
-  if (fs::is_regular_file(dir / kPs3Probe, ec) || IsReleasePatched(dir))
+  if (IsReleasePatched(dir))
     return {};
+  if (fs::is_regular_file(dir / kPs3Probe, ec))
+    return PatchPs3Title(dir, bundle);
 
   const fs::path toc_path = dir / kToc;
   const fs::path shipped_toc_path = WithSuffix(toc_path, kOriginal);

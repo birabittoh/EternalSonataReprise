@@ -87,8 +87,7 @@ bool NeedsConversion(const fs::path& dir) {
 }
 
 bool NeedsPatching(const fs::path& dir) {
-  // Converted PS3 data is PAL's already, as only the PAL release converts.
-  return !IsPs3Directory(dir) && !IsReleasePatched(dir);
+  return !IsReleasePatched(dir);
 }
 
 bool IsExtractedSource(const std::string& picked) {
