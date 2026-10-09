@@ -147,8 +147,13 @@ void SDLCALL DialogCallback(void* userdata, const char* const* files, int) {
 
 void ShowDialog(std::shared_ptr<Flow> flow, bool folder,
                 std::function<void(std::shared_ptr<Flow>, std::string)> then) {
+  // A content link has no folder to resolve a dump's file to.
   static const SDL_DialogFileFilter kFilters[] = {
-      {"Xbox 360 disc image", "iso"},
+#if REX_PLATFORM_ANDROID
+      {"Eternal Sonata (disc image)", "iso"},
+#else
+      {"Eternal Sonata (disc image, EBOOT.BIN, default.xex)", "iso;bin;xex"},
+#endif
       {"All files", "*"},
   };
   auto* request = new DialogRequest{std::move(flow), std::move(then)};
@@ -173,7 +178,7 @@ GameDataChoice MessageBoxPrompt(const GameDataPrompt& prompt) {
     buttons[count++] = {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, int(GameDataChoice::kExtract),
                         Tr(IntroText::kExtract)};
   buttons[count++] = {prompt.can_extract ? 0u : SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,
-                      int(GameDataChoice::kDiscImage), Tr(IntroText::kSelectIso)};
+                      int(GameDataChoice::kDiscImage), Tr(IntroText::kSelectFile)};
   if (prompt.can_pick_folder)
     buttons[count++] = {0, int(GameDataChoice::kFolder), Tr(IntroText::kSelectFolder)};
   buttons[count++] = {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, int(GameDataChoice::kQuit), Tr(IntroText::kQuit)};
