@@ -55,7 +55,7 @@ void BindAssetSystem(rex::Runtime* runtime);
 // Call after the image is loaded and before the guest runs (OnPreLaunchModule).
 void ApplyXexTextPatches(rex::Runtime* runtime);
 
-// Whether "title_jpn.bmd", the Japanese release's title screen, was installed.
+// Whether "title_jpn.bmd", the Japanese title screen, was installed.
 bool JapaneseTitleServed();
 
 // Whether the `fourcc` BTX block ("ITA " and so on) has text to show: the

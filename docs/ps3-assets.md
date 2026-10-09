@@ -687,6 +687,17 @@ picks one of three effects with a counter cycling 1..3 (`dword_8238EBD0`,
 `TITLE_TASK__Init`), and the third is the uncounted sixth word. The converter
 therefore remaps every offset between the count and the first entry.
 
+The fourth entry is the title effect. Its `TRC0` holds the UV rects into
+`TEX0` (1024x512: the Trusty Bell logo, footer, stave and both label
+sets), 0x28 bytes each: u, v, width, height, pivot x, pivot y as floats.
+Each `EFCT` element names its texture and rect at +4 (texture, rect, kind,
+pad) and its width at +0x40, in units of 100 texels for the labels. PAL
+draws the Eternal Sonata logo (`TEX7`, both platforms) and leaves the
+Trusty Bell one in `TEX0` unused; the Japanese releases point the logo
+element at `TEX0` rect 0 at width 8.5, which is all
+`src/installer/japanese_title.cpp` changes. `MLNG` swaps the label rects
+per PAL language.
+
 The credits (`op.bmd`, `ed1.bmd`, `ed2.bmd`) are a `BMD ` header with ten
 list offsets, then 16 byte records whose text pointers are file offsets.
 Both executables read list 0, 1 or 2 by the language
