@@ -32,6 +32,7 @@
 #include "party_system.h"
 #include "ps3_item_tables.h"
 #include "settings.h"
+#include "ui_language.h"
 
 // Cvars read below. Defined (and persisted) in settings.cpp. The rows' own
 // values go through the settings.cpp accessors rather than the cvars directly.
@@ -642,6 +643,13 @@ struct OptionValue {
 // The language everything we draw onto these screens is written in. The guest
 // follows user_language live (see SetUserLanguageSetting), so this does too.
 int DrawLanguage() {
+  // The interface language, in the Text row's order, when it differs from the
+  // game's; a mod language is only reachable through the latter.
+  static constexpr int kFromBtx[] = {5, 0, 0, 2, 4, 1, 3};
+  const u32 game = eternalsonata::GameTextLanguage();
+  const u32 ui = eternalsonata::UiTextLanguage(game);
+  if (ui != game && ui < std::size(kFromBtx))
+    return kFromBtx[ui];
   return std::clamp(eternalsonata::UserLanguageIndex(), 0, kLanguageCount - 1);
 }
 
@@ -2864,9 +2872,24 @@ REX_EXTERN(__imp__sub_8223B780);
 
 namespace {
 
-// Runs the stock lookup and applies any character-name override to its result.
-void BtxLookupWithNameOverrides(PPCContext& ctx, u8* base) {
+// The stock lookup, with the executable's own text in the interface language.
+void LookupText(PPCContext& ctx, u8* base, bool ui_text) {
+  if (ui_text) {
+    const u32 game = REX_LOAD_U32(kLanguage);
+    const u32 language = eternalsonata::UiTextLanguage(game);
+    u32 text = 0;
+    if (language != game &&
+        eternalsonata::LookupBtx(ctx.r3.u32, ctx.r4.u32, language, text)) {
+      ctx.r3.u32 = text;
+      return;
+    }
+  }
   __imp__sub_8223B780(ctx, base);
+}
+
+// Runs the lookup and applies any character-name override to its result.
+void BtxLookupWithNameOverrides(PPCContext& ctx, u8* base, bool ui_text) {
+  LookupText(ctx, base, ui_text);
   const u32 replacement = eternalsonata::PartyNameOverrideFor(ctx.r3.u32);
   if (replacement) {
     ctx.r3.u32 = replacement;
@@ -2875,12 +2898,12 @@ void BtxLookupWithNameOverrides(PPCContext& ctx, u8* base) {
 
 // Runs the stock lookup for an unrelated id, leaving the caller's arguments as
 // they were. Goes straight to __imp__, so this cannot re-enter the hook.
-u32 StockBtxLookup(PPCContext& ctx, u8* base, u32 blob, u32 sid) {
+u32 StockBtxLookup(PPCContext& ctx, u8* base, u32 blob, u32 sid, bool ui_text) {
   const u32 saved_r3 = ctx.r3.u32;
   const u32 saved_r4 = ctx.r4.u32;
   ctx.r3.u32 = blob;
   ctx.r4.u32 = sid;
-  __imp__sub_8223B780(ctx, base);
+  LookupText(ctx, base, ui_text);
   const u32 result = ctx.r3.u32;
   ctx.r3.u32 = saved_r3;
   ctx.r4.u32 = saved_r4;
@@ -2896,6 +2919,8 @@ constexpr u32 kMusicLabelSid = 39;
 REX_HOOK_RAW(sub_8223B780) {
   const u32 blob = ctx.r3.u32;
   const u32 sid = ctx.r4.u32;
+  // Decided on the blob asked for, before a PS3 block takes its place.
+  const bool ui_text = eternalsonata::IsUiTextBlob(blob);
   if (const u32 name = eternalsonata::PartyNameTextFor(blob, sid)) {
     ctx.r3.u32 = name;
     return;
@@ -2924,8 +2949,8 @@ REX_HOOK_RAW(sub_8223B780) {
   // The screen's own heading. Recognised by what it resolves to rather than by
   // its id, so the reference string has to be looked up first.
   if (achievements_menu::WantsTitleSwap(blob) && sid != kMusicLabelSid) {
-    const u32 music = StockBtxLookup(ctx, base, blob, kMusicLabelSid);
-    BtxLookupWithNameOverrides(ctx, base);
+    const u32 music = StockBtxLookup(ctx, base, blob, kMusicLabelSid, ui_text);
+    BtxLookupWithNameOverrides(ctx, base, ui_text);
     if (const u32 heading =
             achievements_menu::TitleOverrideFor(base, ctx.r3.u32, music)) {
       ctx.r3.u32 = heading;
@@ -2990,13 +3015,13 @@ REX_HOOK_RAW(sub_8223B780) {
           // indicating which one is active still needs the game's own
           // highlight mechanism (see docs §14, open work).
           ctx.r4.u32 = val.btx_id;
-          BtxLookupWithNameOverrides(ctx, base);
+          BtxLookupWithNameOverrides(ctx, base, ui_text);
           return;
         }
       }
     }
   }
-  BtxLookupWithNameOverrides(ctx, base);
+  BtxLookupWithNameOverrides(ctx, base, ui_text);
 }
 
 // sub_821F2F38(a1, list, ...): the display-list interpreter. Swap the Options
@@ -3748,7 +3773,7 @@ u32 QuitPromptOverride(PPCContext& ctx, u8* base, u32 blob, u32 sid) {
   if (!g_quit_prompt_building || sid != kStockConfirmSid) {
     return 0;
   }
-  return WriteQuitPrompt(base, StockBtxLookup(ctx, base, blob, sid));
+  return WriteQuitPrompt(base, StockBtxLookup(ctx, base, blob, sid, eternalsonata::IsUiTextBlob(blob)));
 }
 
 // Runs once per menu tick. True while the dialog owns the input.

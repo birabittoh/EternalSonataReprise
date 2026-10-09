@@ -52,6 +52,11 @@ int IntroLanguage();
 
 // Switches and persists to `config_path` when one was bound.
 void SetIntroLanguage(int index);
+
+// The res/lang code of the language in use ("en", "ja", ...), and of the one
+// the process started in.
+const char* IntroLanguageCode();
+const char* LaunchIntroLanguageCode();
 void BindIntroLanguageConfig(const std::filesystem::path& config_path);
 
 // Every language file's text, for baking the glyphs the screen needs.

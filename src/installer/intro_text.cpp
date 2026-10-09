@@ -15,9 +15,11 @@
 #include <rex/system/flags.h>
 
 #include "lang.generated.h"
+#include "settings.h"
+#include "ui_language.h"
 
 REXCVAR_DEFINE_STRING(ui_language, "", "Eternal Sonata",
-                      "Start screen language, by res/lang file name; empty follows the system");
+                      "Interface language, by res/lang file name; empty follows the system");
 
 namespace eternalsonata {
 namespace {
@@ -43,6 +45,7 @@ struct Language {
 
 std::vector<Language> g_languages;
 int g_current = -1;
+int g_launch = -1;
 std::filesystem::path g_config_path;
 
 const std::vector<Language>& Languages() {
@@ -98,12 +101,16 @@ int Current() {
   if (g_current >= 0)
     return g_current;
   g_current = Find(REXCVAR_GET(ui_language));
-  if (g_current < 0 && REXCVAR_GET(user_language) != 1)
+  // A text language the player chose, English included, over the system's.
+  if (g_current < 0 && (REXCVAR_GET(user_language) != 1 ||
+                        rex::cvar::GetFlagSource("user_language") != rex::cvar::Source::kDefault))
     g_current = Find(FromXLanguage(REXCVAR_GET(user_language)));
   if (g_current < 0)
     g_current = FromSystem();
   if (g_current < 0)
     g_current = std::max(Find("en"), 0);
+  if (g_launch < 0)
+    g_launch = g_current;
   return g_current;
 }
 
@@ -165,10 +172,26 @@ int IntroLanguage() {
 void SetIntroLanguage(int index) {
   if (index < 0 || index >= IntroLanguageCount() || index == Current())
     return;
+  const std::string previous = Languages()[size_t(Current())].code;
   g_current = index;
   REXCVAR_SET(ui_language, Languages()[size_t(index)].code);
+  InvalidateUiTextLanguage();
   if (!g_config_path.empty())
     rex::cvar::SaveConfigSubset(g_config_path, {"ui_language"});
+  InterfaceLanguageChanged(previous.c_str());
+}
+
+const char* IntroLanguageCode() {
+  const auto& languages = Languages();
+  return languages.empty() ? "en" : languages[size_t(Current())].code.c_str();
+}
+
+const char* LaunchIntroLanguageCode() {
+  const auto& languages = Languages();
+  if (languages.empty())
+    return "en";
+  Current();
+  return languages[size_t(g_launch)].code.c_str();
 }
 
 void BindIntroLanguageConfig(const std::filesystem::path& config_path) {

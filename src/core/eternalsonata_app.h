@@ -118,6 +118,8 @@ class EternalsonataApp : public rex::ReXApp {
 
     eternalsonata::GameDataOptions options;
     options.config_path = config_path();
+    // The F4 Language row saves through it too, start screen or not.
+    eternalsonata::BindIntroLanguageConfig(config_path());
     std::string pending;
     if (eternalsonata::UsePreparedGameData(options, pending))
       return FinishGameDataPaths();
@@ -191,8 +193,11 @@ class EternalsonataApp : public rex::ReXApp {
     cfg.FontDataOwnedByAtlas = false;
     atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kPTSerifRegularTTF),
                                 static_cast<int>(eternalsonata::kPTSerifRegularTTFSize), 16.0f, &cfg);
+    // Otherwise only the language names the settings list.
     if (REXCVAR_GET(user_language) == 2)
       MergeJapaneseFont(atlas, 16.0f, atlas->GetGlyphRangesJapanese());
+    else
+      MergeJapaneseFont(atlas, 16.0f, intro_glyphs.Data);
   }
 
   // Into the font added last. The overlays and the unlock toast draw
@@ -306,6 +311,8 @@ class EternalsonataApp : public rex::ReXApp {
     // have to see the relocated arrays too.
     eternalsonata::InitPartyArrays(runtime());
     eternalsonata::ApplyPs3ItemTables();
+
+    eternalsonata::ApplyBootTextLanguage();
 
     // Seed the GPU plugin/Vulkan device lists once here rather than every
     // time the F4 settings overlay is opened (see settings.cpp).

@@ -52,6 +52,7 @@
 #include "party_system.h"
 #include "room_presence.h"
 #include "target.h"
+#include "ui_language.h"
 
 REXCVAR_DEFINE_DOUBLE(benched_exp_multiplier, 0.5, "Eternal Sonata",
                       "Share of battle EXP awarded to party members outside the active three")
@@ -703,7 +704,7 @@ uint32_t PartyNameTextFor(uint32_t blob, uint32_t sid) {
   // an empty name rather than a null the caller would dereference.
   std::string text;
   if (IsPs3Target())
-    text = Ps3LocalizedName(slot, ReadGuest<uint32_t>(0x8243D370u));
+    text = Ps3LocalizedName(slot, UiTextLanguage());
   else
     text = CharacterDisplayName(slot).substr(0, 59);
   WriteGuestString(at, ruby ? "<r>" + text : text);
