@@ -450,6 +450,34 @@ long as it exists on disk and something references its path.
 | `.csf` | Sound banks (flag 0, 60 map banks) and compressed voice audio (flag 3, 60 files). Referenced via `"%spc%03d.csf"` / `"%spc%03d_usa.csf"` at ~`0x820872C8`. |
 | `.x3tex`, `.tex` | Textures; `.tex` is a 2D animation container, see `ps3-assets.md` §4. |
 
+### 4.1 USA and JP copies
+
+The executable is PAL's, so a USA or JP copy needs only what PAL's code
+addresses by position or loads by name; `src/installer/release_patch.cpp`
+does that once, in place, from the release's own data:
+
+* `btldata/BattleKeep.bop` (106 slots on PAL, 108 USA, 100 JP). USA and JP
+  hold the results screen and level up animations (`.tex`) at slots 41 and 43
+  (JP 33 and 35); PAL's code loads them from `btldata/btl_exit_text.tex` and
+  `btldata/levelup_JPN.tex` instead (ids -1 and -2 of the slot accessor
+  `sub_821A5148`), and a missing one stalls the battle loader. Those two
+  entries become the two files, and JP also lacks the copies of slots 12, 17,
+  20, 14, 15, 18, 19 and 21 that the others hold at 26..33. A `.tex`'s
+  optional `MLNG` record (kind 9) maps PAL's language codes to its records;
+  without one the default shows.
+* `campdata/camp_grpN.bmd`, PAL only, rebuilt from AppKeep slots 251, 268,
+  269, 267 and 304..306, where USA and JP keep that art.
+* `title_jpn.bmd`, PAL's own addition: USA's `title.bmd` carries the Trusty
+  Bell art as PAL's does, and JP's is that screen already.
+
+Everything else runs as shipped. AppKeep matches PAL slot for slot apart from
+three single language effects (231, 350, 352) and the camp art; JP lacks
+slots 353..356, the `<ar N>` arrows, which only PAL's scripts use. Both fit
+the 0x3A00000 byte `APPKEEP` heap. The credits, `title.bmd` and JP's
+`scp.bmd` keep PAL's layout. `btldata/map/lnt90.bop` differs in twelve map
+objects: PAL clears bit 0 of their flags byte (+40), which turns the map's
+light off on them (`sub_821989B8`).
+
 ---
 
 ## 5. Unpacking

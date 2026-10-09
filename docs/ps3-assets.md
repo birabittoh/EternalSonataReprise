@@ -8,9 +8,9 @@ and new events and lines. Its engine differs from the 360's: more script
 natives, a different map state block, more task lists, and slot addressed
 containers in a different order.
 
-The USA and JP 360 releases run the same engine as PAL, so their executable
-and containers are patched into PAL's and their scripts run unchanged
-(`scripts/gen-release-patches.py`). That cannot work for the PS3: its scripts
+The USA and JP 360 releases run the same engine as PAL, so their data runs
+on PAL's executable with one container rebuilt in PAL's layout and their
+scripts unchanged (`asset-formats.md` §4.1). That cannot work for the PS3: its scripts
 and data assume engine behaviour the PAL executable lacks. The PS3 release is
 therefore a **second target** of this executable:
 

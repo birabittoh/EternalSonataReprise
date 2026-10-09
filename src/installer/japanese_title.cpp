@@ -111,19 +111,25 @@ Bytes BuildJapaneseTitle(const Bytes& title) {
   // The element offsets (u16, from +12) run up to the first element.
   const size_t table = efct->offset + 12;
   const size_t first = Rd16(title, table);
-  int logos = 0;
+  int logos = 0, japanese_logos = 0;
   for (size_t at = table; at < efct->offset + first && at + 2 <= efct->offset + efct->size;
        at += 2) {
     const size_t element = efct->offset + Rd16(title, at);
     if (element + kElementWidth + 4 > efct->offset + efct->size)
       continue;
     // PAL's logo is TEX7, rect 0, a sprite; the Trusty Bell one is TEX0's rect 0.
-    if (Rd32(title, element + kElementRef) != 0x07000100)
+    const uint32_t ref = Rd32(title, element + kElementRef);
+    if (ref == 0x00000100)
+      ++japanese_logos;
+    if (ref != 0x07000100)
       continue;
     Wr32(out, element + kElementRef, 0x00000100);
     Wr32(out, element + kElementWidth, kLogoWidth);
     ++logos;
   }
+  // A Japanese release's own title is the screen already.
+  if (logos == 0 && japanese_logos == 1)
+    return title;
   return logos == 1 ? out : Bytes{};
 }
 
