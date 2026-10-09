@@ -42,6 +42,16 @@ bool NeedsPatching(const std::filesystem::path& dir);
 // or a file inside one, that needs no extraction.
 bool IsExtractedSource(const std::string& picked);
 
+struct SourceInfo {
+  // The release, for the player; empty when not known.
+  std::string release;
+  // Why `picked` cannot be installed, or empty.
+  std::string error;
+};
+
+// Identifies `picked` (as Install takes it) without extracting anything.
+SourceInfo IdentifySource(const std::string& picked);
+
 // Runs the phases on `picked` (a disc image, a PS3 disc folder, or a game
 // directory), extracting into `assets` when it is a disc. Returns why it
 // failed, for the player, or empty with `dir` set to the ready game

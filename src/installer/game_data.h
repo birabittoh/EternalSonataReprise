@@ -1,9 +1,10 @@
 #pragma once
 
 // Resolves game_data_root before the runtime starts, through the install
-// phases of install_pipeline.h, shown on the intro screen. The game starts
-// only when the player presses Start after every phase is done; a prepared
-// directory with nothing left to do skips the screen.
+// phases of install_pipeline.h, shown on the intro screen. A picked source is
+// identified first and installed only when the player presses Extract; the
+// game starts only when the player presses Start after every phase is done. A
+// prepared directory with nothing left to do skips the screen.
 
 #include <filesystem>
 #include <functional>
@@ -17,7 +18,7 @@ class WindowedAppContext;
 
 namespace eternalsonata {
 
-enum class GameDataChoice { kQuit, kDiscImage, kFolder, kStart };
+enum class GameDataChoice { kQuit, kDiscImage, kFolder, kExtract, kStart };
 
 // What the prompt is asked to offer.
 struct GameDataPrompt {
@@ -27,6 +28,10 @@ struct GameDataPrompt {
   std::string copy_hint;
   // Why the previous selection failed, empty on the first call.
   std::string error;
+  // The release picked, once identified.
+  std::string release;
+  // A supported source is picked: Extract is enabled.
+  bool can_extract = false;
   // Every phase is done: Start is enabled.
   bool ready = false;
 };

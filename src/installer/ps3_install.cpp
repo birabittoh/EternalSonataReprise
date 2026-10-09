@@ -339,7 +339,6 @@ fs::path FindPs3Archives(const fs::path& picked) {
   return SameName(at.filename().string(), "archives") && HasArchives(at) ? at : fs::path();
 }
 
-// TITLE_ID from the disc's PARAM.SFO, or empty.
 std::string ReadTitleId(const fs::path& sfo) {
   Bytes d;
   if (!ReadFile(sfo, d) || d.size() < 20 || std::memcmp(d.data(), "\0PSF", 4) != 0)

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <fstream>
 #include <optional>
+#include <utility>
 #include <unordered_set>
 #include <vector>
 
@@ -290,6 +291,38 @@ void WalkDirectory(FileReader& reader, uint64_t game_offset, uint64_t dir_offset
   }
 }
 
+// A root directory entry by name: its offset and length.
+std::optional<std::pair<uint64_t, uint32_t>> FindRootFile(FileReader& reader, const Xdvdfs& fs,
+                                                          std::string_view wanted) {
+  std::vector<uint32_t> pending = {0};
+  std::unordered_set<uint32_t> visited;
+  while (!pending.empty()) {
+    const uint32_t ordinal = pending.back();
+    pending.pop_back();
+    if (!visited.insert(ordinal).second)
+      continue;
+    const uint64_t p = fs.root_offset + uint64_t(ordinal) * 4;
+    const auto left = reader.U16LE(p);
+    const auto right = reader.U16LE(p + 2);
+    const auto sector = reader.U32LE(p + 4);
+    const auto length = reader.U32LE(p + 8);
+    const auto attributes = reader.U8(p + 12);
+    const auto name_length = reader.U8(p + 13);
+    if (!left || !right || !sector || !length || !attributes || !name_length)
+      continue;
+    std::string name(*name_length, '\0');
+    if (!reader.Read(p + 14, name.data(), *name_length))
+      continue;
+    if (!(*attributes & 0x10) && SameFileName(name, wanted))
+      return std::pair(fs.game_offset + uint64_t(*sector) * kSectorSize, *length);
+    if (*left)
+      pending.push_back(*left);
+    if (*right)
+      pending.push_back(*right);
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 bool MoveAside(const fs::path& dir) {
@@ -358,6 +391,23 @@ std::string ExtractDiscImage(const std::string& image, const fs::path& out_dir,
   if (ec)
     return "Could not rename the extracted files: " + ec.message();
   REXLOG_INFO("Extracted {} files into {}", walk.files, out_dir.string());
+  return {};
+}
+
+std::string ReadDiscImageFile(const std::string& image, std::string_view name,
+                              std::vector<uint8_t>& out) {
+  FileReader reader(image);
+  if (!reader.ok())
+    return "The file could not be read.";
+  const auto info = FindXdvdfs(reader);
+  if (!info)
+    return "This is not an Xbox 360 disc image.";
+  const auto file = FindRootFile(reader, *info, name);
+  if (!file)
+    return "This disc image is not Eternal Sonata.";
+  out.resize(file->second);
+  if (!reader.Read(file->first, out.data(), out.size()))
+    return "The disc image is truncated.";
   return {};
 }
 

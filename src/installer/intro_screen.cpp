@@ -153,7 +153,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
  public:
   IntroDialog(rex::ui::ImGuiDrawer* drawer, const GameDataPrompt& prompt)
       : rex::ui::ImGuiDialog(drawer), prompt_(prompt) {
-    selected_ = prompt.ready ? 0 : 1;
+    selected_ = prompt.ready || prompt.can_extract ? 0 : 1;
+    // Extract until the phases are done, then Start.
     options_.push_back({"Start", GameDataChoice::kStart});
     options_.push_back({"Select Disc Image", GameDataChoice::kDiscImage});
     if (prompt.can_pick_folder)
@@ -162,10 +163,11 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   }
 
   void Update(const GameDataPrompt& prompt) {
-    // Start is first in the list; land on it once it can be used.
-    if (prompt.ready && !prompt_.ready)
+    // Extract or Start is first in the list; land on it once it can be used.
+    const bool first = prompt.ready || prompt.can_extract;
+    if (first && (prompt.ready != prompt_.ready || prompt.can_extract != prompt_.can_extract))
       selected_ = 0;
-    else if (!prompt.ready && selected_ == 0)
+    else if (!first && selected_ == 0)
       selected_ = 1;
     prompt_ = prompt;
   }
@@ -239,7 +241,12 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     } else {
       std::string body;
       if (prompt_.ready) {
-        body = "The game files are ready.";
+        body = prompt_.release.empty() ? "The game files are ready."
+                                       : prompt_.release + " is ready.";
+      } else if (prompt_.can_extract) {
+        body = (prompt_.release.empty() ? std::string("Game files found.")
+                                        : "Found " + prompt_.release + ".") +
+               "\nPress Extract to prepare them. This takes a few minutes.";
       } else {
         body = "Eternal Sonata Reprise needs the game files from your own copy of the game.\n";
         body += prompt_.can_pick_folder
@@ -251,6 +258,12 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       }
       y += CenteredText(draw, font, 22.0f * unit, size.x * 0.5f, y, wrap, Color(kText, body_in),
                         body);
+      if (!prompt_.error.empty() && !prompt_.can_extract && !prompt_.release.empty() &&
+          prompt_.error.find(prompt_.release) == std::string::npos) {
+        y += 8.0f * unit;
+        y += CenteredText(draw, font, 20.0f * unit, size.x * 0.5f, y, wrap,
+                          Color(kText, body_in), "Selected: " + prompt_.release);
+      }
       if (!prompt_.error.empty()) {
         y += 8.0f * unit;
         y += CenteredText(draw, font, 20.0f * unit, size.x * 0.5f, y, wrap,
@@ -344,9 +357,16 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     auto pressed = [](std::initializer_list<ImGuiKey> keys) {
       return std::any_of(keys.begin(), keys.end(), [](ImGuiKey k) { return ImGui::IsKeyPressed(k); });
     };
-    // Start stays out of reach until every phase is done.
+    // The first option stays out of reach until there is something to
+    // extract or start.
     auto enabled = [&](int i) {
-      return options_[size_t(i)].choice != GameDataChoice::kStart || prompt_.ready;
+      return options_[size_t(i)].choice != GameDataChoice::kStart || prompt_.ready ||
+             prompt_.can_extract;
+    };
+    auto choice_of = [&](int i) {
+      const GameDataChoice choice = options_[size_t(i)].choice;
+      return choice == GameDataChoice::kStart && !prompt_.ready ? GameDataChoice::kExtract
+                                                                : choice;
     };
     auto step = [&](int direction) {
       do {
@@ -359,7 +379,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       step(-1);
     if (ready && pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space,
                           ImGuiKey_GamepadFaceDown}))
-      choice_ = options_[size_t(selected_)].choice;
+      choice_ = choice_of(selected_);
     if (ready && pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight}))
       choice_ = GameDataChoice::kQuit;
 
@@ -375,7 +395,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       ImGui::PushID(i);
       const bool usable = enabled(i);
       if (ImGui::InvisibleButton("##option", ImVec2(w, h)) && ready && usable)
-        choice_ = options_[size_t(i)].choice;
+        choice_ = choice_of(i);
       // Only a moving mouse selects, so a resting cursor does not undo the keys.
       const ImVec2 delta = ImGui::GetIO().MouseDelta;
       if (ready && usable && ImGui::IsItemHovered() && (delta.x != 0.0f || delta.y != 0.0f))
@@ -389,7 +409,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       draw->AddRectFilled(min, max, IM_COL32(0, 0, 0, int((active ? 150 : 100) * a)), rounding);
       draw->AddRect(min, max, active ? Color(kAccent, a) : IM_COL32(255, 255, 255, int(60 * a)),
                     rounding, 0, std::max(1.0f, (active ? 2.0f : 1.0f) * unit));
-      const char* label = options_[size_t(i)].label;
+      const char* label = choice_of(i) == GameDataChoice::kExtract ? "Extract"
+                                                                    : options_[size_t(i)].label;
       const ImVec2 extent = font->CalcTextSizeA(label_size, FLT_MAX, 0.0f, label);
       draw->AddText(font, label_size,
                     ImVec2(std::floor(min.x + (w - extent.x) * 0.5f),

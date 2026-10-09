@@ -1,7 +1,14 @@
 #include "install_pipeline.h"
 
+#include <fstream>
+#include <iterator>
+#include <vector>
+
+#include <rex/logging.h>
+
 #include "disc_image.h"
 #include "ps3_install.h"
+#include "release_id.h"
 #include "release_patch.h"
 
 namespace eternalsonata {
@@ -55,6 +62,94 @@ fs::path Resolve(const std::string& picked) {
   return path;
 }
 
+bool ReadFile(const fs::path& path, std::vector<uint8_t>& out) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in)
+    return false;
+  out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  return !in.bad();
+}
+
+fs::path ChildNamed(const fs::path& dir, std::string_view name) {
+  std::error_code ec;
+  for (const auto& entry : fs::directory_iterator(dir, ec)) {
+    if (SameFileName(entry.path().filename().string(), name))
+      return entry.path();
+  }
+  return {};
+}
+
+// Known releases by their hash; a supported one installs.
+SourceInfo FromHash(const std::vector<uint8_t>& file, const std::string& unknown) {
+  const std::string hash = Sha256Hex(file);
+  const Release* release = FindRelease(hash);
+  if (!release) {
+    REXLOG_WARN("Unknown dump: {}", hash);
+    return {{}, unknown};
+  }
+  SourceInfo info{std::string("Eternal Sonata, ") + release->name, {}};
+  if (!release->supported)
+    info.error = info.release + " is not supported yet.";
+  return info;
+}
+
+const char* RegionName(Ps3Region region) {
+  switch (region) {
+    case Ps3Region::kPal: return "Europe";
+    case Ps3Region::kUsa: return "North America";
+    case Ps3Region::kJapan: return "Japan";
+  }
+  return "";
+}
+
+// A PS3 dump's region from its title id: BLES Europe, BLUS America, BLJS Japan.
+SourceInfo FromTitleId(const std::string& title_id) {
+  if (title_id.size() < 3)
+    return {};
+  const Ps3Region region = title_id[2] == 'U'   ? Ps3Region::kUsa
+                           : title_id[2] == 'J' ? Ps3Region::kJapan
+                                                : Ps3Region::kPal;
+  return {std::string("Eternal Sonata, PS3, ") + RegionName(region) + " (" + title_id + ")", {}};
+}
+
+SourceInfo IdentifyPs3Folder(const fs::path& archives) {
+  const fs::path usrdir = archives.parent_path();
+  const fs::path eboot = ChildNamed(usrdir, "EBOOT.BIN");
+  std::vector<uint8_t> file;
+  if (!eboot.empty() && ReadFile(eboot, file)) {
+    SourceInfo info = FromHash(file, {});
+    if (!info.release.empty())
+      return info;
+  }
+  // An unknown EBOOT.BIN: named from the disc's title id when it has one.
+  SourceInfo info = FromTitleId(ReadTitleId(ChildNamed(usrdir.parent_path(), "PARAM.SFO")));
+  if (info.release.empty())
+    return {{}, "This PS3 disc folder is not a known dump of Eternal Sonata."};
+  info.error = info.release + " is not a known dump, or not supported yet.";
+  return info;
+}
+
+// Prepared folders are taken as they are, named when their files say which
+// release they came from.
+SourceInfo IdentifyGameDirectory(const fs::path& dir) {
+  if (IsPs3Directory(dir)) {
+    const Ps3Region region = ReadPs3Region(dir);
+    SourceInfo info{std::string("Eternal Sonata, PS3, ") + RegionName(region), {}};
+    if (region != Ps3Region::kPal && NeedsConversion(dir))
+      info.error = info.release + " is not supported yet.";
+    return info;
+  }
+  std::vector<uint8_t> file;
+  fs::path xex = ChildNamed(dir, "default.xex.orig");
+  if (xex.empty())
+    xex = ChildNamed(dir, "default.xex");
+  if (xex.empty() || !ReadFile(xex, file))
+    return {};
+  SourceInfo info = FromHash(file, {});
+  info.error.clear();
+  return info;
+}
+
 std::string RunLaterPhases(const fs::path& dir, const InstallHooks& hooks) {
   std::string error = RunPhase(
       hooks, Phase::kConvert, [&] { return NeedsConversion(dir); },
@@ -96,6 +191,22 @@ bool IsExtractedSource(const std::string& picked) {
   std::error_code ec;
   const fs::path path = Resolve(picked);
   return fs::is_directory(path, ec) && IsGameDirectory(path);
+}
+
+SourceInfo IdentifySource(const std::string& picked) {
+  std::error_code ec;
+  const fs::path path = Resolve(picked);
+  if (!IsContentUri(picked) && fs::is_directory(path, ec)) {
+    if (std::string error = CheckFolder(path); !error.empty())
+      return {{}, error};
+    if (IsGameDirectory(path))
+      return IdentifyGameDirectory(path);
+    return IdentifyPs3Folder(FindPs3Archives(path));
+  }
+  std::vector<uint8_t> xex;
+  if (std::string error = ReadDiscImageFile(picked, "default.xex", xex); !error.empty())
+    return {{}, error};
+  return FromHash(xex, "This Eternal Sonata disc image is not a known dump.");
 }
 
 std::string InstallDirectory(const fs::path& dir, const InstallHooks& hooks) {
