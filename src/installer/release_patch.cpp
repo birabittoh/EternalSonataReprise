@@ -15,6 +15,7 @@
 #include <rex/system/game_data_selector.h>
 
 #include "eternalsonata_asset_container.h"
+#include "japanese_title.h"
 
 // The USA and JP to PAL patch bundle, linked in by release-patches.S.
 extern "C" {
@@ -32,9 +33,11 @@ constexpr const char* kStamp = "release-patches.stamp";
 constexpr const char* kOriginal = ".orig";
 // PS3 data is converted, not patched (target.cpp has the same probe).
 constexpr const char* kPs3Probe = "pcalg_v1.p3obj";
-// Not a release's file: the Japanese title screen, patched from PAL's
-// title.bmd, since PAL's has no Japanese logo.
+// Not a release's file: the Japanese title screen, built from PAL's
+// title.bmd (japanese_title.h).
 constexpr std::string_view kJapaneseTitle = "title_jpn.bmd";
+// Bumped when BuildJapaneseTitle changes, so installs rebuild it.
+constexpr std::string_view kTitleRecipe = "jtitle1";
 
 struct Patch {
   std::string_view path;
@@ -63,6 +66,8 @@ std::string Fingerprint() {
   uint64_t h = 0xCBF29CE484222325ull;
   for (const uint8_t* p = kReleasePatchData; p != kReleasePatchDataEnd; ++p)
     h = (h ^ *p) * 0x100000001B3ull;
+  for (const char c : kTitleRecipe)
+    h = (h ^ uint8_t(c)) * 0x100000001B3ull;
   char text[17];
   std::snprintf(text, sizeof(text), "%016llx", static_cast<unsigned long long>(h));
   return text;
@@ -192,14 +197,15 @@ bool BuildCampGroup(const std::vector<uint8_t>& keep, std::vector<uint8_t>& grou
 }
 
 // Converted PS3 data is PAL's already, so only the Japanese title screen is
-// added, from the converted title.bmd, which has no Japanese logo either.
-std::string PatchPs3Title(const fs::path& dir, const std::vector<Patch>& bundle) {
+// added, from the converted title.bmd.
+std::string PatchPs3Title(const fs::path& dir) {
   const fs::path toc_path = dir / kToc;
   assets::Toc toc;
-  std::vector<uint8_t> title, japanese;
+  std::vector<uint8_t> title;
   if (!toc.Load(toc_path) || !ReadFile(Resolve(dir, "title.bmd"), title))
     return "The converted game files are incomplete: title.bmd could not be read.";
-  if (ApplyAny(bundle, kJapaneseTitle, title, japanese)) {
+  const std::vector<uint8_t> japanese = BuildJapaneseTitle(title);
+  if (!japanese.empty()) {
     if (!WriteFile(Resolve(dir, kJapaneseTitle), japanese))
       return "Could not write title_jpn.bmd.";
     const uint32_t size = uint32_t(japanese.size());
@@ -209,7 +215,7 @@ std::string PatchPs3Title(const fs::path& dir, const std::vector<Patch>& bundle)
     if (!WriteFile(toc_path, toc.bytes()))
       return "Could not write index.vmtoc.";
   } else {
-    REXLOG_WARN("No Japanese title screen matches this PS3 copy's title.bmd");
+    REXLOG_WARN("This PS3 copy's title.bmd is not the PAL layout; no Japanese title screen");
   }
   const std::string stamp = Fingerprint();
   WriteFile(dir / kStamp, std::span(reinterpret_cast<const uint8_t*>(stamp.data()), stamp.size()));
@@ -228,14 +234,12 @@ bool IsReleasePatched(const fs::path& dir) {
 std::string PatchRelease(const fs::path& dir, const ExtractProgress& progress) {
   const std::vector<Patch> bundle = Bundle();
   std::error_code ec;
-  if (bundle.empty()) {
-    REXLOG_WARN("No release patches in this build; USA and JP copies will not run");
-    return {};
-  }
   if (IsReleasePatched(dir))
     return {};
   if (fs::is_regular_file(dir / kPs3Probe, ec))
-    return PatchPs3Title(dir, bundle);
+    return PatchPs3Title(dir);
+  if (bundle.empty())
+    REXLOG_WARN("No release patches in this build; USA and JP copies will not run");
 
   const fs::path toc_path = dir / kToc;
   const fs::path shipped_toc_path = WithSuffix(toc_path, kOriginal);
@@ -293,8 +297,11 @@ std::string PatchRelease(const fs::path& dir, const ExtractProgress& progress) {
     title = patched_title->second;
   else
     LoadShipped(dir, shipped, "title.bmd", title);
-  if (ApplyAny(bundle, kJapaneseTitle, title, japanese))
+  japanese = BuildJapaneseTitle(title);
+  if (!japanese.empty())
     outputs.emplace_back(std::string(kJapaneseTitle), std::move(japanese));
+  else
+    REXLOG_WARN("title.bmd is not the PAL layout; no Japanese title screen");
 
   for (const auto& [path, bytes] : outputs) {
     report(path);

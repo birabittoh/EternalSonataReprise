@@ -31,19 +31,11 @@ path has one patch per release that differs from PAL there; the reader tries
 each, since only one accepts its source. A file the release lacks is patched
 from an empty source.
 
-"title_jpn.bmd" is no release's file: it is the Japanese release's title.bmd,
-patched from PAL's, which the title screen loads for Japanese text. PAL's
-title has no Japanese variant of its logo.
-
-With --ps3 <converted PS3 assets>, the Japanese title is also patched from the
-PS3 copy's title.bmd, which has no Japanese variant either. Its title effect
-already holds the Trusty Bell logo (texture 0, under the menu labels) next to
-the Eternal Sonata one (texture 7), so the PS3's own art is kept and texture 7
-is made the Trusty Bell logo. Both patches share the name; the reader takes the
-one whose source matches.
+The Japanese title screen is not here: the installer builds it from PAL's
+own title.bmd (src/installer/japanese_title.cpp).
 
 usage:
-    python scripts/gen-release-patches.py [--ps3 <ps3 assets>] <pal assets> <out.bin> <release assets>...
+    python scripts/gen-release-patches.py <pal assets> <out.bin> <release assets>...
 """
 import hashlib
 import os
@@ -77,93 +69,6 @@ ADDED = [
     "btldata/levelup_jpn.tex",
 ]
 
-JAPANESE_TITLE = "title_jpn.bmd"
-
-
-def is_japanese(xex):
-    """True for a copy whose xex is locked to the NTSC-J region only."""
-    raw = open(xex, "rb").read(0x10000)
-    security, = struct.unpack_from(">I", raw, 16)
-    region, = struct.unpack_from(">I", raw, security + 0x178)
-    return region & 0xFF00 and not region & 0xFF00FF
-
-
-def title_textures(title):
-    """The DDS offsets of the title screen effect (the second) in a title.bmd."""
-    entries = [struct.unpack_from(">I", title, 12 + 4 * i)[0] for i in range(1, 7)]
-    effect = [e for e in entries if e][3]
-    size, = struct.unpack_from(">I", title, effect + 4)
-    textures = []
-    at = effect
-    while True:
-        at = title.find(b"NTEX", at + 4, effect + 8 + size)
-        if at < 0:
-            return textures
-        if title[at + 8:at + 12] == b"DDS ":
-            textures.append(at + 8)
-
-
-def level_blocks(width, height, k):
-    return max(width >> k, 4) // 4, max(height >> k, 4) // 4
-
-
-def clear_blocks(dest, tex, width, height):
-    at = 128
-    for k in range(11):
-        w, h = level_blocks(width, height, k)
-        dest[tex + at:tex + at + w * h * 16] = bytes(w * h * 16)
-        at += w * h * 16
-
-
-def copy_blocks(dest, tex, dest_height, source, src, src_height, rows, cols, down=0, right=0):
-    """Copies the pixel rows and columns `rows` and `cols` of every mip of the
-    1024 wide DXT5 at `src` in `source` into the one at `tex` in `dest`,
-    moved by `down` and `right` pixels (multiples of 32 keep the mips lined up)."""
-    at_src = at_dest = 128
-    for k in range(11):
-        w, sh = level_blocks(1024, src_height, k)
-        _, dh = level_blocks(1024, dest_height, k)
-        first, last = rows[0] >> (k + 2), min(sh, -(-rows[1] >> (k + 2)))
-        left, end = cols[0] >> (k + 2), min(w, -(-cols[1] >> (k + 2)))
-        for row in range(first, last):
-            to_row = row + (down >> (k + 2))
-            to_left = left + (right >> (k + 2))
-            if 0 <= to_row < dh and 0 <= to_left and to_left + end - left <= w:
-                s = src + at_src + (row * w + left) * 16
-                d = tex + at_dest + (to_row * w + to_left) * 16
-                dest[d:d + (end - left) * 16] = source[s:s + (end - left) * 16]
-        at_src += w * sh * 16
-        at_dest += w * dh * 16
-
-
-def ps3_japanese_title(title, japanese):
-    """The PS3's title.bmd with the Japanese menu art: from the JP release's
-    first effect texture the labels, and the short footer in place of the long
-    one (texture 8); and the Trusty Bell logo, carried by the first texture,
-    in place of the Eternal Sonata one (texture 7)."""
-    textures = title_textures(title)
-    logo, mark, footer = textures[0], textures[7], textures[8]
-    jp_logo = title_textures(japanese)[0]
-    for tex, height in ((logo, 512), (mark, 512), (footer, 64)):
-        size = struct.unpack_from("<II", title, tex + 12)
-        if size != (height, 1024) or title[tex + 84:tex + 88] != b"DXT5":
-            sys.exit("title.bmd is not the PS3 layout")
-    out = bytearray(title)
-    # Below the logo and left of the stave: "OPTION" and its highlight.
-    copy_blocks(out, logo, 512, japanese, jp_logo, 512, (288, 352), (0, 704))
-    copy_blocks(out, logo, 512, japanese, jp_logo, 512, (352, 512), (0, 620))
-    # The logo is rows 16..276 of texture 0 and 38..457 of texture 7; the
-    # latter is cleared and filled from the middle.
-    clear_blocks(out, mark, 1024, 512)
-    copy_blocks(out, mark, 512, bytes(title), logo, 512, (16, 280), (0, 1024), down=96)
-    # "(c)2007 NBGI" is rows 300..336, columns 160..320 of the JP texture 0;
-    # the long footer is centred in rows 20..44 of texture 8.
-    clear_blocks(out, footer, 1024, 64)
-    copy_blocks(out, footer, 64, japanese, jp_logo, 512, (300, 336), (160, 320), down=-288,
-                right=272)
-    return bytes(out)
-
-
 def apply(source, control, diff, extra):
     src = numpy.frombuffer(source, numpy.uint8)
     dif = numpy.frombuffer(diff, numpy.uint8)
@@ -192,9 +97,6 @@ def make_patch(source_raw, source, target):
 
 def main():
     args = sys.argv[1:]
-    ps3 = None
-    if args[:1] == ["--ps3"]:
-        ps3, args = args[1], args[2:]
     if len(args) < 3:
         sys.exit(__doc__)
     pal, out_path = args[:2]
@@ -203,11 +105,6 @@ def main():
     pal_toc = unpack_e.load_toc(pal)
     for release in args[2:]:
         print(release)
-        # The game converted default.xex in place once and kept the original beside it.
-        xex = os.path.join(release, "default.xex")
-        if os.path.exists(xex + ".orig"):
-            xex += ".orig"
-
         toc = unpack_e.load_toc(release)
         for name in CONTAINERS:
             target, _, _ = unpack_e.unpack_file(name, pal, pal_toc)
@@ -217,20 +114,6 @@ def main():
             source_raw = open(os.path.join(release, name), "rb").read()
             patches.append((name, make_patch(source_raw, source, target)))
             print(f"  {name}: {len(patches[-1][1])} bytes")
-
-        if is_japanese(xex):
-            target, _, _ = unpack_e.unpack_file("title.bmd", release, toc)
-            source, _, _ = unpack_e.unpack_file("title.bmd", pal, pal_toc)
-            source_raw = open(os.path.join(pal, "title.bmd"), "rb").read()
-            patches.append((JAPANESE_TITLE, make_patch(source_raw, source, target)))
-            print(f"  {JAPANESE_TITLE}: {len(patches[-1][1])} bytes")
-            if ps3:
-                ps3_toc = unpack_e.load_toc(ps3)
-                source, _, _ = unpack_e.unpack_file("title.bmd", ps3, ps3_toc)
-                source_raw = open(os.path.join(ps3, "title.bmd"), "rb").read()
-                patches.append((JAPANESE_TITLE,
-                                make_patch(source_raw, source, ps3_japanese_title(source, target))))
-                print(f"  {JAPANESE_TITLE} from PS3: {len(patches[-1][1])} bytes")
 
         for name in ADDED:
             if name in toc or any(path == name for path, _ in patches):
