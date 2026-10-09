@@ -17,7 +17,7 @@ namespace eternalsonata {
 enum class IntroText {
   kStart,
   kExtract,
-  kSelectIso,
+  kSelectFile,
   kSelectFolder,
   kQuit,
   kLanguage,

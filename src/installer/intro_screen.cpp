@@ -156,7 +156,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       : rex::ui::ImGuiDialog(drawer), prompt_(prompt) {
     // Sources on the left, then what to do with them on the right. Extract
     // until the phases are done, then Start.
-    options_.push_back({IntroText::kSelectIso, GameDataChoice::kDiscImage, 0, 0});
+    options_.push_back({IntroText::kSelectFile, GameDataChoice::kDiscImage, 0, 0});
     if (prompt.can_pick_folder)
       options_.push_back({IntroText::kSelectFolder, GameDataChoice::kFolder, 0, 1});
     options_.push_back({IntroText::kStart, GameDataChoice::kStart, 1, 0});

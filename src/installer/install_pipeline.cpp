@@ -51,12 +51,14 @@ std::string CheckFolder(const fs::path& dir) {
   return "This folder does not hold the extracted game files (no index.vmtoc).";
 }
 
-// A file picked inside an extracted folder means the folder.
+// A file picked inside an extracted folder, or a PS3 dump's EBOOT.BIN, means
+// the folder.
 fs::path Resolve(const std::string& picked) {
   fs::path path(picked);
   std::error_code ec;
   if (!IsContentUri(picked) && fs::is_regular_file(path, ec) &&
       (SameFileName(path.filename().string(), kTableOfContents) ||
+       SameFileName(path.filename().string(), "EBOOT.BIN") ||
        SameFileName(path.extension().string(), ".xex")))
     return path.parent_path();
   return path;
