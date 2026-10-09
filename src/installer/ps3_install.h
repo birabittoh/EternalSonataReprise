@@ -26,8 +26,7 @@ Ps3Region ReadPs3Region(const std::filesystem::path& dir);
 // Whether `dir` was converted by this build.
 bool IsPs3Converted(const std::filesystem::path& dir);
 
-// Converts `dir` in place. Only the PAL release's tables are compiled in, so
-// another region is refused. Returns why it failed, for the player, or empty.
+// Converts `dir` in place. Returns why it failed, for the player, or empty.
 std::string ConvertPs3(const std::filesystem::path& dir, const ExtractProgress& progress);
 
 // TITLE_ID from a disc's PARAM.SFO, or empty.

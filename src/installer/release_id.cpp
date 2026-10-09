@@ -17,9 +17,9 @@ constexpr std::array kReleases = {
     Release{"PS3, Europe (BLES00444)", "EBOOT.BIN",
             "a825a19dcbbad655b31f892f8fedc11fb356aab0cbb68cf0eb77395f48b43ba9", true},
     Release{"PS3, North America (BLUS30161)", "EBOOT.BIN",
-            "d2a140dfbc84b1f4e2354c21ec51c00fe517f1f8bb83559115fde3efbcdbba02", false},
+            "d2a140dfbc84b1f4e2354c21ec51c00fe517f1f8bb83559115fde3efbcdbba02", true},
     Release{"PS3, Japan (Trusty Bell Reprise)", "EBOOT.BIN",
-            "fe26949166337744af04d31567b3c55533ed537a6b4907f5c3cb9cf8e35580a4", false},
+            "fe26949166337744af04d31567b3c55533ed537a6b4907f5c3cb9cf8e35580a4", true},
 };
 
 constexpr std::array<uint32_t, 64> kRound = {
