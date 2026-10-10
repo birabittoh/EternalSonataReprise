@@ -411,7 +411,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       if (choice == GameDataChoice::kDelete)
         return prompt_.can_delete;
       return choice != GameDataChoice::kStart ||
-             ((prompt_.ready || prompt_.can_extract) && Supported(IntroLanguage()));
+             (prompt_.can_extract || (prompt_.ready && Supported(IntroLanguage())));
     };
     if (!enabled(selected_))
       selected_ = 0;
