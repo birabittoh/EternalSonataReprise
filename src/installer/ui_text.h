@@ -7,6 +7,7 @@
 // other than English, else the system's, since the screen usually shows
 // before any config exists.
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -77,6 +78,18 @@ const char* LaunchIntroLanguageCode();
 void ConfirmIntroLanguage();
 bool IntroLanguageConfirmed();
 void BindIntroLanguageConfig(const std::filesystem::path& config_path);
+
+// Mod supplied interface text. `language` is a res/lang code ("fr") to replace
+// a string of a shipped language, or a mod language's XLanguage id ("9"), which
+// then joins the interface languages under its label. Collected until
+// ApplyModUiStrings, since mod languages register after the mods announce
+// their strings. The first mod to set a string keeps it.
+void AddUiString(std::string_view language, std::string_view section, std::string_view key,
+                 std::string_view value);
+void ApplyModUiStrings();
+
+// `language` for AddUiString, from an XLanguage id.
+std::string UiLanguageOfXLanguage(uint32_t id);
 
 // Every language file's text, for baking the glyphs the screen needs.
 std::string IntroGlyphText();

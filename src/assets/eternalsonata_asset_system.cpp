@@ -40,6 +40,7 @@
 #include "loading_screen.h"
 #include "ps3_convert.h"
 #include "settings.h"
+#include "ui_text.h"
 #include "target.h"
 
 namespace eternalsonata {
@@ -523,8 +524,22 @@ struct DeclaredVoiceLanguage {
   std::string id, label, code, suffix, donor;
 };
 
+// Interface text for the ImGui overlays:
+//
+//   [[interface_text]]
+//   language = "fr"        # a res/lang code, or a mod language's id ("9")
+//   [interface_text.settings]
+//   rate_30 = "30 images/s"
+//
+// Sections and keys are those of res/lang/en.toml.
+struct DeclaredInterfaceText {
+  std::string language;
+  std::vector<std::array<std::string, 3>> strings;  // section, key, value
+};
+
 std::vector<DeclaredLanguage> ReadDeclaredLanguages(
-    const std::filesystem::path& path, std::vector<DeclaredVoiceLanguage>* voices = nullptr) {
+    const std::filesystem::path& path, std::vector<DeclaredVoiceLanguage>* voices = nullptr,
+    std::vector<DeclaredInterfaceText>* interface_text = nullptr) {
   std::vector<DeclaredLanguage> languages;
   std::ifstream in(path);
   if (!in)
@@ -534,6 +549,9 @@ std::vector<DeclaredLanguage> ReadDeclaredLanguages(
   bool in_strings = false;   // inside its [language.strings] table
   bool in_voice = false;     // inside a [[voice_language]] table
   std::vector<DeclaredVoiceLanguage> local_voices;
+  std::vector<DeclaredInterfaceText> local_interface;
+  bool in_interface = false;  // inside [[interface_text]] or one of its sections
+  std::string interface_section;
   while (std::getline(in, line)) {
     bool quoted = false;
     for (size_t i = 0; i < line.size(); ++i) {
@@ -556,13 +574,23 @@ std::vector<DeclaredLanguage> ReadDeclaredLanguages(
       // gets one strings table each.
       in_strings = (line == "[language.strings]") && !languages.empty();
       in_voice = (line == "[[voice_language]]");
+      in_interface = false;
+      interface_section.clear();
+      if (line == "[[interface_text]]") {
+        in_interface = true;
+        local_interface.emplace_back();
+      } else if (line.rfind("[interface_text.", 0) == 0 && line.back() == ']' &&
+                 !local_interface.empty()) {
+        in_interface = true;
+        interface_section = line.substr(16, line.size() - 17);
+      }
       if (in_language)
         languages.emplace_back();
       if (in_voice)
         local_voices.emplace_back();
       continue;
     }
-    if (!in_language && !in_strings && !in_voice)
+    if (!in_language && !in_strings && !in_voice && !in_interface)
       continue;
     const size_t eq = line.find('=');
     if (eq == std::string::npos)
@@ -574,6 +602,18 @@ std::vector<DeclaredLanguage> ReadDeclaredLanguages(
     value = vstart == std::string::npos ? std::string() : value.substr(vstart);
     if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
       value = value.substr(1, value.size() - 2);
+    if (in_interface) {
+      if (interface_section.empty()) {
+        if (key == "language")
+          local_interface.back().language = value;
+      } else {
+        // The one escape a one line value needs.
+        for (size_t at = 0; (at = value.find("\\\"", at)) != std::string::npos; ++at)
+          value.replace(at, 2, "\"");
+        local_interface.back().strings.push_back({interface_section, key, value});
+      }
+      continue;
+    }
     if (in_voice) {
       DeclaredVoiceLanguage& voice = local_voices.back();
       if (key == "id")
@@ -602,6 +642,8 @@ std::vector<DeclaredLanguage> ReadDeclaredLanguages(
   }
   if (voices)
     *voices = std::move(local_voices);
+  if (interface_text)
+    *interface_text = std::move(local_interface);
   return languages;
 }
 
@@ -2004,7 +2046,9 @@ bool SupplyReplacementPcm(void*, const uint8_t tag[16], uint64_t* cursor, int sa
 void ScanModLanguages(rex::Runtime* runtime) {
   for (const auto& mod : runtime->EnabledModsInfo()) {
     std::vector<DeclaredVoiceLanguage> voices;
-    for (const auto& declared : ReadDeclaredLanguages(mod.mod_root / "assets.toml", &voices)) {
+    std::vector<DeclaredInterfaceText> interface_text;
+    for (const auto& declared :
+         ReadDeclaredLanguages(mod.mod_root / "assets.toml", &voices, &interface_text)) {
       if (declared.id.empty() || declared.label.empty()) {
         REXLOG_WARN("assets: mod '{}' declares a [[language]] with no id or label",
                     mod.folder_name);
@@ -2064,7 +2108,18 @@ void ScanModLanguages(rex::Runtime* runtime) {
       }
       state().mod_voice[mod.folder_name] = std::move(banks);
     }
+
+    for (const auto& block : interface_text) {
+      if (block.language.empty()) {
+        REXLOG_WARN("assets: mod '{}' declares an [[interface_text]] with no language",
+                    mod.folder_name);
+        continue;
+      }
+      for (const auto& [section, key, value] : block.strings)
+        AddUiString(block.language, section, key, value);
+    }
   }
+  ApplyModUiStrings();
 }
 
 // pcm/<16 hex digits>.wav under the game directory: the digits are the tag's
