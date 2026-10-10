@@ -262,6 +262,11 @@ const char* ActiveVoiceSuffix();
 //   "settings.native_string"    translates one string this project authors.
 //       payload.u64   = the XLanguage id
 //       payload.bytes = UTF-8 "key=value"
+//   "settings.ui_string"        sets one string of the ImGui overlays, in a shipped
+//       language or a mod one.
+//       payload.u64   = the XLanguage id
+//       payload.bytes = UTF-8 "section.key=value", the section and key of
+//                       res/lang/en.toml (for example "settings.rate_30=...")
 //   "settings.voice_language_option"  adds a Voice entry. Independent of the
 //       three above: a mod may add a voice language, a text language, or both.
 //       payload.u64   = unused

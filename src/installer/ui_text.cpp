@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -39,11 +40,21 @@ constexpr std::array<const char*, 5> kProgressKeys = {
     "progress_extracting", "progress_unpacking", "progress_converting", "progress_patching",
     "progress_deleting"};
 
+using StringTable = std::map<std::string, std::string, std::less<>>;
+
 struct Language {
   std::string code;
   std::string name;
   toml::table tables;
+  // What mods set, by section, over `tables`.
+  std::map<std::string, StringTable, std::less<>> overrides;
 };
+
+struct PendingString {
+  std::string language, section, key, value;
+};
+
+std::vector<PendingString> g_pending;
 
 std::vector<Language> g_languages;
 int g_current = -1;
@@ -51,7 +62,7 @@ int g_launch = -1;
 bool g_confirmed = false;
 std::filesystem::path g_config_path;
 
-const std::vector<Language>& Languages() {
+std::vector<Language>& Languages() {
   if (!g_languages.empty())
     return g_languages;
   for (const LangFile& file : kLangFiles) {
@@ -73,6 +84,14 @@ int Find(std::string_view code) {
       return int(i);
   }
   return -1;
+}
+
+// A mod language is "mod:<XLanguage id>", which no res/lang file is named.
+std::string NormalizeCode(std::string_view language) {
+  const bool numeric = !language.empty() &&
+                       std::all_of(language.begin(), language.end(),
+                                   [](char c) { return c >= '0' && c <= '9'; });
+  return numeric ? "mod:" + std::string(language) : std::string(language);
 }
 
 const char* FromXLanguage(uint32_t id) {
@@ -124,6 +143,11 @@ const char* Find(const char* section, const char* key) {
   for (int index : {Current(), english}) {
     if (index < 0)
       continue;
+    const auto& overrides = languages[size_t(index)].overrides;
+    if (const auto section_it = overrides.find(section); section_it != overrides.end()) {
+      if (const auto text = section_it->second.find(key); text != section_it->second.end())
+        return text->second.c_str();
+    }
     const toml::table* table = languages[size_t(index)].tables[section].as_table();
     if (const auto* text = table ? (*table)[key].as_string() : nullptr)
       return text->get().c_str();
@@ -186,6 +210,54 @@ std::string TrProgress(const std::string& title) {
 
 int IntroLanguageCount() {
   return int(Languages().size());
+}
+
+std::string UiLanguageOfXLanguage(uint32_t id) {
+  return id >= 1 && id <= 6 ? FromXLanguage(id) : std::to_string(id);
+}
+
+void AddUiString(std::string_view language, std::string_view section, std::string_view key,
+                 std::string_view value) {
+  if (language.empty() || section.empty() || key.empty() || value.empty()) {
+    REXLOG_WARN("[ui_text] ignoring an interface string with an empty field ({}.{} in '{}')",
+                section, key, language);
+    return;
+  }
+  g_pending.push_back({NormalizeCode(language), std::string(section), std::string(key),
+                       std::string(value)});
+}
+
+void ApplyModUiStrings() {
+  if (g_pending.empty())
+    return;
+  const auto options = GetLanguageOptions();
+  auto& languages = Languages();
+  for (PendingString& pending : g_pending) {
+    int index = Find(pending.language);
+    if (index < 0 && pending.language.rfind("mod:", 0) == 0) {
+      const std::string_view id = std::string_view(pending.language).substr(4);
+      const auto option = std::find_if(options.begin(), options.end(), [&](const auto& entry) {
+        return id == entry.id;
+      });
+      if (option != options.end()) {
+        languages.push_back({pending.language, option->label, {}, {}});
+        index = int(languages.size()) - 1;
+      }
+    }
+    if (index < 0) {
+      REXLOG_WARN("[ui_text] no interface language '{}' for {}.{}", pending.language,
+                  pending.section, pending.key);
+      continue;
+    }
+    // Mods arrive in priority order, so the first to set a string keeps it.
+    languages[size_t(index)].overrides[pending.section].emplace(std::move(pending.key),
+                                                                 std::move(pending.value));
+  }
+  g_pending.clear();
+  // A saved choice may name a language that only exists now.
+  g_current = -1;
+  g_launch = -1;
+  InvalidateUiTextLanguage();
 }
 
 const char* IntroLanguageName(int index) {

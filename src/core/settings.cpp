@@ -22,6 +22,7 @@ extern "C" int EternalSonataSetSetting(int setting, int value);
 #include <array>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <map>
 #include <optional>
 #include <span>
@@ -2046,6 +2047,21 @@ void RegisterLanguageListeners(rex::system::ModRegistry* registry) {
       });
 
   registry->Subscribe(
+      "settings.ui_string", [](const rex::system::ModRegistry::EventPayload& payload) {
+        const std::string_view kv(reinterpret_cast<const char*>(payload.bytes.data()),
+                                  payload.bytes.size());
+        const size_t dot = kv.find('.');
+        const size_t eq = kv.find('=');
+        if (dot == std::string_view::npos || eq == std::string_view::npos || dot > eq) {
+          REXLOG_WARN("[settings] ignoring a settings.ui_string payload that is not "
+                      "'section.key=value'");
+          return;
+        }
+        AddUiString(UiLanguageOfXLanguage(uint32_t(payload.u64)), kv.substr(0, dot),
+                    kv.substr(dot + 1, eq - dot - 1), kv.substr(eq + 1));
+      });
+
+  registry->Subscribe(
       "settings.native_string", [](const rex::system::ModRegistry::EventPayload& payload) {
         const std::string_view kv(reinterpret_cast<const char*>(payload.bytes.data()),
                                   payload.bytes.size());
@@ -2268,8 +2284,23 @@ int UiLanguageEntry() {
   return 0;
 }
 
-// Whether built-in entry `id` holds the text of res/lang code `code`.
+// The part of a mod language's interface code ("mod:9") after the prefix, or
+// null for a res/lang one.
+const char* ModLanguageOfCode(const char* code) {
+  return std::strncmp(code, "mod:", 4) == 0 ? code + 4 : nullptr;
+}
+
+// The language list id whose text goes with the interface language.
+std::string UiLanguageTargetId() {
+  if (const char* mod = ModLanguageOfCode(IntroLanguageCode()))
+    return mod;
+  return kBuiltinLanguages[UiLanguageEntry()].id;
+}
+
+// Whether list entry `id` holds the text of interface language `code`.
 bool SameLanguage(std::string_view id, const char* code) {
+  if (const char* mod = ModLanguageOfCode(code))
+    return id == mod;
   const char* slot = BtxLanguageSlot(uint32_t(BtxLanguageFromCode(code)));
   for (const auto& option : kBuiltinLanguages)
     if (id == option.id)
@@ -2306,9 +2337,15 @@ void InterfaceLanguageChanged(const char* previous) {
   // Before boot, ApplyBootTextLanguage does this.
   if (!g_boot_language_latched || !SameLanguage(SelectedLanguageId(), previous))
     return;
-  const int index = UiLanguageEntry();
-  if (UserLanguageAvailable(index) && index != UserLanguageIndex())
-    ApplyUserLanguage(index);
+  const std::string target = UiLanguageTargetId();
+  const auto options = GetLanguageOptions();
+  for (int index = 0; index < int(options.size()); ++index) {
+    if (target == options[index].id) {
+      if (UserLanguageAvailable(index) && index != UserLanguageIndex())
+        ApplyUserLanguage(index);
+      return;
+    }
+  }
 }
 
 void ApplyBootTextLanguage() {
@@ -2321,7 +2358,7 @@ void ApplyBootTextLanguage() {
   const std::string id = entry->getter();
   const bool linked = rex::cvar::GetFlagSource("user_language") == rex::cvar::Source::kDefault ||
                       SameLanguage(id, LaunchIntroLanguageCode()) || IntroLanguageConfirmed();
-  const char* target = kBuiltinLanguages[UiLanguageEntry()].id;
+  const std::string target = UiLanguageTargetId();
   if (!linked || id == target)
     return;
   // Not marked pending, nothing runs on it yet. A release without the text
