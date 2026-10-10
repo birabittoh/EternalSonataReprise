@@ -16,7 +16,7 @@ namespace eternalsonata {
 namespace {
 
 constexpr char kBindName[] = "bind_input_overlay";
-constexpr char kWindowId[] = "##eternalsonata_input";
+constexpr char kWindowId[] = "###eternalsonata_input";
 
 std::string WindowTitle() { return std::string(Tr("input_overlay", "title")) + kWindowId; }
 
