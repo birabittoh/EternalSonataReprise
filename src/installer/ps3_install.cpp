@@ -364,7 +364,7 @@ std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir,
   std::error_code ec;
   std::vector<fs::path> inputs;
   for (const auto& entry : fs::directory_iterator(archives, ec)) {
-    if (EndsWith(entry.path().filename().string(), ".files"))
+    if (EndsWith(Lower(entry.path().filename().string()), ".files"))
       inputs.push_back(entry.path());
   }
   std::sort(inputs.begin(), inputs.end());
