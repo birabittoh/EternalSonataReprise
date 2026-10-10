@@ -329,8 +329,10 @@ constexpr uint64_t kIsoDescriptorOffset = 16 * kSectorSize;
 struct IsoEntry {
   std::string name;
   uint64_t offset;
-  uint32_t length;
+  uint64_t length;
   bool directory;
+  // A file over 1 GiB is several extents; these follow the first.
+  std::vector<std::pair<uint64_t, uint32_t>> more;
 };
 
 bool IsIso9660(FileReader& reader) {
@@ -347,6 +349,7 @@ std::vector<IsoEntry> ReadIsoDirectory(FileReader& reader, uint32_t extent, uint
   if (!reader.Read(uint64_t(extent) * kSectorSize, data.data(), length))
     return entries;
   size_t at = 0;
+  bool continued = false;
   while (at < data.size()) {
     const uint8_t size = data[at];
     if (size == 0) {
@@ -358,8 +361,17 @@ std::vector<IsoEntry> ReadIsoDirectory(FileReader& reader, uint32_t extent, uint
     const uint8_t* r = &data[at];
     const uint8_t name_length = r[32];
     at += size;
+    if (continued && !entries.empty()) {
+      const uint32_t part = r[2] | (r[3] << 8) | (r[4] << 16) | (uint32_t(r[5]) << 24);
+      const uint32_t part_size = r[10] | (r[11] << 8) | (r[12] << 16) | (uint32_t(r[13]) << 24);
+      entries.back().more.emplace_back(uint64_t(part) * kSectorSize, part_size);
+      entries.back().length += part_size;
+      continued = (r[25] & 0x80) != 0;
+      continue;
+    }
     if (33u + name_length > size || (name_length == 1 && r[33] <= 1))
       continue;
+    continued = (r[25] & 0x80) != 0;
     std::string name(reinterpret_cast<const char*>(r + 33), name_length);
     if (const size_t version = name.find(';'); version != std::string::npos)
       name.resize(version);
@@ -368,7 +380,7 @@ std::vector<IsoEntry> ReadIsoDirectory(FileReader& reader, uint32_t extent, uint
     const uint32_t sector = r[2] | (r[3] << 8) | (r[4] << 16) | (uint32_t(r[5]) << 24);
     const uint32_t size_bytes = r[10] | (r[11] << 8) | (r[12] << 16) | (uint32_t(r[13]) << 24);
     entries.push_back({std::move(name), uint64_t(sector) * kSectorSize, size_bytes,
-                       (r[25] & 2) != 0});
+                       (r[25] & 2) != 0, {}});
   }
   return entries;
 }
@@ -379,7 +391,7 @@ std::optional<IsoEntry> IsoRoot(FileReader& reader) {
     return std::nullopt;
   const uint32_t sector = root[2] | (root[3] << 8) | (root[4] << 16) | (uint32_t(root[5]) << 24);
   const uint32_t length = root[10] | (root[11] << 8) | (root[12] << 16) | (uint32_t(root[13]) << 24);
-  return IsoEntry{"", uint64_t(sector) * kSectorSize, length, true};
+  return IsoEntry{"", uint64_t(sector) * kSectorSize, length, true, {}};
 }
 
 std::optional<IsoEntry> FindIsoPath(FileReader& reader, std::string_view path) {
@@ -391,7 +403,7 @@ std::optional<IsoEntry> FindIsoPath(FileReader& reader, std::string_view path) {
     if (!at->directory)
       return std::nullopt;
     std::optional<IsoEntry> next;
-    for (IsoEntry& e : ReadIsoDirectory(reader, uint32_t(at->offset / kSectorSize), at->length)) {
+    for (IsoEntry& e : ReadIsoDirectory(reader, uint32_t(at->offset / kSectorSize), uint32_t(at->length))) {
       if (SameFileName(e.name, part)) {
         next = std::move(e);
         break;
@@ -402,12 +414,19 @@ std::optional<IsoEntry> FindIsoPath(FileReader& reader, std::string_view path) {
   return at;
 }
 
+uint64_t MoreBytes(const IsoEntry& e) {
+  uint64_t n = 0;
+  for (const auto& part : e.more)
+    n += part.second;
+  return n;
+}
+
 void CountIso(FileReader& reader, const IsoEntry& dir, Walk& walk, int depth) {
   if (depth > kMaxDirectoryDepth) {
     walk.complete = false;
     return;
   }
-  for (const IsoEntry& e : ReadIsoDirectory(reader, uint32_t(dir.offset / kSectorSize), dir.length)) {
+  for (const IsoEntry& e : ReadIsoDirectory(reader, uint32_t(dir.offset / kSectorSize), uint32_t(dir.length))) {
     if (e.directory) {
       CountIso(reader, e, walk, depth + 1);
     } else {
@@ -425,7 +444,7 @@ void CopyIso(FileReader& reader, const IsoEntry& dir, const fs::path& out_dir, W
   }
   std::error_code ec;
   fs::create_directories(out_dir, ec);
-  for (const IsoEntry& e : ReadIsoDirectory(reader, uint32_t(dir.offset / kSectorSize), dir.length)) {
+  for (const IsoEntry& e : ReadIsoDirectory(reader, uint32_t(dir.offset / kSectorSize), uint32_t(dir.length))) {
     const auto dest = SafeJoin(out_dir, e.name);
     if (!dest) {
       REXLOG_WARN("ISO: rejected entry name '{}'", e.name);
@@ -437,7 +456,11 @@ void CopyIso(FileReader& reader, const IsoEntry& dir, const fs::path& out_dir, W
       continue;
     }
     std::ofstream out(*dest, std::ios::binary | std::ios::trunc);
-    if (!out || !reader.CopyTo(out, e.offset, e.length, walk.progress)) {
+    bool copied = out && reader.CopyTo(out, e.offset, e.more.empty() ? e.length : e.length - MoreBytes(e),
+                                       walk.progress);
+    for (const auto& [offset, length] : e.more)
+      copied = copied && reader.CopyTo(out, offset, length, walk.progress);
+    if (!copied) {
       REXLOG_WARN("ISO: could not write {}", dest->string());
       walk.complete = false;
     }
@@ -546,7 +569,8 @@ std::string ReadIsoImageFile(const std::string& image, std::string_view path,
   if (!file || file->directory)
     return "This disc image is not Eternal Sonata.";
   out.resize(file->length);
-  if (!reader.Read(file->offset, out.data(), out.size()))
+  if (!file->more.empty() ||
+      !reader.Read(file->offset, out.data(), out.size()))
     return "The disc image is truncated.";
   return {};
 }
