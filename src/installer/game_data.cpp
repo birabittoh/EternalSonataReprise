@@ -5,6 +5,8 @@
 #include <chrono>
 #include <cstdio>
 #include <memory>
+#include <mutex>
+#include <utility>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -216,6 +218,48 @@ InstallHooks MakeHooks() {
   return hooks;
 }
 
+// Installs on a worker, so the UI thread keeps its event loop: the intro keeps
+// drawing and answering input. Updates are handed over under a lock.
+struct InstallJob {
+  std::mutex mutex;
+  std::vector<std::pair<Phase, PhaseState>> phases;
+  std::string title, detail;
+  float fraction = -1.0f;
+  bool seen = false;
+  bool posted = false;
+  bool quit_requested = false;
+  std::thread worker;
+  fs::path dir;
+  std::string error;
+};
+
+void ApplyJobUpdates(const std::shared_ptr<InstallJob>& job) {
+  std::vector<std::pair<Phase, PhaseState>> phases;
+  std::string title, detail;
+  float fraction;
+  bool seen;
+  {
+    std::lock_guard lock(job->mutex);
+    job->posted = false;
+    phases.swap(job->phases);
+    title = job->title;
+    detail = job->detail;
+    fraction = job->fraction;
+    seen = job->seen;
+  }
+  for (const auto& [phase, state] : phases)
+    SetIntroPhase(phase, state);
+  if (seen)
+    ReportIntroProgress(title, fraction, detail);
+}
+
+void PostJobUpdates(const std::shared_ptr<Flow>& flow, const std::shared_ptr<InstallJob>& job) {
+  if (job->posted)
+    return;
+  job->posted = true;
+  flow->context->CallInUIThreadDeferred([job] { ApplyJobUpdates(job); });
+}
+
 // Runs the install phases on `picked` and makes the result game_data_root.
 // Empty when it worked, else why not.
 std::string Prepare(const GameDataOptions& options, const std::string& picked) {
@@ -316,18 +360,9 @@ void CheckSpace(Flow& flow) {
   flow.prompt.error = message;
 }
 
-// Runs the phases on the identified source.
-void Extract(std::shared_ptr<Flow> flow) {
-  if (flow->finished)
-    return;
-  flow->prompt.can_extract = false;
-  try {
-    flow->prompt.error = Prepare(flow->options, flow->picked);
-  } catch (const std::exception& e) {
-    g_extracting = false;
-    EndIntroWork();
-    flow->prompt.error = std::string("Preparing the game files failed: ") + e.what();
-  }
+// What follows the phases: back to the intro, ready or with the error.
+void Conclude(std::shared_ptr<Flow> flow, std::string error) {
+  flow->prompt.error = std::move(error);
   if (flow->prompt.error.empty()) {
     // The player starts the game from the intro once every phase is done.
     if (!IntroScreenAvailable()) {
@@ -342,6 +377,73 @@ void Extract(std::shared_ptr<Flow> flow) {
     CheckSpace(*flow);
   }
   Ask(flow);
+}
+
+std::shared_ptr<InstallJob> g_job;
+
+void StartInstallJob(std::shared_ptr<Flow> flow) {
+  auto job = std::make_shared<InstallJob>();
+  g_job = job;
+  BeginIntroWork();
+  g_extracting = true;
+  InstallHooks hooks;
+  hooks.progress = [flow, job](const std::string& title, float fraction, const std::string& detail) {
+    std::lock_guard lock(job->mutex);
+    job->title = title;
+    job->fraction = fraction;
+    job->detail = detail;
+    job->seen = true;
+    PostJobUpdates(flow, job);
+  };
+  hooks.phase = [flow, job](Phase phase, PhaseState state) {
+    std::lock_guard lock(job->mutex);
+    job->phases.emplace_back(phase, state);
+    PostJobUpdates(flow, job);
+  };
+  const std::string picked = flow->picked;
+  job->worker = std::thread([flow, job, hooks, picked] {
+    try {
+      job->error = Install(picked, WritableBaseDir() / "assets", hooks, job->dir);
+    } catch (const std::exception& e) {
+      job->error = std::string("Preparing the game files failed: ") + e.what();
+    }
+    flow->context->CallInUIThreadDeferred([flow, job] {
+      job->worker.join();
+      ApplyJobUpdates(job);
+      g_job.reset();
+      g_extracting = false;
+      EndIntroWork();
+      std::string error = std::move(job->error);
+      if (error.empty())
+        Use(flow->options, job->dir);
+      // A quit asked for mid-install is honored now.
+      if (job->quit_requested) {
+        Finish(flow, false);
+        return;
+      }
+      Conclude(flow, std::move(error));
+    });
+  });
+}
+
+// Runs the phases on the identified source.
+void Extract(std::shared_ptr<Flow> flow) {
+  if (flow->finished)
+    return;
+  flow->prompt.can_extract = false;
+  if (IntroScreenAvailable()) {
+    StartInstallJob(std::move(flow));
+    return;
+  }
+  std::string error;
+  try {
+    error = Prepare(flow->options, flow->picked);
+  } catch (const std::exception& e) {
+    g_extracting = false;
+    EndIntroWork();
+    error = std::string("Preparing the game files failed: ") + e.what();
+  }
+  Conclude(std::move(flow), std::move(error));
 }
 
 // Identifies the pick; extracting waits for the player.
@@ -416,6 +518,12 @@ void DeletePrepared(std::shared_ptr<Flow> flow) {
 void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice) {
   if (flow->finished)
     return;
+  if (g_job) {
+    // The worker owns the files until it ends; only a quit is remembered.
+    if (choice == GameDataChoice::kQuit)
+      g_job->quit_requested = true;
+    return;
+  }
   flow->prompt.error.clear();
   if (choice == GameDataChoice::kQuit || choice == GameDataChoice::kStart) {
     Finish(flow, choice == GameDataChoice::kStart);
