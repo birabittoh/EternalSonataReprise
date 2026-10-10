@@ -425,6 +425,49 @@ The list holds nine languages in total, five built in and four added, which is
 where the Options screen's Text row runs out of width for its two-letter codes.
 Registrations past that are dropped with a warning.
 
+### Translating the overlays
+
+The F3/F4 overlays and the start screen read their text from tables keyed by
+section and key (`res/lang/en.toml` lists them all). A mod can reword any of
+those strings, and give a language it added an overlay text of its own, with
+`[[interface_text]]` blocks in `assets.toml`:
+
+```toml
+[[language]]
+id = 10
+label = "Glyph Test"   # also what the overlay's Language row lists
+code = "GT"
+slot = "DEU"
+font = "fonts/mygame.ttf"   # optional, see below
+
+[[interface_text]]
+language = "10"         # a mod language's id: it joins the overlay's Language row
+
+[interface_text.settings]   # a section of en.toml
+title = "Settings"
+tab_audio = "Audio"
+
+[[interface_text]]
+language = "en"         # a res/lang code (en ja de fr es it): rewords a shipped language
+
+[interface_text.settings]
+restart_now = "Restart Now!"
+```
+
+* A string you leave out reads English. When two mods set the same string, the
+  one earlier in `mods.toml` wins.
+* Picking a mod language as the overlay language also moves the game's text to
+  it, as for the shipped ones, while the two matched.
+* `{}` in a string is where the program puts a name or number.
+* A code mod does the same by publishing `settings.ui_string` with
+  `payload.u64` the XLanguage id and `payload.bytes` `"section.key=value"`.
+* The overlays draw with PT Serif (Latin, Greek, Cyrillic) plus the glyphs
+  the shipped languages use from a system Japanese font. For anything else, a
+  `[[language]]` block takes `font`, a TrueType file relative to the mod, which
+  is merged behind those fonts and so only supplies the glyphs they lack. This
+  is the overlays only: text drawn by the game keeps the game's one font (see
+  the limits above).
+
 ### Adding a new voice language
 
 The voice half of the same idea, and deliberately **not** the same list. The

@@ -32,6 +32,7 @@
 #include <rex/logging.h>
 #include <rex/system/game_data_selector.h>
 #include <rex/system/mod_plugin.h>
+#include <rex/system/mod_state.h>
 
 #include "eternalsonata_asset_api.h"
 #include "eternalsonata_asset_container.h"
@@ -503,7 +504,7 @@ std::map<std::string, bool> ReadAssetsToml(const std::filesystem::path& path) {
 // shared with the mod-registry event route, so this only has to get the fields
 // out.
 struct DeclaredLanguage {
-  std::string id, label, code, slot;
+  std::string id, label, code, slot, font;
   std::vector<std::pair<std::string, std::string>> strings;
 };
 
@@ -639,6 +640,8 @@ std::vector<DeclaredLanguage> ReadDeclaredLanguages(
       current.code = value;
     else if (key == "slot")
       current.slot = value;
+    else if (key == "font")
+      current.font = value;
   }
   if (voices)
     *voices = std::move(local_voices);
@@ -2120,6 +2123,28 @@ void ScanModLanguages(rex::Runtime* runtime) {
     }
   }
   ApplyModUiStrings();
+}
+
+std::vector<std::filesystem::path> ModLanguageFonts() {
+  std::vector<std::filesystem::path> fonts;
+  const auto root = rex::system::ModState::ResolveModsRoot();
+  for (const auto& entry : rex::system::ModState::Load(root)) {
+    if (!entry.enabled)
+      continue;
+    const auto mod_root = root / entry.id;
+    for (const auto& declared : ReadDeclaredLanguages(mod_root / "assets.toml")) {
+      if (declared.font.empty())
+        continue;
+      std::error_code ec;
+      const auto path = mod_root / std::filesystem::path(declared.font);
+      if (std::filesystem::is_regular_file(path, ec))
+        fonts.push_back(path);
+      else
+        REXLOG_WARN("assets: mod '{}' language '{}' names a font that is not there: {}", entry.id,
+                    declared.label, path.string());
+    }
+  }
+  return fonts;
 }
 
 // pcm/<16 hex digits>.wav under the game directory: the digits are the tag's
