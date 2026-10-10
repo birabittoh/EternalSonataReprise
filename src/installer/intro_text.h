@@ -33,6 +33,9 @@ enum class IntroText {
   kSelected,
   kTitle,
   kUnsupportedLanguage,
+  kDeleteFiles,
+  kCancel,
+  kConfirmDelete,
   kCount,
 };
 

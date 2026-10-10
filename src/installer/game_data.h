@@ -18,7 +18,7 @@ class WindowedAppContext;
 
 namespace eternalsonata {
 
-enum class GameDataChoice { kQuit, kDiscImage, kFolder, kExtract, kStart };
+enum class GameDataChoice { kQuit, kDiscImage, kFolder, kExtract, kStart, kDelete, kConfirmDelete, kCancel };
 
 // What the prompt is asked to offer.
 struct GameDataPrompt {
@@ -36,6 +36,10 @@ struct GameDataPrompt {
   bool can_extract = false;
   // Every phase is done: Start is enabled.
   bool ready = false;
+  // The prepared files are ours to delete: Delete Files is offered.
+  bool can_delete = false;
+  // Asking whether to delete: the question, shown with Delete Files and Cancel.
+  std::string confirm;
 };
 
 struct GameDataOptions {
