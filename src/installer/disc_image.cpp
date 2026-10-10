@@ -600,6 +600,50 @@ std::string ReadIsoImageFile(const std::string& image, std::string_view path,
   return {};
 }
 
+std::string WithIsoFiles(const std::string& image, std::string_view folder, std::string_view suffix,
+                         const std::function<std::string(const std::vector<ImageFile>&)>& use) {
+  FileReader reader(image);
+  if (!reader.ok())
+    return "The file could not be read.";
+  const auto dir = IsIso9660(reader) ? FindIsoPath(reader, folder) : std::nullopt;
+  if (!dir || !dir->directory)
+    return "This disc image is not Eternal Sonata.";
+  std::vector<IsoEntry> entries;
+  std::vector<ImageFile> files;
+  for (IsoEntry& e : ReadIsoDirectory(reader, uint32_t(dir->offset / kSectorSize), uint32_t(dir->length))) {
+    if (e.directory || e.name.size() < suffix.size() ||
+        !SameFileName(std::string_view(e.name).substr(e.name.size() - suffix.size()), suffix))
+      continue;
+    entries.push_back(std::move(e));
+  }
+  for (const IsoEntry& e : entries) {
+    files.push_back({e.name, e.length, [&reader, &e](uint64_t off, void* dst, uint64_t len) {
+                       // The first extent, then the ones that follow it.
+                       uint64_t start = e.offset, extent = e.length - MoreBytes(e);
+                       size_t next = 0;
+                       auto* out = static_cast<char*>(dst);
+                       while (len) {
+                         if (off >= extent) {
+                           if (next >= e.more.size())
+                             return false;
+                           off -= extent;
+                           start = e.more[next].first;
+                           extent = e.more[next++].second;
+                           continue;
+                         }
+                         const uint64_t n = std::min(len, extent - off);
+                         if (!reader.Read(start + off, out, n))
+                           return false;
+                         out += n;
+                         off += n;
+                         len -= n;
+                       }
+                       return true;
+                     }});
+  }
+  return use(files);
+}
+
 std::string ExtractIsoFolder(const std::string& image, std::string_view folder,
                              const fs::path& out_dir, const ExtractProgress& progress_callback) {
   FileReader reader(image);

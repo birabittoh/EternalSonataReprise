@@ -217,8 +217,8 @@ SourceInfo IdentifySource(const std::string& picked) {
     if (std::string error = ReadIsoImageFile(picked, kPs3Eboot, eboot); !error.empty())
       return {{}, error};
     SourceInfo info = FromHash(eboot, "This PS3 disc image is not a known dump of Eternal Sonata.");
-    // The disc's game folder is copied out whole before the archives are unpacked from it.
-    info.required_bytes = 2 * MeasureIsoFolder(picked, "PS3_GAME") + kPatchSlack;
+    info.required_bytes =
+        MeasureIsoFolder(picked, "PS3_GAME/USRDIR/archives") * kConvertedPercent / 100 + kPatchSlack;
     return info;
   }
   std::vector<uint8_t> xex;
@@ -253,16 +253,7 @@ std::string Install(const std::string& picked, const fs::path& assets, const Ins
   if (folder) {
     error = UnpackPs3(FindPs3Archives(path), assets, hooks.progress);
   } else if (IsIsoImage(picked)) {
-    // The archives are unpacked from a copy of the disc's game folder.
-    fs::path staging = assets;
-    staging += ".iso";
-    error = ExtractIsoFolder(picked, "PS3_GAME", staging, hooks.progress);
-    if (error.empty()) {
-      const fs::path archives = FindPs3Archives(staging);
-      error = archives.empty() ? "This PS3 disc image has no USRDIR/archives."
-                               : UnpackPs3(archives, assets, hooks.progress);
-    }
-    fs::remove_all(staging, ec);
+    error = UnpackPs3Image(picked, assets, hooks.progress);
   } else {
     error = ExtractDiscImage(picked, assets, kTableOfContents, hooks.progress);
     if (error.empty() && !IsGameDirectory(assets))

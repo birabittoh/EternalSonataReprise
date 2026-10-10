@@ -6,8 +6,10 @@
 // written, so the tree never needs more room than the unpacked files. scripts/unpack_ps3.py and
 // scripts/ps3_convert.py are the reference.
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include "disc_image.h"
 
@@ -31,6 +33,7 @@ std::string ConvertPs3(const std::filesystem::path& dir, const ExtractProgress& 
 
 // TITLE_ID from a disc's PARAM.SFO, or empty.
 std::string ReadTitleId(const std::filesystem::path& sfo);
+std::string TitleIdFromSfo(const std::vector<uint8_t>& sfo);
 
 // The archives folder of a PS3 disc folder, given the disc root, PS3_GAME,
 // USRDIR or archives itself; empty when there is none.
@@ -44,5 +47,9 @@ uint64_t Ps3ArchiveBytes(const std::filesystem::path& archives);
 // lookup folds case.
 std::string UnpackPs3(const std::filesystem::path& archives, const std::filesystem::path& out_dir,
                       const ExtractProgress& progress);
+
+// UnpackPs3 for the *.files inside an ISO 9660 `image`, read in place.
+std::string UnpackPs3Image(const std::string& image, const std::filesystem::path& out_dir,
+                           const ExtractProgress& progress);
 
 }  // namespace eternalsonata
