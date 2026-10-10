@@ -546,9 +546,11 @@ class EternalsonataApp : public rex::ReXApp {
   }
 
   std::unique_ptr<rex::ui::ImGuiDialog> OnCreateUserSettingsOverlay() override {
-    return eternalsonata::CreateSettingsDialog(
-        imgui_drawer(), window(), user_settings_path(), config_path(),
-        static_cast<rex::input::InputSystem*>(runtime()->input_system()));
+    // No runtime yet on the start screen.
+    auto* input = runtime() ? static_cast<rex::input::InputSystem*>(runtime()->input_system())
+                            : nullptr;
+    return eternalsonata::CreateSettingsDialog(imgui_drawer(), window(), user_settings_path(),
+                                               config_path(), input);
   }
 
  private:
