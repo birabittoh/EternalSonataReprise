@@ -430,6 +430,8 @@ class EternalsonataApp : public rex::ReXApp {
       const std::string& release = eternalsonata::TargetRelease();
       ImGui::Separator();
       ImGui::Text("Release: %s", release.empty() ? "unknown" : release.c_str());
+      constexpr const char* kGameVersion = ETERNALSONATA_VERSION;
+      ImGui::Text("Version: %s%s", kGameVersion[0] ? "v" : "", kGameVersion[0] ? kGameVersion : "unknown");
     });
 
     // Discord Rich Presence: reports the field area the player is currently
