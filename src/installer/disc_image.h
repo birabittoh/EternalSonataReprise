@@ -35,6 +35,11 @@ std::string ExtractDiscImage(const std::string& image, const std::filesystem::pa
 std::string ReadDiscImageFile(const std::string& image, std::string_view name,
                               std::vector<uint8_t>& out);
 
+// Bytes extraction would write, read from the directory alone; 0 when the
+// image cannot be read.
+uint64_t MeasureDiscImage(const std::string& image);
+uint64_t MeasureIsoFolder(const std::string& image, std::string_view folder);
+
 // Whether `image` is an ISO 9660 image, as a decrypted PS3 dump is.
 bool IsIsoImage(const std::string& image);
 

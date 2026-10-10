@@ -555,6 +555,31 @@ std::string ReadDiscImageFile(const std::string& image, std::string_view name,
   return {};
 }
 
+uint64_t MeasureDiscImage(const std::string& image) {
+  FileReader reader(image);
+  if (!reader.ok())
+    return 0;
+  const auto info = FindXdvdfs(reader);
+  if (!info)
+    return 0;
+  Walk measured;
+  measured.measure_only = true;
+  WalkDirectory(reader, info->game_offset, info->root_offset, {}, 0, measured);
+  return measured.bytes;
+}
+
+uint64_t MeasureIsoFolder(const std::string& image, std::string_view folder) {
+  FileReader reader(image);
+  if (!reader.ok() || !IsIso9660(reader))
+    return 0;
+  const auto dir = FindIsoPath(reader, folder);
+  if (!dir || !dir->directory)
+    return 0;
+  Walk measured;
+  CountIso(reader, *dir, measured, 0);
+  return measured.bytes;
+}
+
 bool IsIsoImage(const std::string& image) {
   FileReader reader(image);
   return reader.ok() && IsIso9660(reader);

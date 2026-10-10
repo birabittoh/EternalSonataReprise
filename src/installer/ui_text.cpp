@@ -32,6 +32,7 @@ constexpr std::array<const char*, size_t(IntroText::kCount)> kKeys = {
     "select_iso_only", "copy_hint",
     "selected",      "title",         "unsupported_language",
     "delete_files",  "cancel",        "confirm_delete",
+    "not_enough_space",
 };
 constexpr std::array<const char*, kInstallPhaseCount> kPhaseKeys = {
     "phase_extract", "phase_convert", "phase_patch"};

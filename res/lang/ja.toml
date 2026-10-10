@@ -29,6 +29,7 @@ delete_files = "ファイルを削除"
 cancel = "キャンセル"
 progress_deleting = "ゲームファイルを削除中..."
 confirm_delete = "{}の抽出済みファイルを削除しますか？{}が解放され、元に戻せません。"
+not_enough_space = "空き容量が足りません。{}が必要ですが、{}しかありません。空きを作ってから、もう一度ソースを選んでください。"
 
 [settings]
 title = "設定"

@@ -19,6 +19,11 @@ namespace fs = std::filesystem;
 constexpr const char* kTableOfContents = "index.vmtoc";
 constexpr const char* kPs3Eboot = "PS3_GAME/USRDIR/EBOOT.BIN";
 
+// Measured on the JP release: the converted tree is 5% over its archives.
+constexpr uint64_t kConvertedPercent = 110;
+// Patched files, their kept originals and the index.
+constexpr uint64_t kPatchSlack = 256ull << 20;
+
 bool IsContentUri(const std::string& path) {
   return path.starts_with("content://");
 }
@@ -202,18 +207,26 @@ SourceInfo IdentifySource(const std::string& picked) {
       return {{}, error};
     if (IsGameDirectory(path))
       return IdentifyGameDirectory(path);
-    return IdentifyPs3Folder(FindPs3Archives(path));
+    const fs::path archives = FindPs3Archives(path);
+    SourceInfo info = IdentifyPs3Folder(archives);
+    info.required_bytes = Ps3ArchiveBytes(archives) * kConvertedPercent / 100 + kPatchSlack;
+    return info;
   }
   if (IsIsoImage(picked)) {
     std::vector<uint8_t> eboot;
     if (std::string error = ReadIsoImageFile(picked, kPs3Eboot, eboot); !error.empty())
       return {{}, error};
-    return FromHash(eboot, "This PS3 disc image is not a known dump of Eternal Sonata.");
+    SourceInfo info = FromHash(eboot, "This PS3 disc image is not a known dump of Eternal Sonata.");
+    // The disc's game folder is copied out whole before the archives are unpacked from it.
+    info.required_bytes = 2 * MeasureIsoFolder(picked, "PS3_GAME") + kPatchSlack;
+    return info;
   }
   std::vector<uint8_t> xex;
   if (std::string error = ReadDiscImageFile(picked, "default.xex", xex); !error.empty())
     return {{}, error};
-  return FromHash(xex, "This Eternal Sonata disc image is not a known dump.");
+  SourceInfo info = FromHash(xex, "This Eternal Sonata disc image is not a known dump.");
+  info.required_bytes = MeasureDiscImage(picked) + kPatchSlack;
+  return info;
 }
 
 std::string InstallDirectory(const fs::path& dir, const InstallHooks& hooks) {

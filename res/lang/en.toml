@@ -31,6 +31,7 @@ delete_files = "Delete Files"
 cancel = "Cancel"
 progress_deleting = "Deleting game files..."
 confirm_delete = "Delete the extracted files of {}? This frees {} and cannot be undone."
+not_enough_space = "Not enough free disk space: {} needed, {} available. Free some space and select the source again."
 
 [settings]
 title = "Settings"

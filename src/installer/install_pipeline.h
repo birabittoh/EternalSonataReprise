@@ -49,6 +49,8 @@ struct SourceInfo {
   std::string error;
   // The text it ships (release_id.h bits), 0 when not known.
   uint32_t languages = 0;
+  // Disk space Install needs at its peak, 0 when it writes next to nothing.
+  uint64_t required_bytes = 0;
 };
 
 // Identifies `picked` (as Install takes it) without extracting anything.

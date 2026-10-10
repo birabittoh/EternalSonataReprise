@@ -182,8 +182,9 @@ struct Flow {
   rex::ui::WindowedAppContext* context = nullptr;
   std::function<void(bool)> done;
   GameDataPrompt prompt;
-  // The identified source Extract installs.
+  // The identified source Extract installs, and the room it needs.
   std::string picked;
+  uint64_t required_bytes = 0;
   // The prepared directory on offer, when the screen was asked for on demand.
   fs::path prepared;
   bool finished = false;
@@ -302,6 +303,19 @@ void Finish(const std::shared_ptr<Flow>& flow, bool ready) {
 
 void Ask(std::shared_ptr<Flow> flow);
 
+// Turns Extract off while the drive the files go to cannot hold them.
+void CheckSpace(Flow& flow) {
+  std::error_code ec;
+  const uint64_t available = fs::space(WritableBaseDir(), ec).available;
+  if (ec || flow.required_bytes <= available)
+    return;
+  std::string message = Tr(IntroText::kNotEnoughSpace, FormatSize(flow.required_bytes));
+  if (const size_t at = message.find("{}"); at != std::string::npos)
+    message.replace(at, 2, FormatSize(available));
+  flow.prompt.can_extract = false;
+  flow.prompt.error = message;
+}
+
 // Runs the phases on the identified source.
 void Extract(std::shared_ptr<Flow> flow) {
   if (flow->finished)
@@ -323,8 +337,9 @@ void Extract(std::shared_ptr<Flow> flow) {
     flow->prompt.ready = true;
   } else {
     REXLOG_ERROR("{}: {}", flow->picked, flow->prompt.error);
-    // Extract again after fixing what went wrong, such as disk space.
+    // Extract again after fixing what went wrong.
     flow->prompt.can_extract = true;
+    CheckSpace(*flow);
   }
   Ask(flow);
 }
@@ -342,6 +357,9 @@ void OnPicked(std::shared_ptr<Flow> flow, std::string picked) {
     flow->prompt.error = info.error;
     flow->prompt.can_extract = info.error.empty();
     flow->picked = info.error.empty() ? picked : std::string();
+    flow->required_bytes = info.required_bytes;
+    if (info.error.empty())
+      CheckSpace(*flow);
     if (!info.release.empty())
       REXLOG_INFO("Identified {}", info.release);
     if (!info.error.empty())
