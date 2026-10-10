@@ -77,7 +77,7 @@ const char* LaunchIntroLanguageCode();
 // language, which the release has text for, so the text follows it.
 void ConfirmIntroLanguage();
 bool IntroLanguageConfirmed();
-void BindIntroLanguageConfig(const std::filesystem::path& config_path);
+void BindIntroLanguageConfig(const std::filesystem::path& user_settings_path);
 
 // Mod supplied interface text. `language` is a res/lang code ("fr") to replace
 // a string of a shipped language, or a mod language's XLanguage id ("9"), which

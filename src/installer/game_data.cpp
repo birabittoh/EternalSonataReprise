@@ -478,7 +478,6 @@ void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext&
   flow->done = std::move(done);
   flow->prompt.can_pick_folder = kCanPickFolder;
   flow->prompt.copy_hint = CopyHint();
-  BindIntroLanguageConfig(options.config_path);
   if (pending.empty()) {
     Ask(flow);
     return;
