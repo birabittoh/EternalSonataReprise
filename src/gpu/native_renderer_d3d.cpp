@@ -1419,6 +1419,13 @@ REX_HOOK_RAW(sub_82129260) {
       REX_STORE_U32(object, common);
       REX_STORE_U32(object + 4, 1);
       REX_STORE_U32(object + 20, 0xFFFF0000u);
+      // The words the guest ORs into SQ_PROGRAM_CNTL and SQ_CONTEXT_MISC at
+      // draw time (header offset 0, so +48 and +52). Point sprites need them.
+      const GuestShader& shader = lookup(slot);
+      if (shader.param_gen) {
+        REX_STORE_U32(object + 48, 1u << 18);
+        REX_STORE_U32(object + 52, shader.param_gen_pos << 8);
+      }
       REX_STORE_U32(table + 4 * slot, object);
     }
   };

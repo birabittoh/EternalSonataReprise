@@ -72,6 +72,7 @@ SLOTS = X.MAX_INDEX + 1
 
 FLAG_POINT_SIZE = 1 << 0
 FLAG_HAS_CUBE = 1 << 1
+FLAG_PARAM_GEN = 1 << 2
 
 # Shader model 6.0 is the floor Plume's D3D12 and Vulkan backends both accept,
 # and nothing emitted here needs anything newer.
@@ -183,6 +184,7 @@ class Translated:
             sorted(e["key"] for e in emitted.interpolators)
         self.texture_mask = 0
         self.flags = 0
+        self.param_gen_pos = 0
         # 16 floats for constants 252..255, or None. See xenos_ucode's note
         # above PREFIX_CANDIDATES for why this has to travel with the shader.
         self.literals = None if emitted is None else emitted.literals
@@ -233,6 +235,14 @@ def translate(xex, hlsl_dir):
         path = os.path.join(hlsl_dir, shader.name + ".hlsl")
         write_if_different(path, text)
         entry = Translated(shader.kind, shader.index, shader.name, emitted)
+        if shader.kind == "ps":
+            # SQ_PROGRAM_CNTL param_gen and SQ_CONTEXT_MISC param_gen_pos, from
+            # the header words the guest ORs into its registers at draw time.
+            words = struct.unpack_from(">4I", shader.container,
+                                       struct.unpack_from(">I", shader.container, 24)[0])
+            if (words[2] >> 18) & 1:
+                entry.flags |= FLAG_PARAM_GEN
+                entry.param_gen_pos = (words[3] >> 8) & 0xFF
         entry.source = path
         entry.hlsl = text
         # For the debugger's disassembly pane only. A shader whose microcode
@@ -268,6 +278,7 @@ def translate(xex, hlsl_dir):
         entry.keys = sorted(set(base.keys) | {1, 2})
         entry.texture_mask = base.texture_mask
         entry.flags = base.flags
+        entry.param_gen_pos = base.param_gen_pos
         entry.literals = base.literals
         entry.hlsl = text.encode("utf-8")
         entry.source = os.path.join(hlsl_dir, name + ".hlsl")
@@ -417,7 +428,7 @@ def pack(entries, formats):
             "<IIIIIHBBHBBH",
             dxil[0], dxil[1], spirv[0], spirv[1], entry.texture_mask,
             input_offset, len(entry.inputs), entry.flags,
-            key_offset, len(entry.keys), 0, place_literals(entry.literals))
+            key_offset, len(entry.keys), entry.param_gen_pos, place_literals(entry.literals))
 
     empty = struct.pack("<IIIIIHBBHBBH", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
     body = b"".join(slot if slot is not None else empty for slot in table)

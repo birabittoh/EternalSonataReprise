@@ -48,6 +48,7 @@ constexpr uint32_t kVersion = 8;
 
 constexpr uint8_t kFlagPointSize = 1 << 0;
 constexpr uint8_t kFlagHasCube = 1 << 1;
+constexpr uint8_t kFlagParamGen = 1 << 2;
 
 #pragma pack(push, 1)
 struct PackHeader {
@@ -71,7 +72,7 @@ struct PackEntry {
   uint8_t flags;
   uint16_t key_offset;  // in bytes, into the key section
   uint8_t key_count;
-  uint8_t reserved;
+  uint8_t param_gen_pos;
   uint16_t literal_block;  // index into the literal section, 0 means none
 };
 #pragma pack(pop)
@@ -127,6 +128,8 @@ bool Decode(const PackEntry& entry, const PackHeader& header, const uint8_t* blo
   out.has_literals = entry.literal_block != 0;
   out.exports_point_size = (entry.flags & kFlagPointSize) != 0;
   out.has_cube_texture = (entry.flags & kFlagHasCube) != 0;
+  out.param_gen = (entry.flags & kFlagParamGen) != 0;
+  out.param_gen_pos = entry.param_gen_pos;
   return true;
 }
 
