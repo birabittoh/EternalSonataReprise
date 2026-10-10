@@ -21,6 +21,9 @@
 // The storage probes come from the SDK's GameDataSelector
 // (src/system/game_data_selector.cpp), which this replaces.
 
+REXCVAR_DEFINE_BOOL(show_start_screen, false, "Eternal Sonata",
+                    "Show the start screen even when game data is already prepared");
+
 namespace eternalsonata {
 namespace {
 
@@ -91,6 +94,8 @@ struct Flow {
 };
 
 std::atomic<bool> g_extracting{false};
+// A finished directory is on offer; set by UsePreparedGameData.
+bool g_review = false;
 
 fs::path ConfigDir(const GameDataOptions& options) {
   return options.config_path.parent_path();
@@ -296,6 +301,11 @@ bool UsePreparedGameData(const GameDataOptions& options, std::string& pending) {
       return false;
     }
     Use(options, dir);
+    if (REXCVAR_GET(show_start_screen)) {
+      pending = dir.string();
+      g_review = true;
+      return false;
+    }
     return true;
   }
   return false;
@@ -311,6 +321,15 @@ void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext&
   flow->prompt.copy_hint = CopyHint();
   BindIntroLanguageConfig(options.config_path);
   if (pending.empty()) {
+    Ask(flow);
+    return;
+  }
+  if (g_review) {
+    // Finished data: Start works at once, and another source can still be picked.
+    const SourceInfo info = IdentifySource(pending);
+    flow->prompt.release = info.release;
+    flow->prompt.languages = info.languages;
+    flow->prompt.ready = true;
     Ask(flow);
     return;
   }
