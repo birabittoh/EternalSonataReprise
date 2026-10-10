@@ -339,14 +339,9 @@ const char* UserLanguageLabel(int index);
 int UserLanguageIndex();
 void SetUserLanguageSetting(int index);
 
-// The text language moves with the interface language while the two match,
-// when this release has its text. Called by SetIntroLanguage with the code it
-// replaced; before boot it leaves the work to ApplyBootTextLanguage.
-void InterfaceLanguageChanged(const char* previous);
-
-// The same for changes made on the start screen, and on a first launch.
-// Before InitSettingsCaches latches the boot language.
-void ApplyBootTextLanguage();
+// The id the player selected, which is not always what the cvar holds: the
+// donor override and the unavailable fallback point the live cvar elsewhere.
+std::string SelectedLanguageId();
 
 // The XLanguage id of the selected entry. This is the id a translation mod's
 // "settings.native_string" payloads have to carry for the labels this project

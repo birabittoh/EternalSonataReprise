@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
@@ -18,9 +20,6 @@
 #include "lang.generated.h"
 #include "settings.h"
 #include "ui_language.h"
-
-REXCVAR_DEFINE_STRING(ui_language, "", "Eternal Sonata",
-                      "Interface language, by res/lang file name; empty follows the system");
 
 namespace eternalsonata {
 namespace {
@@ -58,8 +57,7 @@ std::vector<PendingString> g_pending;
 
 std::vector<Language> g_languages;
 int g_current = -1;
-int g_launch = -1;
-bool g_confirmed = false;
+std::atomic<uint32_t> g_current_id{0};
 std::filesystem::path g_user_settings_path;
 
 std::vector<Language>& Languages() {
@@ -94,6 +92,16 @@ std::string NormalizeCode(std::string_view language) {
   return numeric ? "mod:" + std::string(language) : std::string(language);
 }
 
+// The user_language id of a built-in code, or a mod language's own id.
+std::string XLanguageOfCode(std::string_view code) {
+  static constexpr std::array<std::pair<std::string_view, const char*>, 6> kIds = {{
+      {"en", "1"}, {"ja", "2"}, {"de", "3"}, {"fr", "4"}, {"es", "5"}, {"it", "6"}}};
+  for (const auto& [name, id] : kIds)
+    if (code == name)
+      return id;
+  return code.rfind("mod:", 0) == 0 ? std::string(code.substr(4)) : std::string();
+}
+
 const char* FromXLanguage(uint32_t id) {
   switch (id) {
     case 2: return "ja";
@@ -117,20 +125,15 @@ int FromSystem() {
   return found;
 }
 
+// The interface follows the text language, so one choice drives both.
 int Current() {
-  if (g_current >= 0)
+  const uint32_t id = uint32_t(std::strtoul(SelectedLanguageId().c_str(), nullptr, 10));
+  if (g_current >= 0 && id == g_current_id.load())
     return g_current;
-  g_current = Find(REXCVAR_GET(ui_language));
-  // A text language the player chose, English included, over the system's.
-  if (g_current < 0 && (REXCVAR_GET(user_language) != 1 ||
-                        rex::cvar::GetFlagSource("user_language") != rex::cvar::Source::kDefault))
-    g_current = Find(FromXLanguage(REXCVAR_GET(user_language)));
-  if (g_current < 0)
-    g_current = FromSystem();
+  g_current = Find(NormalizeCode(UiLanguageOfXLanguage(id)));
   if (g_current < 0)
     g_current = std::max(Find("en"), 0);
-  if (g_launch < 0)
-    g_launch = g_current;
+  g_current_id = id;
   return g_current;
 }
 
@@ -256,7 +259,6 @@ void ApplyModUiStrings() {
   g_pending.clear();
   // A saved choice may name a language that only exists now.
   g_current = -1;
-  g_launch = -1;
   InvalidateUiTextLanguage();
 }
 
@@ -275,39 +277,28 @@ int IntroLanguage() {
 void SetIntroLanguage(int index) {
   if (index < 0 || index >= IntroLanguageCount() || index == Current())
     return;
-  const std::string previous = Languages()[size_t(Current())].code;
-  g_current = index;
-  REXCVAR_SET(ui_language, Languages()[size_t(index)].code);
+  const std::string id = XLanguageOfCode(Languages()[size_t(index)].code);
+  auto* entry = rex::cvar::GetFlagInfo("user_language");
+  if (id.empty() || !entry || !entry->setter || !entry->setter(id))
+    return;
+  g_current = -1;
   InvalidateUiTextLanguage();
   // The config file is read-only; settings.toml is where user choices live.
   if (!g_user_settings_path.empty())
-    rex::cvar::SaveConfigSubset(g_user_settings_path, {"ui_language"});
-  InterfaceLanguageChanged(previous.c_str());
-}
-
-const char* IntroLanguageCode() {
-  const auto& languages = Languages();
-  return languages.empty() ? "en" : languages[size_t(Current())].code.c_str();
-}
-
-const char* LaunchIntroLanguageCode() {
-  const auto& languages = Languages();
-  if (languages.empty())
-    return "en";
-  Current();
-  return languages[size_t(g_launch)].code.c_str();
-}
-
-void ConfirmIntroLanguage() {
-  g_confirmed = true;
-}
-
-bool IntroLanguageConfirmed() {
-  return g_confirmed;
+    rex::cvar::SaveConfigSubset(g_user_settings_path, {"user_language"});
 }
 
 void BindIntroLanguageConfig(const std::filesystem::path& user_settings_path) {
   g_user_settings_path = user_settings_path;
+  // No language chosen yet: start in the system's, text included.
+  if (rex::cvar::GetFlagSource("user_language") != rex::cvar::Source::kDefault)
+    return;
+  const int system = FromSystem();
+  auto* entry = rex::cvar::GetFlagInfo("user_language");
+  if (system < 0 || !entry || !entry->setter)
+    return;
+  if (const std::string id = XLanguageOfCode(Languages()[size_t(system)].code); !id.empty())
+    entry->setter(id);
 }
 
 std::string IntroGlyphText() {

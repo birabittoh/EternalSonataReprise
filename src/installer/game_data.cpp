@@ -400,8 +400,6 @@ void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice) {
     return;
   flow->prompt.error.clear();
   if (choice == GameDataChoice::kQuit || choice == GameDataChoice::kStart) {
-    if (choice == GameDataChoice::kStart)
-      ConfirmIntroLanguage();
     Finish(flow, choice == GameDataChoice::kStart);
     return;
   }

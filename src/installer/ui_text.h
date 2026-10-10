@@ -2,10 +2,9 @@
 
 // The interface text of the start screen and our overlays, from
 // res/lang/*.toml: one table per screen, each key looked up in the language in
-// use, then in English. The ui_language cvar picks
-// the language; unset, it follows user_language when the player picked one
-// other than English, else the system's, since the screen usually shows
-// before any config exists.
+// use, then in English. The language is the user_language
+// choice, so the interface and the game text always agree; with none chosen yet
+// it is the system's, since the screen usually shows before any config exists.
 
 #include <cstdint>
 #include <filesystem>
@@ -65,18 +64,11 @@ const char* IntroLanguageName(int index);
 const char* IntroLanguageCodeAt(int index);
 int IntroLanguage();
 
-// Switches and persists to `config_path` when one was bound.
+// Sets user_language to that language and saves it to settings.toml.
 void SetIntroLanguage(int index);
 
-// The res/lang code of the language in use ("en", "ja", ...), and of the one
-// the process started in.
-const char* IntroLanguageCode();
-const char* LaunchIntroLanguageCode();
-
-// The player started the game from the start screen in the interface
-// language, which the release has text for, so the text follows it.
-void ConfirmIntroLanguage();
-bool IntroLanguageConfirmed();
+// Binds the settings.toml SetIntroLanguage saves to, and adopts the system's
+// language when none was chosen.
 void BindIntroLanguageConfig(const std::filesystem::path& user_settings_path);
 
 // Mod supplied interface text. `language` is a res/lang code ("fr") to replace
