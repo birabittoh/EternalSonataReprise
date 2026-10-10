@@ -2832,6 +2832,9 @@ void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
     const double t = std::clamp((pct - 0.30) / (1.0 - 0.30), 0.0, 1.0);
     target_height = kBaseGrainyHeight + t * (double(height) - kBaseGrainyHeight);
     target_width = double(width) * (target_height / double(height));
+  } else if (pct > 1.0) {
+    target_height = double(height) * pct;
+    target_width = double(width) * pct;
   }
   const uint32_t want_width =
       uint32_t(std::clamp<int64_t>(std::llround(target_width), 1, kMaxExtent));

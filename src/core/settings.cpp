@@ -266,7 +266,6 @@ constexpr std::array kGameDefaults = {
     DefaultValue{"keybind_dpad_left", ""},
     DefaultValue{"keybind_dpad_right", ""},
     DefaultValue{"resolution", "720p"},
-    DefaultValue{"resolution_scale", "1"},
     DefaultValue{"fullscreen", "false"},
     DefaultValue{"audio_mute", "false"},
     DefaultValue{"audio_volume", "1"},
@@ -298,11 +297,8 @@ constexpr std::array kGameDefaults = {
 // live voice_language is always exactly what the player chose. There is no
 // donor rewrite for voice (a mod voice language gets a bank path of its own
 // rather than borrowing a built-in's), so nothing ever shadows it.
-// render_scale is listed for the same no-op reason as vsync: only the native
-// renderer registers it, and resolution_scale stays beside it so a settings.toml
-// still round-trips through Xenos.
 constexpr std::array kBasicCvarNames = {
-    "fullscreen",  "resolution",   "resolution_scale", "user_language",
+    "fullscreen",  "resolution",   "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
@@ -542,21 +538,6 @@ bool AnyKnownPendingRestart() {
   return false;
 }
 
-// resolution_scale value that renders at "100%" (native) for a given display
-// resolution. The SDK's resolution_scale is an integer EDRAM/draw
-// supersampling factor (range 1-8), not a fractional multiplier, so this
-// table is the source of truth for what "100%" means per resolution;
-// DrawRenderScaleRow derives 50%-100% steps from it at runtime.
-int ResolutionScaleFor(const std::string& resolution) {
-  if (resolution == "1080p")
-    return 2;
-  if (resolution == "1440p")
-    return 3;
-  if (resolution == "4K")
-    return 4;
-  return 1;  // 720p, and fallback for anything unrecognized.
-}
-
 // Vertical pixel count of each named resolution preset.
 int ResolutionHeightFor(const char* option) {
   std::string opt = option;
@@ -748,8 +729,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawFieldOfViewRow();
         DrawFrameRateRow();
         DrawRenderFilterRow();
-        // Takes effect immediately on both renderers: the Xenos plugin reads
-        // the cvar per vblank, the native renderer on the next present.
+        // Takes effect on the next present.
         DrawCvarRow("vsync");
 #if REX_HAS_VULKAN
         if (rex::cvar::GetFlagByName("gpu_backend") == "vulkan") {
@@ -1082,7 +1062,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // audio_volume is a Double cvar (0.0-1.0 linear amplitude, applied directly
   // to samples by the SDL audio driver); DrawCvarWidget's generic Double path
   // is a plain InputDouble box, not a slider, so this draws its own row the
-  // same way DrawRenderScaleRow does for resolution_scale -- displaying and
+  // same way DrawRenderScaleRow does for render_scale: displaying and
   // editing a perceptually-spaced percentage (see VolumeAmplitudeFromPercent)
   // rather than the raw amplitude directly.
   void DrawAudioVolumeRow() {
@@ -1187,8 +1167,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // Applies live: the extent is republished every present, so this rebuilds the
   // render targets the same way dragging the window's corner does.
   void DrawRenderScaleRow() {
-    if (!RenderScaleRowAvailable())
-      return;
     int idx = RenderScaleOptionIndex();
     char label[16];
     // ImGui runs the format string through printf itself, so the percent sign
@@ -1196,9 +1174,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     std::snprintf(label, sizeof(label), "%d%%%%", RenderScaleOptionPercent(idx));
 
     ImGui::PushID("render_scale");
-    // Whichever cvar SetRenderScalePercent writes: only the fallback restarts.
-    DrawRowLabel("render_scale", rex::cvar::GetFlagInfo("render_scale") ? "render_scale"
-                                                                              : "resolution_scale");
+    DrawRowLabel("render_scale", "render_scale");
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
     // Discrete 0..N-1 slider; the format string carries the percentage.
@@ -1443,49 +1419,23 @@ int AllowedResolutionCount() {
 // Render resolution, as a percentage
 // ---------------------------------------------------------------------------
 //
-// Backed by the native renderer's `render_scale` or, where only Xenos exists,
-// by the integer `resolution_scale`; the percentage is the common language, and
-// the integer path rounds to its nearest step in both directions.
+// Backed by the native renderer's `render_scale`.
 
 // Below 30% the resolve rectangle's rounding shows on the EDRAM band edges.
 constexpr int kRenderScaleMinPercent = 30;
+constexpr int kRenderScaleMaxPercent = 200;
 constexpr int kRenderScaleStepPercent = 10;
 
-// The largest resolution_scale worth offering: the one that renders at the
-// display's own height.
-static int IntegerRenderScaleBase() {
-  const int display_height = DesktopDisplayHeight();
-  if (display_height >= 2160) return 4;
-  if (display_height >= 1440) return 3;
-  if (display_height >= 1080) return 2;
-  return 1;
-}
-
-static bool HasContinuousRenderScale() {
-  return rex::cvar::GetFlagInfo("render_scale") != nullptr;
-}
-
 int RenderScaleOptionCount() {
-  if (HasContinuousRenderScale()) {
-    return (100 - kRenderScaleMinPercent) / kRenderScaleStepPercent + 1;
-  }
-  return rex::cvar::GetFlagInfo("resolution_scale") ? IntegerRenderScaleBase() : 0;
+  return (kRenderScaleMaxPercent - kRenderScaleMinPercent) / kRenderScaleStepPercent + 1;
 }
 
 int RenderScaleOptionPercent(int index) {
   if (index < 0 || index >= RenderScaleOptionCount()) {
     return 100;
   }
-  if (HasContinuousRenderScale()) {
-    return kRenderScaleMinPercent + index * kRenderScaleStepPercent;
-  }
-  // Steps 1..base, so index 0 is the coarsest and the last is native.
-  return static_cast<int>(
-      std::lround(100.0 * (index + 1) / IntegerRenderScaleBase()));
+  return kRenderScaleMinPercent + index * kRenderScaleStepPercent;
 }
-
-// One valid step means there is nothing to offer, and the row is not drawn.
-bool RenderScaleRowAvailable() { return RenderScaleOptionCount() > 1; }
 
 int RenderScaleOptionIndex() {
   const int count = RenderScaleOptionCount();
@@ -1508,37 +1458,17 @@ void SetRenderScaleOption(int index) {
 }
 
 int RenderScalePercent() {
-  if (const auto* entry = rex::cvar::GetFlagInfo("render_scale")) {
-    // Zero is the cvar's "no opinion", which renders at the window's own size.
-    const double current = std::atof(entry->getter().c_str());
-    const int percent =
-        static_cast<int>(std::lround((current > 0.0 ? current : 1.0) * 100.0));
-    return std::clamp(percent, kRenderScaleMinPercent, 100);
-  }
-  const auto* scale_entry = rex::cvar::GetFlagInfo("resolution_scale");
-  if (!scale_entry) {
-    return 100;
-  }
-  const int base = IntegerRenderScaleBase();
-  const int scale = std::clamp(std::atoi(scale_entry->getter().c_str()), 1, base);
-  return static_cast<int>(std::lround(100.0 * scale / base));
+  // Zero is the cvar's "no opinion", which renders at the window's own size.
+  const auto* entry = rex::cvar::GetFlagInfo("render_scale");
+  const double current = entry ? std::atof(entry->getter().c_str()) : 0.0;
+  const int percent =
+      static_cast<int>(std::lround((current > 0.0 ? current : 1.0) * 100.0));
+  return std::clamp(percent, kRenderScaleMinPercent, kRenderScaleMaxPercent);
 }
 
 void SetRenderScalePercent(int percent) {
-  if (HasContinuousRenderScale()) {
-    percent = std::clamp(percent, kRenderScaleMinPercent, 100);
-    rex::cvar::SetFlagByName("render_scale", std::to_string(percent / 100.0),
-                             /*persist=*/true);
-    SaveUserSettings();
-    return;
-  }
-  if (!rex::cvar::GetFlagInfo("resolution_scale")) {
-    return;
-  }
-  const int base = IntegerRenderScaleBase();
-  const int scale = std::clamp(
-      static_cast<int>(std::lround(percent * base / 100.0)), 1, base);
-  rex::cvar::SetFlagByName("resolution_scale", std::to_string(scale),
+  percent = std::clamp(percent, kRenderScaleMinPercent, kRenderScaleMaxPercent);
+  rex::cvar::SetFlagByName("render_scale", std::to_string(percent / 100.0),
                            /*persist=*/true);
   SaveUserSettings();
 }
@@ -2295,13 +2225,10 @@ void SetUserLanguageSetting(int index) {
 
 void SetResolutionSetting(const char* value) {
   auto* res_entry = rex::cvar::GetFlagInfo("resolution");
-  // resolution_scale is defined by the Xenos GPU plugin, so it does not exist
-  // at all when another plugin (plume) is loaded
-  auto* scale_entry = rex::cvar::GetFlagInfo("resolution_scale");
   if (!res_entry || !res_entry->setter || res_entry->getter() == value) {
     return;
   }
-  // resolution and resolution_scale are both kRequiresRestart -- go through
+  // resolution is kRequiresRestart -- go through
   // rex::cvar::SetFlagByName (not entry->setter directly, as the other
   // Set*Setting helpers in this file do) so the change is recorded by
   // MarkPendingRestart. That's what makes AnyPendingRestart() /
@@ -2309,10 +2236,6 @@ void SetResolutionSetting(const char* value) {
   // banner -- notice a resolution change made from the native Options row,
   // not just from this file's own DrawResolutionRow.
   rex::cvar::SetFlagByName("resolution", value, /*persist=*/true);
-  if (scale_entry && scale_entry->setter) {
-    rex::cvar::SetFlagByName("resolution_scale", std::to_string(ResolutionScaleFor(value)),
-                             /*persist=*/true);
-  }
   SaveUserSettings();
 }
 
