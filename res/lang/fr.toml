@@ -32,6 +32,8 @@ confirm_delete = "Supprimer les fichiers extraits de {} ? Cela libère {} et est
 
 [settings]
 title = "Paramètres"
+startup_hint = "Appuyez sur F4 pour ouvrir les paramètres."
+startup_hint_android = "Appuyez sur Guide pour ouvrir les paramètres."
 restart_banner = "Certaines modifications nécessitent un redémarrage."
 restart_now = "Redémarrer"
 tab_graphics = "Graphismes"

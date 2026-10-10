@@ -32,6 +32,8 @@ confirm_delete = "Die extrahierten Dateien von {} löschen? Das gibt {} frei und
 
 [settings]
 title = "Einstellungen"
+startup_hint = "Drücke F4, um die Einstellungen zu öffnen."
+startup_hint_android = "Drücke Guide, um die Einstellungen zu öffnen."
 restart_banner = "Manche Änderungen erfordern einen Neustart."
 restart_now = "Jetzt neu starten"
 tab_graphics = "Grafik"
