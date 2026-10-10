@@ -60,7 +60,7 @@ std::vector<Language> g_languages;
 int g_current = -1;
 int g_launch = -1;
 bool g_confirmed = false;
-std::filesystem::path g_config_path;
+std::filesystem::path g_user_settings_path;
 
 std::vector<Language>& Languages() {
   if (!g_languages.empty())
@@ -279,8 +279,9 @@ void SetIntroLanguage(int index) {
   g_current = index;
   REXCVAR_SET(ui_language, Languages()[size_t(index)].code);
   InvalidateUiTextLanguage();
-  if (!g_config_path.empty())
-    rex::cvar::SaveConfigSubset(g_config_path, {"ui_language"});
+  // The config file is read-only; settings.toml is where user choices live.
+  if (!g_user_settings_path.empty())
+    rex::cvar::SaveConfigSubset(g_user_settings_path, {"ui_language"});
   InterfaceLanguageChanged(previous.c_str());
 }
 
@@ -305,8 +306,8 @@ bool IntroLanguageConfirmed() {
   return g_confirmed;
 }
 
-void BindIntroLanguageConfig(const std::filesystem::path& config_path) {
-  g_config_path = config_path;
+void BindIntroLanguageConfig(const std::filesystem::path& user_settings_path) {
+  g_user_settings_path = user_settings_path;
 }
 
 std::string IntroGlyphText() {
