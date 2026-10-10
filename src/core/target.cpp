@@ -35,9 +35,11 @@ const std::filesystem::path& GameDataRoot() {
 
 const std::string& TargetRelease() {
   static const std::string release = [] {
-    constexpr std::string_view kTitle = "Eternal Sonata, ";
     std::string name = IdentifySource(g_root.string()).release;
-    return name.starts_with(kTitle) ? name.substr(kTitle.size()) : name;
+    const size_t open = name.rfind('(');
+    const size_t close = name.rfind(')');
+    return open != std::string::npos && close > open ? name.substr(open + 1, close - open - 1)
+                                                      : name;
   }();
   return release;
 }
