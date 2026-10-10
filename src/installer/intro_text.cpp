@@ -31,11 +31,13 @@ constexpr std::array<const char*, size_t(IntroText::kCount)> kKeys = {
     "found",         "found_release", "press_extract",   "need_files",
     "select_iso_or_folder",           "select_iso_only", "copy_hint",
     "selected",      "title",         "unsupported_language",
+    "delete_files",  "cancel",        "confirm_delete",
 };
 constexpr std::array<const char*, kInstallPhaseCount> kPhaseKeys = {
     "phase_extract", "phase_convert", "phase_patch"};
-constexpr std::array<const char*, 4> kProgressKeys = {
-    "progress_extracting", "progress_unpacking", "progress_converting", "progress_patching"};
+constexpr std::array<const char*, 5> kProgressKeys = {
+    "progress_extracting", "progress_unpacking", "progress_converting", "progress_patching",
+    "progress_deleting"};
 
 struct Language {
   std::string code;

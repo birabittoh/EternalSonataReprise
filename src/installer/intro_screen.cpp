@@ -155,25 +155,47 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
  public:
   IntroDialog(rex::ui::ImGuiDrawer* drawer, const GameDataPrompt& prompt)
       : rex::ui::ImGuiDialog(drawer), prompt_(prompt) {
-    // Sources on the left, then what to do with them on the right. Extract
-    // until the phases are done, then Start.
-    options_.push_back({IntroText::kSelectFile, GameDataChoice::kDiscImage, 0, 0});
-    if (prompt.can_pick_folder)
-      options_.push_back({IntroText::kSelectFolder, GameDataChoice::kFolder, 0, 1});
-    options_.push_back({IntroText::kStart, GameDataChoice::kStart, 1, 0});
-    options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, 1});
-    selected_ = prompt.ready || prompt.can_extract ? StartIndex() : 0;
+    BuildOptions();
   }
 
   void Update(const GameDataPrompt& prompt) {
     // Land on Extract or Start once it can be used.
     const bool usable = prompt.ready || prompt.can_extract;
+    if (prompt.confirm.empty() != prompt_.confirm.empty() ||
+        prompt.can_delete != prompt_.can_delete) {
+      prompt_ = prompt;
+      BuildOptions();
+      on_picker_ = picker_open_ = false;
+      return;
+    }
     if (usable && (prompt.ready != prompt_.ready || prompt.can_extract != prompt_.can_extract)) {
       selected_ = StartIndex();
       on_picker_ = picker_open_ = false;
     } else if (!usable && selected_ == StartIndex())
       selected_ = 0;
     prompt_ = prompt;
+  }
+  // Sources on the left, then what to do with them on the right. Extract
+  // until the phases are done, then Start. Asking to delete has only a choice.
+  void BuildOptions() {
+    options_.clear();
+    if (!prompt_.confirm.empty()) {
+      options_.push_back({IntroText::kCancel, GameDataChoice::kCancel, 0, 0});
+      options_.push_back({IntroText::kDeleteFiles, GameDataChoice::kConfirmDelete, 1, 0});
+      selected_ = 0;
+      return;
+    }
+    // Processed files are replaced by deleting them, not by picking a source.
+    if (prompt_.can_delete) {
+      options_.push_back({IntroText::kDeleteFiles, GameDataChoice::kDelete, 0, 0});
+    } else {
+      options_.push_back({IntroText::kSelectFile, GameDataChoice::kDiscImage, 0, 0});
+      if (prompt_.can_pick_folder)
+        options_.push_back({IntroText::kSelectFolder, GameDataChoice::kFolder, 0, 1});
+    }
+    options_.push_back({IntroText::kStart, GameDataChoice::kStart, 1, 0});
+    options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, 1});
+    selected_ = prompt_.ready || prompt_.can_extract ? StartIndex() : 0;
   }
   void SetBusy(bool busy) { busy_ = busy; }
   void SetWorking(bool working) {
@@ -244,7 +266,9 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       y += DrawWork(draw, font, size, unit, y, wrap, body_in);
     } else {
       std::string body;
-      if (prompt_.ready) {
+      if (!prompt_.confirm.empty()) {
+        body = prompt_.confirm;
+      } else if (prompt_.ready) {
         body = prompt_.release.empty() ? Tr(IntroText::kReady)
                                        : Tr(IntroText::kReadyRelease, prompt_.release);
       } else if (prompt_.can_extract) {
@@ -383,7 +407,10 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const int count = int(options_.size());
     // Start stays out of reach until there is something to extract or start.
     auto enabled = [&](int i) {
-      return options_[size_t(i)].choice != GameDataChoice::kStart ||
+      const GameDataChoice choice = options_[size_t(i)].choice;
+      if (choice == GameDataChoice::kDelete)
+        return prompt_.can_delete;
+      return choice != GameDataChoice::kStart ||
              ((prompt_.ready || prompt_.can_extract) && Supported(IntroLanguage()));
     };
     if (!enabled(selected_))
@@ -408,7 +435,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       const Option& from = options_[size_t(selected_)];
       if (dy != 0) {
         const int row = from.row + dy;
-        const int i = row >= 0 && row <= 1 ? at(from.column, row) : -1;
+        const int i = row >= 0 && row <= 2 ? at(from.column, row) : -1;
         if (i >= 0)
           selected_ = i;
         else if (dy > 0)
@@ -416,7 +443,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         return;
       }
       const int column = (from.column + dx + 2) % 2;
-      for (int i : {at(column, from.row), at(column, 1 - from.row)}) {
+      for (int i : {at(column, from.row), at(column, 1), at(column, 0)}) {
         if (i >= 0) {
           selected_ = i;
           return;
@@ -437,7 +464,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
                               ImGuiKey_GamepadFaceDown}))
       choice_ = choice_of(selected_);
     else if (keys && Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight}))
-      choice_ = GameDataChoice::kQuit;
+      choice_ = prompt_.confirm.empty() ? GameDataChoice::kQuit : GameDataChoice::kCancel;
     else
       handled = false;
 
@@ -452,9 +479,12 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       const ImVec2 min(left + float(option.column) * (w + column_gap),
                        top + float(option.row) * (h + gap));
       const ImVec2 max(min.x + w, min.y + h);
+      const bool usable = enabled(i);
+      // Delete Files only shows where it can be used.
+      if (option.choice == GameDataChoice::kDelete && !usable)
+        continue;
       ImGui::SetCursorScreenPos(min);
       ImGui::PushID(i);
-      const bool usable = enabled(i);
       if (ImGui::InvisibleButton("##option", ImVec2(w, h)) && ready && usable && !picker_open_)
         choice_ = choice_of(i);
       // Only a moving mouse selects, so a resting cursor does not undo the keys.

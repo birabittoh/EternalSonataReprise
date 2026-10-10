@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <cstdio>
 #include <memory>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include <SDL3/SDL.h>
@@ -13,6 +16,10 @@
 #include <rex/logging.h>
 #include <rex/runtime.h>
 #include <rex/ui/windowed_app_context.h>
+
+#if REX_PLATFORM_WIN32
+#include <windows.h>
+#endif
 
 #include "install_pipeline.h"
 #include "intro_screen.h"
@@ -81,6 +88,93 @@ std::string CopyHint() {
 #endif
 }
 
+// Symlinks and junctions, which are never followed or deleted through.
+bool IsLink(const fs::path& path) {
+  std::error_code ec;
+  if (fs::is_symlink(path, ec))
+    return true;
+#if REX_PLATFORM_WIN32
+  const DWORD attributes = GetFileAttributesW(path.c_str());
+  return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT);
+#else
+  return false;
+#endif
+}
+
+// Any game directory, the installer's or one the player pointed at. A link
+// cannot be emptied without going through it.
+bool IsDeletable(const fs::path& dir) {
+  std::error_code ec;
+  return !IsLink(dir) && fs::is_directory(dir, ec) && IsGameDirectory(dir);
+}
+
+struct DeleteJob {
+  std::atomic<uint64_t> done{0};
+  std::atomic<bool> finished{false};
+  std::string error;
+};
+
+// Regular files and folders under `dir`, links skipped, not entered.
+uint64_t TreeSize(const fs::path& dir) {
+  uint64_t total = 0;
+  std::error_code ec;
+  fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+  for (; !ec && it != end; it.increment(ec)) {
+    std::error_code entry_ec;
+    if (!IsLink(it->path()) && it->is_regular_file(entry_ec))
+      total += it->file_size(entry_ec);
+  }
+  return total;
+}
+
+void DeleteTree(const fs::path& dir, DeleteJob& job) {
+  std::error_code ec;
+  std::vector<fs::path> folders{dir};
+  fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+  for (; !ec && it != end; it.increment(ec)) {
+    const fs::path path = it->path();
+    if (IsLink(path)) {
+      it.disable_recursion_pending();
+      continue;
+    }
+    std::error_code entry_ec;
+    if (it->is_directory(entry_ec)) {
+      folders.push_back(path);
+    } else {
+      const uint64_t size = it->file_size(entry_ec);
+      if (!fs::remove(path, entry_ec) && entry_ec) {
+        job.error = path.string() + ": " + entry_ec.message();
+        break;
+      }
+      job.done += size;
+    }
+  }
+  if (job.error.empty() && ec)
+    job.error = dir.string() + ": " + ec.message();
+  // Deepest first; one holding a skipped link stays.
+  for (auto folder = folders.rbegin(); folder != folders.rend(); ++folder) {
+    std::error_code remove_ec;
+    fs::remove(*folder, remove_ec);
+  }
+  job.finished = true;
+}
+
+std::string FormatSize(uint64_t bytes) {
+  char text[32];
+  if (bytes >= (1ull << 30))
+    std::snprintf(text, sizeof(text), "%.1f GB", double(bytes) / double(1ull << 30));
+  else
+    std::snprintf(text, sizeof(text), "%.0f MB", double(bytes) / double(1ull << 20));
+  return text;
+}
+
+std::string DeleteQuestion(const std::string& release, const fs::path& dir, uint64_t bytes) {
+  std::string message = Tr(IntroText::kConfirmDelete, release);
+  if (const size_t at = message.find("{}"); at != std::string::npos)
+    message.replace(at, 2, FormatSize(bytes));
+  return message + "\n" + dir.string();
+}
+
 // Kept alive by every callback still pending, so a dialog answering after
 // the player quit lands nowhere.
 struct Flow {
@@ -90,6 +184,8 @@ struct Flow {
   GameDataPrompt prompt;
   // The identified source Extract installs.
   std::string picked;
+  // The prepared directory on offer, when the screen was asked for on demand.
+  fs::path prepared;
   bool finished = false;
 };
 
@@ -253,6 +349,51 @@ void OnPicked(std::shared_ptr<Flow> flow, std::string picked) {
   Ask(flow);
 }
 
+void AskToDelete(std::shared_ptr<Flow> flow) {
+  const fs::path dir = flow->prepared;
+  if (!flow->prompt.can_delete || dir.empty() || !IsDeletable(dir)) {
+    Ask(flow);
+    return;
+  }
+  flow->prompt.confirm = DeleteQuestion(flow->prompt.release, dir, TreeSize(dir));
+  Ask(flow);
+}
+
+void DeletePrepared(std::shared_ptr<Flow> flow) {
+  const fs::path dir = flow->prepared;
+  const uint64_t total = TreeSize(dir);
+  REXLOG_INFO("Deleting {}", dir.string());
+  BeginIntroWork();
+  for (Phase phase : {Phase::kExtract, Phase::kConvert, Phase::kPatch})
+    SetIntroPhase(phase, PhaseState::kSkipped);
+  DeleteJob job;
+  g_extracting = true;
+  std::thread worker(DeleteTree, dir, std::ref(job));
+  while (!job.finished) {
+    const uint64_t done = job.done;
+    ReportIntroProgress("Deleting game files...", total ? float(double(done) / double(total)) : -1.0f,
+                        FormatSize(done) + " / " + FormatSize(total));
+    std::this_thread::sleep_for(std::chrono::milliseconds(16));
+  }
+  worker.join();
+  g_extracting = false;
+  EndIntroWork();
+
+  g_review = false;
+  flow->prepared.clear();
+  flow->picked.clear();
+  flow->prompt.release.clear();
+  flow->prompt.languages = 0;
+  flow->prompt.ready = false;
+  flow->prompt.can_extract = false;
+  flow->prompt.can_delete = false;
+  flow->prompt.error = job.error;
+  REXCVAR_SET(game_data_root, std::string());
+  if (!flow->options.config_path.empty())
+    rex::cvar::SaveConfigSubset(flow->options.config_path, {"game_data_root"});
+  Ask(flow);
+}
+
 void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice) {
   if (flow->finished)
     return;
@@ -261,6 +402,23 @@ void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice) {
     if (choice == GameDataChoice::kStart)
       ConfirmIntroLanguage();
     Finish(flow, choice == GameDataChoice::kStart);
+    return;
+  }
+  if (choice == GameDataChoice::kDelete) {
+    AskToDelete(flow);
+    return;
+  }
+  if (choice == GameDataChoice::kCancel) {
+    flow->prompt.confirm.clear();
+    Ask(flow);
+    return;
+  }
+  if (choice == GameDataChoice::kConfirmDelete) {
+    flow->prompt.confirm.clear();
+    if (flow->prompt.can_delete && IsDeletable(flow->prepared))
+      DeletePrepared(flow);
+    else
+      Ask(flow);
     return;
   }
   if (choice == GameDataChoice::kExtract) {
@@ -330,6 +488,8 @@ void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext&
     flow->prompt.release = info.release;
     flow->prompt.languages = info.languages;
     flow->prompt.ready = true;
+    flow->prepared = pending;
+    flow->prompt.can_delete = IsDeletable(flow->prepared);
     Ask(flow);
     return;
   }
