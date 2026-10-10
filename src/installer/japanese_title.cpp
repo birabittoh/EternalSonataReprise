@@ -119,9 +119,11 @@ Bytes BuildJapaneseTitle(const Bytes& title) {
       continue;
     // PAL's logo is TEX7, rect 0, a sprite; the Trusty Bell one is TEX0's rect 0.
     const uint32_t ref = Rd32(title, element + kElementRef);
-    if (ref == 0x00000100)
+    // A PS3 JP title keeps its own logo in TEX7 at the Japanese width.
+    if (ref == 0x00000100 ||
+        (ref == 0x07000100 && Rd32(title, element + kElementWidth) == kLogoWidth))
       ++japanese_logos;
-    if (ref != 0x07000100)
+    if (ref != 0x07000100 || Rd32(title, element + kElementWidth) == kLogoWidth)
       continue;
     Wr32(out, element + kElementRef, 0x00000100);
     Wr32(out, element + kElementWidth, kLogoWidth);

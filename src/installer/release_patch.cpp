@@ -31,7 +31,7 @@ constexpr const char* kPs3Probe = "pcalg_v1.p3obj";
 // release's title.bmd (japanese_title.h).
 constexpr std::string_view kJapaneseTitle = "title_jpn.bmd";
 // Bumped whenever the patch output changes, so installs repatch.
-constexpr std::string_view kRecipe = "own-data-1";
+constexpr std::string_view kRecipe = "own-data-2";
 
 std::string Fingerprint() {
   return std::string(kRecipe);
