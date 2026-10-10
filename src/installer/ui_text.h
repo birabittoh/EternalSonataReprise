@@ -37,6 +37,7 @@ enum class IntroText {
   kDeleteFiles,
   kCancel,
   kConfirmDelete,
+  kNotEnoughSpace,
   kCount,
 };
 

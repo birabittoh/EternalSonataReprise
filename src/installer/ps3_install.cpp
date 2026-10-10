@@ -359,6 +359,17 @@ std::string ReadTitleId(const fs::path& sfo) {
   return {};
 }
 
+uint64_t Ps3ArchiveBytes(const fs::path& archives) {
+  uint64_t total = 0;
+  std::error_code ec;
+  for (const auto& entry : fs::directory_iterator(archives, ec)) {
+    std::error_code size_ec;
+    if (EndsWith(Lower(entry.path().filename().string()), ".files"))
+      total += entry.file_size(size_ec);
+  }
+  return total;
+}
+
 std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir,
                       const ExtractProgress& progress) {
   std::error_code ec;

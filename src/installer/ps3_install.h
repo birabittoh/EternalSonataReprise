@@ -36,6 +36,9 @@ std::string ReadTitleId(const std::filesystem::path& sfo);
 // USRDIR or archives itself; empty when there is none.
 std::filesystem::path FindPs3Archives(const std::filesystem::path& picked);
 
+// Total size of the *.files in `archives`, which is what UnpackPs3 writes.
+uint64_t Ps3ArchiveBytes(const std::filesystem::path& archives);
+
 // Unpacks every *.files in `archives` into `out_dir`, through a sibling
 // directory like ExtractDiscImage. PS3 paths are all lowercase; every host
 // lookup folds case.
