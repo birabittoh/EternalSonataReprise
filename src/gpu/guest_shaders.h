@@ -76,6 +76,10 @@ struct GuestShader {
   bool exports_point_size = false;
   bool has_cube_texture = false;
 
+  // A pixel shader's SQ_PROGRAM_CNTL param_gen and SQ_CONTEXT_MISC param_gen_pos.
+  bool param_gen = false;
+  uint32_t param_gen_pos = 0;
+
   bool valid() const { return dxil_size != 0 || spirv_size != 0; }
 };
 
