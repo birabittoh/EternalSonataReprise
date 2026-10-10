@@ -47,11 +47,8 @@ int AllowedResolutionCount();
 
 // Render resolution as discrete steps, shared by the F4 overlay's slider and
 // the native Options screen's gauge so the two cannot drift. Backed by
-// `render_scale` (30% to 100% in tens) or, under Xenos, by the integer
-// `resolution_scale`. Menus move the row by option index and draw the
-// percentage. RenderScaleRowAvailable is false when there is only one step.
-// Setters persist.
-bool RenderScaleRowAvailable();
+// `render_scale` (30% to 200% in tens). Menus move the row by option index and
+// draw the percentage. Setters persist.
 int RenderScaleOptionCount();
 int RenderScaleOptionPercent(int index);
 int RenderScaleOptionIndex();
@@ -370,8 +367,7 @@ void ApplyBootLanguageDonorSlot();
 // index space as UserLanguageIndex.
 int BootUserLanguageIndex();
 
-// Applies a named resolution end to end: updates the resolution cvar and the
-// paired resolution_scale cvar (see ResolutionScaleFor), and persists. `value`
+// Applies a named resolution end to end: updates the resolution cvar and persists. `value`
 // is one of "720p"/"1080p"/"1440p"/"4K". Used by the native Resolution row in
 // the game's Options screen.
 void SetResolutionSetting(const char* value);

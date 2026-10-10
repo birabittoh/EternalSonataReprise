@@ -35,9 +35,8 @@ float NativeRenderScaleAtBoot();
 bool NativeRenderPixelatedScaling();
 
 // Registers the cvars a GPU plugin would have registered, so selecting this
-// renderer does not silently lose them: `vsync` and `resolution_scale`, both of
-// which live inside rexgpu-xenos and therefore never register when no plugin is
-// loaded. Call from OnPreSetup, after the config file has been read, so a
+// renderer does not silently lose them: `vsync`, which lives inside
+// rexgpu-xenos and therefore never registers when no plugin is loaded. Call from OnPreSetup, after the config file has been read, so a
 // saved value is still waiting to be applied to it.
 void RegisterNativeRendererCvars();
 

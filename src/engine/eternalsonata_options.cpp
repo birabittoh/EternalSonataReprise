@@ -930,6 +930,8 @@ RowStore& Rows() {
     initial[0].slider = true;
     initial[0].slider_steps = eternalsonata::RenderScaleOptionCount();
     initial[0].slider_display = &eternalsonata::RenderScaleOptionPercent;
+    initial[0].slider_max = eternalsonata::RenderScaleOptionPercent(
+        eternalsonata::RenderScaleOptionCount() - 1);
     initial[0].get_index = &RenderScaleGet;
     initial[0].set_index = &RenderScaleSet;
     initial[0].page = kPageButtons;

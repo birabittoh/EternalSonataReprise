@@ -31,9 +31,6 @@ namespace {
 // and writes exactly like the Xenos plugin's own.
 bool g_vsync = true;
 
-// Storage behind `resolution_scale`, same idea. See RegisterNativeRendererCvars.
-int32_t g_resolution_scale = 1;
-
 // Storage behind `render_scale`, as a fraction of the window. Zero means "no
 // opinion" and renders at the window's own resolution.
 float g_render_scale = 0.0f;
@@ -41,10 +38,8 @@ float g_render_scale = 0.0f;
 // Storage behind `render_pixelated_scaling`.
 bool g_render_pixelated_scaling = false;
 
-constexpr int32_t kMinRenderScale = 1;
-constexpr int32_t kMaxRenderScale = 8;
 constexpr float kMinRenderScaleF = 0.25f;
-constexpr float kMaxRenderScaleF = 1.0f;
+constexpr float kMaxRenderScaleF = 2.0f;
 
 }  // namespace
 
@@ -52,10 +47,6 @@ float NativeRenderScale() {
   // A live read. The extent it feeds is already republished every present and
   // torn down through the debounced resize path, so a mid-run change lands the
   // same way dragging the window's corner does.
-  //
-  // `resolution_scale` is deliberately not consulted: under this renderer the
-  // extent comes from the window, so the integer the Resolution row writes in
-  // lockstep would mean "three times the window" here.
   if (g_render_scale <= 0.0f)
     return 1.0f;
   return std::clamp(g_render_scale, kMinRenderScaleF, kMaxRenderScaleF);
@@ -64,12 +55,8 @@ float NativeRenderScale() {
 float NativeRenderScaleAtBoot() {
   // The fallback for the window extent never having been published, where the
   // size a target was built at *is* part of its identity and nothing retires it.
-  // Keeps the integer fallback, since that path is the pre-window one.
   static const float scale = [] {
-    const float value =
-        g_render_scale > 0.0f
-            ? std::clamp(g_render_scale, kMinRenderScaleF, kMaxRenderScaleF)
-            : float(std::clamp(g_resolution_scale, kMinRenderScale, kMaxRenderScale));
+    const float value = NativeRenderScale();
     if (value != 1.0f)
       REXLOG_DEBUG("native_renderer: rendering at {}x until the window publishes a size", value);
     return value;
@@ -103,41 +90,8 @@ void RegisterNativeRendererCvars() {
   entry.default_value = "true";
   rex::cvar::RegisterFlag(std::move(entry));
 
-  // Same again for `resolution_scale`, which the Xenos plugin defines in
-  // graphics/pipeline/texture/cache.cpp and which is therefore missing entirely
-  // under this renderer. That is not cosmetic: the settings overlay's
-  // Resolution row and the game's own Options screen both write it alongside
-  // `resolution` (SetResolutionSetting in settings.cpp), so without it the
-  // window grew and the game kept rendering 720p.
-  //
-  // Type, category, range, default and lifecycle match the SDK's definition.
-  rex::cvar::FlagEntry scale;
-  scale.name = "resolution_scale";
-  scale.type = rex::cvar::FlagType::Int32;
-  scale.category = "GPU";
-  scale.description =
-      "Draw resolution scale for both X and Y axes (same as setting "
-      "draw_resolution_scale_x and draw_resolution_scale_y)";
-  scale.setter = [](std::string_view value) {
-    int32_t parsed = 0;
-    const char* begin = value.data();
-    const auto result = std::from_chars(begin, begin + value.size(), parsed);
-    if (result.ec != std::errc())
-      return false;
-    g_resolution_scale = std::clamp(parsed, kMinRenderScale, kMaxRenderScale);
-    return true;
-  };
-  scale.getter = []() { return std::to_string(g_resolution_scale); };
-  scale.command_callback = [](std::string_view) {};
-  scale.lifecycle = rex::cvar::Lifecycle::kRequiresRestart;
-  scale.constraints.min = kMinRenderScale;
-  scale.constraints.max = kMaxRenderScale;
-  scale.default_value = "1";
-  rex::cvar::RegisterFlag(std::move(scale));
-
-  // This renderer's own scale, and the one it prefers. Fractional, so it can say
-  // things `resolution_scale` cannot ("1.5x", "half res"). Zero leaves the
-  // integer in charge.
+  // Fractional, so it can say "1.5x" or "half res". Zero means the window's own
+  // size.
   rex::cvar::FlagEntry fine;
   fine.name = "render_scale";
   fine.type = rex::cvar::FlagType::Double;
