@@ -109,6 +109,9 @@ class EternalsonataApp : public rex::ReXApp {
   std::optional<rex::PathConfig> OnFinalizePaths(
       const rex::PathConfig& defaults, std::function<void(rex::PathConfig)> resume) override {
     (void)defaults;
+    // Before the start screen, which can sit open for a long while.
+    window()->SetIcon(eternalsonata::kIconPNG, eternalsonata::kIconPNGSize);
+    window()->SetTitle("Eternal Sonata: Reprise");
     // The overlays record into the host frame, so the renderer needs the drawer
     // that produces them; both are live once presentation is set up.
     eternalsonata::PlumeSetOverlayDrawer(imgui_drawer());
@@ -352,9 +355,6 @@ class EternalsonataApp : public rex::ReXApp {
     // to be constructed, so the native Fullscreen row in the game's own Options
     // screen can apply and persist from a cold start.
     eternalsonata::BindSettingsTargets(window(), user_settings_path());
-
-    window()->SetIcon(eternalsonata::kIconPNG, eternalsonata::kIconPNGSize);
-    window()->SetTitle("Eternal Sonata: Reprise " + std::string(REXGLUE_BUILD_TITLE));
 
     // Wire the F3 debug overlay's "Guest" FPS line to the real guest present
     // rate. Count guest frames at the per-swap boundary; the SDK's runtime
