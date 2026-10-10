@@ -28,6 +28,7 @@ unsupported_language = "{} enthält keinen Text in dieser Sprache. Wähle eine a
 delete_files = "Dateien löschen"
 cancel = "Abbrechen"
 progress_deleting = "Spieldateien werden gelöscht..."
+progress_mods = "Mods werden angewendet..."
 confirm_delete = "Die extrahierten Dateien von {} löschen? Das gibt {} frei und kann nicht rückgängig gemacht werden."
 not_enough_space = "Nicht genug freier Speicherplatz: {} nötig, {} verfügbar. Gib Speicherplatz frei und wähle die Quelle erneut aus."
 

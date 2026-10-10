@@ -30,6 +30,7 @@ unsupported_language = "{} has no text in this language. Choose another language
 delete_files = "Delete Files"
 cancel = "Cancel"
 progress_deleting = "Deleting game files..."
+progress_mods = "Applying mods..."
 confirm_delete = "Delete the extracted files of {}? This frees {} and cannot be undone."
 not_enough_space = "Not enough free disk space: {} needed, {} available. Free some space and select the source again."
 

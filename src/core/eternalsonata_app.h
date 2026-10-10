@@ -50,7 +50,6 @@
 #include "icon.generated.h"
 #include "intro_screen.h"
 #include "ui_text.h"
-#include "loading_screen.h"
 #include "music_system.h"
 #include "native_renderer.h"
 #include "native_renderer_overlay.h"
@@ -114,7 +113,6 @@ class EternalsonataApp : public rex::ReXApp {
     // that produces them; both are live once presentation is set up.
     eternalsonata::PlumeSetOverlayDrawer(imgui_drawer());
     eternalsonata::InitNativeRenderer(window());
-    eternalsonata::BindLoadingScreen(imgui_drawer(), &app_context());
     eternalsonata::BindIntroScreen(imgui_drawer(), &app_context());
 
     eternalsonata::GameDataOptions options;
@@ -178,7 +176,7 @@ class EternalsonataApp : public rex::ReXApp {
     static const ImWchar latin_glyphs[] = {0x0020, 0x00FF, 0};
     ImFontConfig loading_cfg;
     loading_cfg.FontDataOwnedByAtlas = false;
-    std::strncpy(loading_cfg.Name, eternalsonata::kLoadingScreenFontName, sizeof(loading_cfg.Name));
+    std::strncpy(loading_cfg.Name, eternalsonata::kIntroFontName, sizeof(loading_cfg.Name));
     atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kPTSerifRegularTTF),
                                 static_cast<int>(eternalsonata::kPTSerifRegularTTFSize), 64.0f,
                                 &loading_cfg, latin_glyphs);
