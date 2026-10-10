@@ -2046,8 +2046,20 @@ bool SupplyReplacementPcm(void*, const uint8_t tag[16], uint64_t* cursor, int sa
 
 }  // namespace
 
-void ScanModLanguages(rex::Runtime* runtime) {
-  for (const auto& mod : runtime->EnabledModsInfo()) {
+namespace {
+
+struct ModFolder {
+  std::string folder_name;
+  std::filesystem::path mod_root;
+};
+
+// Each mod once, since the start screen scans before the runtime exists and
+// the runtime scans again later.
+void ScanLanguagesOf(const std::vector<ModFolder>& mods) {
+  static std::set<std::string> scanned;
+  for (const auto& mod : mods) {
+    if (!scanned.insert(mod.folder_name).second)
+      continue;
     std::vector<DeclaredVoiceLanguage> voices;
     std::vector<DeclaredInterfaceText> interface_text;
     for (const auto& declared :
@@ -2123,6 +2135,25 @@ void ScanModLanguages(rex::Runtime* runtime) {
     }
   }
   ApplyModUiStrings();
+}
+
+}  // namespace
+
+void ScanModLanguages(rex::Runtime* runtime) {
+  std::vector<ModFolder> mods;
+  for (const auto& mod : runtime->EnabledModsInfo())
+    mods.push_back({mod.folder_name, mod.mod_root});
+  ScanLanguagesOf(mods);
+}
+
+void ScanModLanguagesEarly() {
+  const auto root = rex::system::ModState::ResolveModsRoot();
+  std::vector<ModFolder> mods;
+  for (const auto& entry : rex::system::ModState::Load(root)) {
+    if (entry.enabled)
+      mods.push_back({entry.id, root / entry.id});
+  }
+  ScanLanguagesOf(mods);
 }
 
 std::vector<std::filesystem::path> ModLanguageFonts() {

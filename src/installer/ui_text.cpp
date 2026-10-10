@@ -231,10 +231,19 @@ void AddUiString(std::string_view language, std::string_view section, std::strin
 }
 
 void ApplyModUiStrings() {
-  if (g_pending.empty())
-    return;
   const auto options = GetLanguageOptions();
   auto& languages = Languages();
+  // Every mod language is pickable, with or without interface text of its own.
+  for (const auto& option : options) {
+    const std::string code =
+        NormalizeCode(UiLanguageOfXLanguage(uint32_t(std::strtoul(option.id, nullptr, 10))));
+    if (code.rfind("mod:", 0) == 0 && Find(code) < 0)
+      languages.push_back({code, option.label, {}, {}});
+  }
+  if (g_pending.empty()) {
+    g_current = -1;
+    return;
+  }
   for (PendingString& pending : g_pending) {
     int index = Find(pending.language);
     if (index < 0 && pending.language.rfind("mod:", 0) == 0) {
