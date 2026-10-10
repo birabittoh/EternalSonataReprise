@@ -18,6 +18,9 @@ class WindowedAppContext;
 
 namespace eternalsonata {
 
+// Name of the atlas font baked for the screen; see OnConfigureFonts.
+inline constexpr char kIntroFontName[] = "Loading screen";
+
 void BindIntroScreen(rex::ui::ImGuiDrawer* drawer, rex::ui::WindowedAppContext* context);
 
 // Whether the intro can draw: bound, and the native renderer is up.
@@ -26,6 +29,10 @@ bool IntroScreenAvailable();
 // Shows the screen, or updates it when already showing, and returns at once.
 // `on_choice` runs on the UI thread, outside any frame.
 void ShowIntroScreen(const GameDataPrompt& prompt, std::function<void(GameDataChoice)> on_choice);
+
+// Shows the screen in its working state with no phases, for work after the
+// game data is resolved. False when it cannot draw.
+bool ShowIntroWork();
 
 // Ignores the buttons while a native dialog is open over the screen.
 void SetIntroBusy(bool busy);

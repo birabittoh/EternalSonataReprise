@@ -38,7 +38,7 @@
 #include "eternalsonata_asset_container.h"
 #include "eternalsonata_asset_mesh.h"
 #include "eternalsonata_asset_texture.h"
-#include "loading_screen.h"
+#include "intro_screen.h"
 #include "ps3_convert.h"
 #include "settings.h"
 #include "ui_text.h"
@@ -1786,23 +1786,22 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir, bool sh
   for (const auto& entry : state().containers)
     total += !IsXexContainer(entry.first);
   // A large text mod takes over a minute here, on the UI thread, before the
-  // game has drawn anything. Only shown once the build proves slow, so a small
-  // mod does not flash it, and only at boot: pumping events from here would
-  // steal them from the running game.
+  // game has drawn anything. Shown on the start screen once the build proves
+  // slow, so a small mod does not flash it, and only at boot: pumping events
+  // from here would steal them from the running game.
   const auto start = std::chrono::steady_clock::now();
   bool shown = false;
   struct HideOnExit {
     bool& shown;
     ~HideOnExit() {
       if (shown)
-        HideLoadingScreen();
+        HideIntroScreen();
     }
   } hide_on_exit{shown};
-  auto report = [&](size_t done, const std::string& what, bool force) {
-    UpdateLoadingScreen("Applying mods...", float(done) / float(total),
+  auto report = [&](size_t done, const std::string& what) {
+    ReportIntroProgress("Applying mods...", float(done) / float(total),
                         std::to_string(done * 100 / total) + "%   " + std::to_string(done) +
-                            " / " + std::to_string(total) + "   " + what,
-                        force);
+                            " / " + std::to_string(total) + "   " + what);
   };
 
   size_t built = 0;
@@ -1815,8 +1814,10 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir, bool sh
       continue;
     if (show_progress &&
         (shown || std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(250))) {
-      shown = true;
-      report(visited, guest_path, false);
+      if (!shown)
+        shown = ShowIntroWork();
+      if (shown)
+        report(visited, guest_path);
     }
     ++visited;
     // Last chance for a lazy provider to register patches for this container.
@@ -1867,7 +1868,7 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir, bool sh
   }
 
   if (shown)
-    report(total, "", true);
+    report(total, "");
   if (!built) {
     std::filesystem::remove_all(dir, ec);
     return false;

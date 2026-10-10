@@ -25,7 +25,6 @@
 #include "images.generated.h"
 #include "intro_music.h"
 #include "ui_text.h"
-#include "loading_screen.h"
 #include "native_renderer_plume.h"
 #include "release_id.h"
 
@@ -261,7 +260,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     }
 
     const float body_in = Smooth((t - 0.7f) / 0.8f);
-    ImFont* font = FindFont(kLoadingScreenFontName);
+    ImFont* font = FindFont(kIntroFontName);
     const float wrap = std::min(820.0f * unit, size.x - 32.0f);
     if (working_) {
       y += DrawWork(draw, font, size, unit, y, wrap, body_in);
@@ -798,6 +797,21 @@ void ShowIntroScreen(const GameDataPrompt& prompt, std::function<void(GameDataCh
   g_dialog = std::make_unique<IntroDialog>(g_drawer, prompt);
   StartTicker();
   StartIntroMusic();
+}
+
+bool ShowIntroWork() {
+  if (!IntroScreenAvailable())
+    return false;
+  if (!g_dialog) {
+    if (!g_first_shown)
+      g_first_shown = Clock::now();
+    g_dialog = std::make_unique<IntroDialog>(g_drawer, GameDataPrompt{});
+    StartTicker();
+  }
+  g_dialog->SetWorking(true);
+  for (Phase phase : {Phase::kExtract, Phase::kConvert, Phase::kPatch})
+    g_dialog->SetPhase(phase, PhaseState::kSkipped);
+  return true;
 }
 
 void SetIntroBusy(bool busy) {

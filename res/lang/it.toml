@@ -28,6 +28,7 @@ unsupported_language = "{} non contiene testo in questa lingua. Scegli un'altra 
 delete_files = "Elimina file"
 cancel = "Annulla"
 progress_deleting = "Eliminazione dei file di gioco..."
+progress_mods = "Applicazione delle mod..."
 confirm_delete = "Eliminare i file estratti di {}? Libera {} e non si può annullare."
 not_enough_space = "Spazio libero insufficiente: servono {}, ne sono disponibili {}. Libera spazio e seleziona di nuovo la sorgente."
 

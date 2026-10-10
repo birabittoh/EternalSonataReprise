@@ -36,9 +36,9 @@ constexpr std::array<const char*, size_t(IntroText::kCount)> kKeys = {
 };
 constexpr std::array<const char*, kInstallPhaseCount> kPhaseKeys = {
     "phase_extract", "phase_convert", "phase_patch"};
-constexpr std::array<const char*, 5> kProgressKeys = {
+constexpr std::array<const char*, 6> kProgressKeys = {
     "progress_extracting", "progress_unpacking", "progress_converting", "progress_patching",
-    "progress_deleting"};
+    "progress_deleting", "progress_mods"};
 
 using StringTable = std::map<std::string, std::string, std::less<>>;
 
