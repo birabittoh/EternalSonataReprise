@@ -59,6 +59,7 @@ guest_shaders_debug.bin
 
 # Embedded UI art, rebuilt from src/images/*.png by scripts/gen-images.py
 /src/images.generated.h
+/src/bgm.generated.h
 /src/lang.generated.h
 
 # Windows exe-icon resource script, rewritten by CMake with an absolute path
