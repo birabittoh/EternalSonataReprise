@@ -49,6 +49,7 @@
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
 #include "intro_screen.h"
+#include <rex/ui/ui_text.h>
 #include "ui_text.h"
 #include "music_system.h"
 #include "native_renderer.h"
@@ -251,6 +252,7 @@ class EternalsonataApp : public rex::ReXApp {
   }
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
+    rex::ui::SetUiTextProvider(&eternalsonata::SdkUiText);
     // Identifies this project to the SDK's mod manager overlay ("All" tab)
     // as the goopie.xyz `recompName` to query the public mod catalog for
     config.catalog_name = "eternalsonata";

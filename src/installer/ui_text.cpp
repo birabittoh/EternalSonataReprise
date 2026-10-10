@@ -176,6 +176,10 @@ const char* TrOr(const char* section, const char* key, const char* fallback) {
   return text ? text : fallback;
 }
 
+const char* SdkUiText(const char* key) {
+  return Find("sdk_ui", key);
+}
+
 std::string Tr(const char* section, const char* key, std::string_view arg) {
   std::string text = Tr(section, key);
   if (const size_t at = text.find("{}"); at != std::string::npos)

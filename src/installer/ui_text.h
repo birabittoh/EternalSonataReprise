@@ -47,6 +47,10 @@ const char* Tr(const char* section, const char* key);
 // `fallback` when no language has the key.
 const char* TrOr(const char* section, const char* key, const char* fallback);
 
+// The [sdk_ui] table, for the SDK's own overlays (rex::ui::SetUiTextProvider).
+// Null when no language has the key, which keeps the SDK's English text.
+const char* SdkUiText(const char* key);
+
 std::string Tr(const char* section, const char* key, std::string_view arg);
 
 const char* Tr(IntroText id);
