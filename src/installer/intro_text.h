@@ -27,7 +27,6 @@ enum class IntroText {
   kFoundRelease,
   kPressExtract,
   kNeedFiles,
-  kSelectIsoOrFolder,
   kSelectIsoOnly,
   kCopyHint,
   kSelected,

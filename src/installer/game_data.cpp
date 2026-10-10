@@ -267,8 +267,9 @@ void ShowDialog(std::shared_ptr<Flow> flow, bool folder,
 // Where no intro screen can draw.
 GameDataChoice MessageBoxPrompt(const GameDataPrompt& prompt) {
   std::string message = prompt.error.empty() ? "" : prompt.error + "\n\n";
-  message += std::string(Tr(IntroText::kNeedFiles)) + " ";
-  message += Tr(prompt.can_pick_folder ? IntroText::kSelectIsoOrFolder : IntroText::kSelectIsoOnly);
+  message += Tr(IntroText::kNeedFiles);
+  if (!prompt.can_pick_folder)
+    message += std::string(" ") + Tr(IntroText::kSelectIsoOnly);
   if (!prompt.copy_hint.empty())
     message += "\n\n" + Tr(IntroText::kCopyHint, prompt.copy_hint);
   if (prompt.can_extract)
