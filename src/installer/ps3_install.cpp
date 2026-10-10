@@ -289,6 +289,77 @@ bool HasArchives(const fs::path& dir) {
   return false;
 }
 
+std::string UnpackPs3Files(const std::vector<ImageFile>& inputs, const std::string& title_id,
+                           const fs::path& out_dir, const ExtractProgress& progress) {
+  std::error_code ec;
+  if (inputs.empty())
+    return "No PS3 archives (*.files) found.";
+  std::vector<const ImageFile*> sorted;
+  for (const ImageFile& f : inputs)
+    sorted.push_back(&f);
+  std::sort(sorted.begin(), sorted.end(),
+            [](const ImageFile* a, const ImageFile* b) { return a->name < b->name; });
+
+  fs::path partial = out_dir;
+  partial += ".partial";
+  fs::remove_all(partial, ec);
+  fs::create_directories(partial, ec);
+  if (ec)
+    return "Could not create " + partial.string() + ": " + ec.message();
+
+  std::vector<char> buffer(size_t(1) << 22);
+  for (size_t a = 0; a < sorted.size(); ++a) {
+    const ImageFile& in = *sorted[a];
+    char head[16];
+    if (!in.read(0, head, 16) || std::memcmp(head, "FILE", 4) != 0)
+      return in.name + " is not a PS3 archive.";
+    const Bytes h(head, head + 16);
+    const uint32_t count = ps3::Rd32(h, 8);
+    struct Entry {
+      std::string name;
+      uint32_t offset, size;
+    };
+    std::vector<Entry> entries;
+    for (uint32_t i = 0; i < count; ++i) {
+      char rec[0x30];
+      if (!in.read(16 + uint64_t(i) * sizeof(rec), rec, sizeof(rec)))
+        return in.name + " is truncated.";
+      const Bytes r(rec, rec + sizeof(rec));
+      std::string name(rec, strnlen(rec, 32));
+      std::replace(name.begin(), name.end(), '\\', '/');
+      entries.push_back({std::move(name), ps3::Rd32(r, 32), ps3::Rd32(r, 36)});
+    }
+    for (const Entry& e : entries) {
+      if (e.name.empty() || e.name.find("..") != std::string::npos || e.name.front() == '/')
+        return in.name + " names an unsafe path: " + e.name;
+      if (progress)
+        progress("Unpacking game files...", float(a) / float(sorted.size()), e.name);
+      const fs::path dst = partial / e.name;
+      fs::create_directories(dst.parent_path(), ec);
+      std::ofstream out(dst, std::ios::binary | std::ios::trunc);
+      uint64_t at = e.offset;
+      for (uint64_t left = e.size; left;) {
+        const size_t n = size_t(std::min<uint64_t>(left, buffer.size()));
+        if (!in.read(at, buffer.data(), n) || !out.write(buffer.data(), std::streamsize(n))) {
+          fs::remove_all(partial, ec);
+          return "Unpacking " + e.name + " failed. The disc may be damaged, or the disk full.";
+        }
+        at += n;
+        left -= n;
+      }
+    }
+  }
+  if (!title_id.empty())
+    WriteFile(partial / kTitleId, Bytes(title_id.begin(), title_id.end()));
+  if (fs::exists(out_dir, ec) && !MoveAside(out_dir))
+    return "Could not move the existing " + out_dir.string() + " out of the way.";
+  fs::rename(partial, out_dir, ec);
+  if (ec)
+    return "Could not rename the unpacked files: " + ec.message();
+  REXLOG_INFO("Unpacked {} PS3 archives into {}", sorted.size(), out_dir.string());
+  return {};
+}
+
 }  // namespace
 
 bool IsPs3Directory(const fs::path& dir) {
@@ -339,7 +410,11 @@ fs::path FindPs3Archives(const fs::path& picked) {
 
 std::string ReadTitleId(const fs::path& sfo) {
   Bytes d;
-  if (!ReadFile(sfo, d) || d.size() < 20 || std::memcmp(d.data(), "\0PSF", 4) != 0)
+  return ReadFile(sfo, d) ? TitleIdFromSfo(d) : std::string();
+}
+
+std::string TitleIdFromSfo(const Bytes& d) {
+  if (d.size() < 20 || std::memcmp(d.data(), "\0PSF", 4) != 0)
     return {};
   auto le32 = [&](size_t o) {
     return uint32_t(d[o]) | uint32_t(d[o + 1]) << 8 | uint32_t(d[o + 2]) << 16 |
@@ -379,68 +454,32 @@ std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir,
       inputs.push_back(entry.path());
   }
   std::sort(inputs.begin(), inputs.end());
-  if (inputs.empty())
-    return "No PS3 archives (*.files) in " + archives.string() + ".";
-
-  fs::path partial = out_dir;
-  partial += ".partial";
-  fs::remove_all(partial, ec);
-  fs::create_directories(partial, ec);
-  if (ec)
-    return "Could not create " + partial.string() + ": " + ec.message();
-
-  std::vector<char> buffer(size_t(1) << 22);
-  for (size_t a = 0; a < inputs.size(); ++a) {
-    std::ifstream in(inputs[a], std::ios::binary);
-    char head[16];
-    if (!in.read(head, 16) || std::memcmp(head, "FILE", 4) != 0)
-      return inputs[a].filename().string() + " is not a PS3 archive.";
-    const Bytes h(head, head + 16);
-    const uint32_t count = ps3::Rd32(h, 8);
-    struct Entry {
-      std::string name;
-      uint32_t offset, size;
-    };
-    std::vector<Entry> entries;
-    for (uint32_t i = 0; i < count; ++i) {
-      char rec[0x30];
-      if (!in.read(rec, sizeof(rec)))
-        return inputs[a].filename().string() + " is truncated.";
-      const Bytes r(rec, rec + sizeof(rec));
-      std::string name(rec, strnlen(rec, 32));
-      std::replace(name.begin(), name.end(), '\\', '/');
-      entries.push_back({std::move(name), ps3::Rd32(r, 32), ps3::Rd32(r, 36)});
-    }
-    for (const Entry& e : entries) {
-      if (e.name.empty() || e.name.find("..") != std::string::npos || e.name.front() == '/')
-        return inputs[a].filename().string() + " names an unsafe path: " + e.name;
-      if (progress)
-        progress("Unpacking game files...", float(a) / float(inputs.size()), e.name);
-      const fs::path dst = partial / e.name;
-      fs::create_directories(dst.parent_path(), ec);
-      std::ofstream out(dst, std::ios::binary | std::ios::trunc);
-      in.seekg(e.offset);
-      for (uint64_t left = e.size; left;) {
-        const size_t n = size_t(std::min<uint64_t>(left, buffer.size()));
-        if (!in.read(buffer.data(), std::streamsize(n)) || !out.write(buffer.data(), std::streamsize(n))) {
-          fs::remove_all(partial, ec);
-          return "Unpacking " + e.name + " failed. The disc may be damaged, or the disk full.";
-        }
-        left -= n;
-      }
-    }
+  std::vector<std::ifstream> streams;
+  std::vector<ImageFile> files;
+  for (const fs::path& input : inputs) {
+    streams.emplace_back(input, std::ios::binary);
+    std::ifstream* in = &streams.back();
+    files.push_back({input.filename().string(), fs::file_size(input, ec),
+                     [in](uint64_t off, void* dst, uint64_t len) {
+                       in->clear();
+                       in->seekg(std::streamoff(off));
+                       return bool(in->read(static_cast<char*>(dst), std::streamsize(len)));
+                     }});
   }
   // archives is PS3_GAME/USRDIR/archives.
-  const std::string title_id = ReadTitleId(archives.parent_path().parent_path() / "PARAM.SFO");
-  if (!title_id.empty())
-    WriteFile(partial / kTitleId, Bytes(title_id.begin(), title_id.end()));
-  if (fs::exists(out_dir, ec) && !MoveAside(out_dir))
-    return "Could not move the existing " + out_dir.string() + " out of the way.";
-  fs::rename(partial, out_dir, ec);
-  if (ec)
-    return "Could not rename the unpacked files: " + ec.message();
-  REXLOG_INFO("Unpacked {} PS3 archives into {}", inputs.size(), out_dir.string());
-  return {};
+  return UnpackPs3Files(files, ReadTitleId(archives.parent_path().parent_path() / "PARAM.SFO"),
+                        out_dir, progress);
+}
+
+std::string UnpackPs3Image(const std::string& image, const fs::path& out_dir,
+                           const ExtractProgress& progress) {
+  std::vector<uint8_t> sfo;
+  ReadIsoImageFile(image, "PS3_GAME/PARAM.SFO", sfo);
+  const std::string title_id = TitleIdFromSfo(sfo);
+  return WithIsoFiles(image, "PS3_GAME/USRDIR/archives", ".files",
+                      [&](const std::vector<ImageFile>& files) {
+                        return UnpackPs3Files(files, title_id, out_dir, progress);
+                      });
 }
 
 }  // namespace eternalsonata
