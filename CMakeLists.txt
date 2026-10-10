@@ -162,6 +162,18 @@ add_custom_command(
     VERBATIM
 )
 
+# The start screen's music, embedded from res/bgm.wma.
+set(ETERNALSONATA_BGM_HEADER ${CMAKE_SOURCE_DIR}/src/bgm.generated.h)
+add_custom_command(
+    OUTPUT ${ETERNALSONATA_BGM_HEADER}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-audio.py
+    DEPENDS
+        ${CMAKE_SOURCE_DIR}/scripts/gen-audio.py
+        ${CMAKE_SOURCE_DIR}/res/bgm.wma
+    COMMENT "Generating src/bgm.generated.h"
+    VERBATIM
+)
+
 # The start screen's text, one file per language; globbed and listed for the
 # same reasons as the images above.
 set(ETERNALSONATA_LANG_HEADER ${CMAKE_SOURCE_DIR}/src/lang.generated.h)
@@ -377,6 +389,7 @@ set(ETERNALSONATA_SOURCES
     src/installer/game_data.cpp
     src/installer/install_pipeline.cpp
     src/installer/intro_screen.cpp
+    src/installer/intro_music.cpp
     src/installer/ui_text.cpp
     src/installer/japanese_title.cpp
     src/installer/ps3_audio.cpp
@@ -438,6 +451,7 @@ set(ETERNALSONATA_SOURCES
     ${ETERNALSONATA_ICON_HEADER}
     ${ETERNALSONATA_FONTS_HEADER}
     ${ETERNALSONATA_IMAGES_HEADER}
+    ${ETERNALSONATA_BGM_HEADER}
     ${ETERNALSONATA_LANG_HEADER}
 )
 

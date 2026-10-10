@@ -23,6 +23,7 @@
 #include <rex/ui/windowed_app_context.h>
 
 #include "images.generated.h"
+#include "intro_music.h"
 #include "ui_text.h"
 #include "loading_screen.h"
 #include "native_renderer_plume.h"
@@ -303,6 +304,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const bool handled = DrawButtons(draw, font, size, unit,
                                      std::max(y + 22.0f * unit, size.y * 0.62f), body_in, ready);
     DrawLanguagePicker(draw, font, size, unit, body_in, ready && !handled);
+    DrawMusicToggle(draw, font, size, unit, body_in);
 
     // Fade from black on the first showing only; a cancelled dialog comes back
     // to the screen as it was.
@@ -643,6 +645,61 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     }
   }
 
+  // Bottom left: a note icon that mutes the music, and the piece playing.
+  void DrawMusicToggle(ImDrawList* draw, ImFont* font, ImVec2 size, float unit, float alpha) {
+    const float s = 40.0f * unit;
+    const float margin = 24.0f * unit;
+    const ImVec2 min(margin, size.y - margin - s);
+    const ImVec2 max(min.x + s, min.y + s);
+    ImGui::SetCursorScreenPos(min);
+    if (ImGui::InvisibleButton("##music", ImVec2(s, s)))
+      SetIntroMusicEnabled(!IntroMusicEnabled());
+    const bool on = IntroMusicEnabled();
+    const bool hovered = ImGui::IsItemHovered();
+    const float a = alpha;
+    draw->AddRectFilled(min, max, IM_COL32(0, 0, 0, int((hovered ? 150 : 100) * a)), 6.0f * unit);
+    draw->AddRect(min, max, hovered ? Color(kAccent, a) : IM_COL32(255, 255, 255, int(60 * a)),
+                  6.0f * unit, 0, std::max(1.0f, (hovered ? 2.0f : 1.0f) * unit));
+
+    const ImU32 ink = Color(kText, (on ? 0.9f : 0.55f) * a);
+    // Two beamed eighth notes, symmetric about the button's center.
+    const float u = s / 40.0f;
+    const ImVec2 c(min.x + s * 0.5f, min.y + s * 0.5f + 1.4f * u);
+    auto at = [&](float x, float y) { return ImVec2(c.x + x * u, c.y + y * u); };
+    for (const float head : {-7.0f, 7.0f}) {
+      draw->AddEllipseFilled(at(head, 7.0f), ImVec2(4.6f * u, 3.3f * u), ink, -0.45f);
+      draw->AddLine(at(head + 3.5f, 6.0f), at(head + 3.5f, head < 0 ? -9.0f : -12.0f), ink,
+                    std::max(1.5f, 2.0f * u));
+    }
+    const ImVec2 beam[4] = {at(-4.5f, -10.0f), at(11.5f, -13.5f), at(11.5f, -9.0f), at(-4.5f, -5.5f)};
+    draw->AddConvexPolyFilled(beam, 4, ink);
+    if (!on)
+      draw->AddLine(at(-12.0f, 12.0f), at(12.0f, -14.0f), Color(kText, a), std::max(1.5f, 2.0f * u));
+
+    // The credit slides out from behind the icon, and back in when muted.
+    const float step = ImGui::GetIO().DeltaTime / 0.7f;
+    credit_ = on ? std::min(1.0f, credit_ + step) : std::max(0.0f, credit_ - step);
+    const float shown = Smooth(credit_);
+    const float text_size = 18.0f * unit;
+    const char* credit = "Nocturne Op. 9, No. 2, performed by Aya Higuchi";
+    const float text_x = max.x + 14.0f * unit;
+    const ImVec2 extent = font->CalcTextSizeA(text_size, FLT_MAX, 0.0f, credit);
+    draw->PushClipRect(ImVec2(text_x, min.y), ImVec2(size.x, max.y), true);
+    const int first = draw->VtxBuffer.Size;
+    draw->AddText(font, text_size,
+                  ImVec2(std::floor(text_x - (1.0f - shown) * (extent.x + 14.0f * unit)),
+                         std::floor(min.y + (s - text_size) * 0.5f)),
+                  Color(kText, 0.75f * a), credit);
+    // The left edge fades into the icon while sliding, and is solid at rest.
+    const float edge = std::max(1.0f, 48.0f * unit * (1.0f - shown));
+    for (int i = first; shown < 1.0f && i < draw->VtxBuffer.Size; ++i) {
+      ImDrawVert& v = draw->VtxBuffer[i];
+      const float k = std::clamp((v.pos.x - text_x) / edge, 0.0f, 1.0f);
+      v.col = (v.col & 0x00FFFFFF) | (ImU32(float(v.col >> 24) * k) << 24);
+    }
+    draw->PopClipRect();
+  }
+
   // The reason Start is off, to the right of the Start button whose top right
   // corner is `start_max`.
   void DrawLanguageWarning(ImDrawList* draw, ImFont* font, ImVec2 size, float unit,
@@ -666,6 +723,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   int picker_highlight_ = 0;
   bool busy_ = false;
   bool working_ = false;
+  float credit_ = 0.0f;
   std::array<PhaseState, kInstallPhaseCount> phases_{};
   std::string work_title_;
   std::string work_detail_;
@@ -739,6 +797,7 @@ void ShowIntroScreen(const GameDataPrompt& prompt, std::function<void(GameDataCh
     g_first_shown = Clock::now();
   g_dialog = std::make_unique<IntroDialog>(g_drawer, prompt);
   StartTicker();
+  StartIntroMusic();
 }
 
 void SetIntroBusy(bool busy) {
@@ -778,6 +837,7 @@ void ReportIntroProgress(const std::string& title, float fraction, const std::st
 
 void HideIntroScreen() {
   StopTicker();
+  StopIntroMusic();
   if (!g_dialog)
     return;
   g_dialog.reset();
