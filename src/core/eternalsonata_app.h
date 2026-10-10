@@ -198,6 +198,12 @@ class EternalsonataApp : public rex::ReXApp {
       MergeJapaneseFont(atlas, 16.0f, atlas->GetGlyphRangesJapanese());
     else
       MergeJapaneseFont(atlas, 16.0f, intro_glyphs.Data);
+    // Fonts of mod languages, for glyphs the ones above lack.
+    for (const auto& path : eternalsonata::ModLanguageFonts()) {
+      ImFontConfig merge;
+      merge.MergeMode = true;
+      atlas->AddFontFromFileTTF(path.string().c_str(), 16.0f, &merge);
+    }
   }
 
   // Into the font added last. The overlays and the unlock toast draw
