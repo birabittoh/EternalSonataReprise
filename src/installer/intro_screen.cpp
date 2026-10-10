@@ -276,9 +276,9 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
                                         : Tr(IntroText::kFoundRelease, prompt_.release)) +
                "\n" + Tr(IntroText::kPressExtract);
       } else {
-        body = std::string(Tr(IntroText::kNeedFiles)) + "\n";
-        body += Tr(prompt_.can_pick_folder ? IntroText::kSelectIsoOrFolder
-                                           : IntroText::kSelectIsoOnly);
+        body = Tr(IntroText::kNeedFiles);
+        if (!prompt_.can_pick_folder)
+          body += std::string("\n") + Tr(IntroText::kSelectIsoOnly);
         if (!prompt_.copy_hint.empty())
           body += "\n" + Tr(IntroText::kCopyHint, prompt_.copy_hint);
       }

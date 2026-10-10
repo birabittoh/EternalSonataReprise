@@ -29,7 +29,7 @@ constexpr std::array<const char*, size_t(IntroText::kCount)> kKeys = {
     "start",         "extract",       "select_file",      "select_folder",
     "quit",          "language",      "ready",           "ready_release",
     "found",         "found_release", "press_extract",   "need_files",
-    "select_iso_or_folder",           "select_iso_only", "copy_hint",
+    "select_iso_only", "copy_hint",
     "selected",      "title",         "unsupported_language",
     "delete_files",  "cancel",        "confirm_delete",
 };
