@@ -1,6 +1,8 @@
 #pragma once
 
-// The start screen's text, from res/lang/*.toml. The ui_language cvar picks
+// The interface text of the start screen and our overlays, from
+// res/lang/*.toml: one table per screen, each key looked up in the language in
+// use, then in English. The ui_language cvar picks
 // the language; unset, it follows user_language when the player picked one
 // other than English, else the system's, since the screen usually shows
 // before any config exists.
@@ -37,6 +39,14 @@ enum class IntroText {
   kConfirmDelete,
   kCount,
 };
+
+// The key itself when no language has it, which shows as a typo, not a crash.
+const char* Tr(const char* section, const char* key);
+
+// `fallback` when no language has the key.
+const char* TrOr(const char* section, const char* key, const char* fallback);
+
+std::string Tr(const char* section, const char* key, std::string_view arg);
 
 const char* Tr(IntroText id);
 

@@ -1,4 +1,4 @@
-#include "intro_text.h"
+#include "ui_text.h"
 
 #include <algorithm>
 #include <array>
@@ -42,7 +42,7 @@ constexpr std::array<const char*, 5> kProgressKeys = {
 struct Language {
   std::string code;
   std::string name;
-  toml::table intro;
+  toml::table tables;
 };
 
 std::vector<Language> g_languages;
@@ -57,10 +57,8 @@ const std::vector<Language>& Languages() {
   for (const LangFile& file : kLangFiles) {
     try {
       toml::table table = toml::parse(std::string_view(file.text, file.size));
-      Language language{file.code, table["name"].value_or(std::string(file.code)), {}};
-      if (const toml::table* intro = table["intro"].as_table())
-        language.intro = *intro;
-      g_languages.push_back(std::move(language));
+      std::string name = table["name"].value_or(std::string(file.code));
+      g_languages.push_back({file.code, std::move(name), std::move(table)});
     } catch (const toml::parse_error& e) {
       REXLOG_ERROR("res/lang/{}.toml: {}", file.code, e.description());
     }
@@ -117,21 +115,45 @@ int Current() {
   return g_current;
 }
 
-// The current language's text for `key`, else English's, else the key.
-const char* Lookup(const char* key) {
+// The current language's text for `key`, else English's, else null.
+const char* Find(const char* section, const char* key) {
   const auto& languages = Languages();
   if (languages.empty())
-    return key;
-  for (int index : {Current(), Find("en")}) {
+    return nullptr;
+  static const int english = Find("en");
+  for (int index : {Current(), english}) {
     if (index < 0)
       continue;
-    if (const auto* text = languages[size_t(index)].intro[key].as_string())
+    const toml::table* table = languages[size_t(index)].tables[section].as_table();
+    if (const auto* text = table ? (*table)[key].as_string() : nullptr)
       return text->get().c_str();
   }
-  return key;
+  return nullptr;
+}
+
+const char* Lookup(const char* key) {
+  const char* text = Find("intro", key);
+  return text ? text : key;
 }
 
 }  // namespace
+
+const char* Tr(const char* section, const char* key) {
+  const char* text = Find(section, key);
+  return text ? text : key;
+}
+
+const char* TrOr(const char* section, const char* key, const char* fallback) {
+  const char* text = Find(section, key);
+  return text ? text : fallback;
+}
+
+std::string Tr(const char* section, const char* key, std::string_view arg) {
+  std::string text = Tr(section, key);
+  if (const size_t at = text.find("{}"); at != std::string::npos)
+    text.replace(at, 2, arg);
+  return text;
+}
 
 const char* Tr(IntroText id) {
   return Lookup(kKeys[size_t(id)]);
@@ -152,9 +174,11 @@ std::string TrProgress(const std::string& title) {
   const int english = Find("en");
   if (english < 0)
     return title;
-  const toml::table& intro = Languages()[size_t(english)].intro;
+  const toml::table* intro = Languages()[size_t(english)].tables["intro"].as_table();
+  if (!intro)
+    return title;
   for (const char* key : kProgressKeys) {
-    if (intro[key].value_or(std::string()) == title)
+    if ((*intro)[key].value_or(std::string()) == title)
       return Lookup(key);
   }
   return title;

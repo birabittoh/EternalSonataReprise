@@ -23,7 +23,7 @@
 #include <rex/ui/windowed_app_context.h>
 
 #include "images.generated.h"
-#include "intro_text.h"
+#include "ui_text.h"
 #include "loading_screen.h"
 #include "native_renderer_plume.h"
 #include "release_id.h"

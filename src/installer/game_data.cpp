@@ -23,7 +23,7 @@
 
 #include "install_pipeline.h"
 #include "intro_screen.h"
-#include "intro_text.h"
+#include "ui_text.h"
 
 // The storage probes come from the SDK's GameDataSelector
 // (src/system/game_data_selector.cpp), which this replaces.
