@@ -37,6 +37,10 @@ namespace eternalsonata {
 // first-wins rule spans both routes.
 void ScanModLanguages(rex::Runtime* runtime);
 
+// The same from mods.toml, for the start screen, which opens before any
+// runtime exists. ScanModLanguages then skips the mods this already read.
+void ScanModLanguagesEarly();
+
 // The `font` files that enabled mods name in their `[[language]]` blocks, read
 // straight from mods.toml because the overlay atlas is built before any
 // runtime exists. They are merged into the overlay font behind the stock ones,
