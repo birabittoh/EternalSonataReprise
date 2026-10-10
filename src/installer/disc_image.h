@@ -35,4 +35,16 @@ std::string ExtractDiscImage(const std::string& image, const std::filesystem::pa
 std::string ReadDiscImageFile(const std::string& image, std::string_view name,
                               std::vector<uint8_t>& out);
 
+// Whether `image` is an ISO 9660 image, as a decrypted PS3 dump is.
+bool IsIsoImage(const std::string& image);
+
+// Reads `path` (slash separated, case insensitive) from an ISO 9660 `image`.
+std::string ReadIsoImageFile(const std::string& image, std::string_view path,
+                             std::vector<uint8_t>& out);
+
+// Copies the folder `folder` of an ISO 9660 `image` into `out_dir`, which is
+// replaced. Returns why it failed, for the player, or empty.
+std::string ExtractIsoFolder(const std::string& image, std::string_view folder,
+                             const std::filesystem::path& out_dir, const ExtractProgress& progress);
+
 }  // namespace eternalsonata

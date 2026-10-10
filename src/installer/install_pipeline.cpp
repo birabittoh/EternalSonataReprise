@@ -17,6 +17,7 @@ namespace {
 namespace fs = std::filesystem;
 
 constexpr const char* kTableOfContents = "index.vmtoc";
+constexpr const char* kPs3Eboot = "PS3_GAME/USRDIR/EBOOT.BIN";
 
 bool IsContentUri(const std::string& path) {
   return path.starts_with("content://");
@@ -203,6 +204,12 @@ SourceInfo IdentifySource(const std::string& picked) {
       return IdentifyGameDirectory(path);
     return IdentifyPs3Folder(FindPs3Archives(path));
   }
+  if (IsIsoImage(picked)) {
+    std::vector<uint8_t> eboot;
+    if (std::string error = ReadIsoImageFile(picked, kPs3Eboot, eboot); !error.empty())
+      return {{}, error};
+    return FromHash(eboot, "This PS3 disc image is not a known dump of Eternal Sonata.");
+  }
   std::vector<uint8_t> xex;
   if (std::string error = ReadDiscImageFile(picked, "default.xex", xex); !error.empty())
     return {{}, error};
@@ -232,6 +239,17 @@ std::string Install(const std::string& picked, const fs::path& assets, const Ins
   std::string error;
   if (folder) {
     error = UnpackPs3(FindPs3Archives(path), assets, hooks.progress);
+  } else if (IsIsoImage(picked)) {
+    // The archives are unpacked from a copy of the disc's game folder.
+    fs::path staging = assets;
+    staging += ".iso";
+    error = ExtractIsoFolder(picked, "PS3_GAME", staging, hooks.progress);
+    if (error.empty()) {
+      const fs::path archives = FindPs3Archives(staging);
+      error = archives.empty() ? "This PS3 disc image has no USRDIR/archives."
+                               : UnpackPs3(archives, assets, hooks.progress);
+    }
+    fs::remove_all(staging, ec);
   } else {
     error = ExtractDiscImage(picked, assets, kTableOfContents, hooks.progress);
     if (error.empty() && !IsGameDirectory(assets))

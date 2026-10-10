@@ -323,6 +323,127 @@ std::optional<std::pair<uint64_t, uint32_t>> FindRootFile(FileReader& reader, co
   return std::nullopt;
 }
 
+// ISO 9660, as a decrypted PS3 disc image is laid out.
+constexpr uint64_t kIsoDescriptorOffset = 16 * kSectorSize;
+
+struct IsoEntry {
+  std::string name;
+  uint64_t offset;
+  uint32_t length;
+  bool directory;
+};
+
+bool IsIso9660(FileReader& reader) {
+  return reader.MagicAt(kIsoDescriptorOffset + 1, "CD001");
+}
+
+// The entries of the directory at `extent`, without "." and "..". Names lose
+// their ";1" version suffix.
+std::vector<IsoEntry> ReadIsoDirectory(FileReader& reader, uint32_t extent, uint32_t length) {
+  std::vector<IsoEntry> entries;
+  if (length > 64 * 1024 * 1024)
+    return entries;
+  std::vector<uint8_t> data(length);
+  if (!reader.Read(uint64_t(extent) * kSectorSize, data.data(), length))
+    return entries;
+  size_t at = 0;
+  while (at < data.size()) {
+    const uint8_t size = data[at];
+    if (size == 0) {
+      at = (at / kSectorSize + 1) * kSectorSize;
+      continue;
+    }
+    if (at + size > data.size() || size < 34)
+      break;
+    const uint8_t* r = &data[at];
+    const uint8_t name_length = r[32];
+    at += size;
+    if (33u + name_length > size || (name_length == 1 && r[33] <= 1))
+      continue;
+    std::string name(reinterpret_cast<const char*>(r + 33), name_length);
+    if (const size_t version = name.find(';'); version != std::string::npos)
+      name.resize(version);
+    if (!name.empty() && name.back() == '.')
+      name.pop_back();
+    const uint32_t sector = r[2] | (r[3] << 8) | (r[4] << 16) | (uint32_t(r[5]) << 24);
+    const uint32_t size_bytes = r[10] | (r[11] << 8) | (r[12] << 16) | (uint32_t(r[13]) << 24);
+    entries.push_back({std::move(name), uint64_t(sector) * kSectorSize, size_bytes,
+                       (r[25] & 2) != 0});
+  }
+  return entries;
+}
+
+std::optional<IsoEntry> IsoRoot(FileReader& reader) {
+  uint8_t root[34];
+  if (!reader.Read(kIsoDescriptorOffset + 156, root, sizeof(root)))
+    return std::nullopt;
+  const uint32_t sector = root[2] | (root[3] << 8) | (root[4] << 16) | (uint32_t(root[5]) << 24);
+  const uint32_t length = root[10] | (root[11] << 8) | (root[12] << 16) | (uint32_t(root[13]) << 24);
+  return IsoEntry{"", uint64_t(sector) * kSectorSize, length, true};
+}
+
+std::optional<IsoEntry> FindIsoPath(FileReader& reader, std::string_view path) {
+  auto at = IsoRoot(reader);
+  while (at && !path.empty()) {
+    const size_t slash = path.find('/');
+    const std::string_view part = path.substr(0, slash);
+    path = slash == std::string_view::npos ? std::string_view() : path.substr(slash + 1);
+    if (!at->directory)
+      return std::nullopt;
+    std::optional<IsoEntry> next;
+    for (IsoEntry& e : ReadIsoDirectory(reader, uint32_t(at->offset / kSectorSize), at->length)) {
+      if (SameFileName(e.name, part)) {
+        next = std::move(e);
+        break;
+      }
+    }
+    at = std::move(next);
+  }
+  return at;
+}
+
+void CountIso(FileReader& reader, const IsoEntry& dir, Walk& walk, int depth) {
+  if (depth > kMaxDirectoryDepth) {
+    walk.complete = false;
+    return;
+  }
+  for (const IsoEntry& e : ReadIsoDirectory(reader, uint32_t(dir.offset / kSectorSize), dir.length)) {
+    if (e.directory) {
+      CountIso(reader, e, walk, depth + 1);
+    } else {
+      ++walk.files;
+      walk.bytes += e.length;
+    }
+  }
+}
+
+void CopyIso(FileReader& reader, const IsoEntry& dir, const fs::path& out_dir, Walk& walk,
+             int depth) {
+  if (depth > kMaxDirectoryDepth) {
+    walk.complete = false;
+    return;
+  }
+  std::error_code ec;
+  fs::create_directories(out_dir, ec);
+  for (const IsoEntry& e : ReadIsoDirectory(reader, uint32_t(dir.offset / kSectorSize), dir.length)) {
+    const auto dest = SafeJoin(out_dir, e.name);
+    if (!dest) {
+      REXLOG_WARN("ISO: rejected entry name '{}'", e.name);
+      walk.complete = false;
+      continue;
+    }
+    if (e.directory) {
+      CopyIso(reader, e, *dest, walk, depth + 1);
+      continue;
+    }
+    std::ofstream out(*dest, std::ios::binary | std::ios::trunc);
+    if (!out || !reader.CopyTo(out, e.offset, e.length, walk.progress)) {
+      REXLOG_WARN("ISO: could not write {}", dest->string());
+      walk.complete = false;
+    }
+  }
+}
+
 }  // namespace
 
 bool MoveAside(const fs::path& dir) {
@@ -408,6 +529,52 @@ std::string ReadDiscImageFile(const std::string& image, std::string_view name,
   out.resize(file->second);
   if (!reader.Read(file->first, out.data(), out.size()))
     return "The disc image is truncated.";
+  return {};
+}
+
+bool IsIsoImage(const std::string& image) {
+  FileReader reader(image);
+  return reader.ok() && IsIso9660(reader);
+}
+
+std::string ReadIsoImageFile(const std::string& image, std::string_view path,
+                             std::vector<uint8_t>& out) {
+  FileReader reader(image);
+  if (!reader.ok())
+    return "The file could not be read.";
+  const auto file = IsIso9660(reader) ? FindIsoPath(reader, path) : std::nullopt;
+  if (!file || file->directory)
+    return "This disc image is not Eternal Sonata.";
+  out.resize(file->length);
+  if (!reader.Read(file->offset, out.data(), out.size()))
+    return "The disc image is truncated.";
+  return {};
+}
+
+std::string ExtractIsoFolder(const std::string& image, std::string_view folder,
+                             const fs::path& out_dir, const ExtractProgress& progress_callback) {
+  FileReader reader(image);
+  if (!reader.ok())
+    return "The file could not be read.";
+  const auto dir = IsIso9660(reader) ? FindIsoPath(reader, folder) : std::nullopt;
+  if (!dir || !dir->directory)
+    return "This disc image is not Eternal Sonata.";
+  Walk measured;
+  CountIso(reader, *dir, measured, 0);
+  REXLOG_INFO("Disc image holds {} files, {}", measured.files, FormatBytes(measured.bytes));
+
+  std::error_code ec;
+  fs::remove_all(out_dir, ec);
+  Walk walk;
+  {
+    Progress progress(progress_callback, "Extracting game files...", measured.bytes);
+    walk.progress = &progress;
+    CopyIso(reader, *dir, out_dir, walk, 0);
+  }
+  if (!walk.complete) {
+    fs::remove_all(out_dir, ec);
+    return "Extraction failed. The disc image may be damaged, or the disk full.";
+  }
   return {};
 }
 
