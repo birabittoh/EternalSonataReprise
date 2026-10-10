@@ -44,8 +44,13 @@ void ScanModLanguagesEarly();
 // The `font` files that enabled mods name in their `[[language]]` blocks, read
 // straight from mods.toml because the overlay atlas is built before any
 // runtime exists. They are merged into the overlay font behind the stock ones,
-// so they only supply the glyphs those lack.
-std::vector<std::filesystem::path> ModLanguageFonts();
+// so they only supply the glyphs those lack. The atlas is baked once, so
+// `glyphs` is every character the mod's assets.toml contains.
+struct ModLanguageFont {
+  std::filesystem::path path;
+  std::string glyphs;
+};
+std::vector<ModLanguageFont> ModLanguageFonts();
 
 // Collects patches, builds the cache, and remounts the game partition with it.
 // Must run before the guest starts (OnPostSetup is the right place): the

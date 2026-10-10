@@ -201,11 +201,18 @@ class EternalsonataApp : public rex::ReXApp {
       MergeJapaneseFont(atlas, 16.0f, atlas->GetGlyphRangesJapanese());
     else
       MergeJapaneseFont(atlas, 16.0f, intro_glyphs.Data);
-    // Fonts of mod languages, for glyphs the ones above lack.
-    for (const auto& path : eternalsonata::ModLanguageFonts()) {
+    // Fonts of mod languages, for glyphs the ones above lack. The ranges have
+    // to outlive the bake.
+    static std::deque<ImVector<ImWchar>> mod_glyphs;
+    for (const auto& font : eternalsonata::ModLanguageFonts()) {
+      ImFontGlyphRangesBuilder builder;
+      builder.AddText(font.glyphs.c_str());
+      mod_glyphs.emplace_back();
+      builder.BuildRanges(&mod_glyphs.back());
       ImFontConfig merge;
       merge.MergeMode = true;
-      atlas->AddFontFromFileTTF(path.string().c_str(), 16.0f, &merge);
+      atlas->AddFontFromFileTTF(font.path.string().c_str(), 16.0f, &merge,
+                                mod_glyphs.back().Data);
     }
   }
 

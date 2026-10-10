@@ -2156,8 +2156,8 @@ void ScanModLanguagesEarly() {
   ScanLanguagesOf(mods);
 }
 
-std::vector<std::filesystem::path> ModLanguageFonts() {
-  std::vector<std::filesystem::path> fonts;
+std::vector<ModLanguageFont> ModLanguageFonts() {
+  std::vector<ModLanguageFont> fonts;
   const auto root = rex::system::ModState::ResolveModsRoot();
   for (const auto& entry : rex::system::ModState::Load(root)) {
     if (!entry.enabled)
@@ -2169,7 +2169,7 @@ std::vector<std::filesystem::path> ModLanguageFonts() {
       std::error_code ec;
       const auto path = mod_root / std::filesystem::path(declared.font);
       if (std::filesystem::is_regular_file(path, ec))
-        fonts.push_back(path);
+        fonts.push_back({path, ReadFileText(mod_root / "assets.toml")});
       else
         REXLOG_WARN("assets: mod '{}' language '{}' names a font that is not there: {}", entry.id,
                     declared.label, path.string());

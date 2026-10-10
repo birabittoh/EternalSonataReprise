@@ -464,7 +464,8 @@ restart_now = "Restart Now!"
 * The overlays draw with PT Serif (Latin, Greek, Cyrillic) plus the glyphs
   the shipped languages use from a system Japanese font. For anything else, a
   `[[language]]` block takes `font`, a TrueType file relative to the mod, which
-  is merged behind those fonts and so only supplies the glyphs they lack. This
+  is merged behind those fonts and so only supplies the glyphs they lack. Only
+  characters that appear in the mod's `assets.toml` are loaded from it. This
   is the overlays only: text drawn by the game keeps the game's one font (see
   the limits above).
 
