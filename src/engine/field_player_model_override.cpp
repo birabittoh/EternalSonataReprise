@@ -8,6 +8,7 @@
 #include "generated/eternalsonata_init.h"
 
 #include "settings.h"
+#include "ui_text.h"
 #include "cutscene_system.h"
 #include "overworld_system.h"
 
@@ -408,11 +409,11 @@ const char* const* FieldPlayerModelOverride::SelectionNames() {
   // Rebuilt per call: a modded slot can be defined after boot. ImGui thread.
   static std::array<std::string, kSelectionCount> names;
   static std::array<const char*, kSelectionCount> pointers;
-  names[kSelectionDefault] = "Default";
-  names[kSelectionFollowParty] = "Party Leader";
+  names[kSelectionDefault] = Tr("settings", "model_default");
+  names[kSelectionFollowParty] = Tr("settings", "model_party_leader");
   for (int c = 1; c <= kRosterSize; ++c) {
     names[kSelectionFirstCharacter + c - 1] = CharacterExists(c) ? CharacterDisplayName(c)
-                                                                 : "(vacant)";
+                                                                 : Tr("settings", "model_vacant");
   }
   for (size_t i = 0; i < names.size(); ++i)
     pointers[i] = names[i].c_str();

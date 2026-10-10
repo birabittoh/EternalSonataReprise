@@ -48,7 +48,7 @@
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
 #include "intro_screen.h"
-#include "intro_text.h"
+#include "ui_text.h"
 #include "loading_screen.h"
 #include "music_system.h"
 #include "native_renderer.h"

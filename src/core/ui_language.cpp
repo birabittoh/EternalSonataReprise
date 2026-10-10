@@ -11,7 +11,7 @@
 #include <rex/runtime.h>
 #include <rex/system/xmemory.h>
 
-#include "intro_text.h"
+#include "ui_text.h"
 #include "settings.h"
 
 namespace eternalsonata {

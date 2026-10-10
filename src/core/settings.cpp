@@ -13,7 +13,7 @@ extern "C" int EternalSonataSetSetting(int setting, int value);
 #include "field_player_model_override.h"
 #include "game_settings.h"
 #include "host_timer_resolution.h"
-#include "intro_text.h"
+#include "ui_text.h"
 #include "native_renderer.h"
 #include "ui_language.h"
 
@@ -643,6 +643,31 @@ constexpr ImVec4 kRestartColor(1.0f, 0.85f, 0.2f, 1.0f);
 // Fixed pixel sizes in the settings overlay, which ScaleAllSizes cannot reach.
 float Px(float pixels) { return pixels * UiScale(); }
 
+// The overlay's text, from the [settings] table of res/lang.
+const char* T(const char* key) { return Tr("settings", key); }
+
+// A row's tooltip is its key plus "_tip"; `fallback` when no language has one.
+const char* Tip(const char* key, const char* fallback = nullptr) {
+  thread_local std::string tip;
+  tip.assign(key).append("_tip");
+  return TrOr("settings", tip.c_str(), fallback);
+}
+
+// A label with a fixed ImGui id, so the window and tabs keep their state when
+// the language changes.
+const char* WithId(const char* text, const char* id) {
+  thread_local std::string label;
+  label.assign(text).append("##").append(id);
+  return label.c_str();
+}
+
+// The label of a value that has a key per option, else the value as is.
+const char* OptionText(const char* prefix, const char* id, const char* fallback) {
+  thread_local std::string key;
+  key.assign(prefix).append(id);
+  return TrOr("settings", key.c_str(), fallback);
+}
+
 // Draws nothing; it is a dialog only to get a per frame call inside the ImGui
 // frame. A change lands in full on the next frame, since the font size is
 // fixed at NewFrame. Sizes are rescaled from the unscaled style captured on
@@ -694,7 +719,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
  protected:
   void OnDraw(ImGuiIO& /*io*/) override {
     ImGui::SetNextWindowBgAlpha(0.9f);
-    if (!ImGui::Begin("Settings##rex", nullptr,
+    if (!ImGui::Begin(WithId(T("title"), "rex"), nullptr,
                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
       ImGui::End();
       return;
@@ -702,10 +727,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
     if (AnyPendingRestart()) {
       ImGui::PushStyleColor(ImGuiCol_Text, kRestartColor);
-      ImGui::TextWrapped("Some changes require a restart to take effect.");
+      ImGui::TextWrapped("%s", T("restart_banner"));
       ImGui::PopStyleColor();
       ImGui::SameLine();
-      if (ImGui::SmallButton("Restart Now")) {
+      if (ImGui::SmallButton(T("restart_now"))) {
         // Not Relaunch()+RequestClose() inline: this dialog is not always drawn
         // on the UI thread. Under the native renderer the overlay runs on the
         // guest's own render thread (see OnCreateImmediateDrawer), and closing
@@ -719,8 +744,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     DrawUpdateSection();
 
     if (ImGui::BeginTabBar("##settings_tabs")) {
-      if (ImGui::BeginTabItem("Graphics")) {
-        DrawCvarRow("Fullscreen", "fullscreen");
+      if (ImGui::BeginTabItem(WithId(T("tab_graphics"), "graphics"))) {
+        DrawCvarRow("fullscreen");
         DrawUiScaleRow();
         DrawRenderScaleRow();
         DrawFieldOfViewRow();
@@ -728,7 +753,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawRenderFilterRow();
         // Takes effect immediately on both renderers: the Xenos plugin reads
         // the cvar per vblank, the native renderer on the next present.
-        DrawCvarRow("VSync", "vsync");
+        DrawCvarRow("vsync");
 #if REX_HAS_VULKAN
         if (rex::cvar::GetFlagByName("gpu_backend") == "vulkan") {
           DrawVulkanDeviceRow();
@@ -736,63 +761,47 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 #endif
         ImGui::EndTabItem();
       }
-      if (ImGui::BeginTabItem("Audio")) {
-        DrawCvarRow("Mute Audio", "audio_mute");
+      if (ImGui::BeginTabItem(WithId(T("tab_audio"), "audio"))) {
+        DrawCvarRow("audio_mute");
         DrawAudioVolumeRow();
-        DrawGameVolumeRow("Music Volume", ETERNALSONATA_SETTING_VOLUME_MUSIC, 0);
-        DrawGameVolumeRow("Sound Effects Volume", ETERNALSONATA_SETTING_VOLUME_SFX, 1);
-        DrawGameVolumeRow("Voice Volume", ETERNALSONATA_SETTING_VOLUME_VOICE, 2);
+        DrawGameVolumeRow("music_volume", ETERNALSONATA_SETTING_VOLUME_MUSIC, 0);
+        DrawGameVolumeRow("sfx_volume", ETERNALSONATA_SETTING_VOLUME_SFX, 1);
+        DrawGameVolumeRow("voice_volume", ETERNALSONATA_SETTING_VOLUME_VOICE, 2);
 #if defined(_WIN32)
         DrawTimerResolutionRow();
 #endif
         ImGui::EndTabItem();
       }
-      if (ImGui::BeginTabItem("Input")) {
-        DrawCvarRow("Input Backend", "input_backend");
-        DrawCvarRow("Invert Aim X", "aim_invert_x");
-        DrawCvarRow("Invert Aim Y", "aim_invert_y");
-        DrawCvarRow("Fast Forward", "fast_forward_button",
-                    "Controller button that fast forwards the game while held, like Shift "
-                    "on the keyboard.");
-        DrawMultiplierRow("Fast Forward Cap", "fast_forward_max_speed", kFastForwardSpeedSteps,
-                          "Highest speed fast forward runs at. Unlimited runs as fast as "
-                          "the PC can manage, which varies by scene.",
-                          "Unlimited");
+      if (ImGui::BeginTabItem(WithId(T("tab_input"), "input"))) {
+        DrawCvarRow("input_backend");
+        DrawCvarRow("aim_invert_x");
+        DrawCvarRow("aim_invert_y");
+        DrawCvarRow("fast_forward_button");
+        DrawMultiplierRow("fast_forward_max_speed", kFastForwardSpeedSteps, true);
         ImGui::Separator();
-        DrawCvarRow("Gyro Aiming", "gyro_aim");
+        DrawCvarRow("gyro_aim");
         if (rex::cvar::GetFlagByName("gyro_aim") == "true") {
-          DrawSensitivityRow("Gyro Sensitivity", "gyro_sensitivity");
-          DrawCvarRow("Invert Gyro X", "gyro_invert_x");
-          DrawCvarRow("Invert Gyro Y", "gyro_invert_y");
+          DrawSensitivityRow("gyro_sensitivity");
+          DrawCvarRow("gyro_invert_x");
+          DrawCvarRow("gyro_invert_y");
         }
         ImGui::EndTabItem();
       }
-      if (ImGui::BeginTabItem("Game")) {
+      if (ImGui::BeginTabItem(WithId(T("tab_game"), "game"))) {
         DrawLanguageRow();
         DrawVoiceLanguageRow();
-        DrawCvarRow("Save Portraits", "save_row_portraits",
-                    "Shows the party portraits on save rows in every language, as the "
-                    "Japanese release does.");
+        DrawCvarRow("save_row_portraits");
         // A release with only Japanese text is already on the Japanese font.
         if (WesternTextAvailable()) {
-          DrawCvarRow("Japanese Fonts", "force_japanese_font",
-                      "Draws western text with the Japanese release's font.");
+          DrawCvarRow("force_japanese_font");
         }
         ImGui::Separator();
-        DrawMultiplierRow("EXP", "enemy_exp_multiplier", kRewardMultiplierSteps,
-                          "Multiplies the EXP every enemy is worth.");
-        DrawMultiplierRow("Bench EXP", "benched_exp_multiplier", kExpShareSteps,
-                          "Share of battle EXP awarded to party members outside the active "
-                          "three. The original game awards 0.5x.");
-        DrawMultiplierRow("Downed EXP", "incapacitated_exp_multiplier", kExpShareSteps,
-                          "Share of battle EXP awarded to incapacitated active party members. "
-                          "The original game awards none.");
-        DrawMultiplierRow("Gold", "enemy_gold_multiplier", kRewardMultiplierSteps,
-                          "Multiplies the gold every enemy drops.");
-        DrawMultiplierRow("Enemy HP", "enemy_hp_multiplier", kHpMultiplierSteps,
-                          "Multiplies every enemy's max HP, for longer or shorter fights.");
-        DrawMultiplierRow("Enemy Damage", "enemy_damage_multiplier", kRewardMultiplierSteps,
-                          "Multiplies the damage every enemy deals.");
+        DrawMultiplierRow("enemy_exp_multiplier", kRewardMultiplierSteps);
+        DrawMultiplierRow("benched_exp_multiplier", kExpShareSteps);
+        DrawMultiplierRow("incapacitated_exp_multiplier", kExpShareSteps);
+        DrawMultiplierRow("enemy_gold_multiplier", kRewardMultiplierSteps);
+        DrawMultiplierRow("enemy_hp_multiplier", kHpMultiplierSteps);
+        DrawMultiplierRow("enemy_damage_multiplier", kRewardMultiplierSteps);
         ImGui::Separator();
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();
@@ -802,7 +811,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     }
 
     ImGui::Separator();
-    if (ImGui::Button("Reset All to Defaults")) {
+    if (ImGui::Button(T("reset_all"))) {
       for (const char* name : kBasicCvarNames) {
         rex::cvar::ResetToDefault(name);
       }
@@ -819,7 +828,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     // ("All Settings##rexdev") so its ImGui window doesn't share an ID
     // with this dialog's own "Settings##rex" -- same ID would merge both
     // dialogs' draws into a single squeezed window instead of two.
-    if (ImGui::Button(dev_settings_overlay_ ? "Close All Settings" : "All Settings...")) {
+    if (ImGui::Button(dev_settings_overlay_ ? T("close_all_settings") : T("all_settings"))) {
       if (dev_settings_overlay_) {
         dev_settings_overlay_.reset();
       } else {
@@ -863,17 +872,17 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     if (rex::system::AutoUpdater::HasPendingSelfUpdate(
             rex::system::AutoUpdater::InstallRoot())) {
       ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.85f, 0.55f, 1.0f));
-      ImGui::TextWrapped("An update has been downloaded.");
+      ImGui::TextWrapped("%s", T("update_downloaded"));
       ImGui::PopStyleColor();
       ImGui::SameLine();
 #if REX_PLATFORM_ANDROID
       // The system installer takes it from here and replaces the app itself;
       // closing the game would only dismiss the installer prompt.
-      if (ImGui::SmallButton("Install Update##autoupdate")) {
+      if (ImGui::SmallButton(WithId(T("install_update"), "autoupdate"))) {
         rex::system::AutoUpdater::ApplyAndRestart(rex::system::AutoUpdater::InstallRoot(), {});
       }
 #else
-      if (ImGui::SmallButton("Restart & Apply##autoupdate")) {
+      if (ImGui::SmallButton(WithId(T("restart_apply"), "autoupdate"))) {
         // This install root contains the running executable itself,
         // which stays locked for this process's whole lifetime (see
         // AutoUpdater::ApplyAndRestart's contract). The spawned helper
@@ -895,11 +904,13 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     auto install = auto_updater_.InstallSnapshot();
     if (install.in_progress) {
       if (install.total_bytes > 0) {
-        ImGui::TextDisabled("Downloading update... %.0f%%",
-                            100.0 * static_cast<double>(install.downloaded_bytes) /
-                                static_cast<double>(install.total_bytes));
+        char percent[16];
+        std::snprintf(percent, sizeof(percent), "%.0f%%",
+                      100.0 * static_cast<double>(install.downloaded_bytes) /
+                          static_cast<double>(install.total_bytes));
+        ImGui::TextDisabled("%s", Tr("settings", "downloading_percent", percent).c_str());
       } else {
-        ImGui::TextDisabled("Downloading update...");
+        ImGui::TextDisabled("%s", T("downloading"));
       }
       return;
     }
@@ -918,10 +929,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       return;
     }
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.85f, 0.55f, 1.0f));
-    ImGui::TextWrapped("Update available: v%s", info->version.c_str());
+    ImGui::TextWrapped("%s", Tr("settings", "update_available", "v" + info->version).c_str());
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    if (ImGui::SmallButton("Download Update")) {
+    if (ImGui::SmallButton(T("download_update"))) {
       auto_updater_.InstallAsync(*info, rex::system::AutoUpdater::InstallRoot());
     }
   }
@@ -929,7 +940,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // A row's label, with a yellow asterisk when `cvar` only takes effect after a
   // restart, and in yellow itself once it has been changed and is waiting for
   // one. Returns whether the label was hovered, for the row's own tooltip.
-  bool DrawRowLabel(const char* label, const char* cvar) {
+  bool DrawRowLabel(const char* key, const char* cvar) {
+    const char* label = T(key);
     const bool pending = cvar && CvarPendingRestart(cvar);
     if (pending) {
       ImGui::TextColored(kRestartColor, "%s", label);
@@ -942,7 +954,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       ImGui::SameLine(0.0f, Px(2.0f));
       ImGui::TextColored(kRestartColor, "*");
       if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Requires a restart.");
+        ImGui::SetTooltip("%s", T("requires_restart"));
       }
     }
     return hovered;
@@ -950,15 +962,14 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
   // A plain cvar row: label, the SDK's generic widget, and the cvar's own
   // description as a tooltip unless the row has a better one.
-  void DrawCvarRow(const char* label, const char* name, const char* tooltip = nullptr) {
+  void DrawCvarRow(const char* name) {
     const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
-    if (DrawRowLabel(label, name)) {
-      if (tooltip) {
-        ImGui::SetTooltip("%s", tooltip);
-      } else if (!entry->description.empty()) {
-        ImGui::SetTooltip("%s", entry->description.c_str());
+    if (DrawRowLabel(name, name)) {
+      if (const char* tip = Tip(name, entry->description.empty() ? nullptr
+                                                               : entry->description.c_str())) {
+        ImGui::SetTooltip("%s", tip);
       }
     }
     ImGui::SameLine(Px(180.0f));
@@ -972,8 +983,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // Discrete steps, so the shipped balance is always exactly one notch. The
   // label shows the cvar's real value, which a hand edited config may have
   // put between two steps.
-  void DrawMultiplierRow(const char* label, const char* name, std::span<const double> steps,
-                         const char* tooltip, const char* zero_text = nullptr) {
+  void DrawMultiplierRow(const char* name, std::span<const double> steps,
+                         bool zero_is_unlimited = false) {
     const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
@@ -984,14 +995,14 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         idx = i;
     }
     char text[16];
-    if (zero_text && value == 0.0) {
-      std::snprintf(text, sizeof(text), "%s", zero_text);
+    if (zero_is_unlimited && value == 0.0) {
+      std::snprintf(text, sizeof(text), "%s", T("unlimited"));
     } else {
       std::snprintf(text, sizeof(text), "%gx", value);
     }
 
-    if (DrawRowLabel(label, name)) {
-      ImGui::SetTooltip("%s", tooltip);
+    if (DrawRowLabel(name, name)) {
+      ImGui::SetTooltip("%s", Tip(name, name));
     }
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
@@ -1026,8 +1037,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
                   static_cast<int>(std::lround(
                       (ui_scale_drag_idx_ < 0 ? value : kUiScaleSteps[idx]) * 100.0)));
 
-    if (DrawRowLabel("UI Scale", "ui_scale")) {
-      ImGui::SetTooltip("Size of these overlay windows and their text.");
+    if (DrawRowLabel("ui_scale", "ui_scale")) {
+      ImGui::SetTooltip("%s", Tip("ui_scale", ""));
     }
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
@@ -1048,13 +1059,14 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
   // The generic Double widget is a bare input box; a slider reads better, and
   // the file is written once the drag ends rather than on every frame of it.
-  void DrawSensitivityRow(const char* label, const char* name) {
+  void DrawSensitivityRow(const char* name) {
     const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
     float value = static_cast<float>(std::atof(entry->getter().c_str()));
-    if (DrawRowLabel(label, name) && !entry->description.empty()) {
-      ImGui::SetTooltip("%s", entry->description.c_str());
+    if (DrawRowLabel(name, name)) {
+      if (const char* tip = Tip(name, entry->description.c_str()))
+        ImGui::SetTooltip("%s", tip);
     }
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
@@ -1083,7 +1095,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
     int percent = VolumePercentFromAmplitude(std::atof(entry->getter().c_str()));
 
-    DrawRowLabel("Master Volume", "audio_volume");
+    DrawRowLabel("audio_volume", "audio_volume");
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("audio_volume");
@@ -1100,15 +1112,13 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // through its mixer and land in the save exactly as the Options screen's do.
   // From this thread a write is queued to the next guest frame, so the value
   // being dragged is held here until then rather than snapping back.
-  void DrawGameVolumeRow(const char* label, int setting, int slot) {
+  void DrawGameVolumeRow(const char* key, int setting, int slot) {
     const int current = EternalSonataGetSetting(setting);
     int& pending = volume_drag_[slot];
     int percent = pending >= 0 ? pending : current;
 
-    if (DrawRowLabel(label, nullptr)) {
-      ImGui::SetTooltip("The game's own %s, as in its Options screen. Saved with "
-                        "your game data rather than the host settings.",
-                        label);
+    if (DrawRowLabel(key, nullptr)) {
+      ImGui::SetTooltip("%s", Tr("settings", "game_volume_tip", T(key)).c_str());
     }
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
@@ -1154,19 +1164,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       }
     }
 
-    if (DrawRowLabel("Audio Timing", "host_timer_resolution_ms")) {
-      ImGui::SetTooltip(
-          "How precisely the game's audio clock is allowed to run.\n\n"
-          "\"Host\" leaves your system's own timer alone, which is too coarse "
-          "for this game and makes everything the audio clock drives run about "
-          "3x slow.\n\n"
-          "\"Xbox 360\" matches the console: music and voices play at the tempo "
-          "they were written for, and spoken lines are followed by a short "
-          "pause before the next one, exactly as they were on the original "
-          "hardware.\n\n"
-          "\"Instantaneous\" keeps that same tempo but moves on to the next "
-          "line as soon as the current one finishes, trimming those pauses. "
-          "Down to taste; it draws more power and can spin fans up.");
+    if (DrawRowLabel("host_timer_resolution_ms", "host_timer_resolution_ms")) {
+      ImGui::SetTooltip("%s", Tip("host_timer_resolution_ms"));
     }
     ImGui::SameLine(Px(180.0f));
     // Match the combo boxes in this menu (Language, Input Backend, ...).
@@ -1175,7 +1174,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     // Discrete 0..N-1 slider; format shows the label of the current option
     // (re-evaluated per frame). NoInput keeps it snapping between presets.
     if (ImGui::SliderInt("##v", &sel, 0, static_cast<int>(kTimerResolutionOptions.size()) - 1,
-                         kTimerResolutionOptions[sel].label, ImGuiSliderFlags_NoInput)) {
+                         OptionText("timer_", kTimerResolutionOptions[sel].id,
+                                    kTimerResolutionOptions[sel].label),
+                         ImGuiSliderFlags_NoInput)) {
       // ApplyHostTimerResolution is registered as this cvar's change callback,
       // so writing it through SetFlagByName is what applies the new tick rate.
       rex::cvar::SetFlagByName("host_timer_resolution_ms", kTimerResolutionOptions[sel].id,
@@ -1199,7 +1200,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
     ImGui::PushID("render_scale");
     // Whichever cvar SetRenderScalePercent writes: only the fallback restarts.
-    DrawRowLabel("Render Resolution", rex::cvar::GetFlagInfo("render_scale") ? "render_scale"
+    DrawRowLabel("render_scale", rex::cvar::GetFlagInfo("render_scale") ? "render_scale"
                                                                               : "resolution_scale");
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
@@ -1213,7 +1214,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
   // The sampler every upscale of the world image uses, so it takes effect on the
   // very next frame.
-  void DrawRenderFilterRow() { DrawCvarRow("Pixelated Scaling", "render_pixelated_scaling"); }
+  void DrawRenderFilterRow() { DrawCvarRow("render_pixelated_scaling"); }
 
   // Applies to the next camera setup rather than instantly: the guest calls
   // sub_82108180 when a camera changes, so the view widens on the next cut or
@@ -1227,7 +1228,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     std::snprintf(label, sizeof(label), "%d%%%%", CameraFovOptionPercent(idx));
 
     ImGui::PushID("camera_fov_scale");
-    DrawRowLabel("Field of View", "camera_fov_scale");
+    DrawRowLabel("camera_fov_scale", "camera_fov_scale");
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
     // Discrete 0..N-1 slider on the same steps the native Options gauge moves
@@ -1244,7 +1245,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   void DrawLanguageRow() {
     const int cur_idx = IntroLanguage();
 
-    DrawRowLabel("Language", "ui_language");
+    DrawRowLabel("ui_language", "ui_language");
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("ui_language");
@@ -1269,7 +1270,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       return;
     const int cur_idx = VoiceLanguageIndex();
 
-    DrawRowLabel("Voice Language", "voice_language");
+    DrawRowLabel("voice_language", "voice_language");
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("voice_language");
@@ -1297,14 +1298,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   void DrawFieldLeaderModelRow() {
     int selection = eternalsonata::FieldPlayerModelOverride::Selection();
 
-    if (DrawRowLabel("Overworld Model", "field_leader_model")) {
-      ImGui::SetTooltip(
-          "Which character is shown walking around the overworld.\n\n"
-          "\"Party Leader\" uses whoever is first in the party, which you reorder "
-          "from the status screen.\n\n"
-          "The model can only be swapped while the field is paused, so a change takes "
-          "effect the next time you close a menu or move between areas. "
-          "Characters whose model has not been loaded yet fall back to the default.");
+    if (DrawRowLabel("field_leader_model", "field_leader_model")) {
+      ImGui::SetTooltip("%s", Tip("field_leader_model"));
     }
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
@@ -1323,10 +1318,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     if (eternalsonata::FieldPlayerModelOverride::Selection() ==
         eternalsonata::FieldPlayerModelOverride::kSelectionDefault)
       return;
-    DrawCvarRow("Compatible Actions", "field_action_default_model",
-                "Temporarily use the story character model for chest, door, climbing, "
-                "and other field animations. Disable this to keep the selected model, "
-                "which may contort because those animations use an incompatible rig.");
+    DrawCvarRow("field_action_default_model");
   }
 
   // Controls the frame rate the game runs at. The hooks in
@@ -1336,13 +1328,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   void DrawFrameRateRow() {
     const int cur_idx = FrameRateOptionIndex();
 
-    if (DrawRowLabel("Frame Rate", "frame_rate")) {
-      ImGui::SetTooltip(
-          "How often the in-game scene and simulation advance. The original "
-          "game is capped at 30 FPS; Unlocked runs as fast as the CPU and GPU "
-          "allow, at normal game speed. Adaptive targets 60 but drops to 30 "
-          "rather than running the game in slow motion, returning to 60 once "
-          "there is headroom again.");
+    if (DrawRowLabel("frame_rate", "frame_rate")) {
+      ImGui::SetTooltip("%s", Tip("frame_rate"));
     }
     ImGui::SameLine(Px(180.0f));
     // Match the combo boxes in this menu (Language, Input Backend, ...).
@@ -1353,7 +1340,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     // (re-evaluated per frame). NoInput keeps it snapping between presets.
     if (ImGui::SliderInt("##v", &sel, 0,
                          static_cast<int>(kFrameRateOptions.size()) - 1,
-                         kFrameRateOptions[sel].label,
+                         OptionText("rate_", kFrameRateOptions[sel].id, kFrameRateOptions[sel].label),
                          ImGuiSliderFlags_NoInput)) {
       // Sets both cvars, and persists them itself - hence no SaveBasic here.
       SetFrameRateOption(sel);
@@ -1376,12 +1363,14 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
     int current = std::atoi(entry->getter().c_str());
     auto label_for = [this](int real_idx) -> const std::string& {
-      static const std::string kAuto = "Auto";
-      return real_idx < 0 ? kAuto : vulkan_devices_[real_idx].name;
+      static thread_local std::string name;
+      name = real_idx < 0 ? T("auto") : vulkan_devices_[real_idx].name;
+      return name;
     };
 
-    if (DrawRowLabel("Vulkan Device", "vulkan_device") && !entry->description.empty()) {
-      ImGui::SetTooltip("%s", entry->description.c_str());
+    if (DrawRowLabel("vulkan_device", "vulkan_device")) {
+      if (const char* tip = Tip("vulkan_device", entry->description.c_str()))
+        ImGui::SetTooltip("%s", tip);
     }
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
@@ -1390,7 +1379,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       {
         bool selected = (current < 0);
         ImGui::PushID(-1);
-        if (ImGui::Selectable("Auto", selected)) {
+        if (ImGui::Selectable(T("auto"), selected)) {
           rex::cvar::SetFlagByName("vulkan_device", "-1", /*persist=*/true);
           SaveBasic();
         }

@@ -22,6 +22,7 @@
 #include <rex/cvar.h>
 
 #include "eternalsonata_hooks_internal.h"
+#include "ui_text.h"
 
 // ---------------------------------------------------------------------------
 // Settings
@@ -698,7 +699,7 @@ class GuestProfilerOverlay : public rex::ui::ImGuiDialog {
 
     ImGui::SetNextWindowSize(ImVec2(460, 520), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowBgAlpha(0.85f);
-    if (!ImGui::Begin("Guest Profiler##rex", nullptr, ImGuiWindowFlags_NoCollapse)) {
+    if (!ImGui::Begin((std::string(Tr("profiler", "title")) + "##rex").c_str(), nullptr, ImGuiWindowFlags_NoCollapse)) {
       ImGui::End();
       return;
     }
@@ -710,7 +711,7 @@ class GuestProfilerOverlay : public rex::ui::ImGuiDialog {
     }
 
     if (!snap.valid) {
-      ImGui::TextUnformatted("Sampling... (the summary rolls once a second)");
+      ImGui::TextUnformatted(Tr("profiler", "sampling"));
       ImGui::End();
       return;
     }
@@ -723,12 +724,12 @@ class GuestProfilerOverlay : public rex::ui::ImGuiDialog {
     // of using this thing, so both ways out are one click. "Dump" writes the
     // snapshot already on screen; the checkbox keeps writing one a second,
     // which is what you want for a run you intend to diff afterwards.
-    if (ImGui::Button("Dump to log")) {
+    if (ImGui::Button(Tr("profiler", "dump"))) {
       LogSnapshot(snap);
     }
     ImGui::SameLine();
     bool logging = REXCVAR_GET(guest_profile);
-    if (ImGui::Checkbox("Log every second", &logging)) {
+    if (ImGui::Checkbox(Tr("profiler", "log_every_second"), &logging)) {
       rex::cvar::SetFlagByName("guest_profile", logging ? "true" : "false");
     }
 
@@ -754,7 +755,7 @@ class GuestProfilerOverlay : public rex::ui::ImGuiDialog {
     // Exact, not sampled. The calls/frame column is the one that answers "does
     // this scale with what is on screen": a count that tracks the enemy count
     // is a per-model cost, a flat one is not.
-    ImGui::TextUnformatted("Guest zones (exact, nested)");
+    ImGui::TextUnformatted(Tr("profiler", "zones"));
     if (ImGui::BeginTable("zones", 3, ImGuiTableFlags_SizingStretchProp)) {
       for (uint32_t z = 0; z < kZoneCount; ++z) {
         ImGui::TableNextRow();
@@ -772,15 +773,15 @@ class GuestProfilerOverlay : public rex::ui::ImGuiDialog {
     // The one that names a culprit: blocked milliseconds per frame charged to
     // every function on the stack of the wait. Read it from the bottom, where
     // the entries stop being the scheduler and start being a particular task.
-    ImGui::TextUnformatted("Blocked by (ms/frame on the stack of a wait)");
+    ImGui::TextUnformatted(Tr("profiler", "blocked_by"));
     DrawMsRows("blockedby", snap.blocked_by);
 
     ImGui::Separator();
-    ImGui::TextUnformatted("Inclusive (which guest function owns the frame)");
+    ImGui::TextUnformatted(Tr("profiler", "inclusive"));
     DrawRows("incl", snap.inclusive);
 
     ImGui::Separator();
-    ImGui::TextUnformatted("Leaf (where the cycles land)");
+    ImGui::TextUnformatted(Tr("profiler", "leaf"));
     DrawRows("leaf", snap.leaf);
 
     ImGui::End();
@@ -789,7 +790,7 @@ class GuestProfilerOverlay : public rex::ui::ImGuiDialog {
  private:
   static void DrawMsRows(const char* id, const std::vector<Row>& rows) {
     if (rows.empty()) {
-      ImGui::TextUnformatted("  (nothing blocked)");
+      ImGui::TextUnformatted(Tr("profiler", "nothing_blocked"));
       return;
     }
     if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp)) {
@@ -807,7 +808,7 @@ class GuestProfilerOverlay : public rex::ui::ImGuiDialog {
 
   static void DrawRows(const char* id, const std::vector<Row>& rows) {
     if (rows.empty()) {
-      ImGui::TextUnformatted("  (no samples)");
+      ImGui::TextUnformatted(Tr("profiler", "no_samples"));
       return;
     }
     if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp)) {
