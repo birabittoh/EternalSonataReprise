@@ -325,8 +325,6 @@ class EternalsonataApp : public rex::ReXApp {
     eternalsonata::InitPartyArrays(runtime());
     eternalsonata::ApplyPs3ItemTables();
 
-    eternalsonata::ApplyBootTextLanguage();
-
     // Seed the GPU plugin/Vulkan device lists once here rather than every
     // time the F4 settings overlay is opened (see settings.cpp).
     eternalsonata::InitSettingsCaches();

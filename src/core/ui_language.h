@@ -1,8 +1,7 @@
 #pragma once
 
-// The interface language: the BTX block the executable's own text is drawn
-// in, apart from the game language in dword_8243D370, which the story text,
-// the font and the layouts keep following.
+// The BTX block the executable's own text is drawn in: the game language in
+// dword_8243D370, which the story text, the font and the layouts follow.
 
 #include <cstdint>
 #include <string_view>
@@ -10,8 +9,7 @@
 namespace eternalsonata {
 
 // The dword_8243D370 index (JPN USA GBR FRA ITA DEU ESP) for executable side
-// text, given the game's. It is the game's own while a mod language is
-// selected, or when the two sit on different sides of the Japanese font split.
+// text, given the game's.
 uint32_t UiTextLanguage(uint32_t game_language);
 uint32_t UiTextLanguage();
 

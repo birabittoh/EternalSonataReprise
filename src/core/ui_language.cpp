@@ -18,7 +18,6 @@ namespace eternalsonata {
 namespace {
 
 constexpr uint32_t kTextLanguage = 0x8243D370u;
-constexpr uint32_t kJapanese = 0;
 constexpr char kSlots[][5] = {"JPN ", "USA ", "GBR ", "FRA ", "ITA ", "DEU ", "ESP "};
 
 // Covers the image's .data, which holds the executable's text blobs.
@@ -46,26 +45,6 @@ int BtxLanguageFromCode(std::string_view code) {
 
 namespace {
 
-bool English(uint32_t language) {
-  return language == 1 || language == 2;
-}
-
-uint32_t Resolve(uint32_t game) {
-  const int ui = BtxLanguageFromCode(IntroLanguageCode());
-  if (ui < 0 || game >= std::size(kSlots))
-    return game;
-  // A mod language rewrites the game's block in place, the executable's too.
-  const uint32_t selected = UserLanguageId();
-  if (selected < 1 || selected > 6)
-    return game;
-  // One font draws either Shift JIS or cp1252, and it follows the game.
-  if ((uint32_t(ui) == kJapanese) != (game == kJapanese))
-    return game;
-  if (English(uint32_t(ui)) && English(game))
-    return game;
-  return uint32_t(ui);
-}
-
 uint32_t Load(const uint8_t* at) {
   return rex::memory::load_and_swap<uint32_t>(at);
 }
@@ -73,18 +52,7 @@ uint32_t Load(const uint8_t* at) {
 }  // namespace
 
 uint32_t UiTextLanguage(uint32_t game_language) {
-  // Every text lookup asks, so the answer is kept per thread until a language
-  // changes.
-  thread_local uint32_t generation = 0;
-  thread_local uint32_t game = ~0u;
-  thread_local uint32_t ui = 0;
-  const uint32_t current = g_generation.load(std::memory_order_acquire);
-  if (generation != current || game != game_language) {
-    generation = current;
-    game = game_language;
-    ui = Resolve(game_language);
-  }
-  return ui;
+  return game_language;
 }
 
 const char* BtxLanguageSlot(uint32_t language) {

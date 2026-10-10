@@ -384,10 +384,6 @@ std::vector<ModLanguage> g_mod_languages;
 // "<XLanguage id>:<key>", value UTF-8. Owns its storage, same reason.
 std::map<std::string, std::string> g_native_strings;
 
-// Whether ApplyBootTextLanguage moved the text language, to be saved once
-// the settings path is known.
-bool g_boot_text_moved = false;
-
 // What the config actually said at boot, and whether ApplyBootLanguageDonorSlot
 // has since pointed the live cvar somewhere else for the guest's benefit. Once
 // the player picks something this session the live cvar is authoritative again
@@ -1241,20 +1237,19 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
-  // The interface language. The story text has its own row in the game's
-  // Options screen, and moves with this one while the two match.
+  // The interface and the story text share this choice.
   void DrawLanguageRow() {
-    const int cur_idx = IntroLanguage();
+    const int cur_idx = UserLanguageIndex();
 
     DrawRowLabel("ui_language", "ui_language");
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID("ui_language");
-    if (ImGui::BeginCombo("##v", IntroLanguageName(cur_idx))) {
-      for (int i = 0; i < IntroLanguageCount(); ++i) {
+    if (ImGui::BeginCombo("##v", UserLanguageLabel(cur_idx))) {
+      for (int i : VisibleUserLanguages()) {
         bool selected = (i == cur_idx);
-        if (ImGui::Selectable(IntroLanguageName(i), selected)) {
-          SetIntroLanguage(i);
+        if (ImGui::Selectable(UserLanguageLabel(i), selected)) {
+          SetUserLanguageSetting(i);
         }
         if (selected)
           ImGui::SetItemDefaultFocus();
@@ -1619,8 +1614,6 @@ void BindSettingsTargets(rex::ui::Window* window,
                          std::filesystem::path user_settings_path) {
   g_window = window;
   g_user_settings_path = std::move(user_settings_path);
-  if (g_boot_text_moved)
-    SaveUserSettings();
   rex::cvar::RegisterChangeCallback("fullscreen", [](std::string_view, std::string_view) {
     SaveUserSettings();
   });
@@ -2275,39 +2268,6 @@ int BootUserLanguageIndex() {
 
 namespace {
 
-// The built-in entry with the interface language's text block.
-int UiLanguageEntry() {
-  const char* slot = BtxLanguageSlot(uint32_t(BtxLanguageFromCode(IntroLanguageCode())));
-  for (int i = 0; i < static_cast<int>(kBuiltinLanguages.size()); ++i)
-    if (std::string_view(kBuiltinLanguages[i].btx_slot) == slot)
-      return i;
-  return 0;
-}
-
-// The part of a mod language's interface code ("mod:9") after the prefix, or
-// null for a res/lang one.
-const char* ModLanguageOfCode(const char* code) {
-  return std::strncmp(code, "mod:", 4) == 0 ? code + 4 : nullptr;
-}
-
-// The language list id whose text goes with the interface language.
-std::string UiLanguageTargetId() {
-  if (const char* mod = ModLanguageOfCode(IntroLanguageCode()))
-    return mod;
-  return kBuiltinLanguages[UiLanguageEntry()].id;
-}
-
-// Whether list entry `id` holds the text of interface language `code`.
-bool SameLanguage(std::string_view id, const char* code) {
-  if (const char* mod = ModLanguageOfCode(code))
-    return id == mod;
-  const char* slot = BtxLanguageSlot(uint32_t(BtxLanguageFromCode(code)));
-  for (const auto& option : kBuiltinLanguages)
-    if (id == option.id)
-      return std::string_view(option.btx_slot) == slot;
-  return false;
-}
-
 void ApplyUserLanguage(int index) {
   const auto options = GetLanguageOptions();
   // From here on the live cvar is what the player picked, donor override or
@@ -2331,40 +2291,6 @@ void SetUserLanguageSetting(int index) {
     return;
   }
   ApplyUserLanguage(index);
-}
-
-void InterfaceLanguageChanged(const char* previous) {
-  // Before boot, ApplyBootTextLanguage does this.
-  if (!g_boot_language_latched || !SameLanguage(SelectedLanguageId(), previous))
-    return;
-  const std::string target = UiLanguageTargetId();
-  const auto options = GetLanguageOptions();
-  for (int index = 0; index < int(options.size()); ++index) {
-    if (target == options[index].id) {
-      if (UserLanguageAvailable(index) && index != UserLanguageIndex())
-        ApplyUserLanguage(index);
-      return;
-    }
-  }
-}
-
-void ApplyBootTextLanguage() {
-  auto* entry = rex::cvar::GetFlagInfo("user_language");
-  if (!entry || !entry->setter)
-    return;
-  // Linked when no config named a text language yet, it matched the
-  // interface language the start screen opened in, or the start screen
-  // started the game, which it only allows in a language the release has.
-  const std::string id = entry->getter();
-  const bool linked = rex::cvar::GetFlagSource("user_language") == rex::cvar::Source::kDefault ||
-                      SameLanguage(id, LaunchIntroLanguageCode()) || IntroLanguageConfirmed();
-  const std::string target = UiLanguageTargetId();
-  if (!linked || id == target)
-    return;
-  // Not marked pending, nothing runs on it yet. A release without the text
-  // falls back in ApplyUnavailableLanguageFallback.
-  entry->setter(target);
-  g_boot_text_moved = true;
 }
 
 void SetResolutionSetting(const char* value) {
