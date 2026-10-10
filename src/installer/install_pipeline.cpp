@@ -89,7 +89,7 @@ SourceInfo FromHash(const std::vector<uint8_t>& file, const std::string& unknown
     REXLOG_WARN("Unknown dump: {}", hash);
     return {{}, unknown};
   }
-  SourceInfo info{std::string("Eternal Sonata, ") + release->name, {}, release->languages};
+  SourceInfo info{release->name, {}, release->languages};
   if (!release->supported)
     info.error = info.release + " is not supported yet.";
   return info;
@@ -111,7 +111,7 @@ SourceInfo FromTitleId(const std::string& title_id) {
   const Ps3Region region = title_id[2] == 'U'   ? Ps3Region::kUsa
                            : title_id[2] == 'J' ? Ps3Region::kJapan
                                                 : Ps3Region::kPal;
-  return {std::string("Eternal Sonata, PS3, ") + RegionName(region) + " (" + title_id + ")", {}};
+  return {std::string("Eternal Sonata (PS3, ") + RegionName(region) + ", " + title_id + ")", {}};
 }
 
 SourceInfo IdentifyPs3Folder(const fs::path& archives) {
@@ -136,7 +136,7 @@ SourceInfo IdentifyPs3Folder(const fs::path& archives) {
 SourceInfo IdentifyGameDirectory(const fs::path& dir) {
   if (IsPs3Directory(dir)) {
     const Ps3Region region = ReadPs3Region(dir);
-    return {std::string("Eternal Sonata, PS3, ") + RegionName(region), {},
+    return {std::string("Eternal Sonata (PS3, ") + RegionName(region) + ")", {},
             region == Ps3Region::kJapan ? uint32_t(kTextJa) : uint32_t(kTextAll)};
   }
   std::vector<uint8_t> file;
