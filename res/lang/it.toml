@@ -32,6 +32,8 @@ confirm_delete = "Eliminare i file estratti di {}? Libera {} e non si può annul
 
 [settings]
 title = "Impostazioni"
+startup_hint = "Premi F4 per aprire le impostazioni."
+startup_hint_android = "Premi Guida per aprire le impostazioni."
 restart_banner = "Alcune modifiche richiedono un riavvio per avere effetto."
 restart_now = "Riavvia ora"
 tab_graphics = "Grafica"

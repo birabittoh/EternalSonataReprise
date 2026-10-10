@@ -32,6 +32,8 @@ confirm_delete = "{}の抽出済みファイルを削除しますか？{}が解�
 
 [settings]
 title = "設定"
+startup_hint = "F4キーで設定を開きます。"
+startup_hint_android = "Guideボタンで設定を開きます。"
 restart_banner = "一部の変更は再起動後に反映されます。"
 restart_now = "今すぐ再起動"
 tab_graphics = "グラフィック"

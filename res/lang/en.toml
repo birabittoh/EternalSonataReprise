@@ -34,6 +34,8 @@ confirm_delete = "Delete the extracted files of {}? This frees {} and cannot be 
 
 [settings]
 title = "Settings"
+startup_hint = "Press F4 to open settings."
+startup_hint_android = "Press Guide to open settings."
 restart_banner = "Some changes require a restart to take effect."
 restart_now = "Restart Now"
 tab_graphics = "Graphics"

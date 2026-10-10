@@ -24,6 +24,7 @@
 #include <rex/system/kernel_state.h>
 #include <rex/ui/imgui_theme.h>
 #include <rex/ui/keybinds.h>
+#include <rex/ui/overlay/hint_toast.h>
 #include <rex/ui/window.h>
 #include <rex/version.h>
 
@@ -254,13 +255,8 @@ class EternalsonataApp : public rex::ReXApp {
     // Empty (updater off) unless CMake found a version; see CMakeLists.txt.
     config.game_version = ETERNALSONATA_VERSION;
 
-    // One-shot toast shown top-left as the game starts. Android has no
-    // keyboard, so it names the touch overlay's Guide button instead.
-#if REX_PLATFORM_ANDROID
-    config.startup_hint = "Press Guide to open settings.";
-#else
-    config.startup_hint = "Press F4 to open settings.";
-#endif
+    // The startup toast is shown from OnPreLaunchModule instead, in the
+    // interface language, which mods can still add to until then.
 
     // Whatever plugin the config names, this project renders the guest itself.
     // Clearing it here, the last point before ReXApp decides whether to call
@@ -297,6 +293,17 @@ class EternalsonataApp : public rex::ReXApp {
     // OnPostSetup because the image has to be loaded first; still before the
     // guest runs, and the strings are only read once it does.
     eternalsonata::ApplyXexTextPatches(runtime());
+
+    // One-shot toast shown top-left as the game starts. Android has no
+    // keyboard, so it names the touch overlay's Guide button instead.
+    if (imgui_drawer()) {
+      startup_hint_ = std::make_unique<rex::ui::HintToastDialog>(imgui_drawer());
+#if REX_PLATFORM_ANDROID
+      startup_hint_->Show(eternalsonata::Tr("settings", "startup_hint_android"));
+#else
+      startup_hint_->Show(eternalsonata::Tr("settings", "startup_hint"));
+#endif
+    }
   }
 
   // Detached overlay mode: with no GPU plugin the SDK creates no presenter and
@@ -600,6 +607,7 @@ class EternalsonataApp : public rex::ReXApp {
 
   // F8 device list, backed by the SDK's generic input snapshot API.
   std::unique_ptr<rex::ui::ImGuiDialog> input_overlay_;
+  std::unique_ptr<rex::ui::HintToastDialog> startup_hint_;
   std::unique_ptr<rex::ui::ImGuiDialog> ui_scale_applier_;
 
   // Back-button entry point into the F-key overlays on touch-only devices.

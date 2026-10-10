@@ -32,6 +32,8 @@ confirm_delete = "¿Eliminar los archivos extraídos de {}? Se liberarán {} y n
 
 [settings]
 title = "Ajustes"
+startup_hint = "Pulsa F4 para abrir los ajustes."
+startup_hint_android = "Pulsa Guide para abrir los ajustes."
 restart_banner = "Algunos cambios requieren reiniciar para aplicarse."
 restart_now = "Reiniciar ahora"
 tab_graphics = "Gráficos"
