@@ -3,18 +3,21 @@
 #include <cctype>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include <rex/discord_rpc.h>
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/mod_plugin.h>
 #include <rex/system/mod_registry.h>
+#include <rex/system/user_context.h>
 #include <rex/system/xmemory.h>
 
 #include "area_names.generated.h"
 #include "battle_layout.h"
 #include "cutscene_system.h"
 #include "target.h"
+#include "xlast.generated.h"
 
 namespace eternalsonata {
 
@@ -68,6 +71,11 @@ std::string NormalizeAreaId(std::string id) {
 void RoomPresence::Bind(rex::system::KernelState* kernel_state, rex::Runtime* runtime) {
   kernel_state_ = kernel_state;
 
+  // The stripped guest image drops the XDBF resource the SDK would read the
+  // title's XLast from, so hand it the XML directly (see scripts/gen-xlast.py).
+  kernel_state_->user_contexts().SetXLastBytes(
+      std::vector<uint8_t>(kXLastXml, kXLastXml + sizeof(kXLastXml) - 1));
+
   // Discord RPC is only built for Windows and GNU Linux.
 #if REX_PLATFORM_WIN32 || REX_PLATFORM_GNU_LINUX
   rex::discord_rpc::Presence initial;
@@ -78,6 +86,15 @@ void RoomPresence::Bind(rex::system::KernelState* kernel_state, rex::Runtime* ru
 #endif
 
   runtime->mod_registry()->RegisterTick([this] { Tick(); });
+
+  // The SDK resolves the title's XLast rich presence from XGIUserSetContext;
+  // feed the finished string (the chapter name, or "Idle") to the overlay.
+  kernel_state_->RegisterUserContextCallback(
+      [this](const rex::system::UserContextEvent& event) {
+        if (!event.presence_string.empty()) {
+          NotifyPresenceString(event.presence_string);
+        }
+      });
 }
 
 void RoomPresence::Tick() {
@@ -179,6 +196,16 @@ void RoomPresence::NotifyFieldTeardown() {
   std::lock_guard<std::mutex> lock(area_mutex_);
   // field_area_id_ is kept so transitions keep showing the last area.
   field_active_ = false;
+}
+
+void RoomPresence::NotifyPresenceString(std::string presence) {
+  std::lock_guard<std::mutex> lock(area_mutex_);
+  presence_string_ = std::move(presence);
+}
+
+std::string RoomPresence::PresenceString() {
+  std::lock_guard<std::mutex> lock(area_mutex_);
+  return presence_string_;
 }
 
 bool RoomPresence::IsBattleActive() {

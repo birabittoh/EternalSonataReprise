@@ -46,6 +46,14 @@ class RoomPresence {
   // Called when the field map is torn down (sub_820FD998 with a null name).
   void NotifyFieldTeardown();
 
+  // Called from the SDK user-context callback with the title's resolved rich
+  // presence string (the chapter name, or "Idle" outside play). Thread-safe.
+  void NotifyPresenceString(std::string presence);
+
+  // The last resolved presence string, or empty if the title has set none.
+  // Thread-safe; used by the F3 debug overlay.
+  std::string PresenceString();
+
   // Read live from the battle FSM (FsmStateIsInBattle), so it is stateless
   // and safe from any thread. Exported to mods as EternalSonataIsBattleActive.
   bool IsBattleActive();
@@ -65,6 +73,8 @@ class RoomPresence {
   std::string field_area_id_;
   // Guarded by area_mutex_.
   bool field_active_ = false;
+  // SDK-resolved rich presence string; guarded by area_mutex_.
+  std::string presence_string_;
 
   std::string last_details_;
   std::string last_state_;
