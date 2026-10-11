@@ -1,33 +1,15 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
-// See guest_shaders.h.
+// Driver for the shared pack reader; see guest_shaders.h and
+// KryptonRecomp/guest_shader_pack.h.
 //
-// The pack format, written by scripts/gen-guest-shaders.py. Everything is
-// little endian. The bytes come from kGuestShaderPackData/-End, defined by a
-// generated `.S` that `.incbin`s guest_shaders.bin into the executable's own
-// read-only data (see write_pack_asm), so the pointers handed out below point
-// straight into the running process's image rather than a heap buffer.
-//
-//   header    magic 'ESGS', version, slot count, input count, key bytes,
-//             literal block count, blob bytes
-//   entries   2 * slot count records: vertex table first, then pixel
-//   inputs    (usage, usage index) pairs, referenced by offset from an entry
-//   keys      interpolator semantic keys, referenced by byte offset
-//   literals  64 byte blocks of four float4s, referenced by block index.
-//             Block 0 is a reserved all-zero sentinel meaning "no pool".
-//   blob      the compiled shaders, referenced by offset and size
-//
-// Every offset is validated against the section it indexes before anything is
-// handed out. A pack built by a different revision of the generator should fail
-// to load rather than produce plausible garbage that turns into a GPU fault
-// later.
+// The pack symbol comes from a generated `.S` that `.incbin`s guest_shaders.bin
+// into the executable's own read-only data (see write_pack_asm in
+// scripts/gen-guest-shaders.py), so there is nothing to load from disk.
 
 #include "guest_shaders.h"
 
-#include <cstring>
-#include <vector>
-
-#include <rex/logging.h>
+#include "guest_shader_pack.h"
 
 extern "C" {
 extern const uint8_t kGuestShaderPackData[];
@@ -37,198 +19,45 @@ extern const uint8_t kGuestShaderPackDataEnd[];
 namespace eternalsonata {
 namespace {
 
-constexpr uint32_t kMagic = 0x53475345;  // 'ESGS', little endian
-// Bumped to 2 when the emitter moved the pixel shaders' constant buffers to b2
-// and b3. The pack layout did not change, so a stale pack would load and bind
-// the vertex float bank to every pixel shader; refusing it is the point.
-// Bumped to 5 for the literal constant pool section, and to 6 for the point
-// sprite geometry shader's entry past the two slot tables, and to 7 for the
-// clip scale, which every vertex shader's emitted HLSL depends on.
-constexpr uint32_t kVersion = 8;
+// The renderer-owned entries past the slot tables, in gen-guest-shaders.py's
+// EXTRA_NAMES order.
+enum Extra : uint32_t { kPointSprite, kSpriteBatchVertex, kSpriteBatchPixel, kExtraCount };
 
-constexpr uint8_t kFlagPointSize = 1 << 0;
-constexpr uint8_t kFlagHasCube = 1 << 1;
-constexpr uint8_t kFlagParamGen = 1 << 2;
-
-#pragma pack(push, 1)
-struct PackHeader {
-  uint32_t magic;
-  uint32_t version;
-  uint32_t slots;
-  uint32_t input_count;
-  uint32_t key_bytes;
-  uint32_t literal_blocks;
-  uint32_t blob_bytes;
-};
-
-struct PackEntry {
-  uint32_t dxil_offset;
-  uint32_t dxil_size;
-  uint32_t spirv_offset;
-  uint32_t spirv_size;
-  uint32_t texture_mask;
-  uint16_t input_offset;  // in pairs, into the input section
-  uint8_t input_count;
-  uint8_t flags;
-  uint16_t key_offset;  // in bytes, into the key section
-  uint8_t key_count;
-  uint8_t param_gen_pos;
-  uint16_t literal_block;  // index into the literal section, 0 means none
-};
-#pragma pack(pop)
-
-static_assert(sizeof(PackHeader) == 28, "pack header layout");
-static_assert(sizeof(PackEntry) == 30, "pack entry layout");
-
-std::vector<GuestShader> g_vertex;
-std::vector<GuestShader> g_pixel;
-GuestShader g_point_sprite;
-GuestShader g_sprite_batch_vs;
-GuestShader g_sprite_batch_ps;
-constexpr size_t kExtraEntries = 3;  // point sprite gs, sprite batch vs, sprite batch ps
-const GuestShader g_absent;
-bool g_attempted = false;
-bool g_loaded = false;
-
-// Decode one record. Returns false on any offset that does not fit its section,
-// which is the whole validation: a truncated or mismatched pack is rejected here
-// rather than at the point a blob is handed to the driver.
-bool Decode(const PackEntry& entry, const PackHeader& header, const uint8_t* blob,
-            const GuestVertexInput* inputs, const uint8_t* keys, const uint8_t* literals,
-            GuestShader& out) {
-  auto in_blob = [&](uint32_t offset, uint32_t size) {
-    return size == 0 || (offset <= header.blob_bytes && size <= header.blob_bytes - offset);
-  };
-  if (!in_blob(entry.dxil_offset, entry.dxil_size) ||
-      !in_blob(entry.spirv_offset, entry.spirv_size))
-    return false;
-  if (entry.input_offset + entry.input_count > header.input_count)
-    return false;
-  if (entry.key_offset + entry.key_count > header.key_bytes)
-    return false;
-  if (entry.literal_block >= header.literal_blocks)
-    return false;
-
-  if (entry.dxil_size) {
-    out.dxil = blob + entry.dxil_offset;
-    out.dxil_size = entry.dxil_size;
-  }
-  if (entry.spirv_size) {
-    out.spirv = blob + entry.spirv_offset;
-    out.spirv_size = entry.spirv_size;
-  }
-  out.texture_mask = entry.texture_mask;
-  out.inputs = entry.input_count ? inputs + entry.input_offset : nullptr;
-  out.input_count = entry.input_count;
-  out.interpolator_keys = entry.key_count ? keys + entry.key_offset : nullptr;
-  out.interpolator_key_count = entry.key_count;
-  // Always pointed somewhere: block 0 is the all-zero sentinel, so a shader
-  // with no pool reads the zeros it would have read on the hardware anyway.
-  out.literals = literals + size_t(entry.literal_block) * 64;
-  out.has_literals = entry.literal_block != 0;
-  out.exports_point_size = (entry.flags & kFlagPointSize) != 0;
-  out.has_cube_texture = (entry.flags & kFlagHasCube) != 0;
-  out.param_gen = (entry.flags & kFlagParamGen) != 0;
-  out.param_gen_pos = entry.param_gen_pos;
-  return true;
+// This title's pack: magic 'ESGS', version, and the flag/block layout it uses.
+// Eternal Sonata carries a param_gen flag and a fixed 64 byte literal block,
+// with no per-entry hash section, and three renderer-owned extras.
+krypton::PackTraits MakeTraits() {
+  krypton::PackTraits traits{};
+  traits.magic = 0x53475345;  // 'ESGS', little endian
+  traits.version = 9;
+  traits.flag_point_size = 1 << 0;
+  traits.flag_has_cube = 1 << 1;
+  traits.flag_param_gen = 1 << 2;
+  traits.flag_footprint = 1 << 3;
+  traits.literal_block_bytes = 64;
+  traits.literals_tail_aligned = false;
+  traits.has_hash_section = false;
+  traits.extra_entries = kExtraCount;
+  return traits;
 }
+
+krypton::GuestShaderPack g_pack;
 
 }  // namespace
 
 bool LoadGuestShaders() {
-  if (g_attempted)
-    return g_loaded;
-  g_attempted = true;
-
-  const uint8_t* const pack = kGuestShaderPackData;
-  const size_t pack_size = size_t(kGuestShaderPackDataEnd - kGuestShaderPackData);
-
-  if (pack_size < sizeof(PackHeader)) {
-    REXLOG_ERROR("guest_shaders: embedded pack is too small to be a pack");
-    return false;
-  }
-  PackHeader header;
-  std::memcpy(&header, pack, sizeof(header));
-  if (header.magic != kMagic || header.version != kVersion) {
-    REXLOG_ERROR("guest_shaders: embedded pack is not a v{} pack (magic {:08X} version {})",
-                 kVersion, header.magic, header.version);
-    return false;
-  }
-
-  // One entry past the two tables holds the point sprite geometry shader, which
-  // is ours rather than the guest's and so has no table slot of its own.
-  const size_t entry_count = size_t(header.slots) * 2 + kExtraEntries;
-  const size_t entries_bytes = entry_count * sizeof(PackEntry);
-  const size_t expected = sizeof(PackHeader) + entries_bytes +
-                          size_t(header.input_count) * sizeof(GuestVertexInput) +
-                          size_t(header.key_bytes) + size_t(header.literal_blocks) * 64 +
-                          size_t(header.blob_bytes);
-  if (pack_size != expected) {
-    REXLOG_ERROR("guest_shaders: embedded pack is {} bytes, expected {}", pack_size, expected);
-    return false;
-  }
-
-  const uint8_t* cursor = pack + sizeof(PackHeader);
-  const PackEntry* records = reinterpret_cast<const PackEntry*>(cursor);
-  cursor += entries_bytes;
-  const GuestVertexInput* inputs = reinterpret_cast<const GuestVertexInput*>(cursor);
-  cursor += size_t(header.input_count) * sizeof(GuestVertexInput);
-  const uint8_t* keys = cursor;
-  cursor += header.key_bytes;
-  const uint8_t* literals = cursor;
-  cursor += size_t(header.literal_blocks) * 64;
-  const uint8_t* blob = cursor;
-
-  g_vertex.assign(header.slots, GuestShader{});
-  g_pixel.assign(header.slots, GuestShader{});
-  g_point_sprite = GuestShader{};
-  g_sprite_batch_vs = GuestShader{};
-  g_sprite_batch_ps = GuestShader{};
-  GuestShader* const extras[kExtraEntries] = {&g_point_sprite, &g_sprite_batch_vs,
-                                              &g_sprite_batch_ps};
-  for (size_t i = 0; i < entry_count; ++i) {
-    GuestShader& out = i >= size_t(header.slots) * 2 ? *extras[i - size_t(header.slots) * 2]
-                       : i < header.slots            ? g_vertex[i]
-                                                     : g_pixel[i - header.slots];
-    if (!Decode(records[i], header, blob, inputs, keys, literals, out)) {
-      REXLOG_ERROR("guest_shaders: entry {} in embedded pack is out of range", i);
-      g_vertex.clear();
-      g_pixel.clear();
-      g_point_sprite = GuestShader{};
-      return false;
-    }
-  }
-
-  g_loaded = true;
-  REXLOG_DEBUG("guest_shaders: loaded {} vertex, {} pixel from embedded pack ({} KiB)",
-              GuestVertexShaderCount(), GuestPixelShaderCount(), pack_size / 1024);
-  return true;
+  const size_t size = size_t(kGuestShaderPackDataEnd - kGuestShaderPackData);
+  return g_pack.Load(kGuestShaderPackData, size, MakeTraits());
 }
 
-const GuestShader& GuestVertexShader(uint32_t slot) {
-  return slot < g_vertex.size() ? g_vertex[slot] : g_absent;
-}
+const GuestShader& GuestVertexShader(uint32_t slot) { return g_pack.Vertex(slot); }
+const GuestShader& GuestPixelShader(uint32_t slot) { return g_pack.Pixel(slot); }
 
-const GuestShader& GuestPixelShader(uint32_t slot) {
-  return slot < g_pixel.size() ? g_pixel[slot] : g_absent;
-}
+const GuestShader& GuestPointSpriteShader() { return g_pack.Extra(kPointSprite); }
+const GuestShader& GuestSpriteBatchVertexShader() { return g_pack.Extra(kSpriteBatchVertex); }
+const GuestShader& GuestSpriteBatchPixelShader() { return g_pack.Extra(kSpriteBatchPixel); }
 
-const GuestShader& GuestPointSpriteShader() { return g_point_sprite; }
-const GuestShader& GuestSpriteBatchVertexShader() { return g_sprite_batch_vs; }
-const GuestShader& GuestSpriteBatchPixelShader() { return g_sprite_batch_ps; }
-
-uint32_t GuestVertexShaderCount() {
-  uint32_t count = 0;
-  for (const GuestShader& shader : g_vertex)
-    count += shader.valid() ? 1 : 0;
-  return count;
-}
-
-uint32_t GuestPixelShaderCount() {
-  uint32_t count = 0;
-  for (const GuestShader& shader : g_pixel)
-    count += shader.valid() ? 1 : 0;
-  return count;
-}
+uint32_t GuestVertexShaderCount() { return g_pack.VertexCount(); }
+uint32_t GuestPixelShaderCount() { return g_pack.PixelCount(); }
 
 }  // namespace eternalsonata

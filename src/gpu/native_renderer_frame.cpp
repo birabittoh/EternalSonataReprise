@@ -2226,8 +2226,10 @@ void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t he
   return nullptr;
 }
 
-bool FrameResolveTextureIsScaled(uint32_t address, uint32_t width, uint32_t height) {
-  if (address == 0)
+bool FrameResolveTextureScale(uint32_t address, uint32_t width, uint32_t height, float* scale_x,
+                              float* scale_y) {
+  *scale_x = *scale_y = 1.0f;
+  if (address == 0 || width == 0 || height == 0)
     return false;
   // Same freshest-copy selection as above, without the ripple bookkeeping: this
   // is a question about a bind the caller is about to make, not the bind itself.
@@ -2245,7 +2247,14 @@ bool FrameResolveTextureIsScaled(uint32_t address, uint32_t width, uint32_t heig
     return false;
   const uint32_t image_width = best->image_width != 0 ? best->image_width : best->width;
   const uint32_t image_height = best->image_height != 0 ? best->image_height : best->height;
+  *scale_x = float(image_width) / float(best->width);
+  *scale_y = float(image_height) / float(best->height);
   return image_width != best->width || image_height != best->height;
+}
+
+bool FrameResolveTextureIsScaled(uint32_t address, uint32_t width, uint32_t height) {
+  float scale_x, scale_y;
+  return FrameResolveTextureScale(address, width, height, &scale_x, &scale_y);
 }
 
 uint64_t FrameIndex() { return g_frame; }

@@ -72,6 +72,13 @@ void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t he
 // the world to the window and it does so with the sampler the guest asked for.
 bool FrameResolveTextureIsScaled(uint32_t address, uint32_t width, uint32_t height);
 
+// The host:guest size ratio of the freshest resolve at that address and size,
+// 1:1 when there is none or it is not scaled. The draw state shader needs it to
+// widen the footprint of a scaled tap (see footprint_texture0); IsScaled is a
+// lighter way to ask the same question without the ratios.
+bool FrameResolveTextureScale(uint32_t address, uint32_t width, uint32_t height, float* scale_x,
+                              float* scale_y);
+
 // The host texture currently bound as colour target 0, for the read-write
 // hazard check in the draw layer: a resolve destination handed back by
 // FrameResolveTextureByAddress is the render target itself rather than a copy

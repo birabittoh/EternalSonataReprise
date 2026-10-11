@@ -19,7 +19,7 @@ namespace {
 using namespace plume;
 
 // D3DDECLUSAGE -> HLSL semantic name. This has to agree with USAGE_SEMANTICS in
-// scripts/xenos_hlsl.py, which is what the compiled blobs declare their inputs
+// KryptonRecomp/xenos_hlsl.py, which is what the compiled blobs declare their inputs
 // with; a disagreement shows up as a pipeline that will not link rather than as
 // wrong pixels.
 constexpr const char* kUsageSemantics[] = {
@@ -52,7 +52,7 @@ enum : uint32_t {
 // component, 4 and 5 are the constants 0 and 1, and 6 or 7 leave the
 // destination alone. `sub_82267218` shifts it straight into the vfetch word it
 // patches, and the emitter then applies it (`_fetch_destination` in
-// scripts/xenos_hlsl.py).
+// KryptonRecomp/xenos_hlsl.py).
 //
 // That matters here because vertex fetch is lifted to the host input assembler:
 // the swizzle baked into the extracted microcode is the identity one, so a
@@ -669,7 +669,7 @@ RenderPipelineLayout* EnsureLayout(RenderDevice* device) {
   //
   // Register space 2, matching the generated HLSL: under Vulkan these become a
   // push descriptor set at set index 2, and space 0 is the textures'. See
-  // CB_SPACE in scripts/xenos_hlsl.py for why they cannot share a space.
+  // CB_SPACE in KryptonRecomp/xenos_hlsl.py for why they cannot share a space.
   const RenderRootDescriptorDesc root_descriptors[] = {
       RenderRootDescriptorDesc(0, kConstantRegisterSpace, RenderRootDescriptorType::CONSTANT_BUFFER),
       RenderRootDescriptorDesc(1, kConstantRegisterSpace, RenderRootDescriptorType::CONSTANT_BUFFER),

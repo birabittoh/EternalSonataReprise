@@ -55,7 +55,10 @@ import struct
 import sys
 import zlib
 
-from xex_image import XexImage
+# xex_image lives in the KryptonRecomp submodule.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "KryptonRecomp"))
+from xex_image import XexImage  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "guest_data")
 TEXT_DIR = os.path.join(ROOT, "text")

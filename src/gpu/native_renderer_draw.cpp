@@ -1643,14 +1643,15 @@ void WaterProbeEndFrame() {
 
 // The draw state constants, which are built rather than copied, so they are
 // cached on their values instead of on the guest bytes behind them. Alpha test,
-// param gen and the point sprite size all share one buffer because they are all
-// fixed function state with no host equivalent and a root descriptor is per
-// pipeline layout rather than per stage. See XeDrawState in
-// scripts/xenos_hlsl.py.
+// param gen, the point sprite size, the sampled texture's scale and the per
+// stage fetch swizzles all share one buffer because they are all fixed function
+// state with no host equivalent and a root descriptor is per pipeline layout
+// rather than per stage. See XeDrawState in KryptonRecomp/xenos_hlsl.py.
 //
-// 14 words in the cbuffer, rounded up to the float4 the tail one sits in: the
-// cache compares whole words, so it must not read past what is written.
-constexpr size_t kDrawStateWords = 16;
+// 32 words: 14 built state words, then the texture0 scale, then 16 fetch
+// swizzles. The cache compares whole words, so the count must match the
+// cbuffer exactly.
+constexpr size_t kDrawStateWords = 32;
 struct DrawStateCache {
   uint32_t words[kDrawStateWords] = {};
   RenderBufferReference buffer;
@@ -2712,6 +2713,39 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // keeps auxiliary projections independent of the window aspect.
   std::memcpy(&draw_state[12], &clip_scale_x, 4);
   std::memcpy(&draw_state[13], &clip_scale_y, 4);
+  // The texture half of the state, words 14..31. Texture 0's scale is the
+  // host:guest ratio of whatever resolve it samples, so a footprint shader can
+  // widen its tap in lockstep with the render scale (see footprint_texture0).
+  // The per-stage swizzle words let host textures whose layout differs from the
+  // Xenos fetch swizzle state which channels the guest reads in which order;
+  // the 0x80000000 high bit tells the fetch-post helper to replicate the last
+  // host channel before applying the swizzle, the case for BC5's RG.
+  const uint32_t draw_texture_mask = GuestPipelineTextureMask(call.pipeline);
+  float texture0_scale[2] = {1.0f, 1.0f};
+  {
+    int footprint_vs = -1, footprint_ps = -1;
+    GuestPipelineShaderSlots(call.pipeline, &footprint_vs, &footprint_ps);
+    TextureFetch fetch;
+    if (footprint_ps >= 0 && GuestPixelShader(uint32_t(footprint_ps)).footprint_texture0 &&
+        (draw_texture_mask & 1u) != 0 &&
+        GetBoundTextureFetch(call.memory_base, 0, fetch, nullptr)) {
+      FrameResolveTextureScale(fetch.base_address, fetch.width, fetch.height, &texture0_scale[0],
+                               &texture0_scale[1]);
+    }
+  }
+  std::memcpy(&draw_state[14], &texture0_scale[0], 4);
+  std::memcpy(&draw_state[15], &texture0_scale[1], 4);
+  for (uint32_t stage = 0; stage < kTextureSlots; ++stage) {
+    uint32_t swizzle = 0x688u;
+    TextureFetch fetch;
+    if ((draw_texture_mask & (1u << stage)) != 0 &&
+        GetBoundTextureFetch(call.memory_base, stage, fetch, nullptr) && fetch.format == 49) {
+      // BC5 exposes RG on the host, while Xenos replicates its last component
+      // before applying the fetch swizzle.
+      swizzle = fetch.swizzle | 0x80000000u;
+    }
+    draw_state[16 + stage] = swizzle;
+  }
   if (!g_draw_state_cache.valid ||
       std::memcmp(g_draw_state_cache.words, draw_state, sizeof(draw_state)) != 0) {
     const Allocation allocation = ArenaAllocate(device, kUploadAlignment);

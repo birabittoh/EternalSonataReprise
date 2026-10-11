@@ -6,7 +6,7 @@
 // default.xex, walked once at init by sub_82129260 into the two 256 entry
 // tables at dword_824BBEE8 and dword_824BC2E8. That closed set is what makes
 // static compilation possible at all: scripts/gen-guest-shaders.py extracts the
-// 260 containers, translates the microcode to HLSL (scripts/xenos_hlsl.py) and
+// 260 containers, translates the microcode to HLSL (KryptonRecomp/xenos_hlsl.py) and
 // compiles it with DXC, all at build time. Nothing here translates anything.
 //
 // The result, `guest_shaders.bin`, is linked straight into the executable's
@@ -16,72 +16,21 @@
 // same index the device mirror resolves a bound shader object to, so binding is
 // a direct index rather than a hash of anything.
 //
-// No Plume types here: the pack is bytes, and the caller turns a blob into a
-// RenderShader.
+// The pack format and the reader live in KryptonRecomp/guest_shader_pack.h,
+// shared with the other ReXGlue titles; guest_shaders.cpp is the thin driver
+// that fixes this title's PackTraits and pack symbol.
 
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
 
+#include "guest_shader_pack.h"
+
 namespace eternalsonata {
 
-// D3DDECLUSAGE plus its usage index, one per vertex shader input. This is the
-// container's own vertex fetch patch table, which is what sub_82267218 matches
-// against the bound vertex declaration at draw time; a host input layout is
-// built from it instead, which is why vfetch never has to be translated.
-struct GuestVertexInput {
-  uint8_t usage;
-  uint8_t usage_index;
-};
-
-// One shader. `dxil` and `spirv` point into the pack's blob section and are
-// null when that format was not built for this platform.
-struct GuestShader {
-  const void* dxil = nullptr;
-  uint32_t dxil_size = 0;
-  const void* spirv = nullptr;
-  uint32_t spirv_size = 0;
-
-  // Pixel shaders: which texture/sampler register slots the shader declares.
-  // Slots run 0..15 across this title.
-  uint32_t texture_mask = 0;
-
-  // Vertex shaders only.
-  const GuestVertexInput* inputs = nullptr;
-  uint32_t input_count = 0;
-
-  // Interpolator semantic keys, sorted. Both shader types declare their
-  // interpolators as TEXCOORD<key>, so the host linker performs the register
-  // renumbering sub_822679A8 does at draw time. D3D12 requires a pixel shader's
-  // inputs to be a subset of the vertex shader's outputs, so a pipeline builder
-  // should check one set against the other before creating a pipeline: the
-  // hardware would have synthesised a constant for an unmatched input, and the
-  // host will simply refuse to link.
-  const uint8_t* interpolator_keys = nullptr;
-  uint32_t interpolator_key_count = 0;
-
-  // The compiler's literal constant pool: 64 bytes, four host order float4s
-  // for constant registers 252..255 of this shader's own bank. Never null; a
-  // shader without a pool points at zeros.
-  //
-  // The guest writes these through neither constant setter, so they are not in
-  // the register shadows and are overlaid on the bank a draw uploads. Pixel
-  // shaders clamp against them (`min(x, c253.w)`, alpha against `c255.x`), so
-  // a zero pool zeroes alpha and the alpha test discards the pixel. See
-  // PREFIX_CANDIDATES in scripts/xenos_ucode.py.
-  const uint8_t* literals = nullptr;
-  bool has_literals = false;
-
-  bool exports_point_size = false;
-  bool has_cube_texture = false;
-
-  // A pixel shader's SQ_PROGRAM_CNTL param_gen and SQ_CONTEXT_MISC param_gen_pos.
-  bool param_gen = false;
-  uint32_t param_gen_pos = 0;
-
-  bool valid() const { return dxil_size != 0 || spirv_size != 0; }
-};
+using GuestVertexInput = krypton::GuestVertexInput;
+using GuestShader = krypton::GuestShader;
 
 // Parse the pack linked into the executable. Safe to call more than once; only
 // the first call does any work. Returns false and logs if the pack is malformed,
@@ -97,7 +46,7 @@ const GuestShader& GuestPixelShader(uint32_t slot);
 // so has no guest table slot. A POINT_LIST draw needs it: the console rasterises
 // each vertex as a quad sized by the vertex shader's e63 export and generates a
 // sprite coordinate across it, and a host point list does neither. See
-// scripts/xenos_hlsl.py's point_sprite_gs.
+// KryptonRecomp/xenos_hlsl.py's point_sprite_gs.
 const GuestShader& GuestPointSpriteShader();
 // The sprite batcher's pair: vs_015 with a COLOR0 input carried on interpolator
 // 1, and ps_003 modulating by it instead of pixel c0. See

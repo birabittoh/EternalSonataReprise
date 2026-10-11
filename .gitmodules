@@ -1,3 +1,6 @@
 [submodule "plume"]
 	path = plume
 	url = https://github.com/birabittoh/plume.git
+[submodule "KryptonRecomp"]
+	path = KryptonRecomp
+	url = https://github.com/birabittoh/KryptonRecomp.git

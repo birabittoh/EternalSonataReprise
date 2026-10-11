@@ -107,7 +107,7 @@ struct GuestRenderState {
   // shadow device+10372). Alpha test is fixed function on the console and has
   // no host equivalent at all, so it is not part of a host pipeline: it is
   // handed to the pixel shader, which discards. See the alpha test cbuffer in
-  // scripts/xenos_hlsl.py and its upload in native_renderer_draw.cpp.
+  // KryptonRecomp/xenos_hlsl.py and its upload in native_renderer_draw.cpp.
   uint32_t color_control = 0;
   bool alpha_test_enabled = false;
   GuestCompare alpha_func = GuestCompare::kAlways;
@@ -118,7 +118,7 @@ struct GuestRenderState {
   // rather than something the vertex shader exports: `param_gen` says whether it
   // is generated at all and `param_gen_pos` which interpolator register it
   // replaces. Its zw is the point sprite coordinate, so a point sprite draw
-  // reads nothing without it. See the param gen block in scripts/xenos_hlsl.py.
+  // reads nothing without it. See the param gen block in KryptonRecomp/xenos_hlsl.py.
   bool param_gen_enabled = false;
   uint32_t param_gen_pos = 0;
 

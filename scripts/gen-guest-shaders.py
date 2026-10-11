@@ -43,19 +43,24 @@ Usage:
     python scripts/gen-guest-shaders.py --dxc <path> --out <dir> --formats dxil
 """
 import argparse
-import concurrent.futures
 import os
 import struct
-import subprocess
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The translator lives in the KryptonRecomp submodule, next to this repo's root.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "KryptonRecomp"))
 import extract_shaders as X  # noqa: E402
+from shader_build import compile_all, write_if_different, write_pack_asm  # noqa: E402
 import xenos_hlsl as H  # noqa: E402
 import xenos_ucode as U  # noqa: E402
 
+# Slot 13 is the expanded scene that refraction samples with guest clip
+# coordinates, so the fetch coordinate has to move out of clip space first.
+H.REFRACTION_SLOT = 13
+
 PACK_MAGIC = b"ESGS"
-PACK_VERSION = 8
+PACK_VERSION = 9
 
 # The sidecar the F2 shader debugger reads: per shader, the extractor's name,
 # the microcode disassembly and the emitted HLSL. Kept out of guest_shaders.bin
@@ -73,10 +78,7 @@ SLOTS = X.MAX_INDEX + 1
 FLAG_POINT_SIZE = 1 << 0
 FLAG_HAS_CUBE = 1 << 1
 FLAG_PARAM_GEN = 1 << 2
-
-# Shader model 6.0 is the floor Plume's D3D12 and Vulkan backends both accept,
-# and nothing emitted here needs anything newer.
-PROFILE = {"vs": "vs_6_0", "ps": "ps_6_0", "gs": "gs_6_0"}
+FLAG_FOOTPRINT = 1 << 3
 
 # The point sprite expansion shader, which is ours rather than the guest's: it
 # has no table slot, so it rides in one extra entry past the two 256 slot
@@ -112,65 +114,6 @@ SPRITE_BATCH_SAMPLE = ("float4 xe_batch_sample(float which, float2 uv) {\n"
     "    }\n"
     "}\n\n")
 
-# Matches Plume's own helper (examples/cmake/modules/PlumeDXC.cmake) so the
-# guest shaders and the overlay shaders are compiled the same way. -fvk-invert-y
-# on vertex shaders lets the HLSL be written once for the D3D clip space
-# convention, with the Vulkan flip handled at compile time.
-DXIL_OPTS = ["-Wno-ignored-attributes"]
-SPIRV_OPTS = ["-spirv", "-fspv-target-env=vulkan1.0", "-fvk-use-dx-layout"]
-
-# The reflection and debug sections are dead weight here: the pack carries the
-# signature tables the host needs, decoded from the guest container rather than
-# recovered from the compiled blob.
-STRIP_OPTS = ["-Qstrip_reflect", "-Qstrip_debug"]
-
-
-def write_if_different(path, data):
-    """Avoid touching an unchanged file, so DXC can be skipped on rebuild."""
-    if os.path.exists(path):
-        with open(path, "rb") as handle:
-            if handle.read() == data:
-                return False
-    with open(path, "wb") as handle:
-        handle.write(data)
-    return True
-
-
-def write_pack_asm(asm_path, pack_path, symbol):
-    """Emit a `.S` that `.incbin`s a pack, so it links straight into the exe.
-
-    Used for both guest_shaders.bin and guest_shaders_debug.bin.
-
-    Symbol names need a leading underscore on Mach-O only; ELF and Windows COFF
-    (built here with clang, not cl, so no /Zl-style decoration) use the name as
-    written. `.incbin`'s path is read at assemble time, so it has to survive
-    unescaped through GAS's string literal: forward slashes side-step the
-    backslash-escaping problem entirely and every assembler here accepts them.
-    """
-    incbin_path = os.path.abspath(pack_path).replace("\\", "/")
-    content = f"""\
-#if defined(__APPLE__)
-#define SYM(name) _##name
-.section __TEXT,__const
-#elif defined(_WIN32)
-#define SYM(name) name
-.section .rdata,"dr"
-#else
-#define SYM(name) name
-.section .rodata
-#endif
-
-.p2align 4
-.global SYM({symbol})
-SYM({symbol}):
-.incbin "{incbin_path}"
-.global SYM({symbol}End)
-SYM({symbol}End):
-"""
-    write_if_different(asm_path, content.encode("utf-8"))
-    return True
-
-
 class Translated:
     """One guest shader, translated but not yet compiled."""
 
@@ -195,6 +138,8 @@ class Translated:
                 self.texture_mask |= 1 << texture_slot
                 if kind_name == "TextureCube":
                     self.flags |= FLAG_HAS_CUBE
+            if name in H.FOOTPRINT_SHADERS:
+                self.flags |= FLAG_FOOTPRINT
         elif H.EXPORT_POINT_SIZE in emitted.exports:
             self.flags |= FLAG_POINT_SIZE
         self.blobs = {}  # format -> bytes
@@ -206,7 +151,7 @@ class Translated:
 def translate(xex, hlsl_dir):
     """Walk the blob, translate every container, write the HLSL sources."""
     image = X.XexImage.load(xex)
-    shaders, _ = X.parse_blob(image)
+    shaders, _ = X.parse_blob(image, X.BLOB_START)
     os.makedirs(hlsl_dir, exist_ok=True)
 
     # Decode everything first, because the interpolator layout is a property of
@@ -301,60 +246,15 @@ def translate(xex, hlsl_dir):
         ("Texture2D xe_texture0 : register(t0, space0);\n"
          "SamplerState xe_sampler0 : register(s0, space1);\n",
          SPRITE_BATCH_TEXTURE_DECLS + "\n" + SPRITE_BATCH_SAMPLE),
-        ("xe_texture0.Sample(xe_sampler0, r0.xy)",
+        ("xe_texture_fetch_post(xe_texture0.Sample(xe_sampler0, r0.xy), 0u)",
          "xe_batch_sample(input.in_p2.x, r0.xy)"),
-        ("xe_texture0.Sample(xe_sampler0, r1.xy)",
+        ("xe_texture_fetch_post(xe_texture0.Sample(xe_sampler0, r1.xy), 0u)",
          "xe_batch_sample(input.in_p2.x, r1.xy)"),
         ("xe_mul(r2.xyzw, c[0].xyzw)", "xe_mul(r2.xyzw, input.in_p1)"),
     ])
     ps.texture_mask = (1 << SPRITE_BATCH_TEXTURES) - 1
     out.append(ps)
     return out
-
-
-def compile_one(dxc_command, entry, fmt, out_dir):
-    source = entry.source
-    output = os.path.join(out_dir, "%s.%s" % (entry.name, fmt))
-    # The HLSL source is only rewritten when it changes, so an output that is
-    # newer than its source is still valid and DXC can be skipped entirely.
-    if os.path.exists(output) and \
-            os.path.getmtime(output) >= os.path.getmtime(source):
-        with open(output, "rb") as handle:
-            return handle.read()
-
-    options = list(DXIL_OPTS if fmt == "dxil" else SPIRV_OPTS)
-    if fmt == "dxil":
-        options += STRIP_OPTS
-    if fmt == "spirv" and entry.kind == "vs":
-        options.append("-fvk-invert-y")
-
-    command = list(dxc_command) + options + [
-        "-E", "main", "-T", PROFILE[entry.kind], "-Fo", output, source]
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0 or not os.path.exists(output):
-        raise SystemExit("dxc failed on %s (%s):\n%s%s"
-                         % (entry.name, fmt, result.stdout, result.stderr))
-    with open(output, "rb") as handle:
-        return handle.read()
-
-
-def compile_all(dxc_command, entries, formats, out_root, jobs):
-    work = []
-    for fmt in formats:
-        out_dir = os.path.join(out_root, fmt)
-        os.makedirs(out_dir, exist_ok=True)
-        for entry in entries:
-            work.append((entry, fmt, out_dir))
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-        futures = {
-            pool.submit(compile_one, dxc_command, entry, fmt, out_dir):
-                (entry, fmt)
-            for entry, fmt, out_dir in work
-        }
-        for future in concurrent.futures.as_completed(futures):
-            entry, fmt = futures[future]
-            entry.blobs[fmt] = future.result()
 
 
 def pack(entries, formats):

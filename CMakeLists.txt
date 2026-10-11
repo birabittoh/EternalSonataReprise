@@ -17,7 +17,7 @@ include(generated/rexglue.cmake)
 # Plume, the RHI the native renderer is built on (see src/native_renderer.h).
 # It is a low level interface over D3D12, Vulkan and Metal that does no shader
 # compilation of its own, which is what makes it the right fit here: this
-# project compiles the guest's shaders offline (scripts/xenos_hlsl.py) rather
+# project compiles the guest's shaders offline (KryptonRecomp/xenos_hlsl.py) rather
 # than translating microcode at runtime.
 #
 # Plume is tracked as a submodule, including its own dependencies (volk,
@@ -271,7 +271,7 @@ plume_shaders_init()
 # The game's whole shader inventory is a static blob inside default.xex (see
 # scripts/extract_shaders.py), so this is a finite offline job rather than a
 # runtime translator: extract the 260 containers, emit HLSL from the Xenos
-# microcode (scripts/xenos_hlsl.py), compile each with DXC, and pack the results
+# microcode (KryptonRecomp/xenos_hlsl.py), compile each with DXC, and pack the results
 # into guest_shaders.bin.
 #
 # The pack is linked into the exe: gen-guest-shaders.py also writes a `.S` that
@@ -331,9 +331,11 @@ add_custom_command(
     DEPENDS
         ${CMAKE_SOURCE_DIR}/scripts/gen-guest-shaders.py
         ${CMAKE_SOURCE_DIR}/scripts/extract_shaders.py
-        ${CMAKE_SOURCE_DIR}/scripts/xenos_hlsl.py
-        ${CMAKE_SOURCE_DIR}/scripts/xenos_ucode.py
-        ${CMAKE_SOURCE_DIR}/scripts/xex_image.py
+        ${CMAKE_SOURCE_DIR}/KryptonRecomp/shader_build.py
+        ${CMAKE_SOURCE_DIR}/KryptonRecomp/shader_extract.py
+        ${CMAKE_SOURCE_DIR}/KryptonRecomp/xenos_hlsl.py
+        ${CMAKE_SOURCE_DIR}/KryptonRecomp/xenos_ucode.py
+        ${CMAKE_SOURCE_DIR}/KryptonRecomp/xex_image.py
         ${CMAKE_SOURCE_DIR}/assets/default.xex
     COMMENT "Translating and compiling the guest's 260 shaders"
     VERBATIM
@@ -465,6 +467,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/ps3_natives.cpp
     src/engine/ps3_start_events.cpp
     src/gpu/guest_shaders.cpp
+    ${CMAKE_SOURCE_DIR}/KryptonRecomp/guest_shader_pack.cpp
     src/gpu/native_renderer.cpp
     src/gpu/native_renderer_batch.cpp
     src/gpu/native_renderer_d3d.cpp
@@ -557,6 +560,8 @@ target_include_directories(eternalsonata PRIVATE
     src/assets
     src/api
     src/installer
+    # Shared ReXGlue shader tooling (guest_shader_pack.h, xenos_*.py, ...).
+    ${CMAKE_SOURCE_DIR}/KryptonRecomp
 )
 
 if(WIN32)

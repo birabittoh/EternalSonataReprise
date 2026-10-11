@@ -24,7 +24,7 @@ namespace eternalsonata {
 //
 // The two float banks are separate registers because the guest's are separate
 // banks (device+1792 and device+5888) while a host root signature makes one
-// buffer visible to every stage. scripts/xenos_hlsl.py emits the matching
+// buffer visible to every stage. KryptonRecomp/xenos_hlsl.py emits the matching
 // registers per shader type.
 //
 // Null before the first pipeline is built, or if the device is not up.
@@ -34,7 +34,7 @@ plume::RenderPipelineLayout* GuestPipelineLayout();
 // the descriptor set index they occupy under Vulkan. Not space 0, because that
 // belongs to the textures and DXC maps a b register onto a SPIR-V binding
 // number inside its own space, so b0..b4 there would collide with t0..t4. See
-// CB_SPACE in scripts/xenos_hlsl.py, which has to agree with this.
+// CB_SPACE in KryptonRecomp/xenos_hlsl.py, which has to agree with this.
 inline constexpr uint32_t kConstantRegisterSpace = 2;
 
 // Root descriptor indices, in the order the layout declares them.
@@ -47,7 +47,7 @@ inline constexpr uint32_t kRootPixelBoolConstants = 3;
 // (RB_COLORCONTROL's compare function and RB_ALPHA_REF), handed to the pixel
 // shader because the console tests alpha in fixed function hardware and no host
 // pipeline state object can express that. See PRELUDE_ALPHA_TEST in
-// scripts/xenos_hlsl.py.
+// KryptonRecomp/xenos_hlsl.py.
 inline constexpr uint32_t kRootAlphaTest = 4;
 
 // The descriptor set indices, which are also the HLSL register spaces the
