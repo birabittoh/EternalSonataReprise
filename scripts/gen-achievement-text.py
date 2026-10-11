@@ -1,34 +1,85 @@
 #!/usr/bin/env python3
-"""Write src/engine/achievement_text.h: every achievement string as code.
+"""Write src/engine/achievement_text.generated.h from the title's XLast metadata.
 
-Runs `rexglue init achievements` once per language and turns the TOMLs
-into constexpr tables, so nothing reads the XDBF for text. PAL's XDBF holds
-English, German, French, Spanish and Italian; Japanese is only in the JP
-release's.
+The XLast embedded in assets/default.xex names every achievement (id, cred,
+imageId, achievementType, and a title/description <LocalizedString> id) and
+carries each of those strings in the five PAL locales. That is the same data
+the old pipeline got from the XDBF via `rexglue init achievements`, minus
+Japanese, which the PAL XLast does not carry; its rows live in the committed
+src/engine/achievement_text_jp.toml and are merged here.
 
-    python scripts/gen-achievement-text.py <PAL default.xex> <JP default.xex> src/engine/achievement_text.h
+Runs as part of the build (see CMakeLists.txt). src/engine/achievement_text.generated.h
+is a gitignored build artifact; do not edit it by hand.
 """
+import importlib.util
 import os
-import subprocess
+import re
 import sys
-import tempfile
 import tomllib
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-REXGLUE = os.path.join(ROOT, "sdk", "bin", "rexglue.exe" if os.name == "nt" else "rexglue")
+ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+XEX_PATH = os.path.join(ROOT, "assets", "default.xex")
+JP_PATH = os.path.join(ROOT, "src", "engine", "achievement_text_jp.toml")
+OUT_PATH = os.path.join(ROOT, "src", "engine", "achievement_text.generated.h")
 
-# XLanguage id, table name and the release whose XDBF holds it.
-LANGUAGES = [(1, "English", "pal"), (2, "Japanese", "jp"), (3, "German", "pal"),
-             (4, "French", "pal"), (5, "Spanish", "pal"), (6, "Italian", "pal")]
+# Table order and the XLast locale each table comes from; Japanese is the one
+# table read from JP_PATH instead. The order fixes kAchievementTextByLanguage's
+# indices to the XLanguage ids 1..6.
+LANGUAGES = [("English", "en-US"), ("Japanese", None), ("German", "de-DE"),
+             ("French", "fr-FR"), ("Spanish", "es-ES"), ("Italian", "it-IT")]
+
+# The only AchievementInfo flag the project and the SDK consult is
+# kAchievementFlagShowUnachieved (0x8), and it maps straight onto the XLast
+# attribute of the same name. The retail XDBF also set per-type bits the XML
+# does not describe; nothing reads them.
+FLAG_SHOW_UNACHIEVED = 0x8
 
 
-def dump(xex, language, out_dir):
-    # The parent command's required options apply to the subcommand too.
-    subprocess.run([REXGLUE, "init", "--project-name", "x", "--xex-path", xex,
-                    "achievements", xex, out_dir, "--language", str(language)],
-                   check=True, capture_output=True)
-    with open(os.path.join(out_dir, "achievements.toml"), "rb") as f:
-        return tomllib.load(f)["achievements"]
+def _load_gen_xlast():
+    path = os.path.join(ROOT, "scripts", "gen-xlast.py")
+    spec = importlib.util.spec_from_file_location("gen_xlast", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _unescape(text):
+    for entity, char in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'),
+                         ("&apos;", "'"), ("&amp;", "&")):
+        text = text.replace(entity, char)
+    return text
+
+
+def parse_xlast(text):
+    localized = {}
+    for m in re.finditer(r'<LocalizedString\b[^>]*\bid="(\d+)"[^>]*>(.*?)</LocalizedString>',
+                         text, re.S):
+        strings = {}
+        for t in re.finditer(r'<Translation\s+locale="([^"]+)">(.*?)</Translation>',
+                             m.group(2), re.S):
+            strings[t.group(1)] = _unescape(t.group(2))
+        localized[int(m.group(1))] = strings
+
+    achievements = []
+    for m in re.finditer(r'<Achievement\b([^>]*)/>', text):
+        a = dict(re.findall(r'(\w+)="([^"]*)"', m.group(1)))
+        achievements.append({
+            "id": int(a["id"]),
+            "gamerscore": int(a["cred"]),
+            "image_id": int(a["imageId"]),
+            "flags": FLAG_SHOW_UNACHIEVED if a["showUnachieved"] == "true" else 0,
+            "title": localized[int(a["titleStringId"])],
+            "description": localized[int(a["descriptionStringId"])],
+        })
+    achievements.sort(key=lambda a: a["id"])
+    return achievements
+
+
+def read_japanese(path):
+    with open(path, "rb") as f:
+        rows = tomllib.load(f)["achievements"]
+    return {r["id"]: (r["label"], r["description"], r["unachieved_description"])
+            for r in rows}
 
 
 def literal(text):
@@ -37,26 +88,35 @@ def literal(text):
 
 
 def main():
-    if len(sys.argv) != 4:
-        print(__doc__, file=sys.stderr)
-        return 2
-    xexes = {"pal": sys.argv[1], "jp": sys.argv[2]}
-    dst = sys.argv[3]
-    tables = {}
-    with tempfile.TemporaryDirectory() as tmp:
-        for language, name, release in LANGUAGES:
-            tables[name] = dump(xexes[release], language, os.path.join(tmp, str(language)))
+    gen_xlast = _load_gen_xlast()
+    text = gen_xlast.extract_xlast_xml(XEX_PATH).decode("utf-16-le")
+    achievements = parse_xlast(text)
+    japanese = read_japanese(JP_PATH)
 
-    base = tables["English"]
-    for name, rows in tables.items():
-        fields = ("id", "gamerscore", "image_id", "flags")
-        if [[r[k] for k in fields] for r in rows] != [[r[k] for k in fields] for r in base]:
-            sys.exit(f"{name} lists different achievements")
+    ids = [a["id"] for a in achievements]
+    if sorted(japanese) != ids:
+        sys.exit(f"{JP_PATH} ids {sorted(japanese)} do not match the XLast ids {ids}")
+
+    pal = [(name, locale) for name, locale in LANGUAGES if locale is not None]
+    tables = {}
+    for name, locale in pal:
+        rows = []
+        for a in achievements:
+            try:
+                label, description = a["title"][locale], a["description"][locale]
+            except KeyError:
+                sys.exit(f"XLast is missing {locale} text for achievement {a['id']}")
+            rows.append((a["id"], label, description, ""))
+        tables[name] = rows
+    tables["Japanese"] = [(i, *japanese[i]) for i in ids]
 
     out = [
         "// eternalsonata - ReXGlue Recompiled Project",
         "//",
-        "// Generated by scripts/gen-achievement-text.py from the PAL and JP default.xex.",
+        "// Generated by scripts/gen-achievement-text.py from the XLast metadata in",
+        "// assets/default.xex, plus src/engine/achievement_text_jp.toml for the one",
+        "// language the PAL XLast does not carry. Do not edit by hand or commit this",
+        "// file directly - it is rebuilt on every CMake configure.",
         "",
         "#pragma once",
         "",
@@ -82,16 +142,15 @@ def main():
         "",
         "inline constexpr AchievementRecord kAchievements[] = {",
     ]
-    for r in base:
-        out.append(f"    {{{r['id']}, {r['gamerscore']}, {r['image_id']}, {r['flags']}}},")
+    out += [f"    {{{a['id']}, {a['gamerscore']}, {a['image_id']}, {a['flags']}}}," for a in achievements]
     out.append("};")
-    for name, rows in tables.items():
+    for name, _ in LANGUAGES:
         out += ["", f"inline constexpr AchievementText kAchievementText{name}[] = {{"]
-        for r in rows:
-            out.append(f"    {{{r['id']},")
-            out.append(f"     {literal(r['label'])},")
-            out.append(f"     {literal(r['description'])},")
-            out.append(f"     {literal(r['unachieved_description'])}}},")
+        for aid, label, description, unachieved in tables[name]:
+            out += [f"    {{{aid},",
+                    f"     {literal(label)},",
+                    f"     {literal(description)},",
+                    f"     {literal(unachieved)}}},"]
         out.append("};")
     out += [
         "",
@@ -99,14 +158,18 @@ def main():
         "inline constexpr std::span<const AchievementText> kAchievementTextByLanguage[] = {",
         "    {},",
     ]
-    out += [f"    kAchievementText{name}," for _, name, _ in LANGUAGES]
+    out += [f"    kAchievementText{name}," for name, _ in LANGUAGES]
     out += ["};", "", "}  // namespace eternalsonata", ""]
 
-    with open(dst, "w", encoding="utf-8", newline="\n") as f:
+    with open(OUT_PATH, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out))
-    print(f"{dst}: {len(base)} achievements, {len(tables)} languages")
+    print(f"+ wrote {OUT_PATH} ({len(achievements)} achievements, {len(tables)} languages)")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as exc:  # noqa: BLE001
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)

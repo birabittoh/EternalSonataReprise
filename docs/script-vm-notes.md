@@ -581,6 +581,35 @@ Field movement: the leader's stick walk never goes through the object
 command dispatcher `sub_820F29F8` (only NPC states do), and `bel01.e` imports
 no pad or wait native. Player walking is engine code; scripts only nudge.
 
+### Achievements
+
+Scripts decide unlocks. Field scripts set a flag and call the `lib.e` export
+`sym20094` (about 18 call sites, e.g. `adg01`, `fmt04`, `rtd41`, `svh01`). It
+runs the routine at `lib.e` `0x6cb9`, which tests flags 1830..1851 with the
+image function at `0x1294`. Flag `1829 + n` maps to achievement id `n`
+(1..22). Each set flag appends its id to a local array, then the routine calls
+native 5022 with `(&array, count)` and calls 5023 every frame until it
+reports done. These are the only call sites of 5022 and 5023. A save loaded
+after a chapter end never runs the routine until some script reaches it again.
+
+| id | 360 handler | role |
+|---|---|---|
+| 5021 | `sub_820E7E90` | Xbox rich presence: `sub_82253A68(user, 2, a1[0])` then `(user, 32769, 0)`; 9 call sites, ids 1..8 |
+| 5022 | `sub_820E7EE8` | achievement write: copies `count` `{user index, id}` pairs into the 400 byte buffer at `unk_825658B4` and passes it to `sub_82253950`, the `XUserWriteAchievements` wrapper (`XMsgStartIORequest(0xFB, 0xB0008, ...)`). Does nothing when the user is not in the signed-in mask `dword_82565A88`, when `byte_82565888` is clear (set at save load from `XamContentGetCreator`), or while `byte_825658AC` marks an earlier write pending |
+| 5023 | `sub_820E7FE8` | completion poll for the write (Hex-Rays fails here; not read in detail) |
+
+The SDK receives the write in `XgiApp` (message `0xB0008`) and unlocks through
+its achievement manager (`src/engine/achievement_system.cpp`).
+
+The PS3 executable has no trophy support. Its imports are `sys_io`,
+`cellGcmSys`, `cellSysutil`, `cellSysutilAvconfExt`, `sys_fs`, `cellSysmodule`,
+`cellAudio`, `cellSpurs`, `cellL10n` and `sysPrxForUser`, with no `sceNp` or
+`sceNpTrophy`, and its 5021..5023 are stubs (5021 returns 0; 5022 and 5023
+return 1). The PS3 `lib.e` makes the same calls, and in PS3 mode this project
+registers no replacements for 5021..5023, so the 360 handlers above run. Calling
+5022 directly with ids built from a Chapter 4 save's flags unlocked them in
+game; the evaluator's own call was not observed in PS3 mode.
+
 ### Battle signals
 
 `sub_8212D350(&dword_824BF250, name_a, name_b, arg)` pushes a named entry

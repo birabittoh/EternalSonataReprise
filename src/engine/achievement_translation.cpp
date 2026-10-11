@@ -15,7 +15,7 @@
 #include <rex/system/flags.h>
 #include <rex/system/kernel_state.h>
 
-#include "achievement_text.h"
+#include "achievement_text.generated.h"
 #include "icon.generated.h"
 #include "settings.h"
 

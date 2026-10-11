@@ -4,9 +4,10 @@
 // from the strings mods published (see settings.h's RegisterLanguageListeners
 // and the declarative [language.strings] table in assets.toml).
 //
-// The catalogue comes from achievement_text.h, the PAL and JP XDBFs dumped as
-// code, so the guest image's XDBF is not read for text. A language a mod
-// invented falls back to its donor's strings.
+// The catalogue comes from achievement_text.generated.h, generated from the
+// XLast metadata in assets/default.xex plus the committed Japanese rows, so the
+// guest image's XDBF is not read for text. A language a mod invented falls back
+// to its donor's strings.
 
 #pragma once
 

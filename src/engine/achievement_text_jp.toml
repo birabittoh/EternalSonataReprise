@@ -1,0 +1,137 @@
+# Japanese achievement strings, the one language the PAL XLast does not carry.
+# The XDBF in the JP-release default.xex holds it; that build is not part of
+# this repository, so the rows are kept here and merged by scripts/gen-achievement-text.py
+# into the generated achievement_text.generated.h. Every other language comes
+# straight from the XLast metadata in assets/default.xex.
+
+[[achievements]]
+id = 1
+label = "「第一章　雨だれ」 終曲"
+description = "「第一章　雨だれ」を終了した"
+unachieved_description = ""
+
+[[achievements]]
+id = 2
+label = "「第二章　革命」 終曲"
+description = "「第二章　革命」を終了した"
+unachieved_description = ""
+
+[[achievements]]
+id = 3
+label = "「第三章　幻想即興曲」 終曲"
+description = "「第三章　幻想即興曲」を終了した"
+unachieved_description = ""
+
+[[achievements]]
+id = 4
+label = "「第四章　華麗なる大円舞曲」 終曲"
+description = "「第四章　華麗なる大円舞曲」を終了した"
+unachieved_description = ""
+
+[[achievements]]
+id = 5
+label = "「第五章　夜想曲」 終曲"
+description = "「第五章　夜想曲」を終了した"
+unachieved_description = ""
+
+[[achievements]]
+id = 6
+label = "「第六章　別れの曲」 終曲"
+description = "「第六章　別れの曲」を終了した"
+unachieved_description = ""
+
+[[achievements]]
+id = 7
+label = "「第七章　英雄」 終曲"
+description = "「第七章　英雄」を終了した"
+unachieved_description = ""
+
+[[achievements]]
+id = 8
+label = "「最終章　鏡天花」 終曲"
+description = "「最終章　鏡天花」を終了した"
+unachieved_description = ""
+
+[[achievements]]
+id = 9
+label = "グランドフィナーレ"
+description = "メンバーが全員いる状態で「最終章　鏡天花」を終了した"
+unachieved_description = ""
+
+[[achievements]]
+id = 10
+label = "パーティクラス Lv.2 解除"
+description = "パーティクラス Lv.2 を選択できるようになった"
+unachieved_description = ""
+
+[[achievements]]
+id = 11
+label = "パーティクラス Lv.3 解除"
+description = "パーティクラス Lv.3 を選択できるようになった"
+unachieved_description = ""
+
+[[achievements]]
+id = 12
+label = "パーティクラス Lv.4 解除"
+description = "パーティクラス Lv.4 を選択できるようになった"
+unachieved_description = ""
+
+[[achievements]]
+id = 13
+label = "パーティクラス Lv.5 解除"
+description = "パーティクラス Lv.5 を選択できるようになった"
+unachieved_description = ""
+
+[[achievements]]
+id = 14
+label = "パーティクラス Lv.6 解除"
+description = "パーティクラス Lv.6 を選択できるようになった"
+unachieved_description = ""
+
+[[achievements]]
+id = 15
+label = "英雄の扉"
+description = "英雄の扉を開いた"
+unachieved_description = ""
+
+[[achievements]]
+id = 16
+label = "ロンド再び"
+description = "ユニゾンにてロンドを撃破"
+unachieved_description = ""
+
+[[achievements]]
+id = 17
+label = "クラベス復活"
+description = "ユニゾンをクリアし、クラベスを復活させた"
+unachieved_description = ""
+
+[[achievements]]
+id = 18
+label = "魂の解放"
+description = "鉱封薬の最初の被験者「コーラス」の魂を解放した"
+unachieved_description = ""
+
+[[achievements]]
+id = 19
+label = "シロフォンのお宝"
+description = "シロフォン最上階の隠し扉を開き、中のお宝を獲得した"
+unachieved_description = ""
+
+[[achievements]]
+id = 20
+label = "海賊のお宝"
+description = "謎を解き、海賊のお宝を獲得した"
+unachieved_description = ""
+
+[[achievements]]
+id = 21
+label = "スコアピースコレクター"
+description = "世界中に散らばっているスコアピースを全て集めた"
+unachieved_description = ""
+
+[[achievements]]
+id = 22
+label = "サブイ様信者"
+description = "『サブイ様』と名の付くアイテムを全て集めた"
+unachieved_description = ""

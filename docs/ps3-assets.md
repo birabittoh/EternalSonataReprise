@@ -682,10 +682,13 @@ that voice ends, so a wrong table leaves the intro camera circling forever.
 PS3 mode adds 2 to enemy rows (`sub_821ABC68`) and to categories from 41
 (`sub_821BCC40`).
 
-`title.bmd` holds six entries but its count says five: the title screen
-picks one of three effects with a counter cycling 1..3 (`dword_8238EBD0`,
-`TITLE_TASK__Init`), and the third is the uncounted sixth word. The converter
-therefore remaps every offset between the count and the first entry.
+`title.bmd` holds six entries but its count says five. The sixth word is a
+`Mefc` of five "Coming Soon" labels (`TEX1`..`TEX5`, one per PAL language) over
+a glow (`TEX0`) that the 360 title task never reads: `sub_821333C0` loads
+entries 1 and 2 (backgrounds) and the word at +28 (the title effect below).
+The counter cycling 1..3 (`dword_8238EBD0`, `TITLE_TASK__Init`) selects the
+`E%04d.e` scene behind the title. The converter remaps every offset
+between the count and the first entry.
 
 The fourth entry is the title effect. Its `TRC0` holds the UV rects into
 `TEX0` (1024x512: the Trusty Bell logo, footer, stave and both label

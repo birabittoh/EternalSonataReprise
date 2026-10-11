@@ -102,6 +102,42 @@ add_custom_command(
     VERBATIM
 )
 
+# Rich-presence metadata: the XLast XML the SDK needs to resolve the
+# XGIUserSetContext {cN} templates. Extracted from the same assets/default.xex
+# and handed to the SDK at startup because the stripped guest image omits the
+# XDBF resource it would otherwise read. src/xlast.generated.h is a gitignored
+# build artifact regenerated whenever the XEX or the generator script changes.
+set(ETERNALSONATA_XLAST_HEADER ${CMAKE_SOURCE_DIR}/src/xlast.generated.h)
+add_custom_command(
+    OUTPUT ${ETERNALSONATA_XLAST_HEADER}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-xlast.py
+    DEPENDS
+        ${CMAKE_SOURCE_DIR}/scripts/gen-xlast.py
+        ${CMAKE_SOURCE_DIR}/scripts/gen-icon.py
+        ${CMAKE_SOURCE_DIR}/assets/default.xex
+    COMMENT "Generating src/xlast.generated.h"
+    VERBATIM
+)
+
+# Achievement text: the XLast metadata in the same assets/default.xex names every
+# achievement and carries its title/description in the five PAL locales. The one
+# language it lacks (Japanese) is merged in from the committed
+# src/engine/achievement_text_jp.toml.
+# src/engine/achievement_text.generated.h is a gitignored build artifact.
+set(ETERNALSONATA_ACHIEVEMENT_TEXT_HEADER ${CMAKE_SOURCE_DIR}/src/engine/achievement_text.generated.h)
+add_custom_command(
+    OUTPUT ${ETERNALSONATA_ACHIEVEMENT_TEXT_HEADER}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-achievement-text.py
+    DEPENDS
+        ${CMAKE_SOURCE_DIR}/scripts/gen-achievement-text.py
+        ${CMAKE_SOURCE_DIR}/scripts/gen-xlast.py
+        ${CMAKE_SOURCE_DIR}/scripts/gen-icon.py
+        ${CMAKE_SOURCE_DIR}/src/engine/achievement_text_jp.toml
+        ${CMAKE_SOURCE_DIR}/assets/default.xex
+    COMMENT "Generating src/engine/achievement_text.generated.h"
+    VERBATIM
+)
+
 # On Windows, also embed the same icon as the .exe's own resource (Explorer,
 # taskbar before the window opens, Alt-Tab), separate from the in-window icon
 # applied at runtime via Window::SetIcon (see eternalsonata_app.h). The .rc
@@ -448,6 +484,8 @@ set(ETERNALSONATA_SOURCES
     ${ETERNALSONATA_AREA_NAMES_HEADER}
     ${ETERNALSONATA_PS3_TABLES}
     ${ETERNALSONATA_ICON_HEADER}
+    ${ETERNALSONATA_XLAST_HEADER}
+    ${ETERNALSONATA_ACHIEVEMENT_TEXT_HEADER}
     ${ETERNALSONATA_FONTS_HEADER}
     ${ETERNALSONATA_IMAGES_HEADER}
     ${ETERNALSONATA_BGM_HEADER}

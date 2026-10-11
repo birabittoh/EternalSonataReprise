@@ -46,6 +46,9 @@ guest_shaders_debug.bin
 /src/icon.generated.ico
 /src/version.generated.h.in
 
+# XLast rich-presence XML, rebuilt from assets/default.xex by scripts/gen-xlast.py
+/src/xlast.generated.h
+
 # Area-name table for the Discord presence, rebuilt from docs/cfdata_names.txt
 # by scripts/gen-area-names.py
 /src/area_names.generated.h
@@ -53,6 +56,10 @@ guest_shaders_debug.bin
 # PS3 item and magic text, rebuilt from src/guest_data/ps3/text by
 # scripts/gen-ps3-item-text.py
 /src/engine/ps3_item_text.generated.inc
+
+# Achievement text, rebuilt from the XLast in assets/default.xex plus the
+# committed Japanese rows by scripts/gen-achievement-text.py
+/src/engine/achievement_text.generated.h
 
 # Embedded overlay font, rebuilt from src/fonts/*.ttf by scripts/gen-fonts.py
 /src/fonts.generated.h
