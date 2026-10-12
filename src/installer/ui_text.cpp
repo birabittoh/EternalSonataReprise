@@ -66,7 +66,7 @@ std::vector<Language>& Languages() {
     return g_languages;
   for (const LangFile& file : kLangFiles) {
     try {
-      toml::table table = toml::parse(std::string_view(file.text, file.size));
+      toml::table table = toml::parse(std::string_view(reinterpret_cast<const char*>(file.text), file.size));
       std::string name = table["name"].value_or(std::string(file.code));
       g_languages.push_back({file.code, std::move(name), std::move(table)});
     } catch (const toml::parse_error& e) {
@@ -318,7 +318,7 @@ void BindIntroLanguageConfig(const std::filesystem::path& user_settings_path) {
 std::string IntroGlyphText() {
   std::string text;
   for (const LangFile& file : kLangFiles)
-    text.append(file.text, file.size);
+    text.append(reinterpret_cast<const char*>(file.text), file.size);
   return text;
 }
 

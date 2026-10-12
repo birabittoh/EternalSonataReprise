@@ -20,11 +20,11 @@ def main():
         for i, code in enumerate(codes):
             with open(os.path.join(LANG_DIR, code + ".toml"), "rb") as f:
                 data = f.read()
-            out.write(f"inline constexpr char kLang{i}[] = {{\n")
+            out.write(f"inline constexpr unsigned char kLang{i}[] = {{\n")
             for j in range(0, len(data), 20):
-                out.write("    " + ", ".join(str(b if b < 128 else b - 256) for b in data[j:j + 20]) + ",\n")
+                out.write("    " + ", ".join(str(b) for b in data[j:j + 20]) + ",\n")
             out.write("};\n\n")
-        out.write("struct LangFile {\n  const char* code;\n  const char* text;\n  unsigned int size;\n};\n\n")
+        out.write("struct LangFile {\n  const char* code;\n  const unsigned char* text;\n  unsigned int size;\n};\n\n")
         out.write("inline constexpr LangFile kLangFiles[] = {\n")
         for i, code in enumerate(codes):
             out.write(f'    {{"{code}", kLang{i}, sizeof(kLang{i})}},\n')
