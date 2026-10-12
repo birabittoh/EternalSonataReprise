@@ -445,6 +445,8 @@ set(ETERNALSONATA_SOURCES
     src/platform/fast_forward_key.cpp
     src/platform/host_menu.cpp
     src/platform/input_overlay.cpp
+    src/platform/touch_controls_overlay.cpp
+    src/platform/touch_input_driver.cpp
     src/engine/dlc_auto_install.cpp
     src/engine/costume_system.cpp
     src/engine/character_roster.cpp

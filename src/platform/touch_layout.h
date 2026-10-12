@@ -2,18 +2,19 @@
 //
 // The on-screen pad's design for this game.
 //
-// The SDK owns the machinery (hit-testing, multi-touch, the resulting
-// X_INPUT_STATE and the drawing) but deliberately owns no layout, since every
-// game wants a different one. This is Eternal Sonata's: it only lays out the
-// inputs the game actually asks for, which is why there is no D-pad, no right
-// stick, no Back and no stick press here even though the SDK can express all
-// of them (see rex/input/touch/touch_input_driver.h).
+// The driver owns the machinery (hit-testing, multi-touch, the resulting
+// X_INPUT_STATE) and the overlay the drawing; this is the layout. It only lays
+// out the inputs the game actually asks for, which is why there is no D-pad, no
+// right stick, no Back and no stick press here even though the driver can
+// express all of them (see touch_input_driver.h).
 
 #pragma once
 
-#include <rex/input/touch/touch_input_driver.h>
+#include "touch_input_driver.h"
 
 #include <algorithm>
+
+#include "target.h"
 
 namespace eternalsonata {
 
@@ -22,11 +23,8 @@ namespace eternalsonata {
 // Pure function of the size, as TouchLayoutProvider requires: the driver calls
 // it in window pixels and the overlay calls it in ImGui points, and the two
 // only describe the same pad because each rebuilds it in its own space.
-inline rex::input::touch::TouchLayout BuildTouchLayout(float width, float height) {
-  // rex::input for the X_INPUT_GAMEPAD_* masks, rex::input::touch for the
-  // layout types and the Make* builders.
-  using namespace rex::input;
-  using namespace rex::input::touch;
+inline touch::TouchLayout BuildTouchLayout(float width, float height) {
+  using namespace touch;
 
   TouchLayout layout;
   if (width <= 0.0f || height <= 0.0f) {
@@ -49,6 +47,12 @@ inline rex::input::touch::TouchLayout BuildTouchLayout(float width, float height
   // millimetres of glass is both awkward and easy to misread as a system
   // gesture.
   const float inset = u * 0.06f;
+
+  // PS3 data gets PS3 art; the pad itself stays positional.
+  const bool ps3 = IsPs3Target();
+  if (ps3) {
+    layout.face_style = TouchFaceStyle::kPlayStation;
+  }
 
   // A/B/X/Y diamond, bottom right, in the Xbox arrangement (A at the bottom).
   const float face_r = u * 0.085f;
@@ -79,8 +83,8 @@ inline rex::input::touch::TouchLayout BuildTouchLayout(float width, float height
   // either one of them.
   const float menu_rx = u * 0.10f;
   const float menu_offset = menu_rx + u * 0.01f;
-  layout.controls.push_back(MakePill(width * 0.5f - menu_offset, pill_y, menu_rx, pill_ry, "GUIDE",
-                                     X_INPUT_GAMEPAD_GUIDE));
+  layout.controls.push_back(MakePill(width * 0.5f - menu_offset, pill_y, menu_rx, pill_ry,
+                                     ps3 ? "MENU" : "GUIDE", X_INPUT_GAMEPAD_GUIDE));
   layout.controls.push_back(MakePill(width * 0.5f + menu_offset, pill_y, menu_rx, pill_ry, "START",
                                      X_INPUT_GAMEPAD_START));
 

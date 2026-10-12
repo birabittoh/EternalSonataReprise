@@ -70,6 +70,7 @@
 #include "cutscene_system.h"
 #include "settings.h"
 #include "piano_music_system.h"
+#include "touch_controls_overlay.h"
 #include "touch_layout.h"
 
 class EternalsonataApp : public rex::ReXApp {
@@ -537,15 +538,16 @@ class EternalsonataApp : public rex::ReXApp {
 
     fast_forward_key_ = eternalsonata::CreateFastForwardKey(window());
 
-    // On-screen pad. The SDK's touch driver reports no device until a layout
-    // is installed, so this is what turns the touch controls on for this game;
-    // the touch_controls cvar (on by default only on Android) still decides
-    // whether they are shown. See src/touch_layout.h.
+    // On-screen pad. Registered on every platform; the touch_controls cvar (on
+    // by default only on Android) decides whether it is shown.
     if (auto* input_sys = static_cast<rex::input::InputSystem*>(runtime()->input_system())) {
       input_overlay_ = eternalsonata::CreateInputOverlay(imgui_drawer(), input_sys);
-      if (auto* touch = input_sys->GetDriver<rex::input::touch::TouchInputDriver>()) {
-        touch->SetLayoutProvider(&eternalsonata::BuildTouchLayout);
-      }
+      auto touch = std::make_unique<eternalsonata::touch::TouchInputDriver>(nullptr, 0);
+      touch->Setup();
+      touch->SetLayoutProvider(&eternalsonata::BuildTouchLayout);
+      touch_controls_overlay_ = std::make_unique<eternalsonata::touch::TouchControlsOverlay>(
+          imgui_drawer(), touch.get(), input_sys);
+      input_sys->AddDriver(std::move(touch));
     }
   }
 
@@ -619,6 +621,7 @@ class EternalsonataApp : public rex::ReXApp {
 
   // F8 device list, backed by the SDK's generic input snapshot API.
   std::unique_ptr<rex::ui::ImGuiDialog> input_overlay_;
+  std::unique_ptr<rex::ui::ImGuiDialog> touch_controls_overlay_;
   std::unique_ptr<rex::ui::HintToastDialog> startup_hint_;
   std::unique_ptr<rex::ui::ImGuiDialog> ui_scale_applier_;
 
