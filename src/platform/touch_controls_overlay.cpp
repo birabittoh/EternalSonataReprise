@@ -107,30 +107,95 @@ void DrawLabel(ImDrawList* draw_list, const char* label, float cx, float cy, flo
                      ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, a)), label);
 }
 
+float SmoothStep(float edge0, float edge1, float x) {
+  const float t = std::clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+  return t * t * (3.0f - 2.0f * t);
+}
+
+// Fills an ellipse as one mesh of nested rings shrinking toward `focus`, so a
+// translucent gradient covers each pixel once instead of stacking into bands.
+// `shade(t, dir)` gives the colour at ring t (0 at the focus, 1 at the edge)
+// in direction dir; a one pixel fringe fades the edge out like ImGui's own AA.
+template <typename Shade>
+void FillShadedEllipse(ImDrawList* draw_list, ImVec2 center, ImVec2 radii, ImVec2 focus,
+                       Shade shade) {
+  constexpr int kRings = 16;
+  constexpr int kSegments = 48;
+  constexpr int kLoops = kRings + 2;  // focus, rings, fringe
+  draw_list->PrimReserve((kLoops - 1) * kSegments * 6, kLoops * kSegments);
+  const ImDrawIdx base = ImDrawIdx(draw_list->_VtxCurrentIdx);
+  for (int loop = 0; loop + 1 < kLoops; ++loop) {
+    for (int s = 0; s < kSegments; ++s) {
+      const int n = (s + 1) % kSegments;
+      const ImDrawIdx a = ImDrawIdx(base + loop * kSegments + s);
+      const ImDrawIdx b = ImDrawIdx(base + loop * kSegments + n);
+      const ImDrawIdx c = ImDrawIdx(base + (loop + 1) * kSegments + n);
+      const ImDrawIdx d = ImDrawIdx(base + (loop + 1) * kSegments + s);
+      draw_list->PrimWriteIdx(a);
+      draw_list->PrimWriteIdx(b);
+      draw_list->PrimWriteIdx(c);
+      draw_list->PrimWriteIdx(a);
+      draw_list->PrimWriteIdx(c);
+      draw_list->PrimWriteIdx(d);
+    }
+  }
+  const ImVec2 uv = ImGui::GetFontTexUvWhitePixel();
+  for (int loop = 0; loop < kLoops; ++loop) {
+    const bool fringe = loop == kLoops - 1;
+    const float t = fringe ? 1.0f : float(loop) / float(kRings);
+    for (int s = 0; s < kSegments; ++s) {
+      const float angle = 2.0f * kPi * float(s) / float(kSegments);
+      const ImVec2 dir(std::cos(angle), std::sin(angle));
+      const float grow = fringe ? 0.5f : (loop == kRings ? -0.5f : 0.0f);
+      const ImVec2 ring_center(focus.x + (center.x - focus.x) * t,
+                               focus.y + (center.y - focus.y) * t);
+      const ImVec2 pos(ring_center.x + dir.x * (radii.x * t + grow),
+                       ring_center.y + dir.y * (radii.y * t + grow));
+      ImVec4 color = shade(t, dir);
+      if (fringe) {
+        color.w = 0.0f;
+      }
+      draw_list->PrimWriteVtx(pos, uv, ImGui::GetColorU32(color));
+    }
+  }
+}
+
 void DrawFaceButton(ImDrawList* draw_list, const FaceStyle& style, float cx, float cy, float radius,
                     float alpha, bool pressed) {
   const ImVec4 white(1.0f, 1.0f, 1.0f, 1.0f);
   const ImVec4 black(0.0f, 0.0f, 0.0f, 1.0f);
-  const ImVec4 highlight = LerpColor(style.color, white, 0.35f);
-  const ImVec4 shadow = LerpColor(style.color, black, 0.28f);
-  const float face_alpha = std::min(alpha * (pressed ? 2.0f : 1.5f), 1.0f);
+  const ImVec4 highlight = LerpColor(style.color, white, 0.40f);
+  const ImVec4 shadow = LerpColor(style.color, black, 0.40f);
+  const ImVec4 glow = LerpColor(style.color, white, 0.25f);
+  const float face_alpha = std::min(alpha * (pressed ? 2.6f : 2.0f), 1.0f);
   const float face_radius = radius * (pressed ? 0.96f : 1.0f);
   const ImVec2 center(cx, cy + (pressed ? radius * 0.025f : 0.0f));
 
-  draw_list->AddCircleFilled(center, face_radius, ColorWithAlpha(shadow, face_alpha), 48);
-  constexpr int kGradientSteps = 14;
-  for (int step = kGradientSteps - 1; step >= 1; --step) {
-    const float fraction = float(step) / float(kGradientSteps);
-    const float shade = 1.0f - fraction;
-    const ImVec2 layer_center(center.x, center.y - face_radius * 0.30f * shade);
-    draw_list->AddCircleFilled(layer_center, face_radius * fraction,
-                               ColorWithAlpha(LerpColor(shadow, highlight, shade), face_alpha), 48);
-  }
+  // Lit from above, darkening toward the rim, with light passing through the
+  // plastic and catching the lower edge.
+  FillShadedEllipse(
+      draw_list, center, ImVec2(face_radius, face_radius),
+      ImVec2(center.x, center.y - face_radius * 0.35f), [&](float t, ImVec2 dir) {
+        ImVec4 color = LerpColor(highlight, style.color, SmoothStep(0.0f, 0.6f, t));
+        color = LerpColor(color, shadow, SmoothStep(0.55f, 1.0f, t));
+        const float lower = std::max(dir.y, 0.0f);
+        color = LerpColor(color, glow, 0.7f * lower * lower * SmoothStep(0.7f, 0.95f, t));
+        color.w = face_alpha;
+        return color;
+      });
 
-  const float gloss_alpha = alpha * (pressed ? 0.22f : 0.48f);
-  draw_list->AddEllipseFilled(ImVec2(center.x, center.y - face_radius * 0.38f),
-                              ImVec2(face_radius * 0.56f, face_radius * 0.23f),
-                              ColorWithAlpha(white, gloss_alpha), 0.0f, 32);
+  // Soft edged sheen fading out toward the middle of the dome.
+  const float gloss_alpha = std::min(alpha * (pressed ? 0.45f : 1.1f), 0.75f);
+  const ImVec2 gloss_center(center.x, center.y - face_radius * 0.42f);
+  const ImVec2 gloss_radii(face_radius * 0.62f, face_radius * 0.40f);
+  FillShadedEllipse(draw_list, gloss_center, gloss_radii, gloss_center,
+                    [&](float t, ImVec2 dir) {
+                      const float y = 0.5f - 0.5f * dir.y * t;
+                      ImVec4 color = white;
+                      color.w = gloss_alpha * (0.15f + 0.85f * y * y) *
+                                (1.0f - SmoothStep(0.55f, 1.0f, t));
+                      return color;
+                    });
   draw_list->AddCircle(center, face_radius, ColorWithAlpha(white, alpha * 0.62f), 48, 2.0f);
   if (pressed) {
     draw_list->AddCircle(center, face_radius + 2.0f, ColorWithAlpha(white, alpha * 0.85f), 48,
@@ -177,33 +242,29 @@ void DrawFaceGlyph(ImDrawList* draw_list, FaceGlyph glyph, ImVec2 c, float size,
   }
 }
 
-// Matte black dish with a coloured symbol: the light falls on the lower inner
-// wall of a concave button rather than on top of a dome.
+// Matte black dish with a coloured symbol, lit from above: the bezel catches
+// the light on top while the hollow inside brightens toward the bottom.
 void DrawPlayStationButton(ImDrawList* draw_list, const FaceStyle& style, float cx, float cy,
                            float radius, float alpha, bool pressed) {
   const ImVec4 white(1.0f, 1.0f, 1.0f, 1.0f);
   const ImVec4 black(0.0f, 0.0f, 0.0f, 1.0f);
-  const ImVec4 rim(0.22f, 0.22f, 0.24f, 1.0f);
-  const ImVec4 well(0.05f, 0.05f, 0.06f, 1.0f);
-  const float face_alpha = std::min(alpha * (pressed ? 2.0f : 1.6f), 1.0f);
+  const ImVec4 bezel_lit(0.30f, 0.30f, 0.33f, 1.0f);
+  const ImVec4 bezel_dark(0.11f, 0.11f, 0.12f, 1.0f);
+  const ImVec4 well_top(0.04f, 0.04f, 0.05f, 1.0f);
+  const ImVec4 well_bottom(0.13f, 0.13f, 0.15f, 1.0f);
+  const float face_alpha = std::min(alpha * (pressed ? 2.6f : 2.0f), 1.0f);
   const float face_radius = radius * (pressed ? 0.96f : 1.0f);
   const ImVec2 center(cx, cy + (pressed ? radius * 0.025f : 0.0f));
 
-  draw_list->AddCircleFilled(center, face_radius, ColorWithAlpha(rim, face_alpha), 48);
-  constexpr int kGradientSteps = 12;
-  for (int step = kGradientSteps - 1; step >= 1; --step) {
-    const float fraction = float(step) / float(kGradientSteps);
-    const float depth = 1.0f - fraction;
-    const ImVec2 layer_center(center.x, center.y - face_radius * 0.10f * depth);
-    draw_list->AddCircleFilled(layer_center, face_radius * (0.94f * fraction + 0.06f * depth),
-                               ColorWithAlpha(LerpColor(rim, well, std::sqrt(depth)), face_alpha),
-                               48);
-  }
-
-  // Rim light along the bottom of the dish.
-  draw_list->PathArcTo(center, face_radius * 0.90f, 0.18f * kPi, 0.82f * kPi, 24);
-  draw_list->PathStroke(ColorWithAlpha(white, alpha * (pressed ? 0.20f : 0.34f)), 0,
-                        std::max(1.5f, face_radius * 0.05f));
+  FillShadedEllipse(draw_list, center, ImVec2(face_radius, face_radius), center,
+                    [&](float t, ImVec2 dir) {
+                      const float y = 0.5f + 0.5f * dir.y * t;
+                      const ImVec4 well = LerpColor(well_top, well_bottom, y);
+                      const ImVec4 bezel = LerpColor(bezel_lit, bezel_dark, 0.5f + 0.5f * dir.y);
+                      ImVec4 color = LerpColor(well, bezel, SmoothStep(0.74f, 0.9f, t));
+                      color.w = face_alpha;
+                      return color;
+                    });
   draw_list->AddCircle(center, face_radius, ColorWithAlpha(black, face_alpha * 0.8f), 48, 2.0f);
   draw_list->AddCircle(center, face_radius + 1.5f, ColorWithAlpha(white, alpha * 0.30f), 48,
                        1.0f);
