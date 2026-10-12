@@ -229,7 +229,6 @@ class EternalsonataApp : public rex::ReXApp {
         "C:\\Windows\\Fonts\\YuGothM.ttc",
         "C:\\Windows\\Fonts\\meiryo.ttc",
         "C:\\Windows\\Fonts\\msgothic.ttc",
-        "/system/fonts/NotoSansCJK-Regular.ttc",
         "/System/Library/Fonts/Hiragino Sans GB.ttc",
     };
     for (const char* path : kCandidates) {
@@ -241,7 +240,13 @@ class EternalsonataApp : public rex::ReXApp {
       atlas->AddFontFromFileTTF(path, size, &merge, ranges);
       return;
     }
-    REXLOG_WARN("No Japanese system font found; the overlays will draw Japanese as boxes");
+    // Android's CJK font is CFF2, which the rasterizer cannot draw.
+    ImFontConfig embedded;
+    embedded.MergeMode = true;
+    embedded.FontDataOwnedByAtlas = false;
+    atlas->AddFontFromMemoryTTF(const_cast<unsigned char*>(eternalsonata::kNotoSansJPSubsetTTF),
+                                static_cast<int>(eternalsonata::kNotoSansJPSubsetTTFSize), size,
+                                &embedded, ranges);
   }
 
   // The overlay's whole color palette is mathematically derived (see

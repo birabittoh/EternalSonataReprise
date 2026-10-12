@@ -17,6 +17,8 @@ FONTS = [
      "SIL Open Font License 1.1 - https://github.com/google/fonts/tree/main/ofl/ptserif"),
     ("Roboto-Medium.ttf", "RobotoMedium", "Roboto Medium",
      "Apache License 2.0 - https://github.com/googlefonts/roboto"),
+    ("NotoSansJP-Subset.ttf", "NotoSansJPSubset", "Noto Sans JP (JIS X 0208 subset)",
+     "SIL Open Font License 1.1 - https://github.com/google/fonts/tree/main/ofl/notosansjp"),
 ]
 
 

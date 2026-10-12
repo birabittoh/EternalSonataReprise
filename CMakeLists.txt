@@ -169,6 +169,7 @@ add_custom_command(
         ${CMAKE_SOURCE_DIR}/scripts/gen-fonts.py
         ${CMAKE_SOURCE_DIR}/src/fonts/PTSerif-Regular.ttf
         ${CMAKE_SOURCE_DIR}/src/fonts/Roboto-Medium.ttf
+        ${CMAKE_SOURCE_DIR}/src/fonts/NotoSansJP-Subset.ttf
     COMMENT "Generating src/fonts.generated.h"
     VERBATIM
 )
