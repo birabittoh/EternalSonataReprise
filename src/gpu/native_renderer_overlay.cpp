@@ -11,6 +11,7 @@
 #include <rex/logging.h>
 #include <rex/ui/immediate_drawer.h>
 
+#include "native_renderer_plume.h"
 #include "native_renderer_plume_internal.h"
 #ifdef _WIN32
 #include "shaders/imguiVert.hlsl.dxil.h"
@@ -119,25 +120,32 @@ class PlumeImmediateDrawer final : public rex::ui::ImmediateDrawer {
   // branch and there is only one pipeline.
   std::unique_ptr<PlumeImmediateTexture> white_texture_;
 
-  // The frame's geometry arenas. A batch is appended rather than written at
-  // zero: the overlay records into the guest's command list, which does not
-  // execute until the present, so every batch of the frame has to still be
-  // there when it runs. Writing each one at offset zero left the whole frame
-  // reading the last batch's vertices, which is invisible while imgui emits one
-  // draw list and breaks the moment a second window (a combo popup, say) adds
-  // another.
-  std::unique_ptr<RenderBuffer> vertex_buffer_;
-  std::unique_ptr<RenderBuffer> index_buffer_;
-  uint64_t vertex_capacity_ = 0;
-  uint64_t index_capacity_ = 0;
-  uint64_t vertex_used_ = 0;
-  uint64_t index_used_ = 0;
+  // A frame's geometry arena. A batch is appended rather than written at zero:
+  // the overlay records into the guest's command list, which does not execute
+  // until the present, so every batch of the frame has to still be there when
+  // it runs. Writing each one at offset zero left the whole frame reading the
+  // last batch's vertices, which is invisible while imgui emits one draw list
+  // and breaks the moment a second window (a combo popup, say) adds another.
+  struct Arena {
+    std::unique_ptr<RenderBuffer> vertex_buffer;
+    std::unique_ptr<RenderBuffer> index_buffer;
+    uint64_t vertex_capacity = 0;
+    uint64_t index_capacity = 0;
+    uint64_t vertex_used = 0;
+    uint64_t index_used = 0;
 
-  // Buffers replaced by a larger one mid-frame. Earlier batches are already
-  // recorded against them, so they have to outlive the frame; they are dropped
-  // at the next Begin, by which point the present has fence waited on the
-  // command list that read them.
-  std::vector<std::unique_ptr<RenderBuffer>> retired_buffers_;
+    // Buffers replaced by a larger one mid-frame. Earlier batches are already
+    // recorded against them, so they have to live until the slot comes round
+    // again.
+    std::vector<std::unique_ptr<RenderBuffer>> retired_buffers;
+  };
+
+  // One per frame slot: the previous frame is still on the GPU while this one
+  // records, so sharing one arena let a changed overlay overwrite the vertices
+  // that frame was drawing (visible as warping on Android's tilers). A slot's
+  // arena is idle again once the present has waited on that slot's fence.
+  Arena arenas_[kFramesInFlight];
+  Arena* arena_ = &arenas_[0];
 
   RenderInputSlot input_slot_;
   RenderVertexBufferView vertex_buffer_view_;
@@ -356,58 +364,59 @@ bool PlumeImmediateDrawer::UploadGeometry(const rex::ui::ImmediateDrawBatch& bat
   // A batch is bound by a view of its own, so the only alignment that matters
   // is the one a view start needs. 256 covers both backends and is a multiple
   // of the vertex stride's and the index width's requirements.
-  const uint64_t vertex_offset = AlignUp64(vertex_used_, kGeometryAlignment);
-  const uint64_t index_offset = AlignUp64(index_used_, kGeometryAlignment);
+  Arena& arena = *arena_;
+  const uint64_t vertex_offset = AlignUp64(arena.vertex_used, kGeometryAlignment);
+  const uint64_t index_offset = AlignUp64(arena.index_used, kGeometryAlignment);
 
-  if (vertex_offset + vertex_bytes > vertex_capacity_) {
+  if (vertex_offset + vertex_bytes > arena.vertex_capacity) {
     // Round up generously so a frame that grows by one widget does not
     // reallocate; imgui's geometry size is stable after a few frames.
     const uint64_t wanted =
-        std::max<uint64_t>(std::max<uint64_t>(vertex_capacity_ * 2, 64 * 1024),
+        std::max<uint64_t>(std::max<uint64_t>(arena.vertex_capacity * 2, 64 * 1024),
                            (vertex_offset + vertex_bytes) * 2);
     auto grown = device_->createBuffer(RenderBufferDesc::UploadBuffer(wanted, RenderBufferFlag::VERTEX));
     if (!grown)
       return false;
-    if (vertex_buffer_)
-      retired_buffers_.push_back(std::move(vertex_buffer_));
-    vertex_buffer_ = std::move(grown);
-    vertex_capacity_ = wanted;
-    vertex_used_ = 0;
+    if (arena.vertex_buffer)
+      arena.retired_buffers.push_back(std::move(arena.vertex_buffer));
+    arena.vertex_buffer = std::move(grown);
+    arena.vertex_capacity = wanted;
+    arena.vertex_used = 0;
     return UploadGeometry(batch);  // Re-run against the new buffer, from zero.
   }
-  if (index_bytes != 0 && index_offset + index_bytes > index_capacity_) {
+  if (index_bytes != 0 && index_offset + index_bytes > arena.index_capacity) {
     const uint64_t wanted = std::max<uint64_t>(
-        std::max<uint64_t>(index_capacity_ * 2, 32 * 1024), (index_offset + index_bytes) * 2);
+        std::max<uint64_t>(arena.index_capacity * 2, 32 * 1024), (index_offset + index_bytes) * 2);
     auto grown = device_->createBuffer(RenderBufferDesc::UploadBuffer(wanted, RenderBufferFlag::INDEX));
     if (!grown)
       return false;
-    if (index_buffer_)
-      retired_buffers_.push_back(std::move(index_buffer_));
-    index_buffer_ = std::move(grown);
-    index_capacity_ = wanted;
-    index_used_ = 0;
+    if (arena.index_buffer)
+      arena.retired_buffers.push_back(std::move(arena.index_buffer));
+    arena.index_buffer = std::move(grown);
+    arena.index_capacity = wanted;
+    arena.index_used = 0;
     return UploadGeometry(batch);
   }
 
   if (vertex_bytes != 0) {
-    auto* mapped = static_cast<uint8_t*>(vertex_buffer_->map());
+    auto* mapped = static_cast<uint8_t*>(arena.vertex_buffer->map());
     if (mapped == nullptr)
       return false;
     std::memcpy(mapped + vertex_offset, batch.vertices, size_t(vertex_bytes));
-    vertex_buffer_->unmap();
+    arena.vertex_buffer->unmap();
   }
-  vertex_used_ = vertex_offset + vertex_bytes;
+  arena.vertex_used = vertex_offset + vertex_bytes;
   vertex_buffer_view_ =
-      RenderVertexBufferView(vertex_buffer_->at(vertex_offset), uint32_t(vertex_bytes));
+      RenderVertexBufferView(arena.vertex_buffer->at(vertex_offset), uint32_t(vertex_bytes));
 
   if (index_bytes != 0) {
-    auto* mapped = static_cast<uint8_t*>(index_buffer_->map());
+    auto* mapped = static_cast<uint8_t*>(arena.index_buffer->map());
     if (mapped == nullptr)
       return false;
     std::memcpy(mapped + index_offset, batch.indices, size_t(index_bytes));
-    index_buffer_->unmap();
-    index_used_ = index_offset + index_bytes;
-    index_buffer_view_ = RenderIndexBufferView(index_buffer_->at(index_offset),
+    arena.index_buffer->unmap();
+    arena.index_used = index_offset + index_bytes;
+    index_buffer_view_ = RenderIndexBufferView(arena.index_buffer->at(index_offset),
                                                uint32_t(index_bytes), RenderFormat::R16_UINT);
   }
   return true;
@@ -419,11 +428,12 @@ void PlumeImmediateDrawer::Begin(rex::ui::UIDrawContext& ui_draw_context,
   commands_ = nullptr;
   bound_pipeline_ = nullptr;
 
-  // The frame that recorded against these has presented, and the present fence
-  // waits, so anything replaced mid-frame is now unreferenced.
-  retired_buffers_.clear();
-  vertex_used_ = 0;
-  index_used_ = 0;
+  // The frame that last recorded into this slot has been fence waited, so its
+  // arena, including anything replaced mid-frame, is unreferenced.
+  arena_ = &arenas_[PlumeFrameSlot()];
+  arena_->retired_buffers.clear();
+  arena_->vertex_used = 0;
+  arena_->index_used = 0;
 
   if (!EnsureResources())
     return;
