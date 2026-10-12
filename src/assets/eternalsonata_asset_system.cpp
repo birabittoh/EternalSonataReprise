@@ -959,6 +959,13 @@ uint64_t CacheKey(rex::Runtime* runtime) {
   ReadWholeFile(runtime->game_data_root() / "index.vmtoc", base_toc);
   h = HashUpdate(h, std::string_view(reinterpret_cast<const char*>(base_toc.data()),
                                      base_toc.size()));
+  // Reconverting keeps every size, so the TOC bytes alone cannot tell.
+  std::error_code toc_ec;
+  h = HashUpdate(h, std::to_string(static_cast<int64_t>(
+                        std::filesystem::last_write_time(runtime->game_data_root() / "index.vmtoc",
+                                                         toc_ec)
+                            .time_since_epoch()
+                            .count())));
   for (const auto& mod : runtime->EnabledModsInfo()) {
     h = HashUpdate(h, mod.folder_name);
     h = HashUpdate(h, mod.version);
