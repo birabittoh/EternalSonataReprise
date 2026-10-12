@@ -4,7 +4,7 @@
 // hold XMA2, and no XMA encoder exists. Every clip gets a stub payload that
 // starts with an RXPcmSub tag, and its frames go to pcm/<token>.wav, which the
 // host decodes and substitutes when the XMA decoder meets the tag. Music
-// tracks in PS-ADPCM get a .cxs whose payload carries the tag the same way.
+// tracks in PS-ADPCM get a .cxs that tags every packet with its position.
 
 #include <algorithm>
 #include <cctype>
@@ -312,13 +312,37 @@ Bytes ConvertCsf(const std::string& rel, const Bytes& ps3, const PcmWriter& writ
   return header;
 }
 
+// A resumed track starts mid block, and the guest finds its frame by walking
+// packet headers and frame lengths (sub_822B6478), so every packet has both:
+// equal frames of 512 samples, the first holding the tag at byte 6 and the
+// packet's first sample at byte 22.
+Bytes CxsPacket(const Token& tok, uint32_t frame_count, uint32_t first_sample) {
+  Bytes out(kPacket);
+  Wr32(out, 0, uint64_t(frame_count) << 26 | 1 << 8);
+  const uint32_t bits = uint32_t(kPacket - 4) * 8 / frame_count;
+  for (uint32_t f = 0; f < frame_count; ++f) {
+    const uint32_t at = 32 + f * bits;
+    for (uint32_t b = 0; b < 15; ++b)
+      if (bits >> (14 - b) & 1)
+        out[(at + b) / 8] |= uint8_t(0x80 >> ((at + b) % 8));
+  }
+  std::copy(kTag, kTag + 8, out.begin() + 6);
+  std::copy(tok.begin(), tok.end(), out.begin() + 14);
+  Wr32(out, 22, first_sample);
+  return out;
+}
+
 // A .cxs header as every 360 track has it, and a payload about as long as
 // the 360's XMA tracks take (0.11 to 0.28 bytes per sample and channel),
-// since the guest streams it while the track plays; only its first packet
-// carries the tag.
+// since the guest streams it while the track plays.
 Bytes NewCxs(const Token& tok, uint32_t channels, uint32_t rate, uint32_t frames,
              const Loop* loop) {
-  const size_t size = Align(size_t(frames) * channels / 4, kPacket);
+  const uint32_t per_packet = std::max(16 / channels, 1u) * 512;
+  const uint32_t per_block = per_packet * (kCxsBlock / kPacket);
+  // One frame past the end, as on the 360.
+  const uint32_t end = uint32_t(Align(frames, 512)) + 512;
+  const size_t packets = (end + per_packet - 1) / per_packet;
+  const size_t size = packets * kPacket;
   const size_t blocks = (size + kCxsBlock - 1) / kCxsBlock;
   Bytes out;
   Append(out, "CXS ", 4);
@@ -328,15 +352,13 @@ Bytes NewCxs(const Token& tok, uint32_t channels, uint32_t rate, uint32_t frames
                      uint64_t(kPacket)})
     Put32(out, v);
   out.resize(kCxsHeader);
-  // The samples played by the end of each block, in whole XMA frames, the
-  // last one frame past the end as on the 360. The guest does not start a
+  // The samples played by the end of each block. The guest does not start a
   // track whose loop end falls outside the table.
-  for (size_t i = 0; i + 1 < blocks; ++i)
-    Put32(out, Align((i + 1) * frames / blocks, 512));
-  Put32(out, Align(frames, 512) + 512);
+  for (size_t i = 0; i < blocks; ++i)
+    Put32(out, std::min<size_t>((i + 1) * per_block, end));
   out.resize(kCxsPayload);
-  Append(out, TaggedPacket(tok));
-  out.resize(kCxsPayload + size);
+  for (size_t p = 0; p < packets; ++p)
+    Append(out, CxsPacket(tok, per_packet / 512, uint32_t(p * per_packet)));
   return out;
 }
 

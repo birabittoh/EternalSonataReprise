@@ -189,28 +189,47 @@ def convert_csf(rel, ps3, write_pcm, report):
 CXS_HEADER = 0x800
 CXS_PAYLOAD = 0x1000
 CXS_BLOCK = 0x10000
-# Payload bytes per sample and channel, about what the 360's XMA tracks take
-# (0.11 to 0.28): the guest streams the payload while the track plays.
-CXS_BYTES_PER_SAMPLE = 0.25
+
+
+def cxs_packet(tok, frame_count, first_sample):
+    """A resumed track starts mid block, and the guest finds its frame by
+    walking packet headers and frame lengths (sub_822B6478), so every packet
+    has both: equal frames of 512 samples, the first holding the tag at byte 6
+    and the packet's first sample at byte 22."""
+    out = bytearray(PACKET)
+    u32.pack_into(out, 0, frame_count << 26 | 1 << 8)
+    bits = (PACKET - 4) * 8 // frame_count
+    for f in range(frame_count):
+        at = 32 + f * bits
+        for b in range(15):
+            if bits >> (14 - b) & 1:
+                out[(at + b) // 8] |= 0x80 >> ((at + b) % 8)
+    out[6:22] = TAG + tok
+    u32.pack_into(out, 22, first_sample)
+    return bytes(out)
 
 
 def new_cxs(tok, channels, rate, frames, loop):
-    """A .cxs header as every 360 track has it, and a payload whose first
-    packet carries the tag."""
-    size = align(int(frames * channels * CXS_BYTES_PER_SAMPLE), PACKET)
+    """A .cxs header as every 360 track has it, and a payload about as long as
+    the 360's XMA tracks take (0.11 to 0.28 bytes per sample and channel),
+    since the guest streams it while the track plays."""
+    per_packet = max(16 // channels, 1) * 512
+    per_block = per_packet * (CXS_BLOCK // PACKET)
+    # One frame past the end, as on the 360.
+    end = align(frames, 512) + 512
+    packets = (end + per_packet - 1) // per_packet
+    size = packets * PACKET
     blocks = (size + CXS_BLOCK - 1) // CXS_BLOCK
     loop_start, loop_end = (loop[0], align(loop[1], 512)) if loop else (0, 0)
     out = bytearray(struct.pack('>4s11I', b'CXS ', CXS_HEADER, rate, channels, frames, loop_start,
                                 loop_end, blocks, CXS_PAYLOAD, size, PACKET, PACKET))
     out += bytes(CXS_HEADER - len(out))
-    # The samples played by the end of each block, in whole XMA frames, the
-    # last one frame past the end as on the 360. The guest does not start a
+    # The samples played by the end of each block. The guest does not start a
     # track whose loop end falls outside the table.
-    table = [align((i + 1) * frames // blocks, 512) for i in range(blocks)]
-    table[-1] = align(frames, 512) + 512
-    out += b''.join(u32.pack(v) for v in table)
+    out += b''.join(u32.pack(min((i + 1) * per_block, end)) for i in range(blocks))
     out += bytes(CXS_PAYLOAD - len(out))
-    out += TAG + tok + bytes(size - 16)
+    for p in range(packets):
+        out += cxs_packet(tok, per_packet // 512, p * per_packet)
     return bytes(out)
 
 
