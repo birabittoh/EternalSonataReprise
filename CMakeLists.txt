@@ -534,10 +534,15 @@ rexglue_setup_target(eternalsonata)
 
 target_link_libraries(eternalsonata PRIVATE plume)
 
-# Release version the self-updater compares GitHub tags against: the CI tag
-# (ES_VERSION_NAME, also what the Android Gradle build stamps), else the
-# newest reachable v* tag, else empty, which leaves the updater off.
-set(ETERNALSONATA_VERSION "$ENV{ES_VERSION_NAME}" CACHE STRING "Version embedded for the self-updater (vX.Y.Z or X.Y.Z)")
+# Release version the self-updater compares GitHub tags against: an explicit
+# override, else the CI tag (ES_VERSION_NAME, also what the Android Gradle build
+# stamps), else the newest reachable v* tag, else empty, which leaves the
+# updater off. Recomputed on every configure so a new tag reaches an old build dir.
+set(ETERNALSONATA_VERSION_OVERRIDE "" CACHE STRING "Version embedded for the self-updater (vX.Y.Z or X.Y.Z); empty to derive it")
+set(ETERNALSONATA_VERSION "${ETERNALSONATA_VERSION_OVERRIDE}")
+if(ETERNALSONATA_VERSION STREQUAL "")
+    set(ETERNALSONATA_VERSION "$ENV{ES_VERSION_NAME}")
+endif()
 if(ETERNALSONATA_VERSION STREQUAL "")
     execute_process(
         COMMAND git describe --tags --abbrev=0 --match "v*"
