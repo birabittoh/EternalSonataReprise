@@ -24,11 +24,13 @@
 #ifdef _WIN32
 #include "shaders/blitVert.hlsl.dxil.h"
 #include "shaders/blitFrag.hlsl.dxil.h"
+#include "shaders/blitPresentFrag.hlsl.dxil.h"
 #include "shaders/depthResolveVert.hlsl.dxil.h"
 #include "shaders/depthResolveFrag.hlsl.dxil.h"
 #endif
 #include "shaders/blitVert.hlsl.spirv.h"
 #include "shaders/blitFrag.hlsl.spirv.h"
+#include "shaders/blitPresentFrag.hlsl.spirv.h"
 #include "shaders/depthResolveVert.hlsl.spirv.h"
 #include "shaders/depthResolveFrag.hlsl.spirv.h"
 
@@ -2724,15 +2726,17 @@ bool EnsureBlitResources(RenderDevice* device) {
   if (shader_format == RenderShaderFormat::DXIL) {
     g_blit.vertex_shader =
         device->createShader(blitVertBlobDXIL, sizeof(blitVertBlobDXIL), "VSMain", shader_format);
-    g_blit.pixel_shader =
-        device->createShader(blitFragBlobDXIL, sizeof(blitFragBlobDXIL), "PSMain", shader_format);
+    g_blit.pixel_shader = device->createShader(blitPresentFragBlobDXIL,
+                                               sizeof(blitPresentFragBlobDXIL), "PSMain",
+                                               shader_format);
   } else
 #endif
       if (shader_format == RenderShaderFormat::SPIRV) {
     g_blit.vertex_shader =
         device->createShader(blitVertBlobSPIRV, sizeof(blitVertBlobSPIRV), "VSMain", shader_format);
-    g_blit.pixel_shader =
-        device->createShader(blitFragBlobSPIRV, sizeof(blitFragBlobSPIRV), "PSMain", shader_format);
+    g_blit.pixel_shader = device->createShader(blitPresentFragBlobSPIRV,
+                                               sizeof(blitPresentFragBlobSPIRV), "PSMain",
+                                               shader_format);
   }
 
   RenderSamplerDesc sampler_desc;

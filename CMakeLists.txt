@@ -602,6 +602,8 @@ plume_compile_vertex_shader(eternalsonata
     "${CMAKE_SOURCE_DIR}/src/shaders/blit.vert.hlsl" "blitVert" "VSMain")
 plume_compile_pixel_shader(eternalsonata
     "${CMAKE_SOURCE_DIR}/src/shaders/blit.frag.hlsl" "blitFrag" "PSMain")
+plume_compile_pixel_shader(eternalsonata
+    "${CMAKE_SOURCE_DIR}/src/shaders/blit_present.frag.hlsl" "blitPresentFrag" "PSMain")
 
 # The depth resolve, which cannot be a copy now that depth carries stencil.
 plume_compile_vertex_shader(eternalsonata

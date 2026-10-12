@@ -31,6 +31,16 @@
 "0x822604C8" = { name = "D3DDevice__Clear", evidence = "verified: called from renderer init 0x8210A148 with flags 0x3F (all clear bits), a color and Z=1.0; delegates the packet write to 0x822603A0" }
 "0x82260C68" = { name = "D3DDevice__Resolve", evidence = "verified: takes flags, a source RECT and a dest texture, and emits both DRAW_INDX (0x2200) and DRAW_INDX_2 (0x3600) headers for the resolve quad" }
 
+# Display gamma ramp, uploaded at every swap (see src/shaders/blit_present.frag.hlsl).
+"0x8225EAE0" = { name = "D3DDevice__EmitFrontBufferSwap", evidence = "verified: writes the front buffer address register 6212 and, when flag 2 is set, hands the optional user ramp (last argument) to 0x8225E610" }
+"0x8225E610" = { name = "D3DDevice__UploadGammaRamp", evidence = "verified: with no user ramp builds the default one (0x8226A500 or 0x8226A558) and writes it through the PWL path 0x8226A410 when the format is 673710390, else the 256 entry path 0x8226A330" }
+"0x8226A330" = { name = "D3DDevice__WriteGammaRamp256", evidence = "verified: emits DC_LUT_RW_INDEX (0x1922), DC_LUT_WRITE_EN_MASK (0x1927) and DC_LUT_30_COLOR (0x1925) packets for 256 packed 10 bit entries" }
+"0x8226A410" = { name = "D3DDevice__WriteGammaRampPWL", evidence = "verified: emits DC_LUT_RW_INDEX (0x1922), DC_LUT_WRITE_EN_MASK (0x1927) and DC_LUT_PWL_DATA (0x1924) packets for 128 base/delta entries" }
+"0x8226A500" = { name = "D3D__BuildDefaultGammaRamp", evidence = "verified: fills three 256 entry 16 bit channels with the identity ramp then runs it through 0x8226A008" }
+"0x8226A008" = { name = "D3D__ApplyDisplayGammaToRamp", evidence = "verified: calls VdGetCurrentDisplayGamma and remaps each of 1024 steps through sRGB decode 0x82269EA8 and the BT.709 curve 0x82269F58 (type 2), a power for type 3, then rewrites the three channels" }
+"0x82269EA8" = { name = "D3D__SRGBTransfer", evidence = "verified: 12.92 linear segment with the 0.04045 and 0.0031308 knees and the 2.4 power, direction picked by the flag" }
+"0x82269F58" = { name = "D3D__BT709Transfer", evidence = "verified: 4.5 linear segment below 0.018 then 1.099 * x^0.45 - 0.099, inverse with the 2.2222 power" }
+
 # Draw submission.
 "0x822589D0" = { name = "D3DDevice__DrawIndexedVertices", evidence = "verified: called as (dev, 4, 0, startIndex, 3*triCount) from the mesh loop in 0x8211EE80 and from 0x8210C738" }
 "0x822585E8" = { name = "D3DDevice__DrawVertices", evidence = "verified: called as (dev, primType, startVertex, vertexCount) from 0x82115E40" }
