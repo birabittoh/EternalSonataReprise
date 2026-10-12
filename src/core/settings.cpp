@@ -312,7 +312,9 @@ constexpr std::array kBasicCvarNames = {
     "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
-    "enemy_gold_multiplier", "enemy_hp_multiplier", "enemy_damage_multiplier", "ui_scale",
+    "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
+    "enemy_hp_multiplier",
+    "enemy_damage_multiplier", "ui_scale",
     "save_row_portraits", "force_japanese_font"};
 
 // Steps for the Game tab's multiplier rows. HP stops short of zero, the
@@ -813,6 +815,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawMultiplierRow("benched_exp_multiplier", kExpShareSteps);
         DrawMultiplierRow("incapacitated_exp_multiplier", kExpShareSteps);
         DrawMultiplierRow("enemy_gold_multiplier", kRewardMultiplierSteps);
+        DrawMultiplierRow("photo_price_multiplier", kRewardMultiplierSteps);
+        DrawPhotoPriceAlgorithmRow();
         DrawMultiplierRow("enemy_hp_multiplier", kHpMultiplierSteps);
         DrawMultiplierRow("enemy_damage_multiplier", kRewardMultiplierSteps);
         ImGui::Separator();
@@ -1359,6 +1363,44 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
                      eternalsonata::FieldPlayerModelOverride::SelectionCount())) {
       // SetSelection persists via SaveUserSettings itself.
       eternalsonata::FieldPlayerModelOverride::SetSelection(selection);
+    }
+    ImGui::PopID();
+  }
+
+  // Platform names stay untranslated, so only Auto has a key.
+  void DrawPhotoPriceAlgorithmRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("photo_price_algorithm");
+    if (!entry)
+      return;
+    struct Option {
+      const char* id;
+      const char* label;
+    };
+    const std::array<Option, 3> options = {{{"auto", T("auto")}, {"360", "Xbox 360"}, {"ps3", "PS3"}}};
+    const std::string current = entry->getter();
+    int cur_idx = 0;
+    for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+      if (current == options[i].id)
+        cur_idx = i;
+    }
+
+    if (DrawRowLabel("photo_price_algorithm", "photo_price_algorithm")) {
+      ImGui::SetTooltip("%s", Tip("photo_price_algorithm"));
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("photo_price_algorithm");
+    if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
+      for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+        const bool selected = i == cur_idx;
+        if (ImGui::Selectable(options[i].label, selected)) {
+          rex::cvar::SetFlagByName("photo_price_algorithm", options[i].id, /*persist=*/true);
+          SaveBasic();
+        }
+        if (selected)
+          ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndCombo();
     }
     ImGui::PopID();
   }

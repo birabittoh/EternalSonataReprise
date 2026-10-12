@@ -55,9 +55,11 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include <rex/cvar.h>
 #include <rex/hook.h>
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
@@ -73,6 +75,16 @@
 #include "music_system.h"
 #include "piano_music_system.h"
 #include "save_record.h"
+#include "target.h"
+
+REXCVAR_DEFINE_DOUBLE(photo_price_multiplier, 1.0, "Eternal Sonata",
+                      "Multiplier on the gold photographs sell for")
+    .range(0.0, 10.0);
+
+REXCVAR_DEFINE_STRING(photo_price_algorithm, "auto", "Eternal Sonata",
+                      "How photographs are priced: 360 (scaled by development), ps3 (score "
+                      "times 100), or auto (follows the game data)")
+    .allowed({"auto", "360", "ps3"});
 
 namespace eternalsonata {
 namespace {
@@ -539,6 +551,29 @@ REX_HOOK_RAW(sub_82209478) {
   // The widget field the album draws the haze from, written by the original
   // right before it returned. ctx.r3 still holds the widget.
   WriteGuestFloat(ctx.r3.u32 + 168u, 0.0f);
+}
+
+// sub_821FA4A0(album, index) -> i32: a photograph's sale price. The shop's
+// offer, the album's price label and the sale's total all come from here.
+// The PS3 build prices by score alone (its sub_214160), with no floor of 1.
+REX_EXTERN(__imp__sub_821FA4A0);
+REX_HOOK_RAW(sub_821FA4A0) {
+  using namespace eternalsonata;
+  const std::string algorithm = REXCVAR_GET(photo_price_algorithm);
+  const bool ps3 = algorithm == "ps3" || (algorithm == "auto" && IsPs3Target());
+  if (ps3) {
+    const int record = RecordAt(ctx.r4.s32);
+    const uint32_t rec = record < 0 ? 0 : RecordAddr(record);
+    ctx.r3.s64 = rec && !(ReadGuest<uint32_t>(rec + kRecFlags) & kFlagBlank)
+                     ? static_cast<int32_t>(ReadGuestFloat(rec + kRecScore) * 100.0f)
+                     : 0;
+  } else {
+    __imp__sub_821FA4A0(ctx, base);
+  }
+  const double multiplier = std::clamp(REXCVAR_GET(photo_price_multiplier), 0.0, 10.0);
+  if (multiplier != 1.0) {
+    ctx.r3.s64 = static_cast<int32_t>(std::lround(ctx.r3.s32 * multiplier));
+  }
 }
 
 // sub_82240AF8(save) -> void: restore the live globals from a loaded save,

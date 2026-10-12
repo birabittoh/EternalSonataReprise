@@ -110,6 +110,24 @@ the haze `sub_82209478` writes.
 `sub_822076A8` is the tab's state machine, an eleven-arm jump table on
 `dword_824400EC + 16`. `sub_82206028` builds the trash/sell confirmation.
 
+## Sale price
+
+`sub_821FA4A0(album, display index)` is the only place a price is computed:
+`record[+168]` times a development curve (`sub_822CD788` over `1 - haze`,
+scaled 4 or 16 by `0x8255EDC8`), floored at 1, and 0 for a blank record. The
+sell prompt (`sub_822070C0`), the album's per-slot label (`sub_822087F8`) and
+the running sale total at +0x924 (`sub_82206AF8`) all call it, so the
+`photo_price_multiplier` hook on it keeps all three in step.
+
+The PS3 EBOOT's counterpart, `sub_214160` (TOC 0x5415F8), is much simpler:
+`(int)(record_float * 100.0f)`, 0 for a blank record, with no development
+curve, no aspect flag and no floor of 1. Its records are 224 bytes and the
+order bytes sit at album+0xA9D; the float it reads is 8 bytes past the flags,
+the same position as the 360's quality score. Only the album bind
+(`sub_230938`) and the sale (`sub_22E0E8`) call it. `photo_price_algorithm`
+(auto, 360, ps3) picks between the two inside the same hook, with auto
+following `IsPs3Target()`.
+
 Ruled out during the search, recorded so they are not reopened:
 `sub_821F9F38` ("CampPhoto") is the capture-time render target;
 `sub_822129C8` is the capture state machine; `sub_821EC050` is the
