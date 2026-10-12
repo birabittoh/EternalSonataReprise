@@ -679,6 +679,16 @@ void EternalSonataFontCharacter(PPCRegister& r3, PPCRegister& r4, PPCRegister& r
   r3.u64 = 1;
 }
 
+// The tutorial sizes its hint box to this exact width, but the box's word wrap
+// needs more room under the Japanese font. The hint then breaks onto a second
+// line the box cannot scroll to, and the battle waits on it forever.
+extern "C++" void EternalSonataHintWidth(PPCRegister& r3);
+
+void EternalSonataHintWidth(PPCRegister& r3) {
+  if (REXCVAR_GET(force_japanese_font) && static_cast<int32_t>(r3.u32) > 0)
+    r3.u64 = r3.u32 + 40;
+}
+
 // sub_821D5CC0 overwrites a character its font lacks with '@' or Shift-JIS
 // 0x81A1 and reads it again. A font without those, such as one that failed to
 // load, loops forever, so step past a character that is already the fallback.

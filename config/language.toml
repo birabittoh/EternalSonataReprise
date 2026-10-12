@@ -99,6 +99,13 @@ address = 0x821D03E4
 name = "EternalSonataFontCharacter"
 registers = ["r3", "r4", "r5"]
 
+# Native 45034's measured width, sizing the tutorial hint boxes
+# (EternalSonataHintWidth).
+[[midasm_hook]]
+address = 0x820E75AC
+name = "EternalSonataHintWidth"
+registers = ["r3"]
+
 # A glyph missing from its font, fallback included (EternalSonataSkipMissingGlyph).
 [[midasm_hook]]
 address = 0x821D7178

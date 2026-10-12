@@ -223,6 +223,58 @@ and 8 during a `<wv>` wait.
 `src/engine/eternalsonata_hooks.cpp` uses these to let the advance button cut
 a `<wv>` wait short.
 
+### Overflow, scroll and page states
+
+Every text box runs this, so a box that never finishes holds whatever waits
+on it. Records live in a list at `dword_82557568` (id at `+0`, next at
+`+932`). Per frame `sub_821D49A0` runs the layout pass, then `sub_821D8660`
+(overflow handling), then `sub_821D96F8` (skip button); the layout pass ends
+by calling `sub_821D95B0` (scroll and page clocks).
+
+| Offset | Meaning |
+|---|---|
+| `+4` | state: 1 running, 2 scrolling or flipping, 6 `<w>`, 7 page wait, 8 `<wv>` |
+| `+420` / `+422` | u16 first visible byte / bytes laid out on this page |
+| `+504` | reveal budget; the layout pass returns at once while it is 0 |
+| `+508` / `+876` | scroll clock / clock units per pixel |
+| `+844` / `+846` | s16 box width / height |
+| `+853` | overflow: a line's bottom passed `+846` |
+| `+854` | finished: the layout reached the end of the text |
+| `+856` | waiting for the advance button at a page end |
+| `+859` | overflow mode, from the text's tags |
+| `+861` / `+862` | scrolling a line / flipping a page |
+| `+864` / `+866` / `+868` | first line's height / byte count / reveal budget |
+| `+880` | scroll offset, `sub_821D94D8`: the clock over `+876`, clamped to `+864` |
+| `+882` | height the next line needs, from `sub_821D8990` |
+
+The layout pass wraps at a space when the next word (`sub_821D7EE8`) does not
+fit `+844`, and stops at the first line whose bottom passes `+846`, setting
+`+853`. In state 1, `sub_821D8660` turns that into the mode's action:
+
+* 0: page wait (state 7, `+856`), unless nothing was laid out
+* 1: `sub_821D87E8`
+* 2: scroll one line (state 2, `+861`, `+882` measured)
+* 3: measure `+882`, then page wait
+* 4: page flip (state 2, `+862`)
+* 5: state 0
+
+Once the scroll offset reaches `+864`, `sub_821D95B0` drops the first line
+(`+420 += +866`, `+504 -= +868`, the clock rewinds) and returns to state 1 only
+if `+846 >= +850 + +882`. A page flip ends when the offset reaches `+884`.
+
+A box sized for one line that wraps into two can park in state 2. The battle
+tutorial's hint (`t0001.e` `0x0e44`, window 1001) did that under
+`force_japanese_font`: `+420` stood past the first line, `+504` was 0, so the
+layout pass and with it `sub_821D95B0` never ran again. Window 1001 then stayed
+busy for native 210, which the `lib.e` message task (`sym20069`, `0x58a9`,
+spawning `0x570c`) polls.
+
+Script windows 1000..1003 are `dword_82440604`..`dword_82440610`; 1001 and
+1003 use vtable `off_82082DA4`, whose slot 7 (`sub_82103E00`) ticks the text
+record. Native 210 reports busy until the window's `+12` is 2 or `+20` is 0.
+Native 45034 (`sub_820E74A0`) measures a string in a 512 by 128 box without
+wrapping; only the battle tutorials call it, to size their hint windows.
+
 ---
 
 ## 4. Ruled out
