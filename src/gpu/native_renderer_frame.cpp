@@ -2715,7 +2715,12 @@ bool EnsureBlitResources(RenderDevice* device) {
   };
   RenderDescriptorSetDesc descriptor_set_desc(ranges, 2);
 
+  const RenderPushConstantRange push_constants(0, 0, 0, sizeof(float),
+                                               RenderShaderStageFlag::PIXEL);
+
   RenderPipelineLayoutDesc layout_desc;
+  layout_desc.pushConstantRanges = &push_constants;
+  layout_desc.pushConstantRangesCount = 1;
   layout_desc.descriptorSetDescs = &descriptor_set_desc;
   layout_desc.descriptorSetDescsCount = 1;
   layout_desc.allowInputLayout = false;
@@ -3056,6 +3061,8 @@ void FramePresentGuestImage(RenderCommandList* commands, uint32_t width, uint32_
   commands->setPipeline(g_blit.pipeline.get());
   commands->setGraphicsPipelineLayout(g_blit.pipeline_layout.get());
   commands->setGraphicsDescriptorSet(g_blit.descriptor_set.get(), 0);
+  const float inv_gamma = 1.0f / eternalsonata::DisplayGamma();
+  commands->setGraphicsPushConstants(0, &inv_gamma);
   commands->drawInstanced(3, 1, 0, 0);
 
   // Whatever draws next (the overlay) expects the whole window, and this is the

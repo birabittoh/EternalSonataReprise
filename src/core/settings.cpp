@@ -141,6 +141,11 @@ REXCVAR_DEFINE_DOUBLE(camera_fov_scale, 1.0, "Eternal Sonata",
                       "as the game framed it; above 1 pulls the view back.")
     .range(0.5, 2.0);
 
+REXCVAR_DEFINE_DOUBLE(display_gamma, 1.0, "Eternal Sonata",
+                      "Gamma applied on top of the console display ramp when presenting. 1 matches "
+                      "the console; above 1 brightens.")
+    .range(0.5, 2.0);
+
 // Which model the overworld leader wears. "party" tracks the active party's
 // first member (the game itself always spawns Allegretto regardless of party
 // order); a character name pins that character; "default" leaves the game's
@@ -302,7 +307,7 @@ constexpr std::array kBasicCvarNames = {
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
-    "camera_fov_scale", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
+    "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
     "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
@@ -727,6 +732,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawUiScaleRow();
         DrawRenderScaleRow();
         DrawFieldOfViewRow();
+        DrawGammaRow();
         DrawFrameRateRow();
         DrawRenderFilterRow();
         // Takes effect on the next present.
@@ -1213,6 +1219,24 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
+  void DrawGammaRow() {
+    if (!rex::cvar::GetFlagInfo("display_gamma"))
+      return;
+    int idx = DisplayGammaOptionIndex();
+
+    ImGui::PushID("display_gamma");
+    if (DrawRowLabel("display_gamma", "display_gamma")) {
+      ImGui::SetTooltip("%s", Tip("display_gamma", ""));
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    if (ImGui::SliderInt("##v", &idx, 0, DisplayGammaOptionCount() - 1,
+                         DisplayGammaOptionLabel(idx), ImGuiSliderFlags_NoInput)) {
+      SetDisplayGammaOption(idx);
+    }
+    ImGui::PopID();
+  }
+
   // The interface and the story text share this choice.
   void DrawLanguageRow() {
     const int cur_idx = UserLanguageIndex();
@@ -1521,6 +1545,47 @@ void SetCameraFovOption(int index) {
     return;
   }
   SetCameraFovPercent(CameraFovOptionPercent(index));
+}
+
+namespace {
+constexpr std::array kDisplayGammaSteps = {0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4};
+constexpr std::array<const char*, 7> kDisplayGammaLabels = {"0.8", "0.9", "1.0", "1.1",
+                                                            "1.2", "1.3", "1.4"};
+}  // namespace
+
+int DisplayGammaOptionCount() {
+  return static_cast<int>(kDisplayGammaSteps.size());
+}
+
+const char* DisplayGammaOptionLabel(int index) {
+  if (index < 0 || index >= DisplayGammaOptionCount()) {
+    return nullptr;
+  }
+  return kDisplayGammaLabels[index];
+}
+
+float DisplayGamma() {
+  return static_cast<float>(std::clamp(REXCVAR_GET(display_gamma), 0.5, 2.0));
+}
+
+int DisplayGammaOptionIndex() {
+  const double cur = REXCVAR_GET(display_gamma);
+  int best = 0;
+  for (int i = 1; i < DisplayGammaOptionCount(); ++i) {
+    if (std::abs(kDisplayGammaSteps[i] - cur) < std::abs(kDisplayGammaSteps[best] - cur)) {
+      best = i;
+    }
+  }
+  return best;
+}
+
+void SetDisplayGammaOption(int index) {
+  if (index < 0 || index >= DisplayGammaOptionCount()) {
+    return;
+  }
+  rex::cvar::SetFlagByName("display_gamma", std::to_string(kDisplayGammaSteps[index]),
+                           /*persist=*/true);
+  SaveUserSettings();
 }
 
 void ApplySettingDefaults() {

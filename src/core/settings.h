@@ -67,6 +67,15 @@ void SetCameraFovOption(int index);
 int CameraFovPercent();
 void SetCameraFovPercent(int percent);
 
+// display_gamma as discrete steps, same shape as the camera field of view above.
+// DisplayGamma is the live value the present blit applies, clamped to the cvar's
+// range; above 1 brightens.
+int DisplayGammaOptionCount();
+const char* DisplayGammaOptionLabel(int index);
+int DisplayGammaOptionIndex();
+void SetDisplayGammaOption(int index);
+float DisplayGamma();
+
 // Enumerates GPU plugins and (if built with Vulkan) Vulkan physical devices
 // once, caching the results for CreateSettingsDialog. Both enumerations load
 // GPU plugin DLLs / query the driver, so this is meant to run once at

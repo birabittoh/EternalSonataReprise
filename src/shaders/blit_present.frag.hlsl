@@ -4,6 +4,8 @@
 // the title does not set one: sRGB decode followed by the BT.709 encode that
 // VdGetCurrentDisplayGamma (type 2) asks for. See sub_8226A008 and sub_82269F58.
 // The other blits copy guest images and must stay linear.
+//
+// The player's gamma setting rides on top as a power on the result.
 
 struct VSOutput {
     float4 position : SV_POSITION;
@@ -13,6 +15,11 @@ struct VSOutput {
 [[vk::binding(0, 0)]] Texture2D<float4> sourceTexture : register(t0);
 [[vk::binding(1, 0)]] SamplerState sourceSampler : register(s1);
 
+[[vk::push_constant]]
+struct Constants {
+    float invGamma;
+} constants;
+
 float3 DisplayRamp(float3 c) {
     c = saturate(c);
     float3 lin = select(c > 0.04045, pow((c + 0.055) / 1.055, 2.4), c / 12.92);
@@ -20,5 +27,6 @@ float3 DisplayRamp(float3 c) {
 }
 
 float4 PSMain(VSOutput input) : SV_TARGET {
-    return float4(DisplayRamp(sourceTexture.Sample(sourceSampler, input.uv).rgb), 1.0);
+    float3 c = DisplayRamp(sourceTexture.Sample(sourceSampler, input.uv).rgb);
+    return float4(pow(c, constants.invGamma), 1.0);
 }
