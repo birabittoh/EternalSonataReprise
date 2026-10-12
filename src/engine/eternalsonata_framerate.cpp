@@ -46,7 +46,7 @@ REXCVAR_DECLARE(bool, frame_debug);
 // script wait, 32 the NMTN key grid sampling, 64 the physics substep rescale,
 // 128, 256 and 512 the three physics collision passes, 1024 root velocity,
 // 2048 cloth spread timing, 4096 long chain length correction at every frame
-// rate, 16384 the 60 Hz cloth clock.
+// rate, 16384 the 60 Hz cloth clock, 32768 the field command rate fixups.
 REXCVAR_DEFINE_INT32(frame_wall_debug, 0, "Eternal Sonata",
                      "Bitmask disabling parts of the unlocked wall-clock stepping (debug)");
 
@@ -1164,6 +1164,141 @@ REX_HOOK_RAW(sub_820F7910) {
   float seconds;
   std::memcpy(&seconds, &bits, 4);
   REX_STORE_U32(slot + 16, static_cast<u32>(int(seconds * kUnitsPerSecond / g_wall_avg_units)));
+}
+
+// Field object commands (sub_820F29F8) cache their rate when they start, from
+// the byte of that one frame: a duration in frames (command 1), or a per-frame
+// step of `x / byte` or `x * (300 / byte)` (walk 31, path walks 13 and 28).
+// Wall mode's byte swings with the integer step, so a cached rate came out up
+// to 2.5x off, which sent cutscene walkers through walls and out of frame.
+// Redo them from the mean frame time, and let the tick scale the step by its
+// own frame's units.
+struct CachedStep {
+  u32 command;
+  double units;
+};
+std::mutex g_cached_step_mutex;
+std::unordered_map<u32, CachedStep> g_cached_step;
+
+float GuestFloat(u8* base, u32 address) {
+  const u32 bits = REX_LOAD_U32(address);
+  float value;
+  std::memcpy(&value, &bits, sizeof value);
+  return value;
+}
+
+u32 FloatBits(float value) {
+  u32 bits;
+  std::memcpy(&bits, &value, sizeof bits);
+  return bits;
+}
+
+int CommandFrames(double seconds, double units_per_frame) {
+  return int(seconds * kUnitsPerSecond / units_per_frame + 0.1);
+}
+
+REX_EXTERN(__imp__sub_820F29F8);
+REX_HOOK_RAW(sub_820F29F8) {
+  const u32 obj = ctx.r3.u32;
+  const u32 args = ctx.r4.u32;
+  const u32 command = REX_LOAD_U32(args);
+  const bool fix = g_wall_active && !(REXCVAR_GET(frame_wall_debug) & 32768);
+  u32 field = 0;
+  if (command == 1) {
+    field = 300;
+  } else if (command == 16 || command == 31) {
+    field = 336;
+  } else if (command == 13 || command == 28) {
+    field = 332;
+  }
+  const u32 before = field ? REX_LOAD_U32(obj + field) : 0;
+  const int byte = std::max<int>(REX_LOAD_U8(0x82465F90), 1);
+  {
+    std::lock_guard<std::mutex> lock(g_cached_step_mutex);
+    g_cached_step.erase(obj);
+  }
+  __imp__sub_820F29F8(ctx, base);
+  const u32 after = field ? REX_LOAD_U32(obj + field) : 0;
+  if (!fix || !field || after == before) {
+    return;
+  }
+
+  const double units = g_wall_avg_units;
+  const double stock_step = 300 / byte;
+  if (command == 1) {
+    if (REX_LOAD_U32(args + 4) & 0x10) {
+      const float seconds = GuestFloat(base, args + 8);
+      if (seconds != 0.0f) {
+        REX_STORE_U32(obj + field, static_cast<u32>(std::max(CommandFrames(seconds, units), 1)));
+      }
+    }
+    return;
+  }
+
+  const float cached = GuestFloat(base, obj + field);
+  double scale = 0.0;
+  if (command == 16 || command == 31) {
+    const float rate = GuestFloat(base, args + 20);
+    const bool per_second = REX_LOAD_U32(args + 20) && FloatBits(rate / float(byte)) == after;
+    scale = per_second ? units * byte / kUnitsPerSecond : units / stock_step;
+  } else {
+    const u32 flags = REX_LOAD_U32(args + 8) & 0xFFFF;
+    const u32 seconds_bits = REX_LOAD_U32(args + 12);
+    const float seconds = GuestFloat(base, args + 12);
+    if (flags & 2) {
+      if (seconds_bits && seconds != 0.0f) {
+        const int stock_frames = std::max(int(byte * seconds + 0.1f), 1);
+        scale = double(stock_frames) / std::max(CommandFrames(seconds, units), 1);
+      }
+    } else {
+      scale = seconds_bits ? units * byte / kUnitsPerSecond : units / stock_step;
+    }
+  }
+  if (scale > 0.0 && std::isfinite(scale)) {
+    REX_STORE_U32(obj + field, FloatBits(static_cast<float>(cached * scale)));
+    if (command != 16) {
+      std::lock_guard<std::mutex> lock(g_cached_step_mutex);
+      g_cached_step[obj] = {command, units};
+    }
+  }
+}
+
+// The per-frame tick of those commands applies the cached step as is, so scale
+// it by this frame's units for the length of the call.
+void ScaledStepTick(PPCContext& ctx, u8* base, u32 command, u32 field, PPCFunc* original) {
+  const u32 obj = ctx.r3.u32;
+  double cached_units = 0.0;
+  if (g_wall_active && REX_LOAD_U32(obj + 304) == command) {
+    std::lock_guard<std::mutex> lock(g_cached_step_mutex);
+    const auto it = g_cached_step.find(obj);
+    if (it != g_cached_step.end() && it->second.command == command) {
+      cached_units = it->second.units;
+    }
+  }
+  if (cached_units <= 0.0) {
+    original(ctx, base);
+    return;
+  }
+  const u32 stored = REX_LOAD_U32(obj + field);
+  const float step = GuestFloat(base, obj + field);
+  REX_STORE_U32(obj + field, FloatBits(static_cast<float>(step * g_wall_units / cached_units)));
+  original(ctx, base);
+  REX_STORE_U32(obj + field, stored);
+}
+
+REX_EXTERN(__imp__sub_820F67C8);
+REX_HOOK_RAW(sub_820F67C8) {
+  ScaledStepTick(ctx, base, 31, 336, __imp__sub_820F67C8);
+}
+
+REX_EXTERN(__imp__sub_820F6B00);
+REX_HOOK_RAW(sub_820F6B00) {
+  ScaledStepTick(ctx, base, 13, 332, __imp__sub_820F6B00);
+}
+
+REX_EXTERN(__imp__sub_820F6C30);
+REX_HOOK_RAW(sub_820F6C30) {
+  ScaledStepTick(ctx, base, 28, 332, __imp__sub_820F6C30);
 }
 
 // NMTN channel sampler: keys are sparse (frame, value, tangent in, tangent
