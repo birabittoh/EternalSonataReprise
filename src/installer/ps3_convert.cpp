@@ -80,6 +80,43 @@ void ConvertEffectColours(Bytes& buf, size_t at, size_t size) {
   }
 }
 
+// The cutscene skip prompt is one effect: twelve textures and a language table,
+// five of them 512x128 DXT5 labels with circle next to Yes and cross next to
+// No. Yes is the decide button, A on the 360 pad, so the icons trade places.
+// Rects are in texels and stay on 4 texel blocks for mips 0 and 1.
+constexpr uint32_t kPromptWidth = 512, kPromptHeight = 128;
+constexpr uint32_t kPromptCircleX = 56, kPromptCrossX = 320, kPromptIconWidth = 56;
+constexpr uint32_t kPromptIconY = 64, kPromptIconHeight = 56;
+
+// Swaps the icons in the DXT5 texture (an NTEX, its DDS at +8) at buf[at].
+bool SwapPromptIcons(Bytes& buf, size_t at) {
+  const size_t dds = at + 8;
+  if (dds + 128 > buf.size() || std::memcmp(&buf[dds], "DDS ", 4) != 0 ||
+      std::memcmp(&buf[dds + 84], "DXT5", 4) != 0)
+    return false;
+  auto le32 = [&](size_t o) {
+    return uint32_t(buf[o]) | uint32_t(buf[o + 1]) << 8 | uint32_t(buf[o + 2]) << 16 |
+           uint32_t(buf[o + 3]) << 24;
+  };
+  if (le32(dds + 16) != kPromptWidth || le32(dds + 12) != kPromptHeight)
+    return false;
+  size_t level = dds + 128;
+  for (uint32_t mip = 0; mip < 2; ++mip) {
+    const size_t per_row = (kPromptWidth >> mip) / 4, cols = (kPromptIconWidth >> mip) / 4;
+    const size_t rows = (kPromptIconHeight >> mip) / 4;
+    if (level + 16 * per_row * ((kPromptHeight >> mip) / 4) > buf.size())
+      return false;
+    for (size_t row = 0; row < rows; ++row) {
+      const size_t line = level + 16 * (((kPromptIconY >> mip) / 4 + row) * per_row);
+      std::swap_ranges(buf.begin() + line + 16 * ((kPromptCircleX >> mip) / 4),
+                       buf.begin() + line + 16 * ((kPromptCircleX >> mip) / 4 + cols),
+                       buf.begin() + line + 16 * ((kPromptCrossX >> mip) / 4));
+    }
+    level += 16 * per_row * ((kPromptHeight >> mip) / 4);
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // NTX3 (a one-texture GTF) -> NTEX (a PC DDS)
 // ---------------------------------------------------------------------------
@@ -818,6 +855,19 @@ class Region {
       }
     }
     Wr32(rb_.out, size_t(begin) + 4, uint32_t(int64_t(rb_.out.size()) - begin));
+    size_t textures = 0;
+    bool languages = false;
+    for (size_t e : entries) {
+      textures += std::memcmp(&d_[e], "TEX", 3) == 0;
+      languages |= HasTag(d_, e, "MLNG");
+    }
+    if (textures == 12 && languages) {
+      for (size_t e : entries) {
+        if (std::memcmp(&d_[e], "TEX", 3) == 0 &&
+            SwapPromptIcons(rb_.out, size_t(begin + moved[Rd32(d_, e + 8)])))
+          ++report_.counts["prompt icons"];
+      }
+    }
     ++report_.counts["Mefc"];
   }
 

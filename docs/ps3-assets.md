@@ -383,6 +383,10 @@ to `<i55>`.. and `<i0>` before the preprocessor, lays those icons out through
 the code 24 case with the AppKeep button texture, untinted, and answers 45039
 with "attack is on B".
 
+The cutscene skip prompt (360 slot 352) has circle next to Yes and cross next
+to No baked into its five 512x128 label textures. The converter swaps the two
+icons there (DXT5 blocks, mips 0 and 1), since Yes is A.
+
 ### Starting events
 
 `sub_820FEDC0` preloads a start's `E%04d.e` and `sub_820FEC48` loads its map,

@@ -589,6 +589,36 @@ def mefc_entries(d, o, end):
     return entries
 
 
+# The cutscene skip prompt is one effect: twelve textures and a language table,
+# five of them 512x128 DXT5 labels with circle next to Yes and cross next to
+# No. Yes is the decide button, A on the 360 pad, so the icons trade places.
+# Rects are in texels and stay on 4 texel blocks for mips 0 and 1.
+PROMPT_SIZE = (512, 128)
+PROMPT_CIRCLE_X, PROMPT_CROSS_X, PROMPT_ICON_W = 56, 320, 56
+PROMPT_ICON_Y, PROMPT_ICON_H = 64, 56
+
+
+def swap_prompt_icons(out, at):
+    """Swaps the icons in the DXT5 texture (NTEX, DDS at +8) at out[at]."""
+    dds = at + 8
+    if (out[dds:dds + 4] != b'DDS ' or out[dds + 84:dds + 88] != b'DXT5'
+            or (struct.unpack_from('<II', out, dds + 16)[0], struct.unpack_from('<I', out, dds + 12)[0])
+            != PROMPT_SIZE):
+        return False
+    level = dds + 128
+    for mip in range(2):
+        per_row = (PROMPT_SIZE[0] >> mip) // 4
+        cols = (PROMPT_ICON_W >> mip) // 4
+        for row in range((PROMPT_ICON_H >> mip) // 4):
+            line = level + 16 * (((PROMPT_ICON_Y >> mip) // 4 + row) * per_row)
+            a = line + 16 * ((PROMPT_CIRCLE_X >> mip) // 4)
+            b = line + 16 * ((PROMPT_CROSS_X >> mip) // 4)
+            n = 16 * cols
+            out[a:a + n], out[b:b + n] = bytes(out[b:b + n]), bytes(out[a:a + n])
+        level += 16 * per_row * ((PROMPT_SIZE[1] >> mip) // 4)
+    return True
+
+
 def convert_region(d, start, end, report, audio=None, origin=None):
     """Converts every NOBJ, loose NMDL, loose NTX3 and effect in d[start:end],
     and with audio every sound bank, copying the rest.
@@ -625,6 +655,11 @@ def convert_region(d, start, end, report, audio=None, origin=None):
         for e in entries:
             struct.pack_into('>I', rb.out, begin + e - o + 8, new[rd32(d, e + 8)])
         struct.pack_into('>I', rb.out, begin + 4, len(rb.out) - begin)
+        tags = [d[e:e + 4] for e in entries]
+        if sum(t[:3] == b'TEX' for t in tags) == 12 and b'MLNG' in tags:
+            for e in entries:
+                if d[e:e + 3] == b'TEX' and swap_prompt_icons(rb.out, begin + new[rd32(d, e + 8)]):
+                    report.counts['prompt icons'] += 1
         report.counts['Mefc'] += 1
 
     def scan(o, end):
