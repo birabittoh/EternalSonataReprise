@@ -582,7 +582,8 @@ uint64_t MeasureIsoFolder(const std::string& image, std::string_view folder) {
 
 bool IsIsoImage(const std::string& image) {
   FileReader reader(image);
-  return reader.ok() && IsIso9660(reader);
+  // Xbox 360 images carry a stub ISO 9660 descriptor too.
+  return reader.ok() && IsIso9660(reader) && !FindXdvdfs(reader);
 }
 
 std::string ReadIsoImageFile(const std::string& image, std::string_view path,
