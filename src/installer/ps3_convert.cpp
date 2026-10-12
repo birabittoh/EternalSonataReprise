@@ -55,6 +55,31 @@ void RotateWord(Bytes& buf, int64_t o) {
     Argb(buf.data() + o);
 }
 
+// An effect table ("etbl", an EFCT section): u16 element offsets from +12.
+// Each element is a u16 size at +2, ten key group counts at +0x58 and ten u16
+// group offsets at +0x64 (from +4 of the element). Group 1 is colour keys: a
+// u32 frame then the colour.
+void ConvertEffectColours(Bytes& buf, size_t at, size_t size) {
+  auto u16 = [&](size_t o) { return o + 2 <= buf.size() ? size_t(Rd16(buf, o)) : size_t(0); };
+  if (size < 16 || std::memcmp(buf.data() + at, "etbl", 4) != 0)
+    return;
+  const size_t end = at + size, first = u16(at + 12);
+  std::vector<size_t> offsets;
+  for (size_t i = 12; i < first && at + i + 2 <= end; i += 2)
+    offsets.push_back(u16(at + i));
+  for (size_t k = 0; k + 1 < offsets.size(); ++k) {
+    const size_t element = at + offsets[k], length = u16(element + 2);
+    if (length < 0x70 || offsets[k] + length != offsets[k + 1] || element + length > end)
+      continue;
+    const size_t keys = buf[element + 0x59], group = u16(element + 0x66);
+    for (size_t i = 0; i < keys; ++i) {
+      const size_t colour = element + group + 4 + 8 * i + 4;
+      if (colour + 4 <= element + length)
+        Argb(buf.data() + colour);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // NTX3 (a one-texture GTF) -> NTEX (a PC DDS)
 // ---------------------------------------------------------------------------
@@ -784,8 +809,14 @@ class Region {
         throw std::runtime_error("Mefc at " + Hex(o) + ": a section left no anchor");
       moved[a] = int64_t(*best) - begin;
     }
-    for (size_t e : entries)
-      Wr32(rb_.out, size_t(begin + int64_t(e - o) + 8), uint32_t(moved[Rd32(d_, e + 8)]));
+    for (size_t e : entries) {
+      const size_t a = Rd32(d_, e + 8);
+      Wr32(rb_.out, size_t(begin + int64_t(e - o) + 8), uint32_t(moved[a]));
+      if (HasTag(d_, e, "EFCT")) {
+        const size_t next = *std::upper_bound(cuts.begin(), cuts.end(), a);
+        ConvertEffectColours(rb_.out, size_t(begin + moved[a]), next - a);
+      }
+    }
     Wr32(rb_.out, size_t(begin) + 4, uint32_t(int64_t(rb_.out.size()) - begin));
     ++report_.counts["Mefc"];
   }
