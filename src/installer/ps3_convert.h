@@ -60,6 +60,14 @@ Bytes ConvertCsf(const std::string& rel, const Bytes& ps3, const PcmWriter& writ
 // Music: the files to add for one .cps.
 std::vector<Output> ConvertCps(const std::string& rel, const Bytes& d, const PcmWriter& write_pcm,
                                Report& report);
+// The names ConvertCps may give a track: its .cxs, then its .wav.
+std::vector<std::string> CpsOutputs(const std::string& rel);
+// A converted .cxs as this converter writes it, from its own header; nothing
+// for any other file. The track's sidecar keeps its name.
+std::optional<Bytes> RebuildCxs(const std::string& rel, const Bytes& cxs);
+
+// What a conversion of `rel` may be written as when it is not `rel` itself.
+std::vector<std::string> RenamedOutputs(const std::string& rel);
 
 // The encoded sidecars' WAV format tags: ATRAC3's registered one, and a
 // private one for PS-ADPCM.

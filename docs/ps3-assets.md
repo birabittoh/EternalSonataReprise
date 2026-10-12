@@ -67,11 +67,17 @@ python scripts/ps3_convert.py assets-ps3
 Like a USA or JP copy, the tree is converted where it lies: each convertible
 PS3 file is written over itself, the shipped file kept as `*.orig`, and every
 run starts from those (`ps3-shipped.txt` lists what the PS3 shipped, so files
-a run added are never taken for PS3 data, and a run first deletes every
-other file). The installer's C++ converter keeps no `.orig`: each input is
-deleted as it is converted, and an interrupted run (`ps3-converting.stamp`)
-needs a fresh unpack. No 360 file is needed. `index.vmtoc` is built from scratch, a
-stored record for every file. The PS3 only lacks seven files the 360 lists
+a run added are never taken for PS3 data). The installer's C++ converter
+keeps no `.orig`: each input is deleted once its output is written, so a
+run reads whatever is there. Every same name format keeps its PS3 magic, so
+`ps3-converted.txt` records each output written over its input (size and
+CRC32, appended before the rename); a file matching its line is kept as is.
+An input converted under another name (`.p3tex`, `.cps`) is found through
+its output, and a `.cxs` is rebuilt from its own header. An interrupted run
+(`ps3-converting.stamp`) or a new converter version just runs again, and
+nothing is deleted besides converted inputs. No 360 file is needed.
+`index.vmtoc` gets a stored record for every file, keeping the records of
+files added after conversion (`title_jpn.bmd`). The PS3 only lacks seven files the 360 lists
 (`cfdata/e0041.e`, `e1101.e`, `e7080_010.e`, `e8020.e`,
 `btldata/map/zzz90..92.bop`); nothing PS3 mode runs opens them: the first
 two were start events the PS3 tables replace, the others are reached only

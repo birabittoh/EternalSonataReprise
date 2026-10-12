@@ -1157,4 +1157,15 @@ std::optional<Output> ConvertFile(const std::string& rel, const Bytes& d, Report
   return std::nullopt;
 }
 
+std::vector<std::string> RenamedOutputs(const std::string& rel) {
+  std::string low = rel;
+  std::transform(low.begin(), low.end(), low.begin(),
+                 [](unsigned char c) { return char(std::tolower(c)); });
+  if (EndsWith(low, ".p3tex"))
+    return {rel.substr(0, rel.size() - 6) + ".x3tex"};
+  if (EndsWith(low, ".cps"))
+    return CpsOutputs(rel);
+  return {};
+}
+
 }  // namespace eternalsonata::ps3

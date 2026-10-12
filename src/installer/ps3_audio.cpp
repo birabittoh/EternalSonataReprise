@@ -362,29 +362,46 @@ Bytes NewCxs(const Token& tok, uint32_t channels, uint32_t rate, uint32_t frames
   return out;
 }
 
+std::vector<std::string> CpsOutputs(const std::string& rel) {
+  std::string stem = rel.substr(rel.find_last_of('/') + 1);
+  if (const size_t dot = stem.find_last_of('.'); dot != std::string::npos && dot)
+    stem.resize(dot);
+  std::transform(stem.begin(), stem.end(), stem.begin(),
+                 [](unsigned char c) { return char(std::toupper(c)); });
+  return {"sound/cxs/" + stem + ".cxs", "sound/cxs/" + stem + ".wav"};
+}
+
 std::vector<Output> ConvertCps(const std::string& rel, const Bytes& d, const PcmWriter& write_pcm,
                                Report& report) {
   const uint32_t header = Rd32(d, 4), channels = Rd32(d, 8), size = Rd32(d, 12),
                  rate = Rd32(d, 16), loop_start = Rd32(d, 20), loop_end = Rd32(d, 24),
                  kind = Rd32(d, 28);
   const Bytes data = Slice(d, header, size_t(header) + size);
-  std::string stem = rel.substr(rel.find_last_of('/') + 1);
-  if (const size_t dot = stem.find_last_of('.'); dot != std::string::npos && dot)
-    stem.resize(dot);
-  std::transform(stem.begin(), stem.end(), stem.begin(),
-                 [](unsigned char c) { return char(std::toupper(c)); });
+  const auto outputs = CpsOutputs(rel);
   if (kind == 0) {
     // Plain PCM, already big endian: the scripts ask for these as .wav.
     ++report.counts["music tracks as WAV"];
-    return {{"sound/cxs/" + stem + ".wav", GuestWav(data, channels, rate)}};
+    return {{outputs[1], GuestWav(data, channels, rate)}};
   }
-  const std::string target = "sound/cxs/" + stem + ".cxs";
+  const std::string& target = outputs[0];
   const uint32_t frames = uint32_t(data.size() / (16 * size_t(channels)) * 28);
   const Loop loop{loop_start / (16 * channels) * 28, frames};
   const Token tok = MakeToken(Lower(target));
   write_pcm(tok, PsxAdpcmWav(data, channels, rate, loop_end ? &loop : nullptr));
   ++report.counts["music tracks as PS-ADPCM"];
   return {{target, NewCxs(tok, channels, rate, frames, loop_end ? &loop : nullptr)}};
+}
+
+std::optional<Bytes> RebuildCxs(const std::string& rel, const Bytes& cxs) {
+  if (!Lower(rel).ends_with(".cxs") || cxs.size() < kCxsPayload ||
+      std::memcmp(cxs.data(), "CXS ", 4) != 0 || Rd32(cxs, 4) != kCxsHeader)
+    return std::nullopt;
+  const uint32_t rate = Rd32(cxs, 8), channels = Rd32(cxs, 12), frames = Rd32(cxs, 16);
+  if (!channels)
+    return std::nullopt;
+  // The loop always runs to the end of the track.
+  const Loop loop{Rd32(cxs, 20), frames};
+  return NewCxs(MakeToken(Lower(rel)), channels, rate, frames, Rd32(cxs, 24) ? &loop : nullptr);
 }
 
 std::vector<int16_t> DecodePsxAdpcm(const uint8_t* data, size_t size, uint32_t channels) {

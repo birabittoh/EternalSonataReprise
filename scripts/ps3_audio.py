@@ -233,19 +233,38 @@ def new_cxs(tok, channels, rate, frames, loop):
     return bytes(out)
 
 
+def cps_outputs(rel):
+    """The names convert_cps may give a track: its .cxs, then its .wav."""
+    stem = os.path.splitext(os.path.basename(rel))[0].upper()
+    return [f'sound/cxs/{stem}.cxs', f'sound/cxs/{stem}.wav']
+
+
 def convert_cps(rel, d, write_pcm, report):
     """-> [(360 relative path, bytes)]."""
     header, channels, size, rate, loop_start, loop_end, kind = struct.unpack_from('>7I', d, 4)
     data = d[header:header + size]
-    stem = os.path.splitext(os.path.basename(rel))[0].upper()
+    target, wav = cps_outputs(rel)
     if kind == 0:
         # Plain PCM, already big endian: the scripts ask for these as .wav.
         report.counts['music tracks as WAV'] += 1
-        return [(f'sound/cxs/{stem}.wav', guest_wav(data, channels, rate))]
-    target = f'sound/cxs/{stem}.cxs'
+        return [(wav, guest_wav(data, channels, rate))]
     frames = len(data) // (16 * channels) * 28
     loop = (loop_start // (16 * channels) * 28, frames) if loop_end else None
     tok = token(target.lower())
     write_pcm(tok, psx_adpcm_wav(data, channels, rate, loop))
     report.counts['music tracks as PS-ADPCM'] += 1
     return [(target, new_cxs(tok, channels, rate, frames, loop))]
+
+
+def rebuild_cxs(rel, cxs):
+    """A converted .cxs as this converter writes it, from its own header; None
+    for any other file. The track's sidecar keeps its name."""
+    if (not rel.lower().endswith('.cxs') or len(cxs) < CXS_PAYLOAD or cxs[:4] != b'CXS '
+            or rd32(cxs, 4) != CXS_HEADER):
+        return None
+    rate, channels, frames, loop_start, loop_end = struct.unpack_from('>5I', cxs, 8)
+    if not channels:
+        return None
+    # The loop always runs to the end of the track.
+    loop = (loop_start, frames) if loop_end else None
+    return new_cxs(token(rel.lower()), channels, rate, frames, loop)

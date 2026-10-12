@@ -6,7 +6,8 @@ PS3 ships no codec layer); no 360 file is needed. The tree is converted in
 place, like a USA or JP copy (src/installer/release_patch.cpp): every PS3
 file the 360 executable can load is written over itself, the shipped file
 kept as *.orig and every run starting from those, and index.vmtoc gets a
-stored record for every file. Point game_data_root at the tree. The formats
+stored record for every file. A file the installer already converted is
+kept, as listed in ps3-converted.txt. Point game_data_root at the tree. The formats
 and the evidence for every rule are in docs/ps3-assets.md.
 
 Converted:
@@ -32,8 +33,8 @@ import bisect
 import collections
 import math
 import os
-import shutil
 import struct
+import zlib
 
 import ps3_audio
 
@@ -915,7 +916,7 @@ ORIGINAL = '.orig'
 SHIPPED = 'ps3-shipped.txt'
 # Bumped with every conversion change, here and in src/installer/ps3_install.cpp.
 STAMP = 'ps3-convert.stamp'
-STAMP_VERSION = b'2'
+STAMP_VERSION = b'3'
 NOT_DATA = ('.i64', '.idb', '.id0', '.id1', '.id2', '.nam', '.til', '.bak', ORIGINAL, '.stamp')
 
 
@@ -941,10 +942,55 @@ def shipped_files(root, record):
     return {rel.lower(): rel for rel in files}
 
 
-def read_shipped(path):
-    """The file as unpacked, from before any earlier run."""
-    with open(path + ORIGINAL if os.path.exists(path + ORIGINAL) else path, 'rb') as fh:
+def read_file(path):
+    with open(path, 'rb') as fh:
         return fh.read()
+
+
+# The outputs written over their shipped file, as "size crc32 path" lines.
+# Every same name format keeps its PS3 magic, so only a match says a file is
+# already converted.
+CONVERTED = 'ps3-converted.txt'
+
+
+def file_key(d):
+    return f'{len(d)} {zlib.crc32(d):08x}'
+
+
+def read_converted(root):
+    """Lowercase path -> file_key, or None without a list."""
+    try:
+        with open(os.path.join(root, CONVERTED), encoding='utf-8') as fh:
+            lines = fh.read().splitlines()
+    except FileNotFoundError:
+        return None
+    keys = {}
+    for line in lines:
+        parts = line.split(' ', 2)
+        if len(parts) == 3:
+            keys[parts[2]] = f'{parts[0]} {parts[1]}'
+    return keys
+
+
+def list_converted_tree(root, shipped):
+    """An older build left no CONVERTED: whatever lies under a shipped name it
+    converts in place is its output."""
+    keys = {}
+    for low, rel in sorted(shipped.items()):
+        path = os.path.join(root, rel)
+        if renamed_outputs(rel) or os.path.exists(path + ORIGINAL) or not os.path.exists(path):
+            continue
+        keys[low] = file_key(read_file(path))
+    return keys
+
+
+def renamed_outputs(rel):
+    """What a conversion of rel may be written as when it is not rel itself."""
+    if rel.lower().endswith('.p3tex'):
+        return [rel[:-6] + '.x3tex']
+    if rel.lower().endswith('.cps'):
+        return ps3_audio.cps_outputs(rel)
+    return []
 
 
 def make_room(path, shipped):
@@ -1063,20 +1109,19 @@ def main():
     stats = collections.Counter()
 
     shipped = shipped_files(root, record=not check)
-    toc = Toc(b'')
-    if args.only or check:
-        # A partial run keeps the records of everything converted before.
-        toc_path = os.path.join(root, 'index.vmtoc')
-        if os.path.exists(toc_path):
-            with open(toc_path, 'rb') as fh:
-                toc = Toc(fh.read())
-    elif not check:
-        # Start from the unpacked tree: an earlier run's outputs, or files an
-        # older converter linked in from a 360 copy, would linger otherwise.
-        for rel in walk(root):
-            if rel.lower() not in shipped and rel != SHIPPED:
-                os.remove(os.path.join(root, rel))
-        shutil.rmtree(os.path.join(root, 'pcm'), ignore_errors=True)
+    # Records of files still in the tree stay, such as what the installer's
+    # patch phase added after an earlier run.
+    toc_path = os.path.join(root, 'index.vmtoc')
+    toc = Toc(read_file(toc_path) if os.path.exists(toc_path) else b'')
+    toc.records = {k: r for k, r in toc.records.items() if os.path.isfile(os.path.join(root, k))}
+
+    converted = read_converted(root)
+    if converted is None:
+        has_stamp = os.path.exists(os.path.join(root, STAMP))
+        converted = list_converted_tree(root, shipped) if has_stamp else {}
+        if not check:
+            replace_file(os.path.join(root, CONVERTED),
+                         ''.join(f'{k} {low}\n' for low, k in converted.items()).encode())
 
     def put(rel, data, is_shipped=False):
         path = os.path.join(root, rel)
@@ -1104,16 +1149,51 @@ def main():
         low = out_rel.lower()
         # Converted files keep the PS3 spelling.
         out_rel = shipped.get(low, out_rel)
+        if low in shipped and not check:
+            converted[low] = file_key(data)
+            with open(os.path.join(root, CONVERTED), 'a', encoding='utf-8') as fh:
+                fh.write(f'{converted[low]} {low}\n')
         put(out_rel, data, low in shipped)
         if not toc.set_stored(out_rel, len(data)):
             report.warn(f'{out_rel}: path too long for an index.vmtoc record')
         return out_rel
 
+    def keep_renamed(outputs):
+        """An input the installer converted under another name. A .cxs is
+        rebuilt, since its header holds all the converter needs."""
+        for out in outputs:
+            out_rel = shipped.get(out.lower(), out)
+            path = os.path.join(root, out_rel)
+            if not os.path.exists(path):
+                continue
+            d = read_file(path)
+            report.counts['already converted'] += 1
+            cxs = ps3_audio.rebuild_cxs(out_rel, d)
+            if cxs is not None and cxs != d:
+                report.counts['music tracks rebuilt'] += 1
+                emit(out_rel, cxs)
+            else:
+                toc.set_stored(out_rel, len(d))
+            return True
+        return False
+
     for low, rel in sorted(shipped.items()):
         if args.only and not any(s.lower() in low for s in args.only):
             continue
         path = os.path.join(root, rel)
-        d = read_shipped(path)
+        renamed = renamed_outputs(rel)
+        if os.path.exists(path + ORIGINAL):
+            d = read_file(path + ORIGINAL)
+        elif os.path.exists(path):
+            d = read_file(path)
+            if not renamed and converted.get(low) == file_key(d):
+                report.counts['already converted'] += 1
+                toc.set_stored(rel, len(d))
+                continue
+        else:
+            if not keep_renamed(renamed):
+                report.warn(f'{rel}: neither the PS3 file nor its conversion is there')
+            continue
         if low.endswith('.csf'):
             emit(rel, ps3_audio.convert_csf(rel, d, write_pcm, report))
             continue
