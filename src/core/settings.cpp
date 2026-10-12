@@ -644,6 +644,33 @@ const char* WithId(const char* text, const char* id) {
   return label.c_str();
 }
 
+// A modal asking to confirm a restart. Call every frame; `open` requests it.
+// `id` keeps the popups of different buttons apart.
+bool ConfirmRestart(const char* id, bool open) {
+  const char* popup = WithId(T("restart_title"), id);
+  if (open) {
+    ImGui::OpenPopup(popup);
+  }
+  bool confirmed = false;
+  ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+  ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  if (ImGui::BeginPopupModal(popup, nullptr,
+                             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+    ImGui::TextUnformatted(T("restart_confirm"));
+    ImGui::Spacing();
+    if (ImGui::Button(T("restart_yes"))) {
+      confirmed = true;
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(T("restart_cancel"))) {
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
+  return confirmed;
+}
+
 // The label of a value that has a key per option, else the value as is.
 const char* OptionText(const char* prefix, const char* id, const char* fallback) {
   thread_local std::string key;
@@ -713,7 +740,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       ImGui::TextWrapped("%s", T("restart_banner"));
       ImGui::PopStyleColor();
       ImGui::SameLine();
-      if (ImGui::SmallButton(T("restart_now"))) {
+      bool open_confirm = ImGui::SmallButton(WithId(T("restart_now"), "restart"));
+      if (ConfirmRestart("confirm_restart", open_confirm)) {
         // Not Relaunch()+RequestClose() inline: this dialog is not always drawn
         // on the UI thread. Under the native renderer the overlay runs on the
         // guest's own render thread (see OnCreateImmediateDrawer), and closing
@@ -865,7 +893,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         rex::system::AutoUpdater::ApplyAndRestart(rex::system::AutoUpdater::InstallRoot(), {});
       }
 #else
-      if (ImGui::SmallButton(WithId(T("restart_apply"), "autoupdate"))) {
+      bool open_confirm = ImGui::SmallButton(WithId(T("restart_apply"), "autoupdate"));
+      if (ConfirmRestart("confirm_update", open_confirm)) {
         // This install root contains the running executable itself,
         // which stays locked for this process's whole lifetime (see
         // AutoUpdater::ApplyAndRestart's contract). The spawned helper
