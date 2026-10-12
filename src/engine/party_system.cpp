@@ -1187,6 +1187,9 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetPartyLevel(int level) {
   if (!Available()) {
     return ETERNALSONATA_PARTY_ERR_UNAVAILABLE;
   }
+  // The word before it is the level the game actually plays at, and the party
+  // level screen raises this one back up to it, so both have to move.
+  WriteGuest<uint32_t>(kPartyBase, static_cast<uint32_t>(level));
   WriteGuest<uint32_t>(kPartyLevelAddr, static_cast<uint32_t>(level));
   // Rebuild the budget the way sub_821E6740 leaves it: the level's cap, minus
   // what the current members already spend. Spend is left as the game recorded
@@ -1195,6 +1198,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetPartyLevel(int level) {
   const uint32_t used = ReadGuestByte(kBudgetUsedAddr);
   WriteGuestByte(kBudgetUsedAddr, static_cast<uint8_t>(std::min(used, cap)));
   WriteGuestByte(kBudgetFreeAddr, static_cast<uint8_t>(cap - std::min(used, cap)));
+  WriteGuestByte(kBudgetFreeAddr + 2u, static_cast<uint8_t>(cap));
   return ETERNALSONATA_PARTY_OK;
 }
 
