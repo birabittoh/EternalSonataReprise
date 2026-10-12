@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstring>
 #include <iterator>
 
@@ -98,6 +99,98 @@ REX_HOOK_RAW(sub_82108878) {
             REX_STORE_U32(camera + extents[i].offset, saved[i]);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Mirror plane
+// ---------------------------------------------------------------------------
+
+// sub_82125638 renders a mirror: it reflects the camera about the plane through
+// the mirror mesh's first vertex, with the vertex's packed normal, both read in
+// object space. The mirror node's world matrix is never applied, which holds
+// for the 360 maps (identity) and breaks a rotated mirror such as PS3 bqj16.
+// The wrapper finds the mirror model's matrix with the same scan the function
+// does, and the sub_820C0C60 call that normalizes the plane normal moves both
+// to world space.
+namespace {
+constexpr u32 kMirrorNormalizeReturn = 0x82125810;
+bool g_mirror_world_valid = false;
+float g_mirror_world[12] = {};
+
+float LoadF32(uint8_t* base, u32 address) {
+    return std::bit_cast<float>(REX_LOAD_U32(address));
+}
+
+bool FindMirrorWorld(uint8_t* base) {
+    const u32 object_count = REX_LOAD_U32(0x824BB398);
+    const u32 objects = REX_LOAD_U32(0x824BB3B8);
+    for (u32 i = 0; i < object_count && objects; ++i) {
+        const u32 slot = objects + i * 16;
+        const u32 object = REX_LOAD_U32(slot + 4);
+        if (REX_LOAD_U32(slot) || !object) {
+            continue;
+        }
+        const u32 entries = REX_LOAD_U32(object + 0x564);
+        const int32_t entry_count = static_cast<int32_t>(REX_LOAD_U32(object + 0x568));
+        for (int32_t j = 0; j < entry_count && entries; ++j) {
+            const u32 entry = entries + j * 64;
+            if (REX_LOAD_U32(entry + 0x14) & 1) {
+                continue;
+            }
+            const u32 model = REX_LOAD_U32(entry);
+            const u32 mesh = REX_LOAD_U32(entry + 4);
+            if (!model || !mesh) {
+                continue;
+            }
+            const u32 flags =
+                REX_LOAD_U32(REX_LOAD_U32(mesh) + 0x2C) | REX_LOAD_U32(model + 0x620);
+            if (!(flags & 0x20000000)) {
+                continue;
+            }
+            // Only a static mirror, whose world matrix is the model's own (row
+            // vectors, translation in row 3). A skinned one keeps the old plane.
+            if (REX_LOAD_U32(model + 404) && REX_LOAD_U32(mesh + 24)) {
+                return false;
+            }
+            for (u32 k = 0; k < 4; ++k) {
+                for (u32 i = 0; i < 3; ++i) {
+                    g_mirror_world[i * 4 + k] = LoadF32(base, model + 336 + k * 16 + i * 4);
+                }
+            }
+            return true;
+        }
+    }
+    return false;
+}
+}  // namespace
+
+REX_EXTERN(__imp__sub_82125638);
+REX_HOOK_RAW(sub_82125638) {
+    g_mirror_world_valid = FindMirrorWorld(base);
+    __imp__sub_82125638(ctx, base);
+    g_mirror_world_valid = false;
+}
+
+// Rows are (right, up, forward, translation) so row i dotted with (p, 1) is
+// world axis i. f29..f27 hold the vertex position and r3 points at the normal.
+REX_EXTERN(__imp__sub_820C0C60);
+REX_HOOK_RAW(sub_820C0C60) {
+    if (g_mirror_world_valid && ctx.lr == kMirrorNormalizeReturn) {
+        g_mirror_world_valid = false;
+        const float* m = g_mirror_world;
+        const float p[3] = {static_cast<float>(ctx.f29.f64), static_cast<float>(ctx.f28.f64),
+                            static_cast<float>(ctx.f27.f64)};
+        const u32 normal = ctx.r3.u32;
+        const float n[3] = {LoadF32(base, normal), LoadF32(base, normal + 4), LoadF32(base, normal + 8)};
+        double* position[3] = {&ctx.f29.f64, &ctx.f28.f64, &ctx.f27.f64};
+        for (int i = 0; i < 3; ++i) {
+            const float* row = m + i * 4;
+            *position[i] = row[0] * p[0] + row[1] * p[1] + row[2] * p[2] + row[3];
+            const float world_n = row[0] * n[0] + row[1] * n[1] + row[2] * n[2];
+            REX_STORE_U32(normal + i * 4, std::bit_cast<u32>(world_n));
+        }
+    }
+    __imp__sub_820C0C60(ctx, base);
 }
 
 // The debug-console (sub_822DFA88) and ConsoleSetting (sub_822E5BE8) init
