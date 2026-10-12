@@ -64,6 +64,10 @@ REXCVAR_DEFINE_BOOL(force_japanese_font, false, "Eternal Sonata",
                     "Draw western text with the Japanese font")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
+REXCVAR_DEFINE_BOOL(skip_intro, false, "Eternal Sonata",
+                    "Skip the Bandai Namco and tri-Crescendo logos at boot and go straight to "
+                    "the title menu");
+
 namespace eternalsonata {
 namespace {
 
@@ -720,7 +724,12 @@ constexpr uint32_t kWesternTitlePath = 0x8208332Cu;  // "title.bmd"
 // The title task's fields, from TITLE_TASK__Init and sub_821333C0.
 constexpr uint32_t kTitleFile = 48;        // sub_8210C9D8's loader; +4 is the buffer
 constexpr uint32_t kTitleFilePending = 84;  // nonzero while the read is in flight
-constexpr uint32_t kTitleState = 372;       // 2 is the menu
+constexpr uint32_t kTitleState = 372;       // 1 is the boot logos, 2 the menu
+constexpr uint32_t kTitleScript = 380;      // the logo script's u16 cursor
+constexpr uint32_t kTitleWait = 384;        // frames left on the logo script's current step
+constexpr uint32_t kTitleFade = 388;        // float alpha of the full screen fade
+constexpr uint32_t kTitleFadeStep = 392;    // float added to it per frame
+constexpr uint32_t kTitleLogo = 456;        // the logo sprite drawn this frame, 0 for none
 constexpr uint32_t kTitleEffects = 464;
 constexpr uint32_t kTitleEffect = 10640;
 constexpr uint32_t kTitleCursor = 10644;
@@ -809,6 +818,23 @@ REX_HOOK_RAW(sub_82133CA0) {
     sub_8210CD20(call, base);
     REX_STORE_U32(task + kTitleState, 4);
     g_title_reloading = true;
+  } else if (REXCVAR_GET(skip_intro) && REX_LOAD_U32(task + kTitleState) == 1) {
+    // sub_821338E0's Start skip, but through the yields too, since each one
+    // draws a logo. A step that rewinds is waiting on boot loading.
+    REX_STORE_U32(task + kTitleWait, 0);
+    while (REX_LOAD_U32(task + kTitleState) == 1) {
+      const uint32_t pc = REX_LOAD_U32(task + kTitleScript);
+      call.r3.u32 = task;
+      call.r4.u64 = 1;
+      sub_821335E0(call, base);
+      if (REX_LOAD_U32(task + kTitleScript) == pc) {
+        // Black instead of the white the script faded to.
+        REX_STORE_U32(task + kTitleLogo, 0);
+        REX_STORE_U32(task + kTitleFade, 0);
+        REX_STORE_U32(task + kTitleFadeStep, 0);
+        break;
+      }
+    }
   }
   __imp__sub_82133CA0(ctx, base);
 }

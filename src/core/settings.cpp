@@ -315,7 +315,7 @@ constexpr std::array kBasicCvarNames = {
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
     "enemy_hp_multiplier",
     "enemy_damage_multiplier", "ui_scale",
-    "save_row_portraits", "force_japanese_font"};
+    "save_row_portraits", "force_japanese_font", "skip_intro"};
 
 // Steps for the multiplier rows. HP stops short of zero, the
 // same floor enemy_hp_multiplier has.
@@ -806,6 +806,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawLanguageRow();
         DrawVoiceLanguageRow();
         DrawCvarRow("save_row_portraits");
+        DrawCvarRow("skip_intro");
         // A release with only Japanese text is already on the Japanese font.
         if (WesternTextAvailable()) {
           DrawCvarRow("force_japanese_font");
