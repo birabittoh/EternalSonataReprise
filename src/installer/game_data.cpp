@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -37,6 +38,12 @@ namespace eternalsonata {
 namespace {
 
 namespace fs = std::filesystem;
+
+// Read once and cleared, so a later launch does not repeat it.
+bool ConsumeStartScreenRequest(const fs::path& flag) {
+  std::error_code ec;
+  return !flag.empty() && fs::remove(flag, ec);
+}
 
 #if REX_PLATFORM_ANDROID
 constexpr bool kCanPickFolder = false;
@@ -568,6 +575,19 @@ void Ask(std::shared_ptr<Flow> flow) {
 
 }  // namespace
 
+fs::path StartScreenFlagPath(const fs::path& user_settings_path) {
+  return user_settings_path.parent_path() / "start_screen.flag";
+}
+
+void RequestStartScreenOnNextLaunch(const fs::path& flag, bool request) {
+  std::error_code ec;
+  if (request) {
+    std::ofstream{flag};
+  } else {
+    fs::remove(flag, ec);
+  }
+}
+
 bool UsePreparedGameData(const GameDataOptions& options, std::string& pending) {
   std::vector<fs::path> dirs;
   const std::string value = REXCVAR_GET(game_data_root);
@@ -584,7 +604,7 @@ bool UsePreparedGameData(const GameDataOptions& options, std::string& pending) {
       return false;
     }
     Use(options, dir);
-    if (REXCVAR_GET(show_start_screen)) {
+    if (ConsumeStartScreenRequest(options.start_screen_flag) || REXCVAR_GET(show_start_screen)) {
       pending = dir.string();
       g_review = true;
       return false;

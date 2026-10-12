@@ -11,6 +11,7 @@
 extern "C" int EternalSonataGetSetting(int setting);
 extern "C" int EternalSonataSetSetting(int setting, int value);
 #include "field_player_model_override.h"
+#include "game_data.h"
 #include "game_settings.h"
 #include "host_timer_resolution.h"
 #include "ui_text.h"
@@ -646,7 +647,8 @@ const char* WithId(const char* text, const char* id) {
 
 // A modal asking to confirm a restart. Call every frame; `open` requests it.
 // `id` keeps the popups of different buttons apart.
-bool ConfirmRestart(const char* id, bool open) {
+bool ConfirmRestart(const char* id, bool open, const char* message_key = "restart_confirm",
+                    const char* yes_key = "restart_yes") {
   const char* popup = WithId(T("restart_title"), id);
   if (open) {
     ImGui::OpenPopup(popup);
@@ -656,9 +658,9 @@ bool ConfirmRestart(const char* id, bool open) {
   ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
   if (ImGui::BeginPopupModal(popup, nullptr,
                              ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
-    ImGui::TextUnformatted(T("restart_confirm"));
+    ImGui::TextUnformatted(T(message_key));
     ImGui::Spacing();
-    if (ImGui::Button(T("restart_yes"))) {
+    if (ImGui::Button(T(yes_key))) {
       confirmed = true;
       ImGui::CloseCurrentPopup();
     }
@@ -816,6 +818,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         ImGui::Separator();
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();
+        ImGui::Separator();
+        DrawStartScreenRow();
         ImGui::EndTabItem();
       }
       ImGui::EndTabBar();
@@ -1124,6 +1128,27 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // through its mixer and land in the save exactly as the Options screen's do.
   // From this thread a write is queued to the next guest frame, so the value
   // being dragged is held here until then rather than snapping back.
+  // Restarts into the start screen, where the game files can be deleted or
+  // another source picked.
+  void DrawStartScreenRow() {
+    bool open_confirm = ImGui::Button(WithId(T("start_screen"), "start_screen"));
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("%s", T("start_screen_tip"));
+    }
+    if (ConfirmRestart("confirm_start_screen", open_confirm)) {
+      const auto flag = StartScreenFlagPath(user_settings_path_);
+      RequestStartScreenOnNextLaunch(flag, true);
+      if (!RestartNow()) {
+        RequestStartScreenOnNextLaunch(flag, false);
+      }
+    }
+    ImGui::SameLine();
+    bool open_quit = ImGui::Button(WithId(T("quit_game"), "quit_game"));
+    if (ConfirmRestart("confirm_quit", open_quit, "quit_confirm", "quit_yes")) {
+      QuitNow();
+    }
+  }
+
   void DrawGameVolumeRow(const char* key, int setting, int slot) {
     const int current = EternalSonataGetSetting(setting);
     int& pending = volume_drag_[slot];

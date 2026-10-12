@@ -46,12 +46,23 @@ struct GameDataOptions {
   // The config game_data_root is persisted to; relative values resolve against
   // its folder.
   std::filesystem::path config_path;
+  // The one launch flag file (StartScreenFlagPath).
+  std::filesystem::path start_screen_flag;
 };
 
 // Sets and persists game_data_root from the cvar or an earlier extraction when
 // it needs no more work. False otherwise, with `pending` set to a directory
 // that still needs conversion or patching, or left empty when none was found.
 bool UsePreparedGameData(const GameDataOptions& options, std::string& pending);
+
+// Where a start screen request is kept, next to the user settings. A file
+// rather than an environment variable, since Android restarts the app without
+// handing the old environment on.
+std::filesystem::path StartScreenFlagPath(const std::filesystem::path& user_settings_path);
+
+// Makes the next launch show the start screen even with prepared game data, for
+// that launch only; false withdraws the request.
+void RequestStartScreenOnNextLaunch(const std::filesystem::path& flag, bool request);
 
 // Asks through the intro screen (a message box where it cannot draw) until
 // game data is ready and started, or the player quits. A non empty `pending`

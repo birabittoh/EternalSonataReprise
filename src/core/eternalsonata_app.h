@@ -122,6 +122,7 @@ class EternalsonataApp : public rex::ReXApp {
 
     eternalsonata::GameDataOptions options;
     options.config_path = config_path();
+    options.start_screen_flag = eternalsonata::StartScreenFlagPath(user_settings_path());
     // The F4 Language row saves through it too, start screen or not.
     // So the start screen lists the languages mods add.
     eternalsonata::ScanModLanguagesEarly();
