@@ -447,7 +447,8 @@ Surveyed over the 805 files present on both releases:
 | `NLEF` | `Mefc`s with embedded models | yes |
 | `NATR` | colour array RGBA vs ARGB (§3.3) | yes |
 | `NMR2` | morph vertex records, CMP packed (§3.2) | yes |
-| `NBN2`, `NCAM`, `NLC2`, `NCLS`, `NDYN`, `NMRP`, `NMTN` | float drift from re-export, or identical | nothing to do |
+| `NBN2`, `NCAM`, `NLC2`, `NCLS`, `NDYN`, `NMRP` | float drift from re-export, or identical | nothing to do |
+| `NMTN` | map object motions are version `0x83`, the 360 plays only `0x82` | runtime hook (§3.5) |
 
 ### 3.1 Textures
 
@@ -562,6 +563,23 @@ pointed at by `CreateModel` (model `+176`), so its effects are converted the
 same way and the offsets rewritten. 564 `NLEF`s in 385 files hold 1325
 effects, 205 of them with a model (`CBLn`), which the 360 refuses
 unconverted (version `0x83`); none carries a bank.
+
+### 3.5 Motions
+
+`sub_82118EE0` plays an `NMTN` only when byte 8 is `0x82`; it is the only
+place the 360 checks an `NMTN` version. The PS3's map object motions
+(butterflies, grass, flowers) are `0x83`, 570 chunks that all set the `+41`
+time flag. `src/engine/ps3_motion.cpp` rewrites `0x83` to `0x82` in guest
+memory before the player looks, in PS3 mode only.
+
+The two versions share one layout, and the PS3 reads it like the 360: the
+duration helpers take `+34` and `+36` (`sub_2CD2E0` / `sub_2CD3C0`, the 360's
+`sub_82118DB0` / `sub_82118E48`), both times 5 when bit 0 of `+41` is set,
+and playback setup takes `+32`. The PS3 does not check the `NMTN` version; its
+only `0x83` check is for `NMDL`. PS3 `0x82` character motions equal the 360's
+byte for byte except `+41` (3 on the PS3, 1 on the 360). `0x83` locator
+tracks store their position as constant channels, where the 360's carry it
+from the placed object; the 360 reads both.
 
 ## 4. Containers
 

@@ -464,6 +464,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/ps3_hit_effects.cpp
     src/engine/ps3_maptex.cpp
     src/engine/ps3_models.cpp
+    src/engine/ps3_motion.cpp
     src/engine/ps3_natives.cpp
     src/engine/ps3_start_events.cpp
     src/gpu/guest_shaders.cpp
