@@ -317,7 +317,7 @@ constexpr std::array kBasicCvarNames = {
     "enemy_damage_multiplier", "ui_scale",
     "save_row_portraits", "force_japanese_font"};
 
-// Steps for the Game tab's multiplier rows. HP stops short of zero, the
+// Steps for the multiplier rows. HP stops short of zero, the
 // same floor enemy_hp_multiplier has.
 constexpr std::array kRewardMultiplierSteps = {0.0, 0.25, 0.5, 0.75, 1.0, 1.5,
                                                2.0, 3.0,  4.0, 5.0,  10.0};
@@ -810,20 +810,20 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         if (WesternTextAvailable()) {
           DrawCvarRow("force_japanese_font");
         }
-        ImGui::Separator();
+        DrawPhotoPriceAlgorithmRow();
+        DrawFieldLeaderModelRow();
+        DrawFieldActionModelRow();
+        DrawStartScreenRow();
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem(WithId(T("tab_balance"), "balance"))) {
         DrawMultiplierRow("enemy_exp_multiplier", kRewardMultiplierSteps);
         DrawMultiplierRow("benched_exp_multiplier", kExpShareSteps);
         DrawMultiplierRow("incapacitated_exp_multiplier", kExpShareSteps);
         DrawMultiplierRow("enemy_gold_multiplier", kRewardMultiplierSteps);
         DrawMultiplierRow("photo_price_multiplier", kRewardMultiplierSteps);
-        DrawPhotoPriceAlgorithmRow();
         DrawMultiplierRow("enemy_hp_multiplier", kHpMultiplierSteps);
         DrawMultiplierRow("enemy_damage_multiplier", kRewardMultiplierSteps);
-        ImGui::Separator();
-        DrawFieldLeaderModelRow();
-        DrawFieldActionModelRow();
-        ImGui::Separator();
-        DrawStartScreenRow();
         ImGui::EndTabItem();
       }
       ImGui::EndTabBar();
