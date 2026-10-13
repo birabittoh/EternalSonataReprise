@@ -11,6 +11,7 @@
 #include <rex/logging.h>
 
 #include "guest_shaders.h"
+#include "native_renderer_plume.h"
 #include "native_renderer_plume_internal.h"
 
 namespace eternalsonata {
@@ -1162,6 +1163,7 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
            "disagree with what the blobs declare", request.vertex_slot, request.pixel_slot);
     return nullptr;
   }
+  PlumeNotePipelineCreated();
 
   REXLOG_DEBUG(
       "native_renderer: pipeline #{} vs={} ps={} decl {:016X} topology {} over {} input "

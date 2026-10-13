@@ -7,15 +7,18 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
+#include <chrono>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 #if defined(__APPLE__)
 #include <dlfcn.h>
 
-#include <filesystem>
 #include <string>
 
 #include <rex/filesystem.h>
@@ -457,7 +460,94 @@ bool RebuildSwapChain(void* window_handle) {
   return true;
 }
 
+// Persisted driver pipeline cache. Adreno spends 50 to 500 ms compiling each
+// pipeline and keeps nothing between runs, so without this every new area
+// stalls for seconds, every session.
+constexpr auto kPipelineCacheSaveDelay = std::chrono::seconds(3);
+uint32_t g_pipelines_unsaved = 0;
+std::chrono::steady_clock::time_point g_last_pipeline_created;
+std::atomic<bool> g_pipeline_cache_writing{false};
+
+std::filesystem::path g_pipeline_cache_path;
+
+std::filesystem::path PipelineCachePath() { return g_pipeline_cache_path; }
+
+void LoadPipelineCache() {
+  const auto path = PipelineCachePath();
+  if (path.empty()) {
+    REXLOG_WARN("native_renderer: no pipeline cache path, pipelines will not persist");
+    return;
+  }
+  std::ifstream in(path, std::ios::binary);
+  if (!in)
+    return;
+  std::vector<char> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  const bool used = g_backend.device->loadPipelineCache(data.data(), data.size());
+  REXLOG_INFO("native_renderer: pipeline cache {} ({} KiB)", used ? "loaded" : "discarded",
+              data.size() / 1024);
+}
+
+void WritePipelineCache(std::vector<uint8_t> data) {
+  const auto path = PipelineCachePath();
+  if (path.empty())
+    return;
+  std::error_code ec;
+  std::filesystem::create_directories(path.parent_path(), ec);
+  // Written aside and renamed, so a process killed mid write keeps the old file.
+  auto temp = path;
+  temp += ".tmp";
+  {
+    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+    if (!out)
+      return;
+    out.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
+    if (!out)
+      return;
+  }
+  std::filesystem::rename(temp, path, ec);
+}
+
+void SavePipelineCache(bool wait) {
+  // A write still in flight is waited out at shutdown and retried later otherwise.
+  while (g_pipeline_cache_writing.load(std::memory_order_acquire)) {
+    if (!wait)
+      return;
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  std::vector<uint8_t> data;
+  if (!g_backend.device || !g_backend.device->getPipelineCacheData(data) || data.empty())
+    return;
+  g_pipelines_unsaved = 0;
+  if (wait) {
+    WritePipelineCache(std::move(data));
+    return;
+  }
+  // Detached, since the process may end without a shutdown to join it.
+  g_pipeline_cache_writing.store(true, std::memory_order_release);
+  std::thread([data = std::move(data)]() mutable {
+    WritePipelineCache(std::move(data));
+    g_pipeline_cache_writing.store(false, std::memory_order_release);
+  }).detach();
+}
+
+// Android kills the process rather than shutting it down, so the cache is
+// saved once pipeline creation has gone quiet instead of only at exit.
+void MaybeSavePipelineCache() {
+  if (g_pipelines_unsaved != 0 &&
+      std::chrono::steady_clock::now() - g_last_pipeline_created >= kPipelineCacheSaveDelay)
+    SavePipelineCache(false);
+}
+
 }  // namespace
+
+void PlumeSetPipelineCachePath(std::filesystem::path path) {
+  g_pipeline_cache_path = std::move(path);
+}
+
+void PlumeNotePipelineCreated() {
+  ++g_pipelines_unsaved;
+  g_last_pipeline_created = std::chrono::steady_clock::now();
+}
 
 RenderDevice* PlumeDevice() {
   return g_ready.load(std::memory_order_acquire) ? g_backend.device.get() : nullptr;
@@ -584,8 +674,9 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
     g_backend.render_interface.reset();
     return false;
   }
+  LoadPipelineCache();
 
-  g_backend.queue = g_backend.device->createCommandQueue(RenderCommandListType::DIRECT);
+  g_backend.queue =g_backend.device->createCommandQueue(RenderCommandListType::DIRECT);
   for (FrameSlot& slot : g_slots) {
     slot.command_list = g_backend.queue->createCommandList();
     slot.fence = g_backend.device->createCommandFence();
@@ -691,6 +782,7 @@ void PlumePresentFrame() {
   if (!g_ready.load(std::memory_order_acquire))
     return;
   ProfileZone present_zone(kPhasePresent);
+  MaybeSavePipelineCache();
 
   // Scoped, because this function returns from a dozen places and a flag left
   // set would stop a pending extent from ever being applied.
@@ -972,6 +1064,7 @@ void ShutdownPlumeBackend() {
   if (g_backend.swap_chain)
     g_backend.swap_chain->wait();
 
+  SavePipelineCache(true);
   ShutdownGuestDraws();
   ShutdownTextureMirror();
   ShutdownGuestPipelines();

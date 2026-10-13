@@ -13,6 +13,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 
 namespace rex::ui {
 class UIDrawer;
@@ -102,6 +103,14 @@ bool PlumeFrameRetired(uint64_t frame);
 // pixel size hook, i.e. on the UI thread, so it only records the request and
 // the next present acts on it.
 void PlumeNotifyResize(uint32_t pixel_width, uint32_t pixel_height);
+
+// Where the driver's pipeline cache is kept between runs. Set before
+// InitPlumeBackend, which is when it is read.
+void PlumeSetPipelineCachePath(std::filesystem::path path);
+
+// A pipeline was created, so the driver's pipeline cache has something new to
+// persist. Guest render thread only.
+void PlumeNotePipelineCreated();
 
 // Release the device and swap chain. Called on shutdown, before the window
 // goes away.

@@ -117,6 +117,7 @@ class EternalsonataApp : public rex::ReXApp {
     // The overlays record into the host frame, so the renderer needs the drawer
     // that produces them; both are live once presentation is set up.
     eternalsonata::PlumeSetOverlayDrawer(imgui_drawer());
+    eternalsonata::PlumeSetPipelineCachePath(user_data_root() / "cache" / "pipelines.bin");
     eternalsonata::InitNativeRenderer(window());
     eternalsonata::BindIntroScreen(imgui_drawer(), &app_context());
 
