@@ -28,7 +28,7 @@ constexpr const char* kOriginal = ".orig";
 constexpr const char* kShipped = "ps3-shipped.txt";
 // Bumped with every conversion change, here and in ps3_convert.py.
 constexpr const char* kStamp = "ps3-convert.stamp";
-constexpr const char* kStampVersion = "3";
+constexpr const char* kStampVersion = "4";
 // Present while a conversion runs: the tree needs another.
 constexpr const char* kBusy = "ps3-converting.stamp";
 // The outputs written over their shipped file, as "size crc32 path" lines.
@@ -353,6 +353,13 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
     }
     if (!from_original && renamed.empty() && converted.Matches(low, d)) {
       ++report.counts["already converted"];
+      if (low == ps3::kBattleKeep) {
+        if (Bytes aligned = ps3::AlignBattleKeep(d); aligned != d) {
+          ++report.counts["BattleKeep banks realigned"];
+          emit(rel, aligned);
+          continue;
+        }
+      }
       keep(rel, d.size());
       continue;
     }

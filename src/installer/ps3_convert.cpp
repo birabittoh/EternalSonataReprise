@@ -1128,23 +1128,49 @@ bool EndsWith(std::string_view s, std::string_view suffix) {
 
 const char* const kBattleKeep = "btldata/battlekeep.bop";
 
-Bytes AppendEmptyBattleKeep(const Bytes& d, Report& report) {
+namespace {
+
+// Screen space effects such as the guard mark play their bank only from a
+// 0x1000 boundary (sub_821428B0), so a slot with banks puts its first one
+// there; any other slot keeps its place within the page.
+Bytes LayOutBattleKeep(const Bytes& d, size_t extra) {
   auto [dir_at, slots] = BopEntries(d);
-  slots.resize(slots.size() + kBattleKeepDropped);
+  std::vector<size_t> old;
+  for (size_t i = 0; i < slots.size(); ++i)
+    old.push_back(Rd32(d, dir_at + 4 + 4 * i));
+  slots.resize(slots.size() + extra);
   Bytes out = Slice(d, 0, dir_at);
   Put32(out, slots.size());
   out.resize(out.size() + 4 * slots.size());
   for (size_t i = 0; i < slots.size(); ++i) {
     if (!slots[i])
       continue;
-    out.resize(out.size() + PadTo(int64_t(out.size()), 0x80));
+    const Bytes& slot = *slots[i];
+    size_t phase = old[i];
+    for (size_t o = 0; o + 16 <= slot.size(); ++o) {
+      if (IsCsf(slot, o, slot.size())) {
+        phase = 0x1000 - o;
+        break;
+      }
+    }
+    out.resize(out.size() + ((phase - out.size()) & 0xFFF));
     Wr32(out, dir_at + 4 + 4 * i, out.size());
-    Append(out, *slots[i]);
+    Append(out, slot);
   }
   out.resize(out.size() + PadTo(int64_t(out.size()), 0x1000));
   Wr32(out, 4, out.size());
-  report.counts["BattleKeep null slots appended"] += kBattleKeepDropped;
   return out;
+}
+
+}  // namespace
+
+Bytes AppendEmptyBattleKeep(const Bytes& d, Report& report) {
+  report.counts["BattleKeep null slots appended"] += kBattleKeepDropped;
+  return LayOutBattleKeep(d, kBattleKeepDropped);
+}
+
+Bytes AlignBattleKeep(const Bytes& d) {
+  return LayOutBattleKeep(d, 0);
 }
 
 bool IsCsf(const Bytes& d, size_t o, size_t end) {

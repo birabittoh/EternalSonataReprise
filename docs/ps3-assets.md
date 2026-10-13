@@ -656,8 +656,10 @@ So the array has to be in the 360's layout. The converter appends eight null
 slots after the PS3's entries (`append_empty_battlekeep`), and in PS3 mode
 `src/engine/ps3_battlekeep.cpp` reorders the array after the parser runs:
 360 slots below 26 are the file's, 26..33 the appended eight, 34 and up the
-file's slot minus 8. Nothing reaches 26..33 in PS3 mode: the executable's
-constant ids through the slot accessor `sub_821A5148` (1 based) are 35, 45,
+file's slot minus 8. Slots are laid out so every bank stays on a 0x1000
+boundary of the file, as the 360's are: `sub_821428B0`, which plays the banks
+of screen space effects such as the guard mark, refuses any other. Nothing
+reaches 26..33 in PS3 mode: the executable's constant ids through the slot accessor `sub_821A5148` (1 based) are 35, 45,
 49, 50, 52, 76..79 and 96..98, the hit effect table is translated around
 them, and every reader (`sub_821CD0D8`, `sub_821CDCB0`, the accessor's
 callers) skips a null slot.

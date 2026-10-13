@@ -46,6 +46,8 @@ std::optional<Output> ConvertFile(const std::string& rel, const Bytes& d, Report
 extern const char* const kBattleKeep;
 // Converted PS3 BattleKeep with null slots for the 360's dropped effects.
 Bytes AppendEmptyBattleKeep(const Bytes& d, Report& report);
+// Repairs an earlier conversion's bank alignment; the input when already right.
+Bytes AlignBattleKeep(const Bytes& d);
 
 // Sound bank (CSF) and bank directory (CSL) detection.
 bool IsCsf(const Bytes& d, size_t o, size_t end);

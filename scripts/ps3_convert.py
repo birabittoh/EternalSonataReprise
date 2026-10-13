@@ -855,21 +855,35 @@ def bop_entries(d):
     return dir_at, [d[o:ends[bisect.bisect_right(ends, o)]] if o else None for o in offsets]
 
 
-def append_empty_battlekeep(d, report):
-    """Converted PS3 BattleKeep with eight null slots at its end."""
+def lay_out_battlekeep(d, extra):
+    """Screen space effects such as the guard mark play their bank only from a
+    0x1000 boundary (sub_821428B0), so a slot with banks puts its first one
+    there; any other slot keeps its place within the page."""
     dir_at, slots = bop_entries(d)
-    slots += [None] * BATTLEKEEP_DROPPED
+    old = [rd32(d, dir_at + 4 + 4 * i) for i in range(len(slots))]
+    slots += [None] * extra
     out = bytearray(d[:dir_at]) + u32.pack(len(slots)) + bytes(4 * len(slots))
     for i, e in enumerate(slots):
         if e is None:
             continue
-        out += bytes(-len(out) % 0x80)
+        phase = old[i]
+        o = e.find(b'CSF ')
+        while o >= 0 and not is_csf(e, o, len(e)):
+            o = e.find(b'CSF ', o + 1)
+        if o >= 0:
+            phase = 0x1000 - o
+        out += bytes((phase - len(out)) & 0xFFF)
         u32.pack_into(out, dir_at + 4 + 4 * i, len(out))
         out += e
     out += bytes(-len(out) % 0x1000)
     u32.pack_into(out, 4, len(out))
-    report.counts['BattleKeep null slots appended'] += BATTLEKEEP_DROPPED
     return bytes(out)
+
+
+def append_empty_battlekeep(d, report):
+    """Converted PS3 BattleKeep with eight null slots at its end."""
+    report.counts['BattleKeep null slots appended'] += BATTLEKEEP_DROPPED
+    return lay_out_battlekeep(d, BATTLEKEEP_DROPPED)
 
 
 def convert_bare(d, report):
@@ -951,7 +965,7 @@ ORIGINAL = '.orig'
 SHIPPED = 'ps3-shipped.txt'
 # Bumped with every conversion change, here and in src/installer/ps3_install.cpp.
 STAMP = 'ps3-convert.stamp'
-STAMP_VERSION = b'3'
+STAMP_VERSION = b'4'
 NOT_DATA = ('.i64', '.idb', '.id0', '.id1', '.id2', '.nam', '.til', '.bak', ORIGINAL, '.stamp')
 
 
@@ -1223,7 +1237,12 @@ def main():
             d = read_file(path)
             if not renamed and converted.get(low) == file_key(d):
                 report.counts['already converted'] += 1
-                toc.set_stored(rel, len(d))
+                aligned = lay_out_battlekeep(d, 0) if low == BATTLEKEEP else d
+                if aligned != d:
+                    report.counts['BattleKeep banks realigned'] += 1
+                    emit(rel, aligned)
+                else:
+                    toc.set_stored(rel, len(d))
                 continue
         else:
             if not keep_renamed(renamed):

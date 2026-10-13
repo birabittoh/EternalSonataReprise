@@ -280,8 +280,10 @@ and +16, in the same 1/300 s units.
   scale (`0x824D0134`) instead of 1.0: the battle runs at half speed while the
   counter chance is up.
 
-No sound effect call sits on this path; the audio cue is presumably part of the
-mark's `FDIN` animation.
+The two marks are `BattleKeep.bop` slots 70 and 71 (manager+0x2C9B0 is the
+slot array). Their chime is the mark's own `SE_0` bank, started by a sound
+layer of the effect: screen space effects play through `sub_821428B0`, which
+refuses a bank that is not on a 0x1000 boundary.
 
 ### Reading the press
 
