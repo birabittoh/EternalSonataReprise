@@ -32,6 +32,7 @@
 #include <dlfcn.h>
 #include <sched.h>
 #include <sys/syscall.h>
+#include <sys/uio.h>
 #include <ucontext.h>
 #include <unistd.h>
 #endif
@@ -723,13 +724,21 @@ constexpr uint64_t kAddressMask = 0x0000FFFFFFFFFFFFull;
 
 // Follows the x29 chain of {previous x29, x30} records. Every record has to sit
 // inside the target's own stack and above the last one, so a stale x29 ends the
-// walk instead of faulting inside the signal handler.
+// walk. The bounds alone still let through an x29 that code built without frame
+// pointers (Adreno's shader compiler) left pointing at unmapped memory, so each
+// record is read with process_vm_readv, which fails instead of faulting.
 int WalkFrameRecords(uintptr_t fp, uint64_t* out, int n, int max_frames) {
+  const pid_t pid = getpid();
   while (n < max_frames) {
     if (fp < g_stack_lo || fp + 16 > g_stack_hi || (fp & 7) != 0) {
       break;
     }
-    const auto* record = reinterpret_cast<const uintptr_t*>(fp);
+    uintptr_t record[2];
+    iovec local = {record, sizeof(record)};
+    iovec remote = {reinterpret_cast<void*>(fp), sizeof(record)};
+    if (process_vm_readv(pid, &local, 1, &remote, 1, 0) != ssize_t(sizeof(record))) {
+      break;
+    }
     const uint64_t ret = uint64_t(record[1]) & kAddressMask;
     if (!ret) {
       break;
