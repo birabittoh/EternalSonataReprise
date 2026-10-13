@@ -256,7 +256,9 @@ each cost to an integer. Level 99 and total EXP 99999999 are the two caps.
 
 | Address | What |
 |---|---|
+| `0x8243F3E8` | u32 party level the battle rules use, 1..6 (low byte at `0x8243F3EB`) |
 | `0x8243F3EC` | u32 party level, 1..6 (low byte at `0x8243F3EF`) |
+| `0x8238E2B8` | per level battle rules, 20 bytes per row, indexed by `0x8243F3E8` - 1 |
 | `0x8202CA70` | `u16[]` budget cap, indexed by level - 1 |
 | `0x8243FCC4` | u8 budget left |
 | `0x8243FCC5` | u8 budget spent |
@@ -267,6 +269,13 @@ amount (master table +0x36); `sub_821E6740(id)` registers one in the Item Set
 bytes summing to the level's cap. It returns 0 added, 1 set full, 2 budget
 insufficient, 3 none held (`sub_821FBF20`). Its callers are the Item Set menu
 (`sub_82225FE0`) and the two reset paths.
+
+The party level up (`sub_821C3B78`) writes `0x8243F3E8` unconditionally and
+`0x8243F3EC` only when the new level is higher, so the second is the highest
+level reached. Battle code (the rules table, the counter gate, the HUD) reads
+the first; the budget and the end of battle level check read the second. The
+rules table's byte +3 enables counterattacks (levels 4 to 6); see "Guarding and
+countering" in [enemies.md](enemies.md).
 
 ## Joining and leaving
 
