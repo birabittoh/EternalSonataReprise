@@ -15,6 +15,7 @@
 #include <rex/system/kernel_state.h>
 
 #include "generated/eternalsonata_init.h"
+#include "big_core_affinity.h"
 #include "guest_profiler.h"
 #include "guest_shaders.h"
 #include "native_renderer.h"
@@ -1696,6 +1697,7 @@ REX_HOOK_RAW(D3DDevice__Swap) {
   // After the present, so this frame's fence wait and the GPU timestamps of the
   // frame that just retired are already in the accumulators it reads.
   eternalsonata::ProfileEndFrame();
+  eternalsonata::PinGuestThreadsToBigCores();
 
   // With no GPU plugin there is no swap packet, so this is the only guest frame
   // boundary the host has; see SetGuestFrameCallback.

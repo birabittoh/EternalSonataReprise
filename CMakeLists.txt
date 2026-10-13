@@ -443,6 +443,7 @@ set(ETERNALSONATA_SOURCES
     src/core/guest_image.cpp
     src/engine/force_load_area.cpp
     src/engine/field_player_model_override.cpp
+    src/platform/big_core_affinity.cpp
     src/platform/fast_forward_key.cpp
     src/platform/host_menu.cpp
     src/platform/input_overlay.cpp
