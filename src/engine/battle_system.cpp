@@ -116,7 +116,6 @@ constexpr uint32_t kEnemyAbilityTableAddr = 0x82550E98u;
 constexpr uint32_t kAbilityIdMax = 512u;
 constexpr uint32_t kEchoDisplayObjectOffset = 533072u;
 constexpr uint32_t kEchoCountOffset = 10224u;
-constexpr uint32_t kParryFlagOffset = 537177u;
 
 uint32_t g_last_action_id = 0;
 int g_last_action_strength = 0;
@@ -196,6 +195,30 @@ Actor CurrentActor() {
   actor.kind = static_cast<int>(kind);
   actor.slot = static_cast<int>(ReadGuestByte(descriptor + 4));
   return actor;
+}
+
+// How `target` answered a hit from `source`: 0, or battle::kGuardOutcome*.
+// Only an attack from the other side counts, since the fields keep their value
+// for the rest of the turn.
+int32_t GuardOutcome(const Actor& source, const Actor& target) {
+  if (target.slot < 0 || source.kind == target.kind) {
+    return 0;
+  }
+  if (target.kind == ETERNALSONATA_BATTLE_ACTOR_PARTY &&
+      source.kind == ETERNALSONATA_BATTLE_ACTOR_ENEMY && target.slot < PartyCount()) {
+    const uint32_t record = battle::PartyRecord(static_cast<uint32_t>(target.slot));
+    if (ReadGuestByte(record + battle::kPartyGuardLatchOffset) == 0) {
+      return 0;
+    }
+    return static_cast<int32_t>(ReadGuest<uint32_t>(record + battle::kPartyGuardOutcomeOffset));
+  }
+  if (target.kind == ETERNALSONATA_BATTLE_ACTOR_ENEMY &&
+      source.kind == ETERNALSONATA_BATTLE_ACTOR_PARTY && target.slot < EnemyCount()) {
+    return static_cast<int32_t>(ReadGuest<uint32_t>(
+        battle::EnemyRecord(static_cast<uint32_t>(target.slot)) +
+        battle::kEnemyGuardOutcomeOffset));
+  }
+  return 0;
 }
 
 // The per-unit FSM state for one side's slot, or the game's own "no such unit"
@@ -722,13 +745,15 @@ void PublishBattleEffect(int target_kind, int target_slot, int signed_amount) {
   if (!Available() || !g_runtime || !g_runtime->mod_registry()) {
     return;
   }
-  const bool parried = ReadGuestByte(battle::kManager + kParryFlagOffset) != 0;
+  const Actor source = CurrentActor();
+  const Actor target{target_kind, target_slot};
+  const int32_t guard = signed_amount >= 0 ? GuardOutcome(source, target) : 0;
+  const bool parried =
+      guard == battle::kGuardOutcomeGuard || guard == battle::kGuardOutcomeCounter;
   if (signed_amount == 0 && !parried) {
     g_last_critical = false;
     return;
   }
-  const Actor source = CurrentActor();
-  const Actor target{target_kind, target_slot};
   EternalSonataBattleEffect event{};
   event.source_kind = source.kind;
   event.source_slot = source.slot;
@@ -745,6 +770,9 @@ void PublishBattleEffect(int target_kind, int target_slot, int signed_amount) {
   }
   if (parried) {
     event.flags |= ETERNALSONATA_BATTLE_EFFECT_PARRIED;
+  }
+  if (guard == battle::kGuardOutcomeCounter) {
+    event.flags |= ETERNALSONATA_BATTLE_EFFECT_COUNTERED;
   }
   rex::system::ModRegistry::EventPayload payload;
   payload.u64 = static_cast<uint64_t>(event.amount);

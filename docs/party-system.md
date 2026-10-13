@@ -275,7 +275,12 @@ The party level up (`sub_821C3B78`) writes `0x8243F3E8` unconditionally and
 level reached. Battle code (the rules table, the counter gate, the HUD) reads
 the first; the budget and the end of battle level check read the second. The
 rules table's byte +3 enables counterattacks (levels 4 to 6); see "Guarding and
-countering" in [enemies.md](enemies.md).
+countering" in [enemies.md](enemies.md). The equipment screen's press and hold
+magic slots also split on the first, from level 3.
+
+The two are equal in normal play. The host reports the second
+(`EternalSonataGetPartyLevel`, Discord presence, the item budget) since that is
+what the status screen shows, and `EternalSonataSetPartyLevel` writes both.
 
 ## Joining and leaving
 

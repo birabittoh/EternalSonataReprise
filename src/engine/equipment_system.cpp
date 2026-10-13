@@ -38,7 +38,7 @@
 //   * sub_82231F30 is the game's magic commit and is not called here: the
 //     write itself is one halfword and the rest of that routine repaints the
 //     equipment screen. Its one non-obvious behaviour is reproduced: while the
-//     u32 at 0x8243F3E8 is below 3, writing a press slot mirrors into the
+//     party level at 0x8243F3E8 is below 3, writing a press slot mirrors into the
 //     matching hold slot, so the two cannot differ.
 //
 //   * Whether a character may wear an item is the u32 flag word at +0x04 of
@@ -162,11 +162,11 @@ uint32_t MagicOrderBytes() {
 constexpr uint32_t kMagicNameBlockAddr = 0x8230F640u;
 constexpr uint32_t kMagicDescriptionBlockAddr = 0x822FF598u;
 
-// Party base +0, the word before the party level. sub_82231F30 mirrors the
-// press slots into the hold slots while this is below 3. What it counts is
-// unidentified; only the comparison matters here.
-constexpr uint32_t kMagicIndependenceAddr = 0x8243F3E8u;
-constexpr uint32_t kMagicIndependenceThreshold = 3u;
+// The party level the game plays at (party base +0; the word after it is the
+// highest level reached). sub_82231F30 mirrors the press slots into the hold
+// slots below party level 3.
+constexpr uint32_t kActivePartyLevelAddr = 0x8243F3E8u;
+constexpr uint32_t kMagicIndependenceLevel = 3u;
 
 // The master entity table, shared with items and characters.
 constexpr uint32_t kMasterTableAddr = 0x82017630u;
@@ -541,7 +541,7 @@ bool HasLearnedMagicLocked(int character, int magic_id) {
 
 // True once the second pair of slots can differ from the first.
 bool MagicSlotsIndependent() {
-  return ReadGuest<uint32_t>(kMagicIndependenceAddr) >= kMagicIndependenceThreshold;
+  return ReadGuest<uint32_t>(kActivePartyLevelAddr) >= kMagicIndependenceLevel;
 }
 
 // The whole up-front half of a magic write, made without running guest code.

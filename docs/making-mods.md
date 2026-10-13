@@ -1338,7 +1338,9 @@ Committed HP changes use `eternalsonata.battle.damage` and
 `EternalSonataBattleEffect`: source and target descriptors, the amount, the
 action id, the captured ability strength, and flags for a critical hit, parry,
 Harmony Chain, or counterattack. `amount` is positive for both event types and
-is repeated in `payload.u64` and `payload.f64`. A parry can carry zero damage.
+is repeated in `payload.u64` and `payload.f64`. A parry is a hit the target
+guarded or countered; a countered one also has
+`ETERNALSONATA_BATTLE_EFFECT_COUNTERED` and carries zero damage.
 Critical hits and parries are also repeated on
 `eternalsonata.battle.critical` and `eternalsonata.battle.parry` with the same
 payload. Area abilities publish one result for each affected target.

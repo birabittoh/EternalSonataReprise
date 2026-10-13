@@ -263,8 +263,9 @@ tick `sub_8218BC50` runs `sub_821A69B8` on it every frame.
 | +0x2C | f32 | slow motion countdown |
 
 The clock advances by `sub_82181728(&flt_824D0130, 0)`, the channel 0 game
-clock. The window is `[start, start + length]`, the floats at move record +12
-and +16.
+clock, which counts 300 per second (`300 / fps` per frame, times the channel's
+scale). The window is `[start, start + length]`, the floats at move record +12
+and +16, in the same 1/300 s units.
 
 * **Armed, clock inside the window.** If the target can guard right now (party
   controller vtable +0x90, `sub_821C4F38`, below), the cue opens: it creates the
@@ -341,6 +342,12 @@ stick for every later hit of the same swing:
 | 1 | damage x 0.25 (`sub_821AF2F8` tests the outcome field) |
 | 2 | counter: manager+537177 = 1 and the formula returns 0 damage. The defender is flagged in the turn sequence (manager+533120 entry, +24), and the turn object at manager+533100 switches to mode 3 (+6464) with a time budget of max(50, its timer at +8480 / 6) in +8484. |
 
+The counter flag at manager+537177 then runs through turn setup (battle FSM
+state 6): 1 becomes 2 for the counterattack turn itself, and 2 becomes 0 the
+turn after. While it is 2, `sub_821AFCA0` gives the turn a flat 600 (2 s)
+instead of the party level's command time, and `sub_82189FD0` hides the Y
+hint below party level 5.
+
 A party defender that did not guard itself still takes the 0.25 and plays guard
 motion 25 when any other party member's input byte is 1 (`sub_821AF4C8`), so one
 well timed guard covers the whole party against a multi target swing.
@@ -363,8 +370,10 @@ record +81780, enemy record +32449) is set.
 
 The roll gives 3 when the party level forbids counters or the actor has no move
 record, otherwise 1 when `rand() % 100` is at most the move record's i16 at +22
-(a percent chance) and 2 above it. The record constructor `sub_8219F4B8` zeroes
-the field; where it returns to 0 between turns has not been pinned down.
+(a percent chance) and 2 above it. Turn setup (battle FSM state 6) zeroes the
+field on every enemy, so each enemy turn rolls once on its first swing, and a
+counterable swing makes the rest of that turn's swings uncounterable. The same
+pass clears both sides' guard outcomes.
 
 The party level gate is a six row table at `0x8238E2B8`, 20 bytes per level,
 indexed by level - 1. Byte +3 is 0, 0, 0, 1, 1, 1, so counters start at party
@@ -373,9 +382,10 @@ see "Party level and its budget" in [party-system.md](party-system.md).
 
 ### Host side
 
-`battle_system.cpp` calls manager+537177 the parry flag. It is the counter
-flag: `sub_821B38A8` writes 1 only on outcome 2, so the host's
-`ETERNALSONATA_BATTLE_EVENT_PARRY` and `ETERNALSONATA_BATTLE_EFFECT_PARRIED`
-fire on counters, not on plain guards. The byte also takes a value 2 in a mode
-several battle routines test for (`sub_8218D408`, `sub_821C9090`) that has not
-been decoded, and the host's nonzero test would report that too.
+`battle_system.cpp` reports a hit as parried from the defender's own outcome
+(`battle_layout.h` "Guard and counter"), not from the counter flag: the flag
+stays nonzero through the whole counterattack turn, so every hit of the strike
+back would read as parried. `ETERNALSONATA_BATTLE_EFFECT_PARRIED` means outcome
+1 or 2, and `ETERNALSONATA_BATTLE_EFFECT_COUNTERED` is added for 2. The party
+side also requires the outcome latch, so an outcome left from an earlier swing
+is not reported against a later hit.

@@ -243,6 +243,25 @@ inline constexpr uint32_t kPartyStatusTurnsOffset = 265447u - 183648u;  // u8[6]
 inline constexpr uint32_t kEnemyStatusTurnsOffset = 461852u - 429568u;  // u8[6]
 inline constexpr uint32_t kStatusIdCount = 10u;
 
+// --- Guard and counter -----------------------------------------------------
+//
+// How a defender answered the hit it just took (docs/enemies.md, "Guarding and
+// countering"). sub_821AF670 decides it for a party member once per enemy
+// swing and latches it; the enemy side is set by the AI. Turn setup (state 6)
+// clears both sides, and each enemy attack clears the party side again.
+inline constexpr uint32_t kPartyGuardLatchOffset = 265420u - 183648u;    // u8
+inline constexpr uint32_t kPartyGuardOutcomeOffset = 265424u - 183648u;  // i32
+inline constexpr uint32_t kEnemyGuardOutcomeOffset = 461996u - 429568u;  // i32
+inline constexpr int32_t kGuardOutcomeGuard = 1;
+inline constexpr int32_t kGuardOutcomeCounter = 2;
+
+// Manager byte, set to 1 by sub_821B38A8 when a defender counters (and the
+// damage formula returns 0). Turn setup then advances it to 2 for the
+// counterattack turn itself and clears it the turn after.
+inline constexpr uint32_t kCounterFlagOffset = 537177u;  // u8
+inline constexpr uint8_t kCounterFlagLanded = 1u;
+inline constexpr uint8_t kCounterFlagTurn = 2u;
+
 // The party side's three buffable live stats, the counterparts of
 // kEnemyAttackOffset / kEnemyDefenseOffset / kEnemySpeedOffset. sub_821B8368
 // is what pairs them: its three cases each add a buff into one party field and
@@ -396,9 +415,10 @@ inline constexpr uint32_t EnemyPart(uint32_t slot, uint32_t part_index) {
 //   19  the level-up / results screens (sub_82198450)
 //   20  a branch, not a screen: reads the required party level from the
 //       encounter record (manager+0x68DFC, halfword at +0x34) and compares it
-//       against the current one (dword_8243F3EC's low byte). Below it, opens
-//       the party-level-up screen (sub_821C3B78) and goes to 21; otherwise
-//       skips straight to 22. Most battles therefore never show 20 or 21.
+//       against the highest one reached (dword_8243F3EC's low byte). Below
+//       it, opens the party-level-up screen (sub_821C3B78) and goes to 21;
+//       otherwise skips straight to 22. Most battles therefore never show
+//       20 or 21.
 //   21  the party-level-up screen while it is up (sub_821C3D50)
 //   22  the write-back, and only ever a frame or two long: walks the live
 //       party records, floors each member's current HP at 1 so nobody leaves
@@ -637,10 +657,12 @@ inline constexpr uint32_t kCommandTimerLevelTableAddr = 0x8238E2B9u;
 inline constexpr uint32_t kCommandTimerLevelTableStride = 20u;
 inline constexpr uint8_t kCommandTimerDisabled = 255u;
 
-// The save's current party level (the same field as party_system.cpp's
-// private kPartyLevelAddr): what selects the row in the table above, and
-// what sub_821A9C98 branches on for the command timer's completion rule.
-inline constexpr uint32_t kCurrentPartyLevelAddr = 0x8243F3ECu;
+// The party level the game plays at: what selects the row in the table above
+// (sub_8218A618), the counter gate (sub_821BED88) and sub_821A9C98's
+// completion rule. The word after it, party_system.cpp's kPartyLevelAddr, is
+// the highest level reached, which the party level screen and the item
+// budget use; sub_821C3B78 always writes this one and raises that one.
+inline constexpr uint32_t kCurrentPartyLevelAddr = 0x8243F3E8u;
 
 }  // namespace battle
 }  // namespace eternalsonata

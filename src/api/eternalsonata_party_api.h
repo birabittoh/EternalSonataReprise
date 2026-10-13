@@ -172,7 +172,9 @@ typedef int (*EternalSonataIsCharacterActiveFn)(int character);
 // negative error.
 typedef int (*EternalSonataGetCharacterPositionFn)(int character);
 
-// Party level (1..6), or a negative error.
+// Highest party level reached (1..6), the one the game displays, or a negative
+// error. Battle rules follow a second copy that the game normally keeps equal;
+// EternalSonataSetPartyLevel writes both.
 typedef int (*EternalSonataGetPartyLevelFn)(void);
 
 // The party level's total member budget, how much of it recruited members use,
