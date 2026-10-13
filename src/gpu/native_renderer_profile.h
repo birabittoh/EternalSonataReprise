@@ -9,8 +9,8 @@
 //
 // Everything here runs on the guest's render thread, inside guest D3D entry
 // points, and the present runs there too, which is why plain non-atomic
-// counters are sound. If any of this moves off that thread the accumulators
-// have to become atomics.
+// counters are sound. The deferred recording worker is the one exception and
+// has an atomic of its own, g_record_worker_ns.
 //
 // The clock is read twice per zone. At the innermost zone (the per draw ones)
 // that is roughly 40 ns of `steady_clock` against a draw that costs a few
@@ -37,6 +37,7 @@ extern std::atomic<bool> g_profile_zones_enabled;
 enum ProfilePhase : uint32_t {
   kPhasePresent = 0,     // PlumePresentFrame, everything in it
   kPhaseFenceWait,       // the CPU/GPU serialisation inside that present
+  kPhaseRecordDrain,     // waiting for the recording worker before a submit
   kPhaseDraw,            // IssueGuestDraw, everything in it
   kPhaseVertexUpload,    // stream swap and copy into the arena
   kPhaseIndexUpload,     // index swap and copy
@@ -79,6 +80,10 @@ extern uint64_t g_profile_hits[kPhaseCount];
 // it is close to the frame time, cutting CPU work moves nothing.
 extern uint64_t g_gpu_frame_ns;
 extern uint64_t g_gpu_frame_count;
+
+// Time the deferred recording worker spent replaying, while zones are on. Atomic
+// because the worker writes it; the summary reads and resets it.
+extern std::atomic<uint64_t> g_record_worker_ns;
 
 // Wall time the window covers, so every phase can be printed as a percentage of
 // something real rather than of the sum of the phases. Started at the first

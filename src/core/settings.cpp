@@ -108,6 +108,10 @@ REXCVAR_DEFINE_BOOL(native_profile_zones, false, "Eternal Sonata",
                     "etc.). Off skips every clock read those zones make, at the cost of the "
                     "frame time summary and CPU/GPU verdict going blank.");
 
+REXCVAR_DEFINE_BOOL(native_deferred_recording, true, "Eternal Sonata",
+                    "Record the frame's Vulkan commands on a worker thread instead of the "
+                    "guest's render thread. Read at startup; Vulkan only.");
+
 // Each mip chain adds a second source range to the texture cache, and the
 // aperture walk, content hash and write watch are all paid per range.
 REXCVAR_DEFINE_BOOL(native_texture_mips, false, "Eternal Sonata",

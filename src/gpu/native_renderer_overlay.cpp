@@ -457,7 +457,7 @@ void PlumeImmediateDrawer::Begin(rex::ui::UIDrawContext& ui_draw_context,
   push.scale[1] = -2.0f / float(target_height_);
   push.translate[0] = -1.0f;
   push.translate[1] = 1.0f;
-  commands_->setGraphicsPushConstants(0, &push);
+  commands_->setGraphicsPushConstants(0, &push, 0, sizeof(push));
 }
 
 void PlumeImmediateDrawer::BeginDrawBatch(const rex::ui::ImmediateDrawBatch& batch) {

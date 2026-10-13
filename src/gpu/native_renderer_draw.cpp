@@ -83,6 +83,7 @@ void ApplyProfileZonesCvar() {
 const char* const kPhaseNames[kPhaseCount] = {
     "present",
     "  fence wait",
+    "  record drain",
     "draw",
     "  vertex upload",
     "  index upload",
@@ -3230,6 +3231,12 @@ void LogProfileSummary() {
                 100.0 * double(g_gpu_frame_ns) * 300.0 /
                     (double(g_gpu_frame_count) * double(wall_ns)),
                 g_gpu_frame_count);
+  }
+  // Also off the guest thread, so it overlaps the phases above.
+  if (const uint64_t worker_ns = g_record_worker_ns.exchange(0, std::memory_order_relaxed)) {
+    REXLOG_DEBUG("native_renderer:   {:<18} {:7.2f} ms/frame {:5.1f}% of wall clock",
+                 "record worker", double(worker_ns) / 1e6 / 300.0,
+                 100.0 * double(worker_ns) / double(wall_ns));
   }
   const FrameBoundStats bound = GetFrameBoundStats();
   REXLOG_DEBUG(

@@ -11,4 +11,7 @@ namespace eternalsonata {
 // threads are created as areas load. No-op off Android.
 void PinGuestThreadsToBigCores();
 
+// For a host thread that works alongside the render thread. No-op off Android.
+void PinThisThreadToBigCores();
+
 }  // namespace eternalsonata

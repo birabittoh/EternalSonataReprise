@@ -103,12 +103,19 @@ void PinGuestThreadsToBigCores() {
     REXLOG_INFO("affinity: {} more guest thread(s) kept on the big cores", added);
 }
 
+void PinThisThreadToBigCores() {
+  cpu_set_t big;
+  if (BigCoreSet(&big))
+    sched_setaffinity(0, sizeof(big), &big);
+}
+
 }  // namespace eternalsonata
 
 #else
 
 namespace eternalsonata {
 void PinGuestThreadsToBigCores() {}
+void PinThisThreadToBigCores() {}
 }  // namespace eternalsonata
 
 #endif

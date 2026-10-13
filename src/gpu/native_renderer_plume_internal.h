@@ -68,6 +68,10 @@ plume::RenderFormat PlumeSwapChainFormat();
 //
 // Null before the backend is up. Guest thread only, which is also the thread
 // that presents.
+//
+// On Vulkan this is usually a DeferredCommandList replaying on a worker, so
+// push constants need an explicit size, and nothing recorded may be freed or
+// rewritten before its frame retires.
 plume::RenderCommandList* PlumeGuestCommands();
 
 // Get the guest's finished image ready to be presented: transitions it for

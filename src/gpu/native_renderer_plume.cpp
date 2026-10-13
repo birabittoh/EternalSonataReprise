@@ -30,12 +30,15 @@
 #include <plume_render_interface.h>
 #include <rex/ui/ui_drawer.h>
 
+#include "native_renderer_deferred.h"
 #include "native_renderer_draw.h"
 #include "native_renderer_frame.h"
 #include "native_renderer_texture.h"
 #include "native_renderer_pipeline.h"
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_profile.h"
+
+REXCVAR_DECLARE(bool, native_deferred_recording);
 
 namespace plume {
 #ifdef _WIN32
@@ -299,6 +302,21 @@ void OwePresentWait() { g_present_debt = std::min(g_present_debt + 1, kMaxFrameL
 // PlumeGuestCommands.
 bool g_recording = false;
 
+// The guest frame's recording worker, when native_deferred_recording is on.
+// Null otherwise, and then the guest records into the slot's list directly.
+std::unique_ptr<DeferredCommandList> g_deferred;
+
+// Ends the slot's list once the worker has replayed everything into it, so it
+// is ready to submit.
+void EndGuestList(FrameSlot& slot) {
+  if (g_deferred) {
+    g_deferred->end();
+    g_deferred->Drain();
+  } else {
+    slot.command_list->end();
+  }
+}
+
 // Everything submitted to this queue runs in the order it was submitted, so
 // waiting on any one fence retires every frame submitted at or before it. That
 // is what lets the flush path below retire the whole ring by waiting on one.
@@ -359,7 +377,7 @@ void FlushWithoutPresent() {
   // No closing timestamp is written here, so this frame is dropped from the GPU
   // average rather than read back half written. Flushes are rare by design.
   slot.timer_open = false;
-  slot.command_list->end();
+  EndGuestList(slot);
 
   TextureUploadFlush();
   const RenderCommandList* submit = slot.command_list.get();
@@ -571,8 +589,12 @@ RenderCommandList* PlumeGuestCommands() {
   if (!g_ready.load(std::memory_order_acquire))
     return nullptr;
   FrameSlot& slot = g_slots[g_slot];
+  RenderCommandList* commands = g_deferred ? g_deferred.get() : slot.command_list.get();
   if (!g_recording) {
-    slot.command_list->begin();
+    if (g_deferred)
+      g_deferred->Open(slot.command_list.get());
+    else
+      commands->begin();
     // Only the frame's first list is timed. A list opened after a mid-frame
     // flush would pair its opening stamp with the closing one at present and
     // report the tail of the frame as the whole of it.
@@ -581,14 +603,14 @@ RenderCommandList* PlumeGuestCommands() {
     if (slot.gpu_timer && first_list_of_frame) {
       // Outside any render pass, which is where Vulkan requires the reset; on
       // D3D12 it is a no-op and only the writes matter.
-      slot.command_list->resetQueryPool(slot.gpu_timer.get(), 0, 2);
-      slot.command_list->writeTimestamp(slot.gpu_timer.get(), 0);
+      commands->resetQueryPool(slot.gpu_timer.get(), 0, 2);
+      commands->writeTimestamp(slot.gpu_timer.get(), 0);
       slot.timer_open = true;
     }
     g_recording = true;
     FrameNotifyCommandListBegun();
   }
-  return slot.command_list.get();
+  return commands;
 }
 
 uint32_t PlumeFrameSlot() { return g_slot; }
@@ -685,6 +707,13 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
   }
   g_slot = 0;
   g_retired_frame.store(~0ull, std::memory_order_release);
+
+  // Vulkan only: the proxy answers blitTexture without the backend, and only
+  // Plume's Vulkan lists have been checked for state shared across threads.
+  if (g_backend.api_name == "Vulkan" && REXCVAR_GET(native_deferred_recording)) {
+    g_deferred = std::make_unique<DeferredCommandList>();
+    REXLOG_INFO("native_renderer: recording the frame's commands on a worker thread");
+  }
 
   // Present wait makes vsync usable on a frame-clocked engine. Without it
   // Plume's D3D12 present issues `Present(1, 0)`, which blocks on the vblank
@@ -924,11 +953,11 @@ void PlumePresentFrame() {
   FrameSlot& submitting = g_slots[g_slot];
   if (submitting.timer_open)
     commands->writeTimestamp(submitting.gpu_timer.get(), 1);
-  commands->end();
+  EndGuestList(submitting);
   g_recording = false;
 
   TextureUploadFlush();
-  const RenderCommandList* submit = commands;
+  const RenderCommandList* submit = submitting.command_list.get();
   RenderCommandSemaphore* wait = submitting.acquire_semaphore.get();
   RenderCommandSemaphore* signal = g_backend.release_semaphores[image].get();
   g_backend.queue->executeCommandLists(&submit, 1, &wait, 1, &signal, 1, submitting.fence.get());
@@ -1059,6 +1088,8 @@ void ShutdownPlumeBackend() {
   // destroyed, and the swap chain has to go before the queue that made it.
   // Draining the ring is what makes the queue idle now that a submitted frame
   // is no longer waited on where it was submitted.
+  // Before the lists its packets name go away.
+  g_deferred.reset();
   if (g_backend.queue)
     WaitForAllSlots();
   if (g_backend.swap_chain)

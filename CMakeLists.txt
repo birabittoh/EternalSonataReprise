@@ -476,6 +476,7 @@ set(ETERNALSONATA_SOURCES
     src/gpu/native_renderer.cpp
     src/gpu/native_renderer_batch.cpp
     src/gpu/native_renderer_d3d.cpp
+    src/gpu/native_renderer_deferred.cpp
     src/gpu/native_renderer_draw.cpp
     src/gpu/native_renderer_frame.cpp
     src/gpu/native_renderer_pipeline.cpp

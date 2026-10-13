@@ -934,7 +934,7 @@ bool DepthResolveDraw(RenderCommandList* commands, GuestTarget* target,
 
   commands->setPipeline(g_depth_resolve.pipeline.get());
   commands->setGraphicsPipelineLayout(g_depth_resolve.pipeline_layout.get());
-  commands->setGraphicsPushConstants(0, &push);
+  commands->setGraphicsPushConstants(0, &push, 0, sizeof(push));
   commands->setGraphicsDescriptorSet(destination->depth_set.get(), 0);
   commands->drawInstanced(3, 1, 0, 0);
   return true;
@@ -1059,7 +1059,7 @@ bool DownscaleToReadbackSource(RenderCommandList* commands, ResolvedTexture* des
     push.uv_offset[1] = float(destination->offset_y) / image_h;
     commands->setPipeline(g_crop.pipeline.get());
     commands->setGraphicsPipelineLayout(g_crop.pipeline_layout.get());
-    commands->setGraphicsPushConstants(0, &push);
+    commands->setGraphicsPushConstants(0, &push, 0, sizeof(push));
   } else {
     if (crop)
       ++g_crop_failed;
@@ -3062,7 +3062,7 @@ void FramePresentGuestImage(RenderCommandList* commands, uint32_t width, uint32_
   commands->setGraphicsPipelineLayout(g_blit.pipeline_layout.get());
   commands->setGraphicsDescriptorSet(g_blit.descriptor_set.get(), 0);
   const float inv_gamma = 1.0f / eternalsonata::DisplayGamma();
-  commands->setGraphicsPushConstants(0, &inv_gamma);
+  commands->setGraphicsPushConstants(0, &inv_gamma, 0, sizeof(inv_gamma));
   commands->drawInstanced(3, 1, 0, 0);
 
   // Whatever draws next (the overlay) expects the whole window, and this is the
