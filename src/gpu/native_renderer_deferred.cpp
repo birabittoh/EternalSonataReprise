@@ -45,6 +45,12 @@ constexpr auto kWorkerSpin = std::chrono::microseconds(50);
 // does not wait for the worker's whole backlog.
 constexpr uint64_t kReleaseBytes = 64 * 1024;
 
+// A sleeping worker is woken once this much has piled up, not per packet: the
+// guest's effect code leaves gaps longer than kWorkerSpin between draws, and a
+// futex wake per draw cost the guest thread ~4 ms a frame. Drain and a full
+// ring wake it regardless.
+constexpr uint64_t kWakeBytes = 32 * 1024;
+
 // Null for an empty array, which callers turn into a zero count.
 template <typename T>
 T* CopyArrayStart(uint8_t* tail, const T* items, uint32_t count) {
@@ -94,6 +100,13 @@ uint8_t* DeferredCommandList::Reserve(uint32_t total) {
 void DeferredCommandList::Commit(uint32_t total) {
   head_ += total;
   published_.store(head_, std::memory_order_seq_cst);
+  if (!worker_asleep_.load(std::memory_order_seq_cst))
+    unwoken_from_ = head_;
+  else if (head_ - unwoken_from_ >= kWakeBytes)
+    Wake();
+}
+
+void DeferredCommandList::WakeIfAsleep() {
   if (worker_asleep_.load(std::memory_order_seq_cst))
     Wake();
 }
@@ -101,6 +114,7 @@ void DeferredCommandList::Commit(uint32_t total) {
 void DeferredCommandList::WaitForSpace(uint64_t bytes) {
   if (head_ + bytes - consumed_cache_ <= kRingBytes)
     return;
+  WakeIfAsleep();
   for (uint32_t spins = 0;; ++spins) {
     consumed_cache_ = consumed_.load(std::memory_order_acquire);
     if (head_ + bytes - consumed_cache_ <= kRingBytes)
@@ -113,6 +127,7 @@ void DeferredCommandList::WaitForSpace(uint64_t bytes) {
 }
 
 void DeferredCommandList::Wake() {
+  unwoken_from_ = head_;
   { std::lock_guard<std::mutex> lock(mutex_); }
   wake_.notify_one();
 }
@@ -121,6 +136,7 @@ void DeferredCommandList::Drain() {
   if (consumed_.load(std::memory_order_acquire) == head_)
     return;
   ProfileZone zone(kPhaseRecordDrain);
+  WakeIfAsleep();
   for (uint32_t spins = 0; consumed_.load(std::memory_order_acquire) != head_; ++spins) {
     if (spins < 4096)
       CpuRelax();

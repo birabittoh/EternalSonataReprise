@@ -160,6 +160,7 @@ class DeferredCommandList final : public plume::RenderCommandList {
   void Commit(uint32_t total);
   void WaitForSpace(uint64_t bytes);
   void Wake();
+  void WakeIfAsleep();
   void Run();
 
   std::unique_ptr<uint8_t[]> ring_;
@@ -167,6 +168,8 @@ class DeferredCommandList final : public plume::RenderCommandList {
   // Producer side, guest thread only.
   uint64_t head_ = 0;
   uint64_t consumed_cache_ = 0;
+  // Head when the worker was last seen awake or woken.
+  uint64_t unwoken_from_ = 0;
 
   alignas(64) std::atomic<uint64_t> published_{0};
   alignas(64) std::atomic<uint64_t> consumed_{0};
