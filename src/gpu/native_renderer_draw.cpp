@@ -40,6 +40,35 @@ uint64_t g_gpu_frame_ns = 0;
 uint64_t g_gpu_frame_count = 0;
 std::chrono::steady_clock::time_point g_profile_window_start = std::chrono::steady_clock::now();
 std::atomic<bool> g_profile_zones_enabled{false};
+HitchCounters g_hitch;
+
+void HitchEndFrame() {
+  static auto last = std::chrono::steady_clock::now();
+  static uint64_t last_phase[kPhaseCount] = {};
+  const auto now = std::chrono::steady_clock::now();
+  const double frame_ms = std::chrono::duration<double, std::milli>(now - last).count();
+  last = now;
+
+  if (frame_ms >= 100.0) {
+    std::string zones;
+    if (g_profile_zones_enabled.load(std::memory_order_relaxed)) {
+      // The 300 swap summary resets the accumulators; a phase that went
+      // backwards straddled it and is left out.
+      auto delta = [&](ProfilePhase p) {
+        return g_profile_ns[p] >= last_phase[p] ? double(g_profile_ns[p] - last_phase[p]) / 1e6
+                                                : 0.0;
+      };
+      zones = fmt::format(" | zones: present {:.1f} (fence {:.1f}) draw {:.1f} pacer {:.1f}",
+                          delta(kPhasePresent), delta(kPhaseFenceWait), delta(kPhaseDraw),
+                          delta(kPhasePacerWait));
+    }
+    REXLOG_INFO("hitch: {:.1f} ms frame | {} pipeline(s) {:.1f} ms | {} texture upload(s) {:.1f} ms{}",
+                frame_ms, g_hitch.pipelines, double(g_hitch.pipeline_ns) / 1e6, g_hitch.uploads,
+                double(g_hitch.upload_ns) / 1e6, zones);
+  }
+  std::copy(std::begin(g_profile_ns), std::end(g_profile_ns), last_phase);
+  g_hitch = {};
+}
 
 namespace {
 

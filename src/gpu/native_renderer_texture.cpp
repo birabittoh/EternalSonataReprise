@@ -1126,6 +1126,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
                                                const FormatInfo& info, RenderTexture* existing,
                                                uint64_t* bytes_out = nullptr) {
   ProfileZone zone(kPhaseTextureUpload);
+  HitchTimer hitch(g_hitch.upload_ns, g_hitch.uploads);
 
   // If this address is a resolve destination, guest memory holds nothing the
   // host ever wrote and the decode below would read whatever the allocation

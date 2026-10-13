@@ -110,6 +110,39 @@ class ProfileZone {
   std::chrono::steady_clock::time_point start_;
 };
 
+// Driver object creation, timed whether or not zones are on: it is rare enough
+// that the clock reads cost nothing, and it is what a stall on entering a new
+// area is made of. Reset by HitchEndFrame.
+struct HitchCounters {
+  uint64_t pipeline_ns = 0;
+  uint32_t pipelines = 0;
+  uint64_t upload_ns = 0;
+  uint32_t uploads = 0;
+};
+extern HitchCounters g_hitch;
+
+class HitchTimer {
+ public:
+  HitchTimer(uint64_t& ns, uint32_t& count) : ns_(ns), start_(std::chrono::steady_clock::now()) {
+    ++count;
+  }
+  ~HitchTimer() {
+    ns_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - start_)
+                        .count());
+  }
+  HitchTimer(const HitchTimer&) = delete;
+  HitchTimer& operator=(const HitchTimer&) = delete;
+
+ private:
+  uint64_t& ns_;
+  std::chrono::steady_clock::time_point start_;
+};
+
+// Logs any swap to swap interval over 100 ms with what the counters above and
+// the zones saw in it, then resets them. Call once per guest swap.
+void HitchEndFrame();
+
 // Prints one line per phase, then resets the window. Called from the swap hook
 // alongside the other summaries.
 void LogProfileSummary();

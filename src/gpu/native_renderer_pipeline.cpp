@@ -13,6 +13,7 @@
 #include "guest_shaders.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_plume_internal.h"
+#include "native_renderer_profile.h"
 
 namespace eternalsonata {
 namespace {
@@ -1156,7 +1157,10 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   if (request.has_color_target && state.valid)
     desc.renderTargetBlend[0] = MapBlend(state);
 
-  pipeline->pipeline = device->createGraphicsPipeline(desc);
+  {
+    HitchTimer hitch(g_hitch.pipeline_ns, g_hitch.pipelines);
+    pipeline->pipeline = device->createGraphicsPipeline(desc);
+  }
   if (!pipeline->pipeline) {
     Refuse(kRefuseCreateFailed,
            "the driver rejected the state object; the input layout or the shader signatures "
