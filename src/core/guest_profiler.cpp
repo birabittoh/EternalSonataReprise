@@ -41,6 +41,9 @@
 #if defined(_WIN32) || (defined(__linux__) && defined(__aarch64__))
 #define ES_GUEST_SAMPLER 1
 #endif
+#if defined(__linux__) && defined(__aarch64__)
+#define ES_WORKER_SAMPLER 1
+#endif
 
 #include <imgui.h>
 #include <rex/cvar.h>
@@ -71,6 +74,13 @@ REXCVAR_DEFINE_INT32(guest_profile_hz, 1000, "Eternal Sonata",
 REXCVAR_DEFINE_INT32(guest_profile_top, 12, "Eternal Sonata",
                      "How many entries the guest profiler's inclusive and leaf tables keep")
     .range(1, 64)
+    .debug_only();
+
+// Android only. The render thread's biggest wait is on the per object build
+// threads, whose own cost the render thread's samples cannot show.
+REXCVAR_DEFINE_BOOL(guest_profile_worker, false, "Eternal Sonata",
+                    "Sample the thread that released the render thread's longest waits in the "
+                    "previous second, instead of the render thread")
     .debug_only();
 
 namespace eternalsonata {
@@ -183,9 +193,52 @@ std::unordered_map<uint64_t, CallerCounters> g_wait_callers;
 
 // The last ReleaseSemaphore on each handle, from any thread, so a wait that
 // returns can be charged to whoever let it go.
+#ifdef ES_WORKER_SAMPLER
+struct ThreadStack {
+  pid_t tid = 0;
+  uintptr_t lo = 0;
+  uintptr_t hi = 0;
+};
+
+const ThreadStack& CurrentThreadStack() {
+  thread_local ThreadStack stack;
+  if (!stack.tid) {
+    stack.tid = pid_t(syscall(SYS_gettid));
+    pthread_attr_t attr;
+    if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+      void* base = nullptr;
+      size_t size = 0;
+      if (pthread_attr_getstack(&attr, &base, &size) == 0) {
+        stack.lo = reinterpret_cast<uintptr_t>(base);
+        stack.hi = stack.lo + size;
+      }
+      pthread_attr_destroy(&attr);
+    }
+  }
+  return stack;
+}
+
+struct WorkerWait {
+  uint64_t ns = 0;
+  ThreadStack stack;
+  std::string thread;
+};
+// Render thread blocked time per releasing thread, for guest_profile_worker.
+std::unordered_map<pid_t, WorkerWait> g_worker_waits;
+
+// Handed from the report to the sampler thread, which applies it between
+// samples so the signal handler never sees a half switched target.
+std::mutex g_retarget_mutex;
+ThreadStack g_retarget;
+std::atomic<bool> g_retarget_pending{false};
+#endif
+
 struct Releaser {
   uint32_t caller = 0;
   std::string thread;
+#ifdef ES_WORKER_SAMPLER
+  ThreadStack stack;
+#endif
 };
 std::mutex g_release_mutex;
 std::unordered_map<uint32_t, Releaser> g_last_release;
@@ -273,8 +326,15 @@ class WaitScope {
       {
         std::lock_guard<std::mutex> lock(g_release_mutex);
         auto found = g_last_release.find(handle_);
-        if (found != g_last_release.end())
+        if (found != g_last_release.end()) {
           releaser = fmt::format("{} from 0x{:08X}", found->second.thread, found->second.caller);
+#ifdef ES_WORKER_SAMPLER
+          WorkerWait& worker = g_worker_waits[found->second.stack.tid];
+          worker.ns += ns;
+          worker.stack = found->second.stack;
+          worker.thread = found->second.thread;
+#endif
+        }
       }
       CallerCounters& by = g_wait_releasers[releaser];
       ++by.calls;
@@ -639,6 +699,17 @@ const SymInfo& Symbolise(uint64_t addr) {
 pid_t g_target_tid = 0;
 uintptr_t g_stack_lo = 0;
 uintptr_t g_stack_hi = 0;
+ThreadStack g_render_stack;
+
+void ApplyRetarget() {
+  if (!g_retarget_pending.exchange(false, std::memory_order_acquire))
+    return;
+  std::lock_guard<std::mutex> lock(g_retarget_mutex);
+  const ThreadStack& next = g_retarget.tid ? g_retarget : g_render_stack;
+  g_target_tid = next.tid;
+  g_stack_lo = next.lo;
+  g_stack_hi = next.hi;
+}
 
 // The sampler asks with a sequence number and the handler answers with it, so
 // the sampler only reads frames the handler finished writing for its request.
@@ -739,6 +810,7 @@ void SamplerMain() {
   timespec next;
   clock_gettime(CLOCK_MONOTONIC, &next);
   while (g_sampler_running.load(std::memory_order_relaxed)) {
+    ApplyRetarget();
     if (ProfilingEnabled()) {
       SampleOnce();
     }
@@ -777,6 +849,7 @@ void StartLinuxSampler() {
     return;
   }
   g_target_tid = pid_t(syscall(SYS_gettid));
+  g_render_stack = {g_target_tid, g_stack_lo, g_stack_hi};
   g_sampler_running.store(true, std::memory_order_relaxed);
   g_sampler = std::thread(SamplerMain);
 }
@@ -1198,6 +1271,9 @@ void GuestProfilerReport() {
     g_waits = WaitCounters{};
     g_wait_callers.clear();
     g_wait_releasers.clear();
+#ifdef ES_WORKER_SAMPLER
+    g_worker_waits.clear();
+#endif
     return;
   }
   if (window_start == clock::time_point{}) {
@@ -1275,6 +1351,33 @@ void GuestProfilerReport() {
   g_wait_callers.clear();
   g_wait_releasers.clear();
 
+#ifdef ES_WORKER_SAMPLER
+  {
+    // Samples in this window came from the target picked last window.
+    ThreadStack pick;
+    std::string pick_name = "render thread";
+    if (REXCVAR_GET(guest_profile_worker)) {
+      uint64_t best = 0;
+      for (const auto& [tid, worker] : g_worker_waits) {
+        if (tid && worker.stack.hi && worker.ns > best) {
+          best = worker.ns;
+          pick = worker.stack;
+          pick_name = worker.thread;
+        }
+      }
+    }
+    g_worker_waits.clear();
+    std::lock_guard<std::mutex> lock(g_retarget_mutex);
+    if (pick.tid != g_retarget.tid) {
+      if (REXCVAR_GET(guest_profile))
+        REXLOG_INFO("[guest-prof] sampling {} (tid {}) from the next window", pick_name,
+                    pick.tid);
+      g_retarget = pick;
+      g_retarget_pending.store(true, std::memory_order_release);
+    }
+  }
+#endif
+
   {
     std::lock_guard<std::mutex> lock(g_snapshot_mutex);
     g_snapshot = std::move(snap);
@@ -1324,7 +1427,12 @@ REX_HOOK_RAW(sub_822535B0) {
   if (eternalsonata::ProfilingEnabled()) {
     std::lock_guard<std::mutex> lock(eternalsonata::g_release_mutex);
     eternalsonata::g_last_release[ctx.r3.u32] = {uint32_t(ctx.lr),
-                                                 eternalsonata::CurrentThreadLabel()};
+                                                 eternalsonata::CurrentThreadLabel()
+#ifdef ES_WORKER_SAMPLER
+                                                     ,
+                                                 eternalsonata::CurrentThreadStack()
+#endif
+    };
   }
   __imp__sub_822535B0(ctx, base);
 }
