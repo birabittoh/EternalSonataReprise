@@ -12,6 +12,7 @@
 #include "touch_input_driver.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <utility>
@@ -32,12 +33,23 @@
 // device in hand.
 REXCVAR_DEFINE_BOOL(touch_controls, REX_PLATFORM_ANDROID != 0, "Input/Touch",
                     "Show on-screen touch controls");
+REXCVAR_DEFINE_DOUBLE(touch_scale, 1.0, "Input/Touch",
+                      "Size of the on-screen touch controls (0.5..2)");
 REXCVAR_DEFINE_DOUBLE(touch_opacity, 0.45, "Input/Touch",
                       "Opacity of the on-screen touch controls (0..1)");
 
 namespace eternalsonata::touch {
 
 namespace {
+
+std::atomic<bool> g_fast_forward_held{false};
+std::atomic<int64_t> g_keep_visible_until_ms{0};
+
+int64_t NowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
 
 constexpr rex::input::DeviceId kTouchDevice = static_cast<rex::input::DeviceId>(0x544F5543);
 constexpr auto kTouchAutoHideDelay = std::chrono::milliseconds(3333);
@@ -106,6 +118,10 @@ uint16_t ResolveButtons(const TouchControl& c, float x, float y) {
 }
 
 }  // namespace
+
+void TouchKeepVisible() { g_keep_visible_until_ms.store(NowMs() + 250, std::memory_order_relaxed); }
+
+bool TouchFastForwardHeld() { return g_fast_forward_held.load(std::memory_order_relaxed); }
 
 TouchControl MakeCircle(float cx, float cy, float radius, std::string label, uint16_t button,
                         TouchTrigger trigger) {
@@ -245,6 +261,14 @@ bool TouchInputDriver::IsEnabled() const {
   return layout_provider_ != nullptr;
 }
 
+void TouchInputDriver::PublishFastForward() {
+  bool held = false;
+  for (size_t i = 0; i < layout_.controls.size(); ++i) {
+    held |= layout_.controls[i].fast_forward && (pressed_mask_ & (uint64_t(1) << i)) != 0;
+  }
+  g_fast_forward_held.store(held, std::memory_order_relaxed);
+}
+
 void TouchInputDriver::ReleaseAll() {
   finger_targets_.clear();
   pressed_mask_ = 0;
@@ -271,9 +295,11 @@ void TouchInputDriver::RefreshLayout() {
   }
   const float width = float(attached_window_->GetActualPhysicalWidth());
   const float height = float(attached_window_->GetActualPhysicalHeight());
-  if (width == surface_width_ && height == surface_height_) {
+  const double scale = REXCVAR_GET(touch_scale);
+  if (width == surface_width_ && height == surface_height_ && scale == layout_scale_) {
     return;
   }
+  layout_scale_ = scale;
   surface_width_ = width;
   surface_height_ = height;
   layout_ = (width > 0.0f && height > 0.0f) ? layout_provider_(width, height) : TouchLayout();
@@ -297,6 +323,10 @@ void TouchInputDriver::OnTouchEvent(rex::ui::TouchEvent& e) {
   if (!layout_provider_) {
     return;
   }
+  struct PublishFastForward {
+    TouchInputDriver& d;
+    ~PublishFastForward() { d.PublishFastForward(); }
+  } publish{*this};
   RefreshLayout();
   if (surface_width_ <= 0.0f || surface_height_ <= 0.0f) {
     return;
@@ -396,17 +426,20 @@ bool TouchInputDriver::GetVisualState(TouchVisualState* out_state) {
     return false;
   }
   std::lock_guard<std::mutex> lock(state_mutex_);
+  // Touch events normally build the layout; without a touchscreen none arrive.
+  RefreshLayout();
   if (!layout_provider_ || surface_width_ <= 0.0f || surface_height_ <= 0.0f) {
     return false;
   }
-  if (!is_active()) {
+  const bool keep_visible = NowMs() < g_keep_visible_until_ms.load(std::memory_order_relaxed);
+  if (!is_active() && !keep_visible) {
     // Events stop arriving while the gate is shut, so a finger that was down
     // when it closed has no way to report its release. Drop them here, on the
     // frame that notices, rather than leaving a stick drawn.
     ReleaseAll();
     return false;
   }
-  if (finger_targets_.empty() &&
+  if (!keep_visible && finger_targets_.empty() &&
       std::chrono::steady_clock::now() - last_touch_time_ >= kTouchAutoHideDelay) {
     return false;
   }

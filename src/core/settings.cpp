@@ -17,6 +17,7 @@ extern "C" int EternalSonataSetSetting(int setting, int value);
 #include "ui_text.h"
 #include "native_renderer.h"
 #include "ui_language.h"
+#include "touch_input_driver.h"
 
 #include <algorithm>
 #include <atomic>
@@ -313,7 +314,7 @@ constexpr std::array kBasicCvarNames = {
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
     "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
-    "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button",
+    "touch_controls", "touch_scale", "touch_opacity", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
@@ -795,6 +796,11 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawCvarRow("input_backend");
         DrawCvarRow("aim_invert_x");
         DrawCvarRow("aim_invert_y");
+        DrawCvarRow("touch_controls");
+        if (rex::cvar::GetFlagByName("touch_controls") == "true") {
+          DrawSensitivityRow("touch_scale", 0.5f, 2.0f, true);
+          DrawSensitivityRow("touch_opacity", 0.1f, 1.0f, true);
+        }
         DrawCvarRow("fast_forward_button");
         DrawMultiplierRow("fast_forward_max_speed", kFastForwardSpeedSteps, true);
         ImGui::Separator();
@@ -1084,7 +1090,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
   // The generic Double widget is a bare input box; a slider reads better, and
   // the file is written once the drag ends rather than on every frame of it.
-  void DrawSensitivityRow(const char* name) {
+  void DrawSensitivityRow(const char* name, float min = 0.1f, float max = 5.0f,
+                          bool touch_preview = false) {
     const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
@@ -1096,10 +1103,13 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID(name);
-    if (ImGui::SliderFloat("##v", &value, 0.1f, 5.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+    if (ImGui::SliderFloat("##v", &value, min, max, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
       char text[16];
       std::snprintf(text, sizeof(text), "%.2f", value);
       rex::cvar::SetFlagByName(name, text, /*persist=*/true);
+    }
+    if (touch_preview && ImGui::IsItemActive()) {
+      eternalsonata::touch::TouchKeepVisible();
     }
     if (ImGui::IsItemDeactivatedAfterEdit()) {
       SaveBasic();

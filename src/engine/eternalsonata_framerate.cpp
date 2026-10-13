@@ -31,6 +31,7 @@
 #include "guest_main_thread.h"
 #include "guest_profiler.h"
 #include "native_renderer_profile.h"
+#include "touch_input_driver.h"
 
 // frame_rate cvar: "30" / "60" / "adaptive" / "unlocked". Defined (and
 // persisted) in settings.cpp; declared here so the frame-driver hook can read it
@@ -542,7 +543,7 @@ bool TurboPadHeld() {
 }
 
 bool TurboHeld() {
-  if (TurboPadHeld()) {
+  if (TurboPadHeld() || eternalsonata::touch::TouchFastForwardHeld()) {
     return true;
   }
   // Don't fast forward while the settings overlay has the keyboard.

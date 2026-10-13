@@ -72,6 +72,8 @@ struct TouchControl {
   std::string label;
   uint16_t button = 0;
   TouchTrigger trigger = TouchTrigger::kNone;
+  // Reports nothing to the guest; holding it only turns on TouchFastForwardHeld.
+  bool fast_forward = false;
 };
 
 /**
@@ -164,6 +166,13 @@ struct TouchVisualState {
   std::vector<TouchStickVisual> sticks;
 };
 
+/// Keeps the pad drawn while a settings slider is being dragged, even with the
+/// input gate shut and no recent touch. Call every frame the slider is active.
+void TouchKeepVisible();
+
+/// True while a fast forward control of the layout is being held.
+bool TouchFastForwardHeld();
+
 /**
  * Synthesizes an Xbox 360 controller from touches on the game surface.
  *
@@ -221,6 +230,9 @@ class TouchInputDriver final : public InputDriver, public rex::ui::WindowInputLi
   // Drops every finger currently down. state_mutex_ must be held.
   void ReleaseAll();
 
+  // Publishes whether a fast forward control is held. state_mutex_ must be held.
+  void PublishFastForward();
+
   // What a finger currently down has hold of.
   struct FingerTarget {
     enum class Kind { kControl, kStick } kind;
@@ -254,6 +266,7 @@ class TouchInputDriver final : public InputDriver, public rex::ui::WindowInputLi
   TouchLayout layout_;
   float surface_width_ = 0.0f;
   float surface_height_ = 0.0f;
+  double layout_scale_ = 0.0;
 
   FingerTargetMap finger_targets_;
 

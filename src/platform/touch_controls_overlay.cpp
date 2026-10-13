@@ -107,6 +107,19 @@ void DrawLabel(ImDrawList* draw_list, const char* label, float cx, float cy, flo
                      ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, a)), label);
 }
 
+// Two right-pointing triangles, the fast forward glyph.
+void DrawFastForwardIcon(ImDrawList* draw_list, float cx, float cy, float radius, float alpha,
+                         bool pressed) {
+  const float a = std::min(alpha * (pressed ? kPressedBoost : 1.0f) * 1.8f, 1.0f);
+  const ImU32 color = ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, a));
+  const float h = radius * 0.42f;
+  const float w = radius * 0.38f;
+  for (int i = 0; i < 2; ++i) {
+    const float x = cx + (i == 0 ? -w : w) - w * 0.5f;
+    draw_list->AddTriangleFilled(ImVec2(x, cy - h), ImVec2(x, cy + h), ImVec2(x + w, cy), color);
+  }
+}
+
 float SmoothStep(float edge0, float edge1, float x) {
   const float t = std::clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
   return t * t * (3.0f - 2.0f * t);
@@ -364,7 +377,11 @@ void TouchControlsOverlay::OnDraw(ImGuiIO& io) {
                                      32);
           draw_list->AddCircle(ImVec2(c.cx, c.cy), c.half_width, EdgeColor(alpha, pressed), 32,
                                2.0f);
-          DrawLabel(draw_list, c.label.c_str(), c.cx, c.cy, alpha, pressed);
+          if (c.fast_forward) {
+            DrawFastForwardIcon(draw_list, c.cx, c.cy, c.half_width, alpha, pressed);
+          } else {
+            DrawLabel(draw_list, c.label.c_str(), c.cx, c.cy, alpha, pressed);
+          }
         }
         break;
       }
