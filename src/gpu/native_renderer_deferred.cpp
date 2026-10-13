@@ -387,6 +387,10 @@ void DeferredCommandList::setDepthBias(float depthBias, float depthBiasClamp,
   });
 }
 
+void DeferredCommandList::setStencilReference(uint32_t stencilReference) {
+  Push([=](Target& target) { target->setStencilReference(stencilReference); });
+}
+
 void DeferredCommandList::clearColor(uint32_t attachmentIndex, RenderColor colorValue,
                                      const RenderRect* clearRects, uint32_t clearRectsCount) {
   Push(uint64_t(clearRectsCount) * sizeof(RenderRect), [&](uint8_t* tail) {

@@ -77,6 +77,9 @@ const plume::RenderInputSlot* GuestPipelineInputSlots(const GuestPipeline* pipel
                                                       uint32_t* count);
 bool GuestPipelineUsesNullSlot(const GuestPipeline* pipeline);
 
+// True when the draw has to set the stencil reference after binding the pipeline.
+bool GuestPipelineUsesDynamicStencilRef(const GuestPipeline* pipeline);
+
 // Which texture/sampler slots the bound pixel shader declares. The texture
 // mirror visits only these: the remaining stages hold stale fetch constants
 // that no shader names, and decoding one is at best wasted work and at worst a

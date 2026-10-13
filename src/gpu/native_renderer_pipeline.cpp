@@ -596,6 +596,9 @@ struct GuestPipeline {
   // overlay constants 252..255 of its own bank. See GuestShader::literals.
   const uint8_t* vertex_literals = nullptr;
   const uint8_t* pixel_literals = nullptr;
+
+  // The stencil reference comes from the draw, not the pipeline.
+  bool dynamic_stencil_ref = false;
 };
 
 namespace {
@@ -736,6 +739,10 @@ const RenderPipeline* GuestPipelineObject(const GuestPipeline* pipeline) {
   return pipeline ? pipeline->pipeline.get() : nullptr;
 }
 
+bool GuestPipelineUsesDynamicStencilRef(const GuestPipeline* pipeline) {
+  return pipeline && pipeline->dynamic_stencil_ref;
+}
+
 const RenderInputSlot* GuestPipelineInputSlots(const GuestPipeline* pipeline, uint32_t* count) {
   if (pipeline == nullptr) {
     if (count)
@@ -852,9 +859,10 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
     key.color_mask = request.state.color_mask;
     // Only when the test is on: RB_STENCILREFMASK keeps changing underneath
     // draws that ignore it, and keying on it unconditionally would split the
-    // cache for nothing.
+    // cache for nothing. The reference byte is left out because the draw sets
+    // it as dynamic state.
     if (request.state.stencil_enabled)
-      key.stencil_ref_mask = request.state.stencil_ref_mask;
+      key.stencil_ref_mask = request.state.stencil_ref_mask & ~0xFFu;
   }
 
   // Only the streams this declaration references, so an unrelated stream the
@@ -1100,14 +1108,14 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   // outline over the entire screen, silhouetting flat ground and every mesh
   // border, which is what this exists for.
   //
-  // The reference is part of the pipeline rather than a command, so a draw that
-  // only changes it gets its own PSO; RB_STENCILREFMASK is in the key for that
-  // reason.
+  // The reference is dynamic: the guest changes it between draws that share
+  // everything else, and baking it in built one Vulkan pipeline per value.
   if (request.has_depth_target && state.valid && state.stencil_enabled) {
     desc.stencilEnabled = true;
     desc.stencilReadMask = state.stencil_read_mask;
     desc.stencilWriteMask = state.stencil_write_mask;
-    desc.stencilReference = state.stencil_ref;
+    desc.dynamicStencilReferenceEnabled = true;
+    pipeline->dynamic_stencil_ref = true;
     desc.stencilFrontFace.compareFunction = MapCompare(state.stencil_func);
     desc.stencilFrontFace.failOp = MapStencilOp(state.stencil_fail_op);
     desc.stencilFrontFace.passOp = MapStencilOp(state.stencil_zpass_op);
