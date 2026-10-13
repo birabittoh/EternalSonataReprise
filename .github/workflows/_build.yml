@@ -305,6 +305,8 @@ jobs:
 
           # Stage the project's own shared library.
           cp -v "$BUILD_DIR/libeternalsonata.so" "$JNI_DIR/"
+          # libadrenotools' hooks, loaded by name from nativeLibraryDir.
+          cp -v "$BUILD_DIR"/lib{main_hook,file_redirect_hook,gsl_alloc_hook,hook_impl}.so "$JNI_DIR/"
 
           # Stage SDK runtime libraries (release variants only).
           for lib in sdk/${{ matrix.target_sdk_dir }}/lib/*.so; do

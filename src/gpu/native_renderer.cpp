@@ -20,6 +20,9 @@
 
 #include "guest_shaders.h"
 #include "native_renderer_plume.h"
+#if defined(__ANDROID__)
+#include "android_gpu_driver.h"
+#endif
 
 namespace eternalsonata {
 
@@ -197,6 +200,8 @@ void InitNativeRenderer(rex::ui::Window* window) {
     SDL_free(windows);
   }
 #elif defined(__ANDROID__)
+  PromptGpuDriverAfterFailedStart();
+
   // Plume's Android backend expects an ANativeWindow*. SDL exposes this as a
   // window property; GetNativeWindowHandle() returns null on non-Win32.
   void* handle = nullptr;

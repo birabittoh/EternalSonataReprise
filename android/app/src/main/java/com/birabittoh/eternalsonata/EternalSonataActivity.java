@@ -108,6 +108,10 @@ public class EternalSonataActivity extends SDLActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        if (requestCode == REQUEST_DRIVER) {
+            onDriverPicked(resultCode == RESULT_OK && data != null ? data.getData() : null);
+            return;
+        }
         if (requestCode < REQUEST_BASE || resultCode != RESULT_OK || data == null
                 || data.getData() == null) {
             super.onActivityResult(requestCode, resultCode, data);
@@ -173,6 +177,267 @@ public class EternalSonataActivity extends SDLActivity {
         showHostToast("Saves exported.");
     }
 
+    // ---------------------------------------------------------------------
+    // Custom GPU drivers (libadrenotools, see android_gpu_driver.cpp).
+    //
+    // filesDir/gpu_drivers/<name>/ holds one extracted driver package and
+    // "selected" names the active one and its library on two lines. Native
+    // reads these before creating the Vulkan instance, so a change applies on
+    // the next start; at startup, native waits for the dialog to close.
+    // ---------------------------------------------------------------------
+
+    private static final int REQUEST_DRIVER = REQUEST_BASE - 1;
+
+    private boolean driverDialogAtStartup;
+
+    /** The driver this process loaded; changing away from it needs a restart. */
+    private String runningDriver;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        runningDriver = selectedDriver();
+    }
+
+    private File driversRoot() {
+        return new File(getFilesDir(), "gpu_drivers");
+    }
+
+    private java.util.List<String> installedDrivers() {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        File[] dirs = driversRoot().listFiles(f -> f.isDirectory() && !f.getName().startsWith("."));
+        if (dirs != null) {
+            for (File dir : dirs) names.add(dir.getName());
+        }
+        java.util.Collections.sort(names, String.CASE_INSENSITIVE_ORDER);
+        return names;
+    }
+
+    private String selectedDriver() {
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.FileReader(new File(driversRoot(), "selected")))) {
+            return reader.readLine();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Null selects the system driver. */
+    private void selectDriver(String name) {
+        File selected = new File(driversRoot(), "selected");
+        String library = name == null ? null : driverLibrary(new File(driversRoot(), name));
+        if (library == null) {
+            selected.delete();
+            return;
+        }
+        try (java.io.FileWriter writer = new java.io.FileWriter(selected)) {
+            writer.write(name + "\n" + library + "\n");
+        } catch (Exception e) {
+            Log.w(TAG, "Could not save the driver selection: " + e.getMessage());
+        }
+    }
+
+    /** The driver's libraryName from meta.json, else its only .so. */
+    private static String driverLibrary(File dir) {
+        org.json.JSONObject meta = readDriverMeta(dir);
+        if (meta != null) {
+            String library = meta.optString("libraryName", "");
+            if (!library.isEmpty() && new File(dir, library).isFile()) return library;
+        }
+        File[] libs = dir.listFiles((d, n) -> n.endsWith(".so"));
+        return libs != null && libs.length == 1 ? libs[0].getName() : null;
+    }
+
+    private static org.json.JSONObject readDriverMeta(File dir) {
+        try {
+            byte[] bytes = java.nio.file.Files.readAllBytes(new File(dir, "meta.json").toPath());
+            return new org.json.JSONObject(new String(bytes, "UTF-8"));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public void showGpuDriverDialog(final boolean atStartup) {
+        runOnUiThread(() -> buildDriverDialog(atStartup));
+    }
+
+    private void buildDriverDialog(final boolean atStartup) {
+        final java.util.List<String> names = installedDrivers();
+        final String current = selectedDriver();
+        String[] items = new String[names.size() + 1];
+        items[0] = "System driver";
+        for (int i = 0; i < names.size(); i++) items[i + 1] = names.get(i);
+        final int[] choice = { Math.max(0, names.indexOf(current) + 1) };
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+            .setTitle(atStartup ? "The game did not start last time. GPU driver:" : "GPU driver")
+            .setSingleChoiceItems(items, choice[0], (d, which) -> choice[0] = which)
+            .setPositiveButton(atStartup ? "Start" : "OK", (d, w) -> {
+                String picked = choice[0] == 0 ? null : names.get(choice[0] - 1);
+                selectDriver(picked);
+                if (atStartup) {
+                    runningDriver = selectedDriver();
+                    nativeGpuDriverDialogClosed();
+                } else {
+                    offerCloseForDriver();
+                }
+            })
+            .setNeutralButton("Install...", (d, w) -> {
+                driverDialogAtStartup = atStartup;
+                android.content.Intent intent =
+                    new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                startActivityForResult(intent, REQUEST_DRIVER);
+            });
+        if (!names.isEmpty()) {
+            builder.setNegativeButton("Delete", (d, w) -> {
+                if (choice[0] > 0) {
+                    String name = names.get(choice[0] - 1);
+                    deleteTree(new File(driversRoot(), name));
+                    if (name.equals(current)) selectDriver(null);
+                }
+                buildDriverDialog(atStartup);
+            });
+        }
+        // At startup the game waits on this dialog, so it has to end in a button.
+        builder.setCancelable(!atStartup);
+        if (!atStartup) builder.setOnCancelListener(d -> offerCloseForDriver());
+        builder.show();
+    }
+
+    /**
+     * The driver is only loaded at startup. Android gives the game no way to
+     * relaunch itself, so the most it can do is close.
+     */
+    private void offerCloseForDriver() {
+        if (java.util.Objects.equals(selectedDriver(), runningDriver)) return;
+        new AlertDialog.Builder(this)
+            .setTitle("GPU driver changed")
+            .setMessage("The new driver is used from the next start. Close the game now? "
+                + "Unsaved progress will be lost.")
+            .setPositiveButton("Close game", (d, w) -> nativeCloseGame())
+            .setNegativeButton("Later", null)
+            .show();
+    }
+
+    private void onDriverPicked(final android.net.Uri uri) {
+        final boolean atStartup = driverDialogAtStartup;
+        if (uri == null) {
+            buildDriverDialog(atStartup);
+            return;
+        }
+        new Thread(() -> {
+            String installed = installDriver(uri);
+            runOnUiThread(() -> {
+                if (installed == null) {
+                    showHostToast("That file is not a Vulkan driver package.");
+                } else {
+                    selectDriver(installed);
+                    showHostToast("Installed " + installed + ".");
+                }
+                buildDriverDialog(atStartup);
+            });
+        }, "gpu-driver-install").start();
+    }
+
+    /** Extracts a driver zip (or takes a bare .so); returns its folder name or null. */
+    private String installDriver(android.net.Uri uri) {
+        File staging = new File(driversRoot(), ".staging");
+        deleteTree(staging);
+        staging.mkdirs();
+        String displayName = queryDisplayName(uri);
+        try (InputStream raw = getContentResolver().openInputStream(uri);
+             java.io.BufferedInputStream in = new java.io.BufferedInputStream(raw)) {
+            in.mark(4);
+            byte[] magic = new byte[4];
+            int got = in.read(magic);
+            in.reset();
+            if (got == 4 && magic[0] == 0x7F && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F') {
+                String name = displayName != null && displayName.endsWith(".so")
+                    ? displayName : "vulkan.custom.so";
+                copyStream(in, new File(staging, name));
+            } else {
+                extractZip(in, staging);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Driver install failed: " + e.getMessage());
+            deleteTree(staging);
+            return null;
+        }
+
+        // Some packages wrap everything in one folder.
+        File root = staging;
+        File[] top = staging.listFiles();
+        if (top != null && top.length == 1 && top[0].isDirectory()) root = top[0];
+        if (driverLibrary(root) == null) {
+            deleteTree(staging);
+            return null;
+        }
+
+        String name = "";
+        org.json.JSONObject meta = readDriverMeta(root);
+        if (meta != null) {
+            name = (meta.optString("name", "") + " " + meta.optString("driverVersion", "")).trim();
+        }
+        if (name.isEmpty()) {
+            name = displayName != null ? displayName.replaceFirst("\\.[^.]*$", "") : "Custom driver";
+        }
+        name = name.replaceAll("[^A-Za-z0-9 ._+-]", "_").replaceFirst("^\\.+", "");
+        if (name.isEmpty()) name = "Custom driver";
+
+        File dest = new File(driversRoot(), name);
+        deleteTree(dest);
+        boolean moved = root.renameTo(dest);
+        deleteTree(staging);
+        return moved ? name : null;
+    }
+
+    private String queryDisplayName(android.net.Uri uri) {
+        try (android.database.Cursor cursor = getContentResolver().query(
+                uri, new String[] { android.provider.OpenableColumns.DISPLAY_NAME },
+                null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) return cursor.getString(0);
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private static void extractZip(InputStream in, File dest) throws java.io.IOException {
+        String destPath = dest.getCanonicalPath() + File.separator;
+        try (java.util.zip.ZipInputStream zip = new java.util.zip.ZipInputStream(in)) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                File out = new File(dest, entry.getName());
+                if (!out.getCanonicalPath().startsWith(destPath)) continue;
+                if (entry.isDirectory()) {
+                    out.mkdirs();
+                } else {
+                    out.getParentFile().mkdirs();
+                    copyStream(zip, out);
+                }
+            }
+        }
+    }
+
+    private static void copyStream(InputStream in, File out) throws java.io.IOException {
+        try (OutputStream os = new FileOutputStream(out)) {
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+        }
+    }
+
+    private static void deleteTree(File file) {
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) deleteTree(child);
+        }
+        file.delete();
+    }
+
     private native void nativeHostMenuSelect(int index);
     private native String nativeDocumentReady(int op, String path);
+    private native void nativeGpuDriverDialogClosed();
+    private native void nativeCloseGame();
 }

@@ -45,11 +45,13 @@ enum MenuItem : int {
   kInstallMod,
   kExportSaves,
   kImportSaves,
+  kGpuDriver,
   kExit,
 };
 
 const char* const kMenuItems[] = {
-    "Install DLC...", "Install mod (.zip)...", "Export saves", "Import saves", "Exit",
+    "Install DLC...", "Install mod (.zip)...", "Export saves", "Import saves", "GPU driver...",
+    "Exit",
 };
 
 // Which document request a JNI file callback belongs to. Passed to Java and
@@ -296,12 +298,24 @@ Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeHostMenuSelect(JNI
     case kImportSaves:
       CallActivityVoid("requestOpenDocument", "(I)V", static_cast<jint>(kOpImportSaves));
       break;
+    case kGpuDriver:
+      CallActivityVoid("showGpuDriverDialog", "(Z)V", static_cast<jboolean>(JNI_FALSE));
+      break;
     case kExit:
       RunOnUiThread([window] { window->RequestClose(); });
       break;
     default:  // The dialog was dismissed.
       break;
   }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeCloseGame(JNIEnv*, jobject) {
+  if (!g_instance) {
+    return;
+  }
+  rex::ui::Window* window = g_instance->window_for_callback();
+  RunOnUiThread([window] { window->RequestClose(); });
 }
 
 // `path` is a plain cache file Java already copied the picked document into

@@ -443,6 +443,7 @@ set(ETERNALSONATA_SOURCES
     src/core/guest_image.cpp
     src/engine/force_load_area.cpp
     src/engine/field_player_model_override.cpp
+    src/platform/android_gpu_driver.cpp
     src/platform/big_core_affinity.cpp
     src/platform/fast_forward_key.cpp
     src/platform/host_menu.cpp
@@ -536,6 +537,18 @@ endif()
 rexglue_setup_target(eternalsonata)
 
 target_link_libraries(eternalsonata PRIVATE plume)
+
+# libadrenotools loads a user supplied Vulkan driver (Turnip) in place of the
+# stock one, which on many Adreno phones stops short of what Plume needs. Its
+# hook libraries are dlopen'd by name from nativeLibraryDir, so they are built
+# next to libeternalsonata.so for staging into jniLibs.
+if(ANDROID)
+    add_subdirectory(libadrenotools EXCLUDE_FROM_ALL)
+    set_target_properties(main_hook file_redirect_hook gsl_alloc_hook hook_impl PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+    target_link_libraries(eternalsonata PRIVATE adrenotools)
+    add_dependencies(eternalsonata main_hook file_redirect_hook gsl_alloc_hook hook_impl)
+endif()
 
 # Release version the self-updater compares GitHub tags against: an explicit
 # override, else the CI tag (ES_VERSION_NAME, also what the Android Gradle build

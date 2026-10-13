@@ -16,6 +16,10 @@
 #include <thread>
 #include <vector>
 
+#if defined(__ANDROID__)
+#include "android_gpu_driver.h"
+#endif
+
 #if defined(__APPLE__)
 #include <dlfcn.h>
 
@@ -45,6 +49,7 @@ namespace plume {
 extern std::unique_ptr<RenderInterface> CreateD3D12Interface();
 #endif
 extern std::unique_ptr<RenderInterface> CreateVulkanInterface();
+extern void SetVulkanGetInstanceProcAddr(void* getInstanceProcAddr);
 }  // namespace plume
 
 namespace eternalsonata {
@@ -645,6 +650,9 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
   (void)window_view;
   const RenderWindow render_window = static_cast<RenderWindow>(window_handle);
 #endif
+#if defined(__ANDROID__)
+  SetVulkanGetInstanceProcAddr(LoadSelectedVulkanDriver());
+#endif
 
   // D3D12 on Windows, Vulkan elsewhere. Plume's Vulkan backend goes through
   // volk and loads the loader at runtime, so this does not add a link time
@@ -969,6 +977,13 @@ void PlumePresentFrame() {
     }
     g_resize_pending.store(true, std::memory_order_release);
   }
+#if defined(__ANDROID__)
+  // A few seconds of real frames, so a driver that dies compiling the first
+  // pipelines still gets the picker on the next launch.
+  static uint32_t presented = 0;
+  if (++presented == 300)
+    MarkRendererStarted();
+#endif
 
   // And then do *not* wait for it. This is the whole of frames in flight: the
   // frame just submitted runs on the GPU while the CPU records the next one,

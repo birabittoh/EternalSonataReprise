@@ -57,6 +57,23 @@ $env:SDL_JOYSTICK_DIRECTINPUT = "0"
 
 This setting disables support for controllers that require DirectInput.
 
+### Android: the game crashes or will not start
+
+Many Adreno phones ship a Vulkan driver too old for the renderer, and Android
+offers no way to update it. The game can load a custom driver instead, such as
+Mesa's Turnip drivers, packaged as the same `.zip` files other Android
+emulators use.
+
+1. Download a Turnip driver package to the phone.
+2. In game, press back and choose **GPU driver...**.
+3. Tap **Install...**, pick the `.zip`, then **OK**.
+4. Let the game close, then start it again.
+
+If the game never gets far enough to open the menu, start it again after the
+crash: when the previous start did not finish, the same dialog appears before
+the renderer loads, so you can install a driver or switch back to the system
+one. See [docs/custom-gpu-drivers.md](docs/custom-gpu-drivers.md) for details.
+
 ## Building from scratch
 
 ### 0. Install dependencies

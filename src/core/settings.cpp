@@ -47,6 +47,9 @@ extern "C" int EternalSonataSetSetting(int setting, int value);
 #if REX_HAS_VULKAN
 #include <rex/ui/vulkan/provider.h>
 #endif
+#if defined(__ANDROID__)
+#include "android_gpu_driver.h"
+#endif
 
 // In-game frame rate (see DrawFrameRateRow). The engine is frame clocked: the
 // sim advances `300 / byte_82465F90` units per present and nothing reads the
@@ -1712,7 +1715,11 @@ void InitSettingsCaches() {
   BootUserLanguageIndex();
   g_active_voice.store(VoiceLanguageIndex());
 #if REX_HAS_VULKAN
-  g_vulkan_devices_cache = rex::ui::vulkan::EnumerateDevices();
+#if defined(__ANDROID__)
+  // Would load the stock driver next to the custom one adrenotools brings in.
+  if (!CustomVulkanDriverSelected())
+#endif
+    g_vulkan_devices_cache = rex::ui::vulkan::EnumerateDevices();
 #endif
 }
 
