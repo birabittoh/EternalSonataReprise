@@ -44,11 +44,7 @@ namespace plume {
 #ifdef _WIN32
 extern std::unique_ptr<RenderInterface> CreateD3D12Interface();
 #endif
-#if defined(PLUME_SDL_VULKAN_ENABLED)
-extern std::unique_ptr<RenderInterface> CreateVulkanInterface(RenderWindow sdlWindow);
-#else
 extern std::unique_ptr<RenderInterface> CreateVulkanInterface();
-#endif
 }  // namespace plume
 
 namespace eternalsonata {
@@ -634,7 +630,7 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
   //
   // The interface still comes from the no-argument CreateVulkanInterface()
   // below: Apple lists VK_EXT_metal_surface statically and only needs a window
-  // at swap chain time, unlike the SDL path.
+  // at swap chain time.
 #if defined(__APPLE__)
   if (window_view == nullptr) {
     REXLOG_ERROR("native_renderer: no CAMetalLayer for the game window, cannot bring up Plume");
@@ -678,9 +674,6 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
       g_backend.api_name = "Vulkan";
     }
   }
-#elif defined(PLUME_SDL_VULKAN_ENABLED)
-  g_backend.render_interface = CreateVulkanInterface(render_window);
-  g_backend.api_name = "Vulkan";
 #else
   g_backend.render_interface = CreateVulkanInterface();
   g_backend.api_name = "Vulkan";

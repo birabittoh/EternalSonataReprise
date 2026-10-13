@@ -34,14 +34,14 @@ message(STATUS "eternalsonata - using Plume submodule at ${ETERNALSONATA_PLUME_D
 # handles, which are not represented by Window::GetNativeWindowHandle().
 # Android does not need this — Plume has native VK_KHR_android_surface support.
 # Apple must not get this either: plume_render_interface_types.h and
-# plume_vulkan.cpp both check PLUME_SDL_VULKAN_ENABLED in the same #elif chain
+# plume_vulkan.cpp both check PLUME_SDL3_VULKAN_ENABLED in the same #elif chain
 # as __APPLE__, before it. Defining it here would swap RenderWindow from
 # Plume's native Apple {window, view} pair (fed to vkCreateMetalSurfaceEXT via
 # a CAMetalLayer) to a bare SDL_Window*, which Plume's Apple surface-creation
 # code does not accept — see native_renderer_plume.cpp for what actually needs
 # to build that {window, view} pair from the SDL window (e.g. SDL_Metal_CreateView).
 if(UNIX AND NOT APPLE AND NOT ANDROID)
-    set(PLUME_SDL_VULKAN_ENABLED ON CACHE BOOL "Enable SDL Vulkan integration" FORCE)
+    set(PLUME_SDL3_VULKAN_ENABLED ON CACHE BOOL "Enable SDL3 Vulkan integration" FORCE)
 endif()
 add_subdirectory("${ETERNALSONATA_PLUME_DIR}" "${CMAKE_BINARY_DIR}/plume" EXCLUDE_FROM_ALL)
 

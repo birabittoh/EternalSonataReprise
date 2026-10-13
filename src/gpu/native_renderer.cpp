@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <string>
 
-#if defined(PLUME_SDL_VULKAN_ENABLED) || defined(__ANDROID__) || defined(__APPLE__)
+#if defined(PLUME_SDL3_VULKAN_ENABLED) || defined(__ANDROID__) || defined(__APPLE__)
 #include <SDL3/SDL.h>
 #endif
 
@@ -184,7 +184,7 @@ void InitNativeRenderer(rex::ui::Window* window) {
   // VkSurfaceKHR. GetNativeWindowHandle() only returns an HWND on Windows and
   // null elsewhere, and the SDK has no accessor for the SDL_Window behind
   // rex::ui::WindowSDL, so ask SDL: the app opens one window, the first entry.
-#if defined(PLUME_SDL_VULKAN_ENABLED)
+#if defined(PLUME_SDL3_VULKAN_ENABLED)
   void* handle = nullptr;
   if (window) {
     int window_count = 0;
@@ -216,7 +216,7 @@ void InitNativeRenderer(rex::ui::Window* window) {
   // its own, so attach one. Both SDL calls are main-thread only, which
   // OnPostSetup is.
   //
-  // Not routed through PLUME_SDL_VULKAN_ENABLED even though this is still
+  // Not routed through PLUME_SDL3_VULKAN_ENABLED even though this is still
   // Vulkan: Plume checks that macro before __APPLE__ in the same #elif chain,
   // so defining it would pick the Linux shape. See CMakeLists.txt.
   void* handle = nullptr;
