@@ -5,17 +5,41 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
+#ifndef _WIN32
+#include <pthread.h>
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #include <dbghelp.h>
+#endif
+
+#if defined(__linux__) && defined(__aarch64__)
+#include <cerrno>
+#include <csignal>
+#include <ctime>
+#include <cxxabi.h>
+#include <dlfcn.h>
+#include <sched.h>
+#include <sys/syscall.h>
+#include <ucontext.h>
+#include <unistd.h>
+#endif
+
+// Where a stack sampler exists. Android has no SuspendThread, so there it is a
+// signal to the target thread plus a walk of the AAPCS64 frame records.
+#if defined(_WIN32) || (defined(__linux__) && defined(__aarch64__))
+#define ES_GUEST_SAMPLER 1
 #endif
 
 #include <imgui.h>
@@ -147,6 +171,39 @@ ZoneCounters g_zones;
 // Written only from the present thread (see WaitScope) and read by the summary,
 // which runs on the present thread too. No synchronisation needed.
 WaitCounters g_waits;
+
+// Blocked time per (kind, guest return address). The wrappers are shared by
+// every wait in the game, so the caller is what names the event; it is also the
+// only attribution there is where the stack sampler is not.
+struct CallerCounters {
+  uint64_t calls = 0;
+  uint64_t ns = 0;
+};
+std::unordered_map<uint64_t, CallerCounters> g_wait_callers;
+
+// The last ReleaseSemaphore on each handle, from any thread, so a wait that
+// returns can be charged to whoever let it go.
+struct Releaser {
+  uint32_t caller = 0;
+  std::string thread;
+};
+std::mutex g_release_mutex;
+std::unordered_map<uint32_t, Releaser> g_last_release;
+std::unordered_map<std::string, CallerCounters> g_wait_releasers;
+
+const std::string& CurrentThreadLabel() {
+  thread_local std::string label;
+  if (label.empty()) {
+#ifdef _WIN32
+    label = fmt::format("tid {}", GetCurrentThreadId());
+#else
+    char name[16] = {};
+    pthread_getname_np(pthread_self(), name, sizeof(name));
+    label = name;
+#endif
+  }
+  return label;
+}
 uint64_t g_present_ns = 0;
 uint64_t g_frames = 0;
 
@@ -159,17 +216,20 @@ bool ProfilingEnabled() {
 
 #ifdef _WIN32
 DWORD g_target_tid = 0;
+#else
+thread_local bool g_is_target_thread = false;
+std::atomic<bool> g_target_claimed{false};
 #endif
 
 bool OnTargetThread() {
 #ifdef _WIN32
   return g_target_tid != 0 && GetCurrentThreadId() == g_target_tid;
 #else
-  return false;
+  return g_is_target_thread;
 #endif
 }
 
-#ifdef _WIN32
+#ifdef ES_GUEST_SAMPLER
 // Defined with the sampler below; declared here because WaitScope needs them.
 int CaptureStackSelf(uint64_t* out, int max_frames);
 void RecordWaitStack(const uint64_t* frames, int n, uint64_t ns);
@@ -188,7 +248,9 @@ void RecordWaitStack(const uint64_t* frames, int n, uint64_t ns);
 // where doing it per sample would not be.
 class WaitScope {
  public:
-  explicit WaitScope(WaitKind kind) : kind_(kind), active_(OnTargetThread() && ProfilingEnabled()) {
+  WaitScope(WaitKind kind, uint32_t caller, uint32_t handle)
+      : kind_(kind), caller_(caller), handle_(handle),
+        active_(OnTargetThread() && ProfilingEnabled()) {
     if (active_) {
       start_ = std::chrono::steady_clock::now();
     }
@@ -203,7 +265,22 @@ class WaitScope {
         uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start_).count());
     ++g_waits.calls[kind_];
     g_waits.ns[kind_] += ns;
-#ifdef _WIN32
+    CallerCounters& caller = g_wait_callers[(uint64_t(kind_) << 32) | caller_];
+    ++caller.calls;
+    caller.ns += ns;
+    if (kind_ == kWaitNt548A0) {
+      std::string releaser = "unknown";
+      {
+        std::lock_guard<std::mutex> lock(g_release_mutex);
+        auto found = g_last_release.find(handle_);
+        if (found != g_last_release.end())
+          releaser = fmt::format("{} from 0x{:08X}", found->second.thread, found->second.caller);
+      }
+      CallerCounters& by = g_wait_releasers[releaser];
+      ++by.calls;
+      by.ns += ns;
+    }
+#ifdef ES_GUEST_SAMPLER
     // Sub-microsecond waits are an uncontended handshake, not a stall. Skipping
     // them keeps a chatty-but-free primitive from crowding the table.
     if (ns >= 1000) {
@@ -221,6 +298,8 @@ class WaitScope {
 
  private:
   WaitKind kind_;
+  uint32_t caller_;
+  uint32_t handle_;
   bool active_;
   std::chrono::steady_clock::time_point start_;
 };
@@ -305,6 +384,8 @@ struct Snapshot {
   uint64_t bad_samples = 0;
   std::vector<Row> inclusive;
   std::vector<Row> leaf;
+  std::vector<Row> leaf_callers;
+  std::vector<Row> leaf_offsets;
   // Ranked by blocked milliseconds per frame rather than by percent; `percent`
   // carries the ms so the table can reuse Row.
   std::vector<Row> blocked_by;
@@ -317,7 +398,7 @@ Snapshot g_snapshot;
 // Sampler
 // ---------------------------------------------------------------------------
 
-#ifdef _WIN32
+#ifdef ES_GUEST_SAMPLER
 
 constexpr int kMaxDepth = 48;
 
@@ -336,7 +417,9 @@ uint64_t g_failed_samples = 0;
 // rather than eating the heap.
 constexpr size_t kMaxSampleWords = 8000 * (kMaxDepth + 1);
 
+#ifdef _WIN32
 HANDLE g_target_thread = nullptr;
+#endif
 std::atomic<bool> g_sampler_running{false};
 std::thread g_sampler;
 
@@ -362,6 +445,31 @@ void RecordWaitStack(const uint64_t* frames, int n, uint64_t ns) {
   g_wait_stacks.insert(g_wait_stacks.end(), frames, frames + n);
   g_wait_stacks.push_back(0);
 }
+
+// Symbolisation, done once per summary and cached forever. The recompiler emits
+// `__imp__sub_82xxxxxx` per guest function, so a resolved host symbol usually
+// *is* the guest function name; the prefix is stripped so a line can be pasted
+// straight into IDA.
+struct SymInfo {
+  uint64_t func_start = 0;
+  std::string name;
+  // For code dladdr cannot name: "module+0xoffset", to symbolise offline
+  // against the unstripped library.
+  std::string offset;
+};
+
+std::unordered_map<uint64_t, SymInfo> g_sym_cache;
+
+// `__imp__sub_82123456` is how the recompiler names a guest function; the rest
+// of this project (logs, IDA, the shader debugger) speaks bare `sub_82123456`.
+void StripImpPrefix(std::string& name) {
+  constexpr char kPrefix[] = "__imp__";
+  if (name.rfind(kPrefix, 0) == 0) {
+    name.erase(0, sizeof(kPrefix) - 1);
+  }
+}
+
+#ifdef _WIN32
 
 // Unwinds a suspended thread with the same machinery the OS exception
 // dispatcher uses. No symbols required: RtlLookupFunctionEntry reads the
@@ -493,16 +601,6 @@ void SamplerMain() {
   }
 }
 
-// Symbolisation, done once per summary and cached forever. The recompiler emits
-// `__imp__sub_82xxxxxx` per guest function, so a resolved host symbol usually
-// *is* the guest function name; the prefix is stripped so a line can be pasted
-// straight into IDA.
-struct SymInfo {
-  uint64_t func_start = 0;
-  std::string name;
-};
-
-std::unordered_map<uint64_t, SymInfo> g_sym_cache;
 bool g_sym_ready = false;
 
 const SymInfo& Symbolise(uint64_t addr) {
@@ -525,15 +623,8 @@ const SymInfo& Symbolise(uint64_t addr) {
   DWORD64 displacement = 0;
   if (SymFromAddr(GetCurrentProcess(), addr, &displacement, symbol)) {
     info.func_start = symbol->Address;
-    std::string name(symbol->Name);
-    // `__imp__sub_82123456` is how the recompiler names a guest function; the
-    // rest of this project (logs, IDA, the shader debugger) speaks bare
-    // `sub_82123456`, so match that.
-    constexpr char kPrefix[] = "__imp__";
-    if (name.rfind(kPrefix, 0) == 0) {
-      name.erase(0, sizeof(kPrefix) - 1);
-    }
-    info.name = std::move(name);
+    info.name = symbol->Name;
+    StripImpPrefix(info.name);
   } else {
     info.func_start = addr;
     info.name = "?";
@@ -541,35 +632,260 @@ const SymInfo& Symbolise(uint64_t addr) {
   return g_sym_cache.emplace(addr, std::move(info)).first->second;
 }
 
+#else  // Linux, aarch64
+
+// Written by GuestProfilerFrameBoundary before the sampler thread starts, which
+// orders them before every signal.
+pid_t g_target_tid = 0;
+uintptr_t g_stack_lo = 0;
+uintptr_t g_stack_hi = 0;
+
+// The sampler asks with a sequence number and the handler answers with it, so
+// the sampler only reads frames the handler finished writing for its request.
+std::atomic<uint32_t> g_signal_request{0};
+std::atomic<uint32_t> g_signal_done{0};
+uint64_t g_signal_frames[kMaxDepth];
+int g_signal_count = 0;
+
+// Return addresses carry no tag or PAC bits in a userspace pointer this wide.
+constexpr uint64_t kAddressMask = 0x0000FFFFFFFFFFFFull;
+
+// Follows the x29 chain of {previous x29, x30} records. Every record has to sit
+// inside the target's own stack and above the last one, so a stale x29 ends the
+// walk instead of faulting inside the signal handler.
+int WalkFrameRecords(uintptr_t fp, uint64_t* out, int n, int max_frames) {
+  while (n < max_frames) {
+    if (fp < g_stack_lo || fp + 16 > g_stack_hi || (fp & 7) != 0) {
+      break;
+    }
+    const auto* record = reinterpret_cast<const uintptr_t*>(fp);
+    const uint64_t ret = uint64_t(record[1]) & kAddressMask;
+    if (!ret) {
+      break;
+    }
+    out[n++] = ret;
+    if (record[0] <= fp) {
+      break;
+    }
+    fp = record[0];
+  }
+  return n;
+}
+
+int CaptureStackSelf(uint64_t* out, int max_frames) {
+  return WalkFrameRecords(reinterpret_cast<uintptr_t>(__builtin_frame_address(0)), out, 0,
+                          max_frames);
+}
+
+void OnProfileSignal(int, siginfo_t*, void* context) {
+  const int saved_errno = errno;
+  const uint32_t request = g_signal_request.load(std::memory_order_acquire);
+  const mcontext_t& mc = static_cast<const ucontext_t*>(context)->uc_mcontext;
+  int n = 0;
+  g_signal_frames[n++] = mc.pc & kAddressMask;
+  // A leaf never stores x30 in a record, so this is the only place its caller
+  // appears. Elsewhere it repeats a function the walk finds anyway, and each
+  // sample counts a function once.
+  if (mc.regs[30]) {
+    g_signal_frames[n++] = mc.regs[30] & kAddressMask;
+  }
+  g_signal_count = WalkFrameRecords(uintptr_t(mc.regs[29]), g_signal_frames, n, kMaxDepth);
+  g_signal_done.store(request, std::memory_order_release);
+  errno = saved_errno;
+}
+
+void SampleOnce() {
+  const pid_t tid = g_target_tid;
+  if (!tid) {
+    return;
+  }
+  const uint32_t request = g_signal_request.load(std::memory_order_relaxed) + 1;
+  g_signal_request.store(request, std::memory_order_release);
+  if (syscall(SYS_tgkill, getpid(), tid, SIGPROF) != 0) {
+    return;
+  }
+
+  // The handler runs as soon as the kernel next schedules the target, which is
+  // immediate unless the big cores are all busy.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(5);
+  while (g_signal_done.load(std::memory_order_acquire) != request) {
+    if (std::chrono::steady_clock::now() > deadline) {
+      std::lock_guard<std::mutex> lock(g_samples_mutex);
+      ++g_sample_count;
+      ++g_failed_samples;
+      return;
+    }
+    sched_yield();
+  }
+
+  uint64_t frames[kMaxDepth];
+  const int n = g_signal_count;
+  std::memcpy(frames, g_signal_frames, sizeof(uint64_t) * size_t(n));
+
+  std::lock_guard<std::mutex> lock(g_samples_mutex);
+  ++g_sample_count;
+  if (n == 0) {
+    ++g_failed_samples;
+    return;
+  }
+  if (g_samples.size() + size_t(n) + 1 > kMaxSampleWords) {
+    return;
+  }
+  g_samples.insert(g_samples.end(), frames, frames + n);
+  g_samples.push_back(0);
+}
+
+void SamplerMain() {
+  timespec next;
+  clock_gettime(CLOCK_MONOTONIC, &next);
+  while (g_sampler_running.load(std::memory_order_relaxed)) {
+    if (ProfilingEnabled()) {
+      SampleOnce();
+    }
+    const int hz = std::clamp(REXCVAR_GET(guest_profile_hz), 50, 8000);
+    next.tv_nsec += 1'000'000'000L / hz;
+    while (next.tv_nsec >= 1'000'000'000L) {
+      next.tv_nsec -= 1'000'000'000L;
+      ++next.tv_sec;
+    }
+    // Absolute, so the rate holds however long the sample took.
+    while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, nullptr) == EINTR) {
+    }
+  }
+}
+
+void StartLinuxSampler() {
+  pthread_attr_t attr;
+  if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+    void* stack = nullptr;
+    size_t size = 0;
+    if (pthread_attr_getstack(&attr, &stack, &size) == 0) {
+      g_stack_lo = reinterpret_cast<uintptr_t>(stack);
+      g_stack_hi = g_stack_lo + size;
+    }
+    pthread_attr_destroy(&attr);
+  }
+  if (!g_stack_hi) {
+    return;
+  }
+
+  struct sigaction action = {};
+  action.sa_sigaction = OnProfileSignal;
+  action.sa_flags = SA_SIGINFO | SA_RESTART;
+  sigemptyset(&action.sa_mask);
+  if (sigaction(SIGPROF, &action, nullptr) != 0) {
+    return;
+  }
+  g_target_tid = pid_t(syscall(SYS_gettid));
+  g_sampler_running.store(true, std::memory_order_relaxed);
+  g_sampler = std::thread(SamplerMain);
+}
+
+// Guest functions are exported from the game library, so dladdr names them
+// without the symbol files. Unexported code is grouped by module.
+const SymInfo& Symbolise(uint64_t addr) {
+  auto it = g_sym_cache.find(addr);
+  if (it != g_sym_cache.end()) {
+    return it->second;
+  }
+
+  SymInfo info;
+  Dl_info dl = {};
+  if (dladdr(reinterpret_cast<void*>(addr), &dl) != 0 && dl.dli_sname) {
+    info.func_start = reinterpret_cast<uint64_t>(dl.dli_saddr);
+    int status = 0;
+    char* demangled = abi::__cxa_demangle(dl.dli_sname, nullptr, nullptr, &status);
+    info.name = status == 0 && demangled ? demangled : dl.dli_sname;
+    std::free(demangled);
+    StripImpPrefix(info.name);
+  } else if (dl.dli_fname) {
+    info.func_start = reinterpret_cast<uint64_t>(dl.dli_fbase);
+    const char* slash = std::strrchr(dl.dli_fname, '/');
+    info.name = fmt::format("{} (unexported)", slash ? slash + 1 : dl.dli_fname);
+    info.offset = fmt::format("{}+0x{:x}", slash ? slash + 1 : dl.dli_fname,
+                              addr - reinterpret_cast<uint64_t>(dl.dli_fbase));
+  } else {
+    info.name = "?";
+  }
+  return g_sym_cache.emplace(addr, std::move(info)).first->second;
+}
+
+#endif  // _WIN32
+
 struct Bucket {
   uint64_t inclusive = 0;
   uint64_t leaf = 0;
   const std::string* name = nullptr;
 };
 
+// Keyed by name rather than address: a hooked function is two host symbols,
+// the hook `sub_X` and the original `__imp__sub_X`, and both strip to one name.
+// Names live in g_sym_cache, whose nodes never move, so views into them hold.
 void RankSamples(const std::vector<uint64_t>& raw, uint64_t good, size_t top,
-                 std::vector<Row>* inclusive, std::vector<Row>* leaf) {
-  std::unordered_map<uint64_t, Bucket> buckets;
-  std::unordered_set<uint64_t> seen;  // per sample, so recursion counts once
+                 std::vector<Row>* inclusive, std::vector<Row>* leaf,
+                 std::vector<Row>* leaf_callers, std::vector<Row>* leaf_offsets) {
+  std::unordered_map<std::string_view, Bucket> buckets;
+  std::unordered_set<std::string_view> seen;  // per sample, so recursion counts once
+  // A leaf alone says `syscall` or `clock_gettime`; the next distinct names
+  // above it say who is paying for it.
+  constexpr int kChainNames = 4;
+  std::unordered_map<std::string, uint64_t> pairs;
+  std::unordered_map<std::string_view, uint64_t> offsets;
 
   size_t i = 0;
   while (i < raw.size()) {
     seen.clear();
-    bool is_leaf = true;
+    std::string chain;
+    const std::string* last_name = nullptr;
+    int chain_names = 0;
     while (i < raw.size() && raw[i] != 0) {
       const SymInfo& sym = Symbolise(raw[i]);
       ++i;
-      auto& bucket = buckets[sym.func_start];
+      auto& bucket = buckets[sym.name];
       bucket.name = &sym.name;
-      if (is_leaf) {
+      if (!last_name) {
         ++bucket.leaf;
-        is_leaf = false;
+        if (!sym.offset.empty()) {
+          ++offsets[sym.offset];
+        }
       }
-      if (seen.insert(sym.func_start).second) {
+      if (chain_names < kChainNames && (!last_name || sym.name != *last_name)) {
+        chain += last_name ? " <- " + sym.name : sym.name;
+        last_name = &sym.name;
+        ++chain_names;
+      }
+      if (seen.insert(sym.name).second) {
         ++bucket.inclusive;
       }
     }
     ++i;  // step over the terminator
+    if (chain_names > 1) {
+      ++pairs[chain];
+    }
+  }
+
+  std::vector<std::pair<std::string_view, uint64_t>> ranked_offsets(offsets.begin(),
+                                                                    offsets.end());
+  const size_t keep_offsets = std::min(top, ranked_offsets.size());
+  std::partial_sort(ranked_offsets.begin(), ranked_offsets.begin() + keep_offsets,
+                    ranked_offsets.end(),
+                    [](const auto& a, const auto& b) { return a.second > b.second; });
+  for (size_t n = 0; n < keep_offsets; ++n) {
+    leaf_offsets->push_back({std::string(ranked_offsets[n].first),
+                             100.0 * double(ranked_offsets[n].second) / double(good)});
+  }
+
+  std::vector<std::pair<const std::string*, uint64_t>> ranked_pairs;
+  ranked_pairs.reserve(pairs.size());
+  for (const auto& entry : pairs) {
+    ranked_pairs.emplace_back(&entry.first, entry.second);
+  }
+  const size_t keep_pairs = std::min(top, ranked_pairs.size());
+  std::partial_sort(ranked_pairs.begin(), ranked_pairs.begin() + keep_pairs, ranked_pairs.end(),
+                    [](const auto& a, const auto& b) { return a.second > b.second; });
+  for (size_t n = 0; n < keep_pairs; ++n) {
+    leaf_callers->push_back({*ranked_pairs[n].first, 100.0 * double(ranked_pairs[n].second) /
+                                                         double(good)});
   }
 
   std::vector<const Bucket*> ranked;
@@ -601,8 +917,8 @@ void RankSamples(const std::vector<uint64_t>& raw, uint64_t good, size_t top,
 // caller responsible for a stall.
 void RankWaitStacks(const std::vector<uint64_t>& raw, double frames, size_t top,
                     std::vector<Row>* out) {
-  std::unordered_map<uint64_t, std::pair<uint64_t, const std::string*>> totals;
-  std::unordered_set<uint64_t> seen;
+  std::unordered_map<std::string_view, std::pair<uint64_t, const std::string*>> totals;
+  std::unordered_set<std::string_view> seen;
 
   size_t i = 0;
   while (i < raw.size()) {
@@ -611,8 +927,8 @@ void RankWaitStacks(const std::vector<uint64_t>& raw, double frames, size_t top,
     while (i < raw.size() && raw[i] != 0) {
       const SymInfo& sym = Symbolise(raw[i]);
       ++i;
-      if (seen.insert(sym.func_start).second) {
-        auto& entry = totals[sym.func_start];
+      if (seen.insert(sym.name).second) {
+        auto& entry = totals[sym.name];
         entry.first += ns;
         entry.second = &sym.name;
       }
@@ -634,7 +950,7 @@ void RankWaitStacks(const std::vector<uint64_t>& raw, double frames, size_t top,
   }
 }
 
-#endif  // _WIN32
+#endif  // ES_GUEST_SAMPLER
 
 // Everything the overlay shows, in the log. Shared so that what you read on
 // screen and what you paste out of the log are the same numbers, formatted the
@@ -661,6 +977,12 @@ void LogSnapshot(const Snapshot& snap) {
   }
   for (const Row& row : snap.leaf) {
     REXLOG_INFO("[guest-prof]   leaf {:5.1f}%  {}", row.percent, row.name);
+  }
+  for (const Row& row : snap.leaf_callers) {
+    REXLOG_INFO("[guest-prof]   from {:5.1f}%  {}", row.percent, row.name);
+  }
+  for (const Row& row : snap.leaf_offsets) {
+    REXLOG_INFO("[guest-prof]   pc {:5.1f}%  {}", row.percent, row.name);
   }
 }
 
@@ -850,6 +1172,15 @@ void GuestProfilerFrameBoundary() {
     g_sampler_running.store(true, std::memory_order_relaxed);
     g_sampler = std::thread(SamplerMain);
   }
+#else
+  if (!g_target_claimed.exchange(true, std::memory_order_relaxed))
+    g_is_target_thread = true;
+#ifdef ES_GUEST_SAMPLER
+  if (g_is_target_thread && ProfilingEnabled() &&
+      !g_sampler_running.load(std::memory_order_relaxed)) {
+    StartLinuxSampler();
+  }
+#endif
 #endif
 }
 
@@ -865,6 +1196,8 @@ void GuestProfilerReport() {
     g_frames = 0;
     g_present_ns = 0;
     g_waits = WaitCounters{};
+    g_wait_callers.clear();
+    g_wait_releasers.clear();
     return;
   }
   if (window_start == clock::time_point{}) {
@@ -895,7 +1228,7 @@ void GuestProfilerReport() {
     snap.zone_ms[z] = (double(g_zones.ns[z]) / frames) / 1e6;
   }
 
-#ifdef _WIN32
+#ifdef ES_GUEST_SAMPLER
   std::vector<uint64_t> raw;
   {
     std::lock_guard<std::mutex> lock(g_samples_mutex);
@@ -908,7 +1241,8 @@ void GuestProfilerReport() {
   const size_t top = size_t(std::clamp(REXCVAR_GET(guest_profile_top), 1, 64));
   const uint64_t good = snap.samples > snap.bad_samples ? snap.samples - snap.bad_samples : 0;
   if (good) {
-    RankSamples(raw, good, top, &snap.inclusive, &snap.leaf);
+    RankSamples(raw, good, top, &snap.inclusive, &snap.leaf, &snap.leaf_callers,
+                &snap.leaf_offsets);
   }
   if (!g_wait_stacks.empty()) {
     RankWaitStacks(g_wait_stacks, frames, top, &snap.blocked_by);
@@ -918,7 +1252,28 @@ void GuestProfilerReport() {
 
   if (REXCVAR_GET(guest_profile)) {
     LogSnapshot(snap);
+    std::vector<std::pair<uint64_t, CallerCounters>> callers(g_wait_callers.begin(),
+                                                             g_wait_callers.end());
+    std::sort(callers.begin(), callers.end(),
+              [](const auto& a, const auto& b) { return a.second.ns > b.second.ns; });
+    for (size_t i = 0; i < callers.size() && i < 6; ++i) {
+      REXLOG_INFO("[guest-prof]   waiter {} from 0x{:08X}: {:.2f}/f {:.3f}ms/f",
+                  kWaitNames[callers[i].first >> 32], uint32_t(callers[i].first),
+                  double(callers[i].second.calls) / frames,
+                  double(callers[i].second.ns) / frames / 1e6);
+    }
+    std::vector<std::pair<std::string, CallerCounters>> releasers(g_wait_releasers.begin(),
+                                                                  g_wait_releasers.end());
+    std::sort(releasers.begin(), releasers.end(),
+              [](const auto& a, const auto& b) { return a.second.ns > b.second.ns; });
+    for (size_t i = 0; i < releasers.size() && i < 4; ++i) {
+      REXLOG_INFO("[guest-prof]   released by {}: {:.2f}/f {:.3f}ms/f", releasers[i].first,
+                  double(releasers[i].second.calls) / frames,
+                  double(releasers[i].second.ns) / frames / 1e6);
+    }
   }
+  g_wait_callers.clear();
+  g_wait_releasers.clear();
 
   {
     std::lock_guard<std::mutex> lock(g_snapshot_mutex);
@@ -948,7 +1303,7 @@ std::unique_ptr<rex::ui::ImGuiDialog> CreateGuestProfilerOverlay(rex::ui::ImGuiD
 #define ETERNALSONATA_WAIT_HOOK(fn, kind)          \
   REX_EXTERN(__imp__##fn);                         \
   REX_HOOK_RAW(fn) {                               \
-    eternalsonata::WaitScope scope(kind);          \
+    eternalsonata::WaitScope scope(kind, uint32_t(ctx.lr), ctx.r3.u32); \
     __imp__##fn(ctx, base);                        \
   }
 
@@ -962,6 +1317,17 @@ ETERNALSONATA_WAIT_HOOK(sub_822A7E60, eternalsonata::kWaitKeA7E60)
 ETERNALSONATA_WAIT_HOOK(sub_822A7F10, eternalsonata::kWaitKeMultiple)
 
 #undef ETERNALSONATA_WAIT_HOOK
+
+// ReleaseSemaphore, recorded so the waits above can name who released them.
+REX_EXTERN(__imp__sub_822535B0);
+REX_HOOK_RAW(sub_822535B0) {
+  if (eternalsonata::ProfilingEnabled()) {
+    std::lock_guard<std::mutex> lock(eternalsonata::g_release_mutex);
+    eternalsonata::g_last_release[ctx.r3.u32] = {uint32_t(ctx.lr),
+                                                 eternalsonata::CurrentThreadLabel()};
+  }
+  __imp__sub_822535B0(ctx, base);
+}
 
 #define ETERNALSONATA_ZONE_HOOK(fn, zone)          \
   REX_EXTERN(__imp__##fn);                         \
