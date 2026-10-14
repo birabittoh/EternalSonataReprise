@@ -7,3 +7,14 @@ address = 0x821CE6D8
 name = "EternalSonataBowSightArm"
 registers = ["f31"]
 jump_address_on_true = 0x821CE6E0
+
+# Baked effect colour tables, sampled on animation frame starts like stock 30
+# fps so loops that fade out their last frame stop flickering.
+[[midasm_hook]]
+address = 0x820C7180
+name = "EffectBakedTimeParticle"
+registers = ["f0", "r31"]
+[[midasm_hook]]
+address = 0x820D3BC4
+name = "EffectBakedTime2D"
+registers = ["f0", "r30"]

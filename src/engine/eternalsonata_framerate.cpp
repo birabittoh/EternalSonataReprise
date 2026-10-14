@@ -21,8 +21,10 @@
 #include <imgui.h>
 #include <rex/cvar.h>
 #include <rex/input/input_system.h>
+#include <rex/memory/utils.h>
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
+#include <rex/system/xmemory.h>
 
 #include "aim_input.h"
 #include "enemy_system.h"
@@ -804,6 +806,41 @@ REX_HOOK_RAW(sub_820C7C18) {
 }
 
 }  // namespace eternalsonata_hooks
+
+namespace {
+
+// Effects with baked colour tables index them per 1/300 s by the part's time,
+// but stock 30 fps only ever samples the first entry of each animation frame.
+// Loops are authored for that: the combo indicator jumps back from frame 12 to
+// 11 once frame 13 starts, and the tail of frame 12 fades out, so any faster
+// step shows the fade as a flicker. Sample on frame starts like stock does.
+void SnapBakedTime(PPCRegister& time, u32 model) {
+  auto* memory = rex::Runtime::instance()->memory();
+  const u8 byte = *memory->TranslateVirtual<const u8*>(0x82465F90);
+  if (byte == 0 || 300 / byte >= 10) {
+    return;
+  }
+  const auto fps = static_cast<int32_t>(
+      rex::memory::load_and_swap<u32>(memory->TranslateVirtual<const u8*>(model + 0x798C)));
+  if (fps <= 0) {
+    return;
+  }
+  const double unit = kUnitsPerSecond / fps;
+  time.f64 = std::floor(time.f64 / unit + 1e-3) * unit;
+}
+
+}  // namespace
+
+// sub_820C6C50 at 0x820C7180, f0 = particle time about to index its baked
+// alpha and colour, r31 = model.
+extern "C++" void EffectBakedTimeParticle(PPCRegister& f0, PPCRegister& r31) {
+  SnapBakedTime(f0, r31.u32);
+}
+
+// sub_820D3AF8 at 0x820D3BC4, the 2D effect equivalent, r30 = model.
+extern "C++" void EffectBakedTime2D(PPCRegister& f0, PPCRegister& r30) {
+  SnapBakedTime(f0, r30.u32);
+}
 
 namespace {
 
