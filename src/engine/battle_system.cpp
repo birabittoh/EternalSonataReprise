@@ -57,6 +57,7 @@
 
 #include "generated/eternalsonata_init.h"
 
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -1151,6 +1152,134 @@ REX_HOOK_RAW(sub_821C6E68) {
       REX_STORE_U32(kPadPressed + kPadStride * pad, saved[pad]);
     }
   }
+}
+
+// Hit resolution at a contact point (r8). A NaN point spreads into the popups
+// and the battle camera and hangs both, so it falls back to the target's
+// position here.
+REX_EXTERN(__imp__sub_821B4508);
+REX_HOOK_RAW(sub_821B4508) {
+  using namespace eternalsonata;
+  const u32 point = ctx.r8.u32;
+  const u32 target = ctx.r5.u32;
+  bool finite = true;
+  for (u32 i = 0; i < 3; ++i) {
+    finite &= std::isfinite(std::bit_cast<float>(REX_LOAD_U32(point + 4 * i)));
+  }
+  if (!finite) {
+    const int kind = static_cast<int>(REX_LOAD_U32(target));
+    const int slot = static_cast<int>(REX_LOAD_U8(target + 4));
+    const uint32_t node = SceneNode(kind, slot);
+    const uint32_t scratch = PositionScratch();
+    float pos[3] = {0.0f, 0.0f, 0.0f};
+    if (node && scratch) {
+      g_get_scene_position(scratch, kSceneManager, node);
+      for (u32 i = 0; i < 3; ++i) {
+        pos[i] = std::bit_cast<float>(REX_LOAD_U32(scratch + 4 * i));
+      }
+    }
+    pos[1] += 1.0f;
+    for (u32 i = 0; i < 3; ++i) {
+      REX_STORE_U32(point + 4 * i, std::bit_cast<u32>(pos[i]));
+    }
+    REXLOG_WARN("[battle] NaN hit point on {}:{} replaced with ({}, {}, {})", kind, slot, pos[0],
+                pos[1], pos[2]);
+  }
+  __imp__sub_821B4508(ctx, base);
+}
+
+// Damage popup placement, rewritten with an iteration cap. The guest version
+// steps the new popup up (and sideways at the top of the screen) until no live
+// popup is within 28 x 32 px, with no bound: a NaN projection or a camera that
+// keeps the sideways steps on top of the other popup froze a battle forever.
+// On the cap the popup keeps its start position and the inputs are logged.
+REX_EXTERN(sub_82108660);
+REX_EXTERN(sub_821BDAE8);
+REX_HOOK_RAW(sub_821BDC10) {
+  constexpr u32 kCamera = 0x82440618u;
+  constexpr u32 kSlots = 16u;
+  constexpr u32 kSlotStride = 56u;
+  constexpr int kMaxSteps = 512;
+
+  const u32 popups = ctx.r3.u32;
+  const u32 pos = ctx.r4.u32;
+  auto load_f = [&](u32 a) { return std::bit_cast<float>(REX_LOAD_U32(a)); };
+  auto store_f = [&](u32 a, float v) { REX_STORE_U32(a, std::bit_cast<u32>(v)); };
+
+  PPCContext call = ctx;
+  call.r1.u32 = ctx.r1.u32 - 0x100u;
+  REX_STORE_U32(call.r1.u32, ctx.r1.u32);
+  const u32 point = call.r1.u32 + 0x50u;
+  const u32 other = call.r1.u32 + 0x60u;
+  const u32 screen_a = call.r1.u32 + 0x70u;
+  const u32 screen_b = call.r1.u32 + 0x80u;
+
+  const u32 camera = REX_LOAD_U32(kCamera);
+  auto project = [&](u32 out, u32 in) {
+    call.r3.u64 = out;
+    call.r4.u64 = camera;
+    call.r5.u64 = in;
+    sub_82108660(call, base);
+  };
+
+  const float start[3] = {load_f(pos), load_f(pos + 4), load_f(pos + 8)};
+  float x = start[0];
+  float y = start[1];
+  store_f(point + 8, start[2]);
+  int steps = 0;
+  for (; steps < kMaxSteps; ++steps) {
+    store_f(point, x);
+    store_f(point + 4, y);
+    bool overlap = false;
+    for (u32 k = 0; k < kSlots && !overlap; ++k) {
+      const u32 slot = popups + 20u + kSlotStride * k;
+      const bool fresh = REX_LOAD_U32(slot + 24) != 0 &&
+                         static_cast<int32_t>(REX_LOAD_U32(slot + 28)) <= 60;
+      if (!REX_LOAD_U8(slot) || fresh || !camera) {
+        continue;
+      }
+      for (u32 i = 0; i < 3; ++i) {
+        REX_STORE_U32(other + 4 * i, REX_LOAD_U32(slot + 4 + 4 * i));
+      }
+      project(screen_a, point);
+      project(screen_b, other);
+      // NaN must count as overlapping, as the guest's "> 28" tests do.
+      overlap = !(std::fabs(load_f(screen_a + 4) - load_f(screen_b + 4)) > 28.0f) &&
+                !(std::fabs(load_f(screen_a) - load_f(screen_b)) > 32.0f);
+    }
+    if (!overlap) {
+      break;
+    }
+    call.r3.u64 = popups;
+    call.r4.u64 = point;
+    sub_821BDAE8(call, base);
+    y = static_cast<float>(call.f1.f64) + y;
+    store_f(point + 4, y);
+    if (camera) {
+      project(screen_a, point);
+      if (load_f(screen_a + 4) < 128.0f) {
+        y = start[1];
+        x = x + 0.69999999f;
+      }
+    }
+  }
+
+  if (steps == kMaxSteps) {
+    REXLOG_WARN("[battle] popup placement gave up: start ({}, {}, {}) last ({}, {}) camera {:08X}",
+                start[0], start[1], start[2], x, y, camera);
+    for (u32 k = 0; k < kSlots; ++k) {
+      const u32 slot = popups + 20u + kSlotStride * k;
+      if (REX_LOAD_U8(slot)) {
+        REXLOG_WARN("[battle]   popup {} at ({}, {}, {}) task {:08X} age {}", k,
+                    load_f(slot + 4), load_f(slot + 8), load_f(slot + 12),
+                    REX_LOAD_U32(slot + 24), static_cast<int32_t>(REX_LOAD_U32(slot + 28)));
+      }
+    }
+    x = start[0];
+    y = start[1];
+  }
+  store_f(pos, x);
+  store_f(pos + 4, y);
 }
 
 // ---------------------------------------------------------------------------
