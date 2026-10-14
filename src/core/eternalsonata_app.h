@@ -170,7 +170,7 @@ class EternalsonataApp : public rex::ReXApp {
     atlas->AddFontDefault();
 
     // Sans serif, like the controller's own button letters.
-    static const ImWchar face_button_glyphs[] = {'A', 'B', 'X', 'Y', 0};
+    static const ImWchar face_button_glyphs[] = {'0', '9', 'A', 'Z', 0};
     ImFontConfig face_button_cfg;
     face_button_cfg.FontDataOwnedByAtlas = false;
     face_button_cfg.OversampleH = face_button_cfg.OversampleV = 2;

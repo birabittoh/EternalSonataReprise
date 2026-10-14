@@ -17,6 +17,8 @@
 #include <cfloat>
 #include <cmath>
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include <rex/cvar.h>
 
@@ -94,19 +96,212 @@ ImU32 EdgeColor(float alpha, bool pressed) {
   return ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, a));
 }
 
-void DrawLabel(ImDrawList* draw_list, const char* label, float cx, float cy, float alpha,
-               bool pressed) {
-  if (!label || !*label) {
+// The shoulder, trigger and menu plates mirror shoulder() and menu_button() in
+// scripts/gen-face-buttons.py, redrawn as vectors so they follow touch_scale.
+struct Shape {
+  std::vector<ImVec2> pts;    // -1..1 across the control, before rounding
+  std::vector<float> radius;  // corner radius per point, in control half heights
+};
+
+// Replaces every corner with a short curve; stays convex if the input is.
+std::vector<ImVec2> RoundShape(const Shape& shape, ImVec2 mid, ImVec2 half, float side) {
+  const size_t n = shape.pts.size();
+  std::vector<ImVec2> px(n);
+  for (size_t i = 0; i < n; ++i) {
+    px[i] = ImVec2(mid.x + shape.pts[i].x * side * half.x, mid.y + shape.pts[i].y * half.y);
+  }
+  std::vector<ImVec2> out;
+  for (size_t i = 0; i < n; ++i) {
+    const ImVec2 v = px[i];
+    const ImVec2 a = px[(i + n - 1) % n];
+    const ImVec2 b = px[(i + 1) % n];
+    const float la = std::hypot(a.x - v.x, a.y - v.y);
+    const float lb = std::hypot(b.x - v.x, b.y - v.y);
+    const float k = std::min(shape.radius[i] * half.y, 0.5f * std::min(la, lb));
+    const ImVec2 pa(v.x + (a.x - v.x) / la * k, v.y + (a.y - v.y) / la * k);
+    const ImVec2 pb(v.x + (b.x - v.x) / lb * k, v.y + (b.y - v.y) / lb * k);
+    constexpr int kSteps = 6;
+    for (int s = 0; s <= kSteps; ++s) {
+      const float t = float(s) / float(kSteps);
+      const float w0 = (1 - t) * (1 - t), w1 = 2 * t * (1 - t), w2 = t * t;
+      out.emplace_back(w0 * pa.x + w1 * v.x + w2 * pb.x, w0 * pa.y + w1 * v.y + w2 * pb.y);
+    }
+  }
+  return out;
+}
+
+// Vertical gradient across a convex outline. Colour is linear in y, so the
+// fan's per-vertex colours interpolate exactly.
+void FillGradient(ImDrawList* draw_list, const std::vector<ImVec2>& pts, const ImVec4& top,
+                  const ImVec4& bottom) {
+  float y0 = FLT_MAX, y1 = -FLT_MAX;
+  for (const ImVec2& p : pts) {
+    y0 = std::min(y0, p.y);
+    y1 = std::max(y1, p.y);
+  }
+  const int n = int(pts.size());
+  draw_list->PrimReserve((n - 2) * 3, n);
+  const ImDrawIdx base = ImDrawIdx(draw_list->_VtxCurrentIdx);
+  for (int i = 1; i + 1 < n; ++i) {
+    draw_list->PrimWriteIdx(base);
+    draw_list->PrimWriteIdx(ImDrawIdx(base + i));
+    draw_list->PrimWriteIdx(ImDrawIdx(base + i + 1));
+  }
+  const ImVec2 uv = ImGui::GetFontTexUvWhitePixel();
+  for (const ImVec2& p : pts) {
+    const float t = std::clamp((p.y - y0) / std::max(y1 - y0, 1.0f), 0.0f, 1.0f);
+    draw_list->PrimWriteVtx(p, uv, ImGui::GetColorU32(LerpColor(top, bottom, t)));
+  }
+}
+
+// A gradient body over a dark outline.
+void DrawPlate(ImDrawList* draw_list, const std::vector<ImVec2>& pts, float edge,
+               const ImVec4& edge_color, const ImVec4& top, const ImVec4& bottom) {
+  draw_list->AddPolyline(pts.data(), int(pts.size()), ImGui::GetColorU32(edge_color),
+                         ImDrawFlags_Closed, edge * 2.0f);
+  FillGradient(draw_list, pts, top, bottom);
+}
+
+// Bold white lettering in a black outline, as the game letters its glyphs.
+void DrawOutlinedText(ImDrawList* draw_list, const char* text, ImVec2 mid, float size,
+                      float alpha) {
+  ImFont* font = FaceButtonFont();
+  size = std::min(std::round(size), font->LegacySize);
+  const ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
+  const ImVec2 pos(std::round(mid.x - ts.x * 0.5f), std::round(mid.y - ts.y * 0.5f));
+  const ImU32 outline = ColorWithAlpha(ImVec4(0, 0, 0, 1), alpha);
+  const float r = std::max(1.0f, size * 0.07f);
+  constexpr int kSteps = 12;
+  for (int i = 0; i < kSteps; ++i) {
+    const float angle = 2.0f * kPi * float(i) / float(kSteps);
+    draw_list->AddText(font, size,
+                       ImVec2(pos.x + std::cos(angle) * r, pos.y + std::sin(angle) * r), outline,
+                       text);
+  }
+  const ImU32 fill = ColorWithAlpha(ImVec4(1, 1, 1, 1), alpha);
+  for (float dx : {-0.03f * size, 0.0f, 0.03f * size}) {
+    draw_list->AddText(font, size, ImVec2(pos.x + dx, pos.y), fill, text);
+  }
+}
+
+float TextWidth(const char* text, float size) {
+  ImFont* font = FaceButtonFont();
+  size = std::min(std::round(size), font->LegacySize);
+  return font->CalcTextSizeA(size, FLT_MAX, 0.0f, text).x;
+}
+
+void DrawPillIcon(ImDrawList* draw_list, const TouchControl& c, bool ps, float alpha,
+                  bool pressed) {
+  const float a = std::min(alpha * (pressed ? 2.6f : 2.0f), 1.0f);
+  const ImVec2 half(c.half_width, c.half_height);
+  const ImVec2 mid(c.cx, c.cy + (pressed ? c.half_height * 0.06f : 0.0f));
+  const float edge = std::max(1.5f, c.half_height * 0.07f);
+  const ImVec4 black(0, 0, 0, a);
+
+  const bool left = c.trigger == TouchTrigger::kLeft || c.button == X_INPUT_GAMEPAD_LEFT_SHOULDER;
+  const float side = left ? 1.0f : -1.0f;  // shapes are drawn as the left hand ones
+  const bool trigger = c.trigger != TouchTrigger::kNone;
+  const bool shoulder = trigger || c.button == X_INPUT_GAMEPAD_LEFT_SHOULDER ||
+                        c.button == X_INPUT_GAMEPAD_RIGHT_SHOULDER;
+
+  std::string label = c.label;
+  if (ps && shoulder && label.size() == 2) {
+    label[0] = left ? 'L' : 'R';
+    label[1] = trigger ? '2' : '1';
+  }
+  const float letter_alpha = std::min(alpha * 2.1f, 1.0f);
+  const float text_size = c.half_height * 1.15f;
+
+  if (shoulder) {
+    Shape shape;
+    if (ps) {
+      const float bottom = trigger ? 1.1f : 0.5f;
+      shape = {{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}}, {0.5f, 0.5f, bottom, bottom}};
+    } else if (trigger) {
+      shape = {{{-0.724f, -1}, {0.862f, -1}, {1, 1}, {-1, 1}, {-1, -0.61f}},
+               {0.3f, 0.3f, 0.3f, 0.3f, 0.3f}};
+    } else {
+      shape = {{{1, -1}, {1, 1}, {-0.44f, 1}, {-1, 0.43f}, {-1, -0.43f}, {-0.44f, -1}},
+               {0.2f, 0.2f, 0.5f, 0.5f, 0.5f, 0.5f}};
+    }
+    const std::vector<ImVec2> pts = RoundShape(shape, mid, half, side);
+    if (ps) {
+      DrawPlate(draw_list, pts, edge, black, ImVec4(0.48f, 0.48f, 0.52f, a),
+                ImVec4(0.20f, 0.20f, 0.22f, a));
+      const float inset = c.half_height * 0.12f;
+      const ImVec2 inner_half(std::max(half.x - inset, 1.0f), std::max(half.y - inset, 1.0f));
+      FillGradient(draw_list, RoundShape(shape, mid, inner_half, side),
+                   ImVec4(0.34f, 0.34f, 0.37f, a), ImVec4(0.06f, 0.06f, 0.07f, a));
+    } else if (trigger) {
+      DrawPlate(draw_list, pts, edge, black, ImVec4(0.88f, 0.89f, 0.92f, a),
+                ImVec4(0.40f, 0.41f, 0.45f, a));
+      // The slot near the top edge.
+      const float sx = mid.x - side * half.x * 0.05f;
+      draw_list->AddRectFilled(ImVec2(sx - half.x * 0.38f, mid.y - half.y * 0.90f),
+                               ImVec2(sx + half.x * 0.38f, mid.y - half.y * 0.62f),
+                               ColorWithAlpha(ImVec4(0.12f, 0.12f, 0.13f, 1), a), half.y * 0.12f);
+    } else {
+      DrawPlate(draw_list, pts, edge, black, ImVec4(0.97f, 0.97f, 0.98f, a),
+                ImVec4(0.55f, 0.55f, 0.57f, a));
+    }
+    if (pressed) {
+      draw_list->AddPolyline(pts.data(), int(pts.size()),
+                             ColorWithAlpha(ImVec4(1, 1, 1, 1), alpha * 0.85f), ImDrawFlags_Closed,
+                             2.0f);
+    }
+    const float tx = mid.x + side * half.x * (ps ? 0.0f : (trigger ? -0.02f : 0.13f));
+    DrawOutlinedText(draw_list, label.c_str(), ImVec2(tx, mid.y), text_size, letter_alpha);
     return;
   }
-  // The base size, not the current one: the layout is in window pixels, so the
-  // labels must not follow a host's global UI scale (style.FontScaleMain).
-  ImFont* font = ImGui::GetFont();
-  const float font_size = ImGui::GetStyle().FontSizeBase;
-  const ImVec2 size = font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, label);
-  const float a = std::min(alpha * (pressed ? kPressedBoost : 1.0f) * 1.8f, 1.0f);
-  draw_list->AddText(font, font_size, ImVec2(cx - size.x * 0.5f, cy - size.y * 0.5f),
-                     ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, a)), label);
+
+  if (c.button == X_INPUT_GAMEPAD_START) {
+    // The start badge, then the name.
+    const float r = c.half_height * 0.8f;
+    const float gap = c.half_height * 0.3f;
+    const float text_w = TextWidth("START", text_size);
+    const float x0 = mid.x - (r * 2.0f + gap + text_w) * 0.5f;
+    const ImVec2 bc(x0 + r, mid.y);
+    if (ps) {
+      const std::vector<ImVec2> tri = {ImVec2(bc.x + r * 0.9f, bc.y),
+                                       ImVec2(bc.x - r * 0.8f, bc.y - r * 0.95f),
+                                       ImVec2(bc.x - r * 0.8f, bc.y + r * 0.95f)};
+      DrawPlate(draw_list, tri, edge, black, ImVec4(0.46f, 0.46f, 0.50f, a),
+                ImVec4(0.18f, 0.18f, 0.21f, a));
+    } else {
+      std::vector<ImVec2> disc;
+      for (int i = 0; i < 32; ++i) {
+        const float ang = 2.0f * kPi * float(i) / 32.0f;
+        disc.emplace_back(bc.x + std::cos(ang) * r, bc.y + std::sin(ang) * r);
+      }
+      DrawPlate(draw_list, disc, edge, black, ImVec4(0.94f, 0.95f, 0.97f, a),
+                ImVec4(0.52f, 0.53f, 0.58f, a));
+      const float t = r * 0.5f;
+      draw_list->AddTriangleFilled(ImVec2(bc.x + t * 1.3f, bc.y),
+                                   ImVec2(bc.x - t * 0.9f, bc.y - t * 1.25f),
+                                   ImVec2(bc.x - t * 0.9f, bc.y + t * 1.25f),
+                                   ColorWithAlpha(ImVec4(0.36f, 0.37f, 0.39f, 1), a));
+    }
+    DrawOutlinedText(draw_list, "START", ImVec2(x0 + r * 2.0f + gap + text_w * 0.5f, mid.y),
+                     text_size, letter_alpha);
+    return;
+  }
+
+  // Menu: two square windows, the front one over the back one.
+  const float s = c.half_height * 0.62f;
+  const float shift = s * 0.55f;
+  for (int i = 0; i < 2; ++i) {
+    const float off = (i == 0 ? -shift : shift);
+    const ImVec2 centre(mid.x + off, mid.y + off);
+    const Shape shape = {{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}}, {0.15f, 0.15f, 0.15f, 0.15f}};
+    const std::vector<ImVec2> pts = RoundShape(shape, centre, ImVec2(s, s), 1.0f);
+    DrawPlate(draw_list, pts, edge, black, ImVec4(0.97f, 0.97f, 0.98f, a),
+              ImVec4(0.55f, 0.55f, 0.57f, a));
+    if (pressed) {
+      draw_list->AddPolyline(pts.data(), int(pts.size()),
+                             ColorWithAlpha(ImVec4(1, 1, 1, 1), alpha * 0.85f), ImDrawFlags_Closed,
+                             2.0f);
+    }
+  }
 }
 
 // Two right-pointing triangles, the fast forward glyph.
@@ -401,19 +596,14 @@ void TouchControlsOverlay::OnDraw(ImGuiIO& io) {
                                2.0f);
           if (c.fast_forward) {
             DrawFastForwardIcon(draw_list, c.cx, c.cy, c.half_width, alpha, pressed);
-          } else {
-            DrawLabel(draw_list, c.label.c_str(), c.cx, c.cy, alpha, pressed);
           }
         }
         break;
       }
 
       case TouchControl::Shape::kPill: {
-        const ImVec2 lo(c.cx - c.half_width, c.cy - c.half_height);
-        const ImVec2 hi(c.cx + c.half_width, c.cy + c.half_height);
-        draw_list->AddRectFilled(lo, hi, FillColor(alpha, pressed), c.half_height);
-        draw_list->AddRect(lo, hi, EdgeColor(alpha, pressed), c.half_height, 0, 2.0f);
-        DrawLabel(draw_list, c.label.c_str(), c.cx, c.cy, alpha, pressed);
+        DrawPillIcon(draw_list, c, layout.face_style == TouchFaceStyle::kPlayStation, alpha,
+                     pressed);
         break;
       }
 
