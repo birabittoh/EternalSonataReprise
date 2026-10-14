@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Embeds the PNGs in src/images/ and res/ as byte arrays into src/images.generated.h.
 
-Every res/*.png is also listed by file stem in kResImages, so code can look up
+Every PNG under res/ is also listed by file stem in kResImages, so code can look up
 art that a checkout may not have.
 
 Run automatically by CMake (see CMakeLists.txt) before compiling; the raw .png
-files are the checked-in source of truth, the header is a gitignored build
+files are the checked-in source of truth, except res/generated/, which
+scripts/gen-face-buttons.py renders first, the header is a gitignored build
 artifact.
 """
 import os
+import runpy
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 IMAGES_DIR = os.path.join(ROOT, "src", "images")
@@ -32,11 +34,12 @@ def emit_array(f, ident, data):
 
 
 def res_ident(filename):
-    stem = os.path.splitext(filename)[0]
+    stem = os.path.splitext(os.path.basename(filename))[0]
     return "Res" + "".join(w.capitalize() for w in stem.replace("-", "_").split("_"))
 
 
 def main():
+    runpy.run_path(os.path.join(ROOT, "scripts", "gen-face-buttons.py"), run_name="__main__")
     lines = [
         "#pragma once",
         "",
@@ -50,7 +53,12 @@ def main():
 
     res = []
     if os.path.isdir(RES_DIR):
-        res = sorted(f for f in os.listdir(RES_DIR) if f.lower().endswith(".png"))
+        res = sorted(
+            os.path.relpath(os.path.join(dirpath, f), RES_DIR).replace(os.sep, "/")
+            for dirpath, _, files in os.walk(RES_DIR)
+            for f in files
+            if f.lower().endswith(".png")
+        )
 
     with open(OUT_PATH, "w", newline="\n") as out:
         out.write("\n".join(lines) + "\n")
@@ -64,7 +72,7 @@ def main():
             ident = res_ident(filename)
             with open(os.path.join(RES_DIR, filename), "rb") as fin:
                 emit_array(out, ident, fin.read())
-            stem = os.path.splitext(filename)[0]
+            stem = os.path.splitext(os.path.basename(filename))[0]
             entries.append(f'    {{"{stem}", k{ident}PNG, k{ident}PNGSize}},')
         entries.append("    {nullptr, nullptr, 0},")
 

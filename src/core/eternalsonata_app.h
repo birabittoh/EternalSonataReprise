@@ -30,6 +30,7 @@
 
 #include "achievement_translation.h"
 #include "achievements_menu.h"
+#include "button_glyphs.h"
 #include "battle_system.h"
 #include "enemy_system.h"
 #include "eternalsonata_asset_system.h"
@@ -375,6 +376,7 @@ class EternalsonataApp : public rex::ReXApp {
     // single-threaded; the swap counter itself is atomic.
     auto on_guest_frame = [this] {
       runtime()->mod_registry()->DispatchTick();
+      button_glyphs::Update();
       guest_swap_count_.fetch_add(1, std::memory_order_relaxed);
     };
     auto* gs = runtime()->graphics_system();
@@ -477,6 +479,7 @@ class EternalsonataApp : public rex::ReXApp {
     // The status menu's Trophies entry draws over the old Status icon, which is
     // an appkeep.bmd texture: register the patch before the cache is built.
     achievements_menu::RegisterIcons();
+    button_glyphs::Register();
 
     eternalsonata::BindAssetSystem(runtime());
 

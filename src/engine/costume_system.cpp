@@ -18,6 +18,7 @@
 #include "field_player_model_override.h"
 #include "generated/eternalsonata_init.h"
 #include "party_arrays.h"
+#include "button_glyphs.h"
 #include "ps3_appkeep.h"
 #include "target.h"
 
@@ -839,6 +840,7 @@ REX_HOOK_RAW(sub_82162058) {
   __imp__sub_82162058(ctx, base);
   if (eternalsonata::IsPs3Target())
     eternalsonata::BuildPs3AppKeep(ctx, base);
+  button_glyphs::OnAppKeepLoaded();
   std::lock_guard lock(g_mutex);
   EnsureCharacterLists();
   State& s = state();

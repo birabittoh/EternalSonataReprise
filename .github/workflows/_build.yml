@@ -151,7 +151,7 @@ jobs:
 
       - name: Install Python build dependencies
         shell: bash
-        run: python -m pip install --disable-pip-version-check cryptography
+        run: python -m pip install --disable-pip-version-check cryptography Pillow numpy
 
       - name: Cache XEX asset for codegen
         id: asset-cache

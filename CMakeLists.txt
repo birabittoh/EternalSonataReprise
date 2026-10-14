@@ -175,14 +175,16 @@ add_custom_command(
 )
 
 # Embedded UI art: src/images/*.png and res/*.png are the checked-in source of truth;
-# src/images.generated.h is a gitignored build artifact regenerated whenever a
-# .png or the generator script changes.
+# the button art in res/generated/ is rendered by scripts/gen-face-buttons.py from
+# gen-images.py. src/images.generated.h is a gitignored build artifact regenerated
+# whenever a .png or a generator script changes.
 set(ETERNALSONATA_IMAGES_HEADER ${CMAKE_SOURCE_DIR}/src/images.generated.h)
 # Globbed so that adding a .png cannot leave a stale header behind: naming them
 # one by one means a new image silently never rebuilds it.
 file(GLOB ETERNALSONATA_IMAGE_SOURCES CONFIGURE_DEPENDS
      ${CMAKE_SOURCE_DIR}/src/images/*.png
-     ${CMAKE_SOURCE_DIR}/res/*.png)
+     ${CMAKE_SOURCE_DIR}/res/*.png
+     ${CMAKE_SOURCE_DIR}/res/generated/*.png)
 # Renaming or removing a .png changes no timestamp the header is older than,
 # so the list itself is an input; file(CONFIGURE) only rewrites it on change.
 set(ETERNALSONATA_IMAGE_LIST ${CMAKE_BINARY_DIR}/image_sources.txt)
@@ -193,6 +195,8 @@ add_custom_command(
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-images.py
     DEPENDS
         ${CMAKE_SOURCE_DIR}/scripts/gen-images.py
+        ${CMAKE_SOURCE_DIR}/scripts/gen-face-buttons.py
+        ${CMAKE_SOURCE_DIR}/scripts/fonts/Arimo-Variable.ttf
         ${ETERNALSONATA_IMAGE_LIST}
         ${ETERNALSONATA_IMAGE_SOURCES}
     COMMENT "Generating src/images.generated.h"
@@ -418,6 +422,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/music_system.cpp
     src/engine/option_strip.cpp
     src/engine/achievements_menu.cpp
+    src/engine/button_glyphs.cpp
     src/engine/achievement_system.cpp
     src/engine/item_system.cpp
     src/engine/equipment_system.cpp

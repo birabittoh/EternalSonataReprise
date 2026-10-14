@@ -73,15 +73,6 @@ ImU32 ColorWithAlpha(ImVec4 color, float alpha) {
   return ImGui::GetColorU32(color);
 }
 
-ImU32 FillColor(float alpha, bool pressed) {
-  const float a = std::min(alpha * (pressed ? kPressedBoost : 1.0f), 1.0f);
-  return ImGui::GetColorU32(ImVec4(0.08f, 0.08f, 0.10f, a));
-}
-
-ImU32 EdgeColor(float alpha, bool pressed) {
-  const float a = std::min(alpha * (pressed ? kPressedBoost : 1.0f) * 1.6f, 1.0f);
-  return ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, a));
-}
 
 ImFont* FaceButtonFont() {
   for (ImFont* font : ImGui::GetIO().Fonts->Fonts) {
@@ -90,6 +81,17 @@ ImFont* FaceButtonFont() {
     }
   }
   return ImGui::GetFont();
+}
+
+
+ImU32 FillColor(float alpha, bool pressed) {
+  const float a = std::min(alpha * (pressed ? kPressedBoost : 1.0f), 1.0f);
+  return ImGui::GetColorU32(ImVec4(0.08f, 0.08f, 0.10f, a));
+}
+
+ImU32 EdgeColor(float alpha, bool pressed) {
+  const float a = std::min(alpha * (pressed ? kPressedBoost : 1.0f) * 1.6f, 1.0f);
+  return ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, a));
 }
 
 void DrawLabel(ImDrawList* draw_list, const char* label, float cx, float cy, float alpha,
@@ -181,7 +183,9 @@ void DrawFaceButton(ImDrawList* draw_list, const FaceStyle& style, float cx, flo
   const ImVec4 shadow = LerpColor(style.color, black, 0.40f);
   const ImVec4 glow = LerpColor(style.color, white, 0.25f);
   const float face_alpha = std::min(alpha * (pressed ? 2.6f : 2.0f), 1.0f);
-  const float face_radius = radius * (pressed ? 0.96f : 1.0f);
+  // The art sits just inside the control's radius; a held button sinks a little.
+  const float face_radius = radius * (pressed ? 0.94f : 0.98f);
+  const float u = face_radius / 60.0f;  // one pixel of the 128 px reference art
   const ImVec2 center(cx, cy + (pressed ? radius * 0.025f : 0.0f));
 
   // Lit from above, darkening toward the rim, with light passing through the
@@ -209,21 +213,39 @@ void DrawFaceButton(ImDrawList* draw_list, const FaceStyle& style, float cx, flo
                                 (1.0f - SmoothStep(0.55f, 1.0f, t));
                       return color;
                     });
-  draw_list->AddCircle(center, face_radius, ColorWithAlpha(white, alpha * 0.62f), 48, 2.0f);
+  // A thin highlight inside a thick black rim.
+  draw_list->AddCircle(center, face_radius - 3.5f * u, ColorWithAlpha(white, face_alpha * 0.45f),
+                       64, 1.5f * u);
+  draw_list->AddCircle(center, face_radius - 1.2f * u, ColorWithAlpha(black, face_alpha), 64,
+                       5.0f * u);
   if (pressed) {
     draw_list->AddCircle(center, face_radius + 2.0f, ColorWithAlpha(white, alpha * 0.85f), 48,
                          2.0f);
   }
 
+  // Cream letter in a dark outline of the button's own shade, over a drop shadow.
   ImFont* font = FaceButtonFont();
-  const float font_size = std::min(std::round(face_radius * 1.12f), font->LegacySize);
+  const float font_size = std::min(std::round(face_radius * 1.2f), font->LegacySize);
   const ImVec2 text_size = font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, style.label);
-  const ImVec2 text_pos(std::round(center.x - text_size.x * 0.5f + face_radius * 0.02f),
+  const ImVec2 text_pos(std::round(center.x - text_size.x * 0.5f),
                         std::round(center.y - text_size.y * 0.5f));
-  draw_list->AddText(font, font_size, ImVec2(text_pos.x, text_pos.y + 1.0f),
-                     ColorWithAlpha(black, alpha * 0.42f), style.label);
-  const ImU32 label_color = ColorWithAlpha(white, std::min(alpha * 2.1f, 1.0f));
-  draw_list->AddText(font, font_size, text_pos, label_color, style.label);
+  const float letter_alpha = std::min(alpha * 2.1f, 1.0f);
+  draw_list->AddText(font, font_size, ImVec2(text_pos.x, text_pos.y + u),
+                     ColorWithAlpha(black, letter_alpha * 0.42f), style.label);
+  const ImU32 outline = ColorWithAlpha(LerpColor(black, style.color, 0.45f), letter_alpha);
+  constexpr int kOutlineSteps = 16;
+  for (int i = 0; i < kOutlineSteps; ++i) {
+    const float angle = 2.0f * kPi * float(i) / float(kOutlineSteps);
+    draw_list->AddText(font, font_size,
+                       ImVec2(text_pos.x + std::cos(angle) * 2.5f * u,
+                              text_pos.y + std::sin(angle) * 2.5f * u),
+                       outline, style.label);
+  }
+  // Drawn at a half pixel spread to thicken the lighter face into a bold weight.
+  const ImU32 letter = ColorWithAlpha(ImVec4(0.98f, 0.957f, 0.886f, 1.0f), letter_alpha);
+  for (float dx : {-0.5f * u, 0.0f, 0.5f * u}) {
+    draw_list->AddText(font, font_size, ImVec2(text_pos.x + dx, text_pos.y), letter, style.label);
+  }
 }
 
 void DrawFaceGlyph(ImDrawList* draw_list, FaceGlyph glyph, ImVec2 c, float size, ImU32 color,
@@ -266,7 +288,7 @@ void DrawPlayStationButton(ImDrawList* draw_list, const FaceStyle& style, float 
   const ImVec4 well_top(0.04f, 0.04f, 0.05f, 1.0f);
   const ImVec4 well_bottom(0.13f, 0.13f, 0.15f, 1.0f);
   const float face_alpha = std::min(alpha * (pressed ? 2.6f : 2.0f), 1.0f);
-  const float face_radius = radius * (pressed ? 0.96f : 1.0f);
+  const float face_radius = radius * (pressed ? 0.94f : 0.98f);
   const ImVec2 center(cx, cy + (pressed ? radius * 0.025f : 0.0f));
 
   FillShadedEllipse(draw_list, center, ImVec2(face_radius, face_radius), center,
@@ -282,8 +304,8 @@ void DrawPlayStationButton(ImDrawList* draw_list, const FaceStyle& style, float 
   draw_list->AddCircle(center, face_radius + 1.5f, ColorWithAlpha(white, alpha * 0.30f), 48,
                        1.0f);
 
-  const float glyph_size = face_radius * 0.62f;
-  const float thickness = std::max(2.0f, face_radius * (pressed ? 0.15f : 0.12f));
+  const float glyph_size = face_radius * 0.66f;
+  const float thickness = std::max(2.0f, face_radius * (pressed ? 0.19f : 0.17f));
   if (pressed) {
     draw_list->AddCircleFilled(center, face_radius * 0.82f,
                                ColorWithAlpha(style.color, alpha * 0.35f), 48);

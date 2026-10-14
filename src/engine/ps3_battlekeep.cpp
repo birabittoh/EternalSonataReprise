@@ -11,6 +11,7 @@
 // the enemies and two more categories after 40, which the PS3 engine asks
 // for as the 360's plus 2 (EBOOT sub_175248 against sub_821AB7E0).
 
+#include "button_glyphs.h"
 #include "character_roster.h"
 #include "generated/eternalsonata_init.h"
 #include "target.h"
@@ -55,8 +56,12 @@ REX_EXTERN(__imp__sub_821A0F18);
 REX_HOOK_RAW(sub_821A0F18) {
   const uint32_t object = ctx.r3.u32;
   __imp__sub_821A0F18(ctx, base);
-  if (!eternalsonata::IsPs3Target() || !ctx.r3.u32)
+  if (!ctx.r3.u32)
     return;
+  if (!eternalsonata::IsPs3Target()) {
+    button_glyphs::OnBattleKeepLoaded(object + kSlotArray);
+    return;
+  }
   const uint32_t slots = object + kSlotArray;
   const uint32_t count = REX_LOAD_U32(object + kSlotCount);
   std::array<uint32_t, kSlots360> file{};
@@ -71,6 +76,7 @@ REX_HOOK_RAW(sub_821A0F18) {
   }
   for (uint32_t slot = 0; slot < kSlots360; ++slot)
     REX_STORE_U32(slots + 4 * slot, file[FileSlot(slot)]);
+  button_glyphs::OnBattleKeepLoaded(slots);
 }
 
 REX_EXTERN(__imp__sub_821ABC68);

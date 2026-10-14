@@ -7,6 +7,7 @@
 #include "eternalsonata_asset_texture.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 
@@ -277,11 +278,14 @@ bool ParseNtex(const std::vector<uint8_t>& data, size_t offset, TextureRef& out)
 // ---------------------------------------------------------------------------
 // Encoding
 //
-// A compact BC1/BC2/BC3 encoder: the block's colour bounding box, inset once,
-// as the two endpoints. Good enough for the art a mod replaces and small enough
-// to keep the whole texture path free of dependencies.
+// A compact BC1/BC2/BC3 encoder with no dependencies. The colour endpoints
+// start on the block's principal axis and are refined by least squares against
+// the indices they produce, keeping the best fit seen. A bounding box fits
+// badly when a block's colours run along a diagonal, which is every outlined
+// glyph.
 uint16_t PackRgb565(uint32_t r, uint32_t g, uint32_t b) {
-  return uint16_t(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+  return uint16_t((((r * 31 + 127) / 255) << 11) | (((g * 63 + 127) / 255) << 5) |
+                  ((b * 31 + 127) / 255));
 }
 
 void UnpackRgb565(uint16_t value, int32_t rgb[3]) {
@@ -293,58 +297,43 @@ void UnpackRgb565(uint16_t value, int32_t rgb[3]) {
   rgb[2] = int32_t((b << 3) | (b >> 2));
 }
 
-// `block` is 16 RGBA8 texels, row major. Writes the 8-byte BC1 colour block.
-// `punchthrough` selects the 3-colour mode, where index 3 is transparent black.
-void EncodeColourBlock(const uint8_t block[64], bool punchthrough, uint8_t out[8]) {
-  int32_t low[3] = {255, 255, 255};
-  int32_t high[3] = {0, 0, 0};
-  bool any = false;
-  for (uint32_t i = 0; i < 16; ++i) {
-    if (punchthrough && block[i * 4 + 3] < 128)
-      continue;
-    any = true;
-    for (uint32_t c = 0; c < 3; ++c) {
-      low[c] = std::min(low[c], int32_t(block[i * 4 + c]));
-      high[c] = std::max(high[c], int32_t(block[i * 4 + c]));
-    }
-  }
-  if (!any) {
-    low[0] = low[1] = low[2] = 0;
-    high[0] = high[1] = high[2] = 0;
-  }
+struct ColourFit {
+  uint16_t c0 = 0;
+  uint16_t c1 = 0;
+  uint32_t indices = 0;
+  int64_t error = INT64_MAX;
+};
 
-  // Inset the box by an eighth of its range. The endpoints are quantised and
-  // the interpolants sit at 1/3 and 2/3, so the extremes are better served by
-  // pulling in slightly than by sitting exactly on the outliers.
-  for (uint32_t c = 0; c < 3; ++c) {
-    const int32_t inset = (high[c] - low[c]) >> 4;
-    low[c] = std::min(low[c] + inset, 255);
-    high[c] = std::max(high[c] - inset, 0);
-  }
-
-  uint16_t c0 = PackRgb565(uint32_t(high[0]), uint32_t(high[1]), uint32_t(high[2]));
-  uint16_t c1 = PackRgb565(uint32_t(low[0]), uint32_t(low[1]), uint32_t(low[2]));
+// Quantises the endpoints, applies the ordering that selects the mode, assigns
+// each texel its nearest palette entry and totals the squared error over the
+// texels that count.
+ColourFit EvaluateColour(const uint8_t block[64], const bool counts[16], bool punchthrough,
+                         const float a[3], const float b[3]) {
+  auto clamp8 = [](float v) { return uint32_t(std::clamp(v, 0.0f, 255.0f) + 0.5f); };
+  ColourFit fit;
+  fit.c0 = PackRgb565(clamp8(a[0]), clamp8(a[1]), clamp8(a[2]));
+  fit.c1 = PackRgb565(clamp8(b[0]), clamp8(b[1]), clamp8(b[2]));
   // The mode is chosen by the ordering of the endpoints, so it has to hold even
   // when both quantise to the same value.
   if (punchthrough) {
-    if (c0 > c1)
-      std::swap(c0, c1);
-    if (c0 == c1 && c0 != 0)
-      --c0;
+    if (fit.c0 > fit.c1)
+      std::swap(fit.c0, fit.c1);
+    if (fit.c0 == fit.c1 && fit.c0 != 0)
+      --fit.c0;
   } else {
-    if (c0 < c1)
-      std::swap(c0, c1);
-    if (c0 == c1) {
-      if (c1 != 0)
-        --c1;
+    if (fit.c0 < fit.c1)
+      std::swap(fit.c0, fit.c1);
+    if (fit.c0 == fit.c1) {
+      if (fit.c1 != 0)
+        --fit.c1;
       else
-        c0 = 1;
+        fit.c0 = 1;
     }
   }
 
   int32_t palette[4][3];
-  UnpackRgb565(c0, palette[0]);
-  UnpackRgb565(c1, palette[1]);
+  UnpackRgb565(fit.c0, palette[0]);
+  UnpackRgb565(fit.c1, palette[1]);
   for (uint32_t c = 0; c < 3; ++c) {
     if (punchthrough) {
       palette[2][c] = (palette[0][c] + palette[1][c]) / 2;
@@ -355,7 +344,7 @@ void EncodeColourBlock(const uint8_t block[64], bool punchthrough, uint8_t out[8
     }
   }
 
-  uint32_t indices = 0;
+  fit.error = 0;
   const uint32_t candidates = punchthrough ? 3 : 4;
   for (uint32_t i = 0; i < 16; ++i) {
     uint32_t best = 0;
@@ -374,18 +363,123 @@ void EncodeColourBlock(const uint8_t block[64], bool punchthrough, uint8_t out[8
           best = p;
         }
       }
+      if (counts[i])
+        fit.error += best_error;
     }
-    indices |= best << (i * 2);
+    fit.indices |= best << (i * 2);
+  }
+  return fit;
+}
+
+// `block` is 16 RGBA8 texels, row major. Writes the 8-byte BC1 colour block.
+// `punchthrough` selects the 3-colour mode, where index 3 is transparent black.
+void EncodeColourBlock(const uint8_t block[64], bool punchthrough, uint8_t out[8]) {
+  // Texels that are fully transparent carry no colour worth fitting, and their
+  // black would drag the endpoints toward it.
+  bool counts[16];
+  uint32_t used = 0;
+  for (uint32_t i = 0; i < 16; ++i) {
+    counts[i] = punchthrough ? block[i * 4 + 3] >= 128 : block[i * 4 + 3] >= 8;
+    used += counts[i];
+  }
+  if (!used) {
+    for (uint32_t i = 0; i < 16; ++i)
+      counts[i] = true;
+    used = 16;
   }
 
-  out[0] = uint8_t(c0 & 0xFF);
-  out[1] = uint8_t(c0 >> 8);
-  out[2] = uint8_t(c1 & 0xFF);
-  out[3] = uint8_t(c1 >> 8);
-  out[4] = uint8_t(indices & 0xFF);
-  out[5] = uint8_t((indices >> 8) & 0xFF);
-  out[6] = uint8_t((indices >> 16) & 0xFF);
-  out[7] = uint8_t((indices >> 24) & 0xFF);
+  float mean[3] = {};
+  for (uint32_t i = 0; i < 16; ++i)
+    if (counts[i])
+      for (uint32_t c = 0; c < 3; ++c)
+        mean[c] += block[i * 4 + c];
+  for (float& m : mean)
+    m /= float(used);
+
+  // Principal axis by power iteration on the covariance.
+  float cov[3][3] = {};
+  for (uint32_t i = 0; i < 16; ++i) {
+    if (!counts[i])
+      continue;
+    float d[3];
+    for (uint32_t c = 0; c < 3; ++c)
+      d[c] = block[i * 4 + c] - mean[c];
+    for (uint32_t r = 0; r < 3; ++r)
+      for (uint32_t c = 0; c < 3; ++c)
+        cov[r][c] += d[r] * d[c];
+  }
+  float axis[3] = {0.57735f, 0.57735f, 0.57735f};
+  for (uint32_t it = 0; it < 8; ++it) {
+    float next[3] = {};
+    for (uint32_t r = 0; r < 3; ++r)
+      for (uint32_t c = 0; c < 3; ++c)
+        next[r] += cov[r][c] * axis[c];
+    const float length = std::sqrt(next[0] * next[0] + next[1] * next[1] + next[2] * next[2]);
+    if (length < 1e-6f)
+      break;
+    for (uint32_t c = 0; c < 3; ++c)
+      axis[c] = next[c] / length;
+  }
+
+  float t_min = 1e9f, t_max = -1e9f;
+  for (uint32_t i = 0; i < 16; ++i) {
+    if (!counts[i])
+      continue;
+    float t = 0.0f;
+    for (uint32_t c = 0; c < 3; ++c)
+      t += (block[i * 4 + c] - mean[c]) * axis[c];
+    t_min = std::min(t_min, t);
+    t_max = std::max(t_max, t);
+  }
+  float a[3], b[3];
+  for (uint32_t c = 0; c < 3; ++c) {
+    a[c] = mean[c] + axis[c] * t_max;
+    b[c] = mean[c] + axis[c] * t_min;
+  }
+
+  ColourFit best = EvaluateColour(block, counts, punchthrough, a, b);
+  for (uint32_t iteration = 0; iteration < 6 && best.error > 0; ++iteration) {
+    // Least squares for the endpoints that the current indices ask for. The
+    // palette runs from c0 at t = 0 to c1 at t = 1.
+    const float position3[4] = {0.0f, 1.0f, 1.0f / 3.0f, 2.0f / 3.0f};
+    const float position2[4] = {0.0f, 1.0f, 0.5f, 0.0f};
+    double aa = 0, bb = 0, ab = 0, ax[3] = {}, bx[3] = {};
+    for (uint32_t i = 0; i < 16; ++i) {
+      if (!counts[i])
+        continue;
+      const uint32_t index = (best.indices >> (i * 2)) & 3;
+      const double t = punchthrough ? position2[index] : position3[index];
+      const double wa = 1.0 - t;
+      aa += wa * wa;
+      bb += t * t;
+      ab += wa * t;
+      for (uint32_t c = 0; c < 3; ++c) {
+        ax[c] += wa * block[i * 4 + c];
+        bx[c] += t * block[i * 4 + c];
+      }
+    }
+    const double det = aa * bb - ab * ab;
+    if (std::fabs(det) < 1e-6)
+      break;
+    float na[3], nb[3];
+    for (uint32_t c = 0; c < 3; ++c) {
+      na[c] = float((ax[c] * bb - bx[c] * ab) / det);
+      nb[c] = float((bx[c] * aa - ax[c] * ab) / det);
+    }
+    const ColourFit candidate = EvaluateColour(block, counts, punchthrough, na, nb);
+    if (candidate.error >= best.error)
+      break;
+    best = candidate;
+  }
+
+  out[0] = uint8_t(best.c0 & 0xFF);
+  out[1] = uint8_t(best.c0 >> 8);
+  out[2] = uint8_t(best.c1 & 0xFF);
+  out[3] = uint8_t(best.c1 >> 8);
+  out[4] = uint8_t(best.indices & 0xFF);
+  out[5] = uint8_t((best.indices >> 8) & 0xFF);
+  out[6] = uint8_t((best.indices >> 16) & 0xFF);
+  out[7] = uint8_t((best.indices >> 24) & 0xFF);
 }
 
 void EncodeAlphaBlockBc3(const uint8_t block[64], uint8_t out[8]) {

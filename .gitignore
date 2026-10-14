@@ -135,3 +135,6 @@ __pycache__/
 /android/app/src/main/res/mipmap-xxxhdpi/
 /portable.txt
 /user/
+
+# Button art rendered by scripts/gen-face-buttons.py during the build
+/res/generated/

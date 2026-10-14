@@ -17,6 +17,7 @@
 
 #include <rex/cvar.h>
 
+#include "button_glyphs.h"
 #include "target.h"
 
 REXCVAR_DECLARE(double, touch_scale);
@@ -54,9 +55,9 @@ inline touch::TouchLayout BuildTouchLayout(float width, float height) {
   // gesture.
   const float inset = u * 0.06f;
 
-  // PS3 data gets PS3 art; the pad itself stays positional.
+  // The art follows the override_button_glyphs setting; the pad itself stays positional.
   const bool ps3 = IsPs3Target();
-  if (ps3) {
+  if (button_glyphs::UsePlayStationArt()) {
     layout.face_style = TouchFaceStyle::kPlayStation;
   }
 

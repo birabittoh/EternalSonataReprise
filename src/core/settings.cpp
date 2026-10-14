@@ -189,6 +189,18 @@ REXCVAR_DEFINE_STRING(fast_forward_button, "rs", "Eternal Sonata",
     .allowed({"off", "a", "b", "x", "y", "lb", "rb", "lt", "rt", "ls", "rs", "back", "start",
               "dpad_up", "dpad_down", "dpad_left", "dpad_right"});
 
+// Applied live by button_glyphs.cpp; disabled keeps the release's own art.
+REXCVAR_DEFINE_STRING(override_button_glyphs, "disabled", "Eternal Sonata",
+                      "Button prompt art: disabled (the release's own), xbox or ps3")
+    .allowed({"disabled", "xbox", "ps3"})
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
+// Applied live by button_glyphs.cpp; auto follows whichever the player used last.
+REXCVAR_DEFINE_STRING(prompt_device, "auto", "Eternal Sonata",
+                      "Prompt device: auto (the last one used), controller or mouse_keyboard")
+    .allowed({"auto", "controller", "mouse_keyboard"})
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
 // Read by the sub_821C6E68 hook in battle_system.cpp.
 REXCVAR_DEFINE_BOOL(auto_parry, false, "Eternal Sonata",
                     "Counter and parry automatically without pressing any buttons");
@@ -321,7 +333,7 @@ constexpr std::array kBasicCvarNames = {
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
     "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
-    "touch_controls", "touch_scale", "touch_opacity", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button",
+    "touch_controls", "touch_scale", "touch_opacity", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "override_button_glyphs", "prompt_device",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
@@ -828,6 +840,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         if (WesternTextAvailable()) {
           DrawCvarRow("force_japanese_font");
         }
+        DrawOverrideButtonGlyphsRow();
+        DrawPromptDeviceRow();
         DrawPhotoPriceAlgorithmRow();
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();
@@ -1418,6 +1432,83 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         const bool selected = i == cur_idx;
         if (ImGui::Selectable(options[i].label, selected)) {
           rex::cvar::SetFlagByName("photo_price_algorithm", options[i].id, /*persist=*/true);
+          SaveBasic();
+        }
+        if (selected)
+          ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::PopID();
+  }
+
+  void DrawOverrideButtonGlyphsRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("override_button_glyphs");
+    if (!entry)
+      return;
+    struct Option {
+      const char* id;
+      const char* label;
+    };
+    const std::array<Option, 3> options = {
+        {{"disabled", T("glyphs_disabled")}, {"xbox", "Xbox 360"}, {"ps3", "PS3"}}};
+    const std::string current = entry->getter();
+    int cur_idx = 0;
+    for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+      if (current == options[i].id)
+        cur_idx = i;
+    }
+
+    if (DrawRowLabel("override_button_glyphs", "override_button_glyphs")) {
+      ImGui::SetTooltip("%s", Tip("override_button_glyphs"));
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("override_button_glyphs");
+    if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
+      for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+        const bool selected = i == cur_idx;
+        if (ImGui::Selectable(options[i].label, selected)) {
+          rex::cvar::SetFlagByName("override_button_glyphs", options[i].id, /*persist=*/true);
+          SaveBasic();
+        }
+        if (selected)
+          ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::PopID();
+  }
+
+  void DrawPromptDeviceRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("prompt_device");
+    if (!entry)
+      return;
+    struct Option {
+      const char* id;
+      const char* label;
+    };
+    const std::array<Option, 3> options = {{{"mouse_keyboard", T("prompt_mouse_keyboard")},
+                                            {"controller", T("prompt_controller")},
+                                            {"auto", T("auto")}}};
+    const std::string current = entry->getter();
+    int cur_idx = 2;
+    for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+      if (current == options[i].id)
+        cur_idx = i;
+    }
+
+    if (DrawRowLabel("prompt_device", "prompt_device")) {
+      ImGui::SetTooltip("%s", Tip("prompt_device"));
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("prompt_device");
+    if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
+      for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+        const bool selected = i == cur_idx;
+        if (ImGui::Selectable(options[i].label, selected)) {
+          rex::cvar::SetFlagByName("prompt_device", options[i].id, /*persist=*/true);
           SaveBasic();
         }
         if (selected)
