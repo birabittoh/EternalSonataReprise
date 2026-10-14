@@ -64,6 +64,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <rex/cvar.h>
 #include <rex/hook.h>
 #include <rex/memory/utils.h>
 #include <rex/runtime.h>
@@ -76,6 +77,8 @@
 #include "eternalsonata_battle_api.h"
 #include "guest_main_thread.h"
 #include "room_presence.h"
+
+REXCVAR_DECLARE(bool, auto_parry);
 
 namespace eternalsonata {
 namespace {
@@ -1070,6 +1073,84 @@ REX_EXTERN(__imp__sub_821ACBF8);
 REX_HOOK_RAW(sub_821ACBF8) {
   __imp__sub_821ACBF8(ctx, base);
   eternalsonata::PollBattleUnits();
+}
+
+// Party controller pad read (docs/enemies.md "Reading the press"). With auto_parry
+// on, the button the player would press is added to the pressed mask of every
+// live pad for this call, so the cue window, input latch and mark all run as for
+// a real press. A counters when the counter window holds, otherwise B guards.
+// The read drops A on flag bit 2 or the turn lock, and B on flag bit 0x10, so
+// those pick the button here too.
+// While an enemy acts and it is not this member's turn, the player's own A and
+// B are hidden from the read: an early or late press would lock the member out.
+REX_EXTERN(__imp__sub_821C6E68);
+REX_EXTERN(__imp__sub_821C5038);
+REX_EXTERN(__imp__sub_821C4F38);
+REX_EXTERN(__imp__sub_821B09F0);
+REX_HOOK_RAW(sub_821C6E68) {
+  constexpr u32 kManager = 0x824D0440u;
+  constexpr u32 kCueState = 0x82552714u;
+  constexpr u32 kTurn = 0x825526C0u;
+  constexpr u32 kPadActive = 0x824BB41Au;
+  constexpr u32 kPadPressed = 0x824BB5C4u;
+  constexpr u32 kPadStride = 464u;
+  constexpr u32 kPadCount = 5u;
+  constexpr u32 kInputOffset = 81848u;
+
+  const u32 self = ctx.r3.u32;
+  const u32 record = REX_LOAD_U32(self + 32u);
+  bool defending = false;
+  if (REXCVAR_GET(auto_parry) && record && !REX_LOAD_U8(self + 8u)) {
+    // Acting unit {kind, slot} as sub_821980D0 reads it; kind 0 is the party.
+    const u32 turn = REX_LOAD_U32(kTurn);
+    const u32 actor = turn ? REX_LOAD_U32(turn + 196u) : 0u;
+    defending = actor && REX_LOAD_U32(actor) != 0;
+  }
+  if (!defending) {
+    __imp__sub_821C6E68(ctx, base);
+    return;
+  }
+
+  const u32 map = REX_LOAD_U32(kManager + 533144u);
+  const u32 mask_a = REX_LOAD_U32(map);
+  const u32 mask_b = REX_LOAD_U32(map + 4u);
+  u32 press_mask = 0;
+  if (REX_LOAD_U32(kCueState) == 2u && REX_LOAD_U8(record + kInputOffset) == 0) {
+    ctx.r3.u64 = self;
+    __imp__sub_821C4F38(ctx, base);
+    const bool guard_open = (ctx.r3.u32 & 0xFFu) != 0;
+    ctx.r3.u64 = self;
+    __imp__sub_821C5038(ctx, base);
+    const bool counter_open = (ctx.r3.u32 & 0xFFu) != 0;
+    ctx.r3.u64 = kManager;
+    __imp__sub_821B09F0(ctx, base);
+    const bool locked = (ctx.r3.u32 & 0xFFu) != 0;
+    ctx.r3.u64 = self;
+
+    const u32 flags = REX_LOAD_U8(self + 60u);
+    const bool can_a = !locked && !(flags & 0x2u);
+    const bool can_b = !(flags & 0x10u);
+    if (counter_open && can_a) {
+      press_mask = mask_a;
+    } else if (guard_open && can_b) {
+      press_mask = mask_b;
+    }
+  }
+
+  u32 saved[kPadCount] = {};
+  for (u32 pad = 0; pad < kPadCount; ++pad) {
+    if (REX_LOAD_U8(kPadActive + kPadStride * pad)) {
+      const u32 addr = kPadPressed + kPadStride * pad;
+      saved[pad] = REX_LOAD_U32(addr);
+      REX_STORE_U32(addr, (saved[pad] & ~(mask_a | mask_b)) | press_mask);
+    }
+  }
+  __imp__sub_821C6E68(ctx, base);
+  for (u32 pad = 0; pad < kPadCount; ++pad) {
+    if (REX_LOAD_U8(kPadActive + kPadStride * pad)) {
+      REX_STORE_U32(kPadPressed + kPadStride * pad, saved[pad]);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

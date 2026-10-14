@@ -213,7 +213,7 @@ unless they say otherwise; party record offsets are from the record start
 
 ### Buttons
 
-`sub_821A8FD8` builds a 20-byte button map at manager+533144 (`0x82298`). The
+`sub_821A8FD8` allocates a 20-byte button map and stores its pointer at manager+533144 (`0x82298`). The
 masks are XInput button bits, tested against the pad's pressed-this-frame
 mask by `sub_82199580`:
 
@@ -381,6 +381,17 @@ The party level gate is a six row table at `0x8238E2B8`, 20 bytes per level,
 indexed by level - 1. Byte +3 is 0, 0, 0, 1, 1, 1, so counters start at party
 level 4. The level that indexes it is the low byte of the u32 at `0x8243F3E8`;
 see "Party level and its budget" in [party-system.md](party-system.md).
+
+### Auto parry
+
+The `auto_parry` setting (Balance tab) hooks `sub_821C6E68` and rewrites that
+pad's pressed word at `0x824BB5C4 + 464 * pad` for the call, then restores it.
+While an enemy acts and it is not that member's turn (party controller +8), it
+drops the player's own A and B, because an early or late press locks the member
+out; on the member's own turn A and B drive its attack and guard stance and are
+left alone. Once the cue is open and the input byte is 0 it adds the A mask
+(counter window open) or the B mask (guard only, so counters not unlocked). The
+game then handles it as a real press.
 
 ### Host side
 

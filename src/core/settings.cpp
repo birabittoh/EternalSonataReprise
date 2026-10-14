@@ -189,6 +189,10 @@ REXCVAR_DEFINE_STRING(fast_forward_button, "rs", "Eternal Sonata",
     .allowed({"off", "a", "b", "x", "y", "lb", "rb", "lt", "rt", "ls", "rs", "back", "start",
               "dpad_up", "dpad_down", "dpad_left", "dpad_right"});
 
+// Read by the sub_821C6E68 hook in battle_system.cpp.
+REXCVAR_DEFINE_BOOL(auto_parry, false, "Eternal Sonata",
+                    "Counter and parry automatically without pressing any buttons");
+
 // Read every frame by the present hook in eternalsonata_framerate.cpp. Unpaced
 // fast forward runs as fast as the host presents, so its speed varies by scene.
 REXCVAR_DEFINE_DOUBLE(fast_forward_max_speed, 3.0, "Eternal Sonata",
@@ -322,7 +326,7 @@ constexpr std::array kBasicCvarNames = {
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
     "enemy_hp_multiplier",
-    "enemy_damage_multiplier", "ui_scale",
+    "enemy_damage_multiplier", "auto_parry", "ui_scale",
     "save_row_portraits", "force_japanese_font", "skip_intro"};
 
 // Steps for the multiplier rows. HP stops short of zero, the
@@ -838,6 +842,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawMultiplierRow("photo_price_multiplier", kRewardMultiplierSteps);
         DrawMultiplierRow("enemy_hp_multiplier", kHpMultiplierSteps);
         DrawMultiplierRow("enemy_damage_multiplier", kRewardMultiplierSteps);
+        DrawCvarRow("auto_parry");
         ImGui::EndTabItem();
       }
       ImGui::EndTabBar();
