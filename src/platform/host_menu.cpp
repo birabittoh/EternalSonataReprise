@@ -21,7 +21,6 @@
 #include <rex/logging.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/mod_state.h>
-#include <rex/system/xam/content_manager.h>
 #include <rex/system/xcontent.h>
 #endif
 
@@ -41,8 +40,7 @@ namespace {
 // Menu entries, in the order EternalSonataActivity shows them. The indices
 // are what nativeHostMenuSelect switches on, so keep the two in step.
 enum MenuItem : int {
-  kInstallDlc = 0,
-  kInstallMod,
+  kInstallMod = 0,
   kExportSaves,
   kImportSaves,
   kGpuDriver,
@@ -50,7 +48,7 @@ enum MenuItem : int {
 };
 
 const char* const kMenuItems[] = {
-    "Install DLC...", "Install mod (.zip)...", "Export saves", "Import saves", "GPU driver...",
+    "Install mod (.zip)...", "Export saves", "Import saves", "GPU driver...",
     "Exit",
 };
 
@@ -58,8 +56,7 @@ const char* const kMenuItems[] = {
 // handed straight back, since the picker result arrives on a later turn of
 // the Android activity's own lifecycle.
 enum DocumentOp : int {
-  kOpInstallDlc = 0,
-  kOpImportSaves,
+  kOpImportSaves = 0,
   kOpExportSaves,
   kOpInstallMod,
 };
@@ -126,11 +123,6 @@ void ShowToast(const std::string& message) {
   env->DeleteLocalRef(text);
 }
 
-rex::system::xam::ContentManager* ContentManager() {
-  auto* kernel_state = rex::system::kernel_state();
-  return kernel_state ? kernel_state->content_manager() : nullptr;
-}
-
 // content_root/<xuid>/<title id>. Saves live under this per profile, so an
 // export has to sweep every xuid directory rather than just the signed in
 // one; the reference layout has both a zeroed and a real profile id.
@@ -192,22 +184,6 @@ bool StageSavesForExport(const std::filesystem::path& user_data_root,
 // The menu actions. Each runs on the UI thread (see the JNI callbacks below)
 // and returns the message to show the user.
 // ---------------------------------------------------------------------------
-
-std::string DoInstallDlc(const std::filesystem::path& package) {
-  auto* content_manager = ContentManager();
-  if (!content_manager) {
-    return "Not ready yet, try again once the game has loaded.";
-  }
-  // Trust the package header over the picker: InstallContent reads the title
-  // id and content type out of the container itself and files it accordingly,
-  // so a package for another game lands somewhere this title never looks
-  // rather than being silently adopted. Check it here so the user is told.
-  const auto result = content_manager->InstallContent(package);
-  if (XFAILED(result)) {
-    return "Could not install that package (it may not be Xbox 360 DLC).";
-  }
-  return "DLC installed. Restart the game if it does not appear.";
-}
 
 std::string DoExportSaves(const std::filesystem::path& user_data_root,
                           const std::filesystem::path& cache_root,
@@ -284,11 +260,6 @@ Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeHostMenuSelect(JNI
   const auto cache_root = g_instance->cache_root();
 
   switch (index) {
-    case kInstallDlc:
-      // Any type: STFS packages have no MIME type of their own and pickers
-      // hide what they cannot name.
-      CallActivityVoid("requestOpenDocument", "(I)V", static_cast<jint>(kOpInstallDlc));
-      break;
     case kInstallMod:
       CallActivityVoid("requestOpenDocument", "(I)V", static_cast<jint>(kOpInstallMod));
       break;
@@ -346,9 +317,6 @@ Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeDocumentReady(JNIE
   g_instance->window_for_callback()->app_context().CallInUIThreadSynchronous(
       [&, op, user_data_root, cache_root] {
         switch (op) {
-          case kOpInstallDlc:
-            message = DoInstallDlc(host_path);
-            break;
           case kOpInstallMod:
             message = DoInstallMod(host_path);
             break;

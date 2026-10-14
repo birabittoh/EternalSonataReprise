@@ -9,8 +9,8 @@
 //
 // It also carries the actions that have no overlay behind them and that an
 // Android user cannot perform for themselves, because Android 11+ hides
-// Android/data from on-device file managers: installing and removing DLC
-// packages, importing and exporting saves, and clearing the shader cache.
+// Android/data from on-device file managers: installing mods,
+// importing and exporting saves, and clearing the shader cache.
 #pragma once
 
 #include <filesystem>

@@ -1,6 +1,6 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
-// Auto-installs the "Piano Music Key" DLC from a project-local `dlc` folder.
+// Asks for the Piano Unlock Key DLC package when the game looks for it.
 //
 // ---------------------------------------------------------------------------
 // Why this lives here and not in the SDK
@@ -57,18 +57,23 @@
 // What this hook does
 // ---------------------------------------------------------------------------
 //
-// sub_82209A18 is state 2 -- the first thing that runs once the player has
-// actually asked for the unlock key. Just before it, if no marketplace content
-// is installed for this title, scan `dlc/` next to the executable for STFS
-// packages and install them. No dialogs, no prompting, and nothing happens at
-// all on a normal boot or when the DLC is already installed.
+// sub_82209A18 is state 2, the first thing that runs once the player has asked
+// for the unlock key. Just before it, if no marketplace content is installed
+// for this title, a file dialog asks for the package and installs it. A
+// cancelled dialog or a bad file changes nothing, so the game goes on to its
+// own "failed to read" message.
 
-#include <cstdio>
-#include <cstring>
-#include <filesystem>
-#include <system_error>
+#include <cstdint>
+#include <fstream>
+#include <future>
+#include <memory>
+#include <string>
+#include <string_view>
+
+#include <SDL3/SDL.h>
 
 #include <rex/logging.h>
+#include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/xam/content_manager.h>
 #include <rex/system/xcontent.h>
@@ -77,102 +82,100 @@
 
 namespace {
 
-// Where the user drops packages, relative to the working directory -- the same
-// place `assets`, `mods` and `logs` are resolved from.
-constexpr const char* kDlcDirName = "dlc";
-
-// STFS containers are identified by their 4-byte magic. "LIVE" is signed
-// marketplace content (what the Piano Music Key package is), "PIRS" is
-// unsigned Microsoft-distributed content, "CON " is console-signed.
-bool LooksLikeStfsPackage(const std::filesystem::path& path) {
-  FILE* file = nullptr;
-#if defined(_WIN32)
-  if (_wfopen_s(&file, path.c_str(), L"rb") != 0 || !file) {
+// STFS containers start with one of these magics.
+bool LooksLikeStfsPackage(const void* data, size_t size) {
+  if (size < 4) {
     return false;
   }
-#else
-  file = std::fopen(path.c_str(), "rb");
-  if (!file) {
-    return false;
-  }
-#endif
-  char magic[4] = {};
-  const size_t read = std::fread(magic, 1, sizeof(magic), file);
-  std::fclose(file);
-  if (read != sizeof(magic)) {
-    return false;
-  }
-  return std::memcmp(magic, "LIVE", 4) == 0 || std::memcmp(magic, "CON ", 4) == 0 ||
-         std::memcmp(magic, "PIRS", 4) == 0;
+  const std::string_view m(static_cast<const char*>(data), 4);
+  return m == "LIVE" || m == "CON " || m == "PIRS";
 }
 
-void InstallPackagesFromDlcDir() {
-  auto* kernel_state = rex::system::kernel_state();
-  if (!kernel_state) {
-    return;
+// The installed folder is named after the file; a picked Android content URI
+// carries it after the last (possibly escaped) separator.
+std::string PackageName(std::string picked) {
+  for (std::string_view separator : {"/", "\\", "%2F", "%2f", "%3A", "%3a"}) {
+    if (const size_t at = picked.rfind(separator); at != std::string::npos) {
+      picked.erase(0, at + separator.size());
+    }
   }
-  auto* content_manager = kernel_state->content_manager();
+  return picked;
+}
+
+struct PickRequest {
+  std::promise<std::string> picked;
+};
+
+void SDLCALL OnPicked(void* userdata, const char* const* files, int) {
+  std::unique_ptr<PickRequest> request(static_cast<PickRequest*>(userdata));
+  request->picked.set_value(files && files[0] ? files[0] : "");
+}
+
+void SDLCALL ShowPicker(void* userdata) {
+  SDL_ShowOpenFileDialog(OnPicked, userdata, nullptr, nullptr, 0, nullptr, false);
+}
+
+// Blocks the calling guest thread until the player answers; empty if cancelled.
+std::string PickPackage() {
+  auto* request = new PickRequest;
+  auto picked = request->picked.get_future();
+  if (!SDL_RunOnMainThread(ShowPicker, request, false)) {
+    delete request;
+    return {};
+  }
+  return picked.get();
+}
+
+void InstallPickedPackage() {
+  auto* kernel_state = rex::system::kernel_state();
+  auto* content_manager = kernel_state ? kernel_state->content_manager() : nullptr;
   if (!content_manager) {
     return;
   }
-
-  // Already installed? Then the enumerator will find it and there is nothing
-  // to do. This mirrors what state 4 is about to ask for: device id 1 (the
-  // dummy HDD), the common xuid 0 that marketplace content is filed under, and
-  // the running title id (ListContent's default).
-  if (!content_manager
-           ->ListContent(1, 0, rex::system::XContentType::kMarketplaceContent)
-           .empty()) {
+  // Mirrors what state 4 asks for: the dummy HDD, the common xuid 0 that
+  // marketplace content is filed under, and the running title id.
+  if (!content_manager->ListContent(1, 0, rex::system::XContentType::kMarketplaceContent).empty()) {
     return;
   }
-
+  const std::string picked = PickPackage();
+  if (picked.empty()) {
+    return;
+  }
+  // SDL reads content URIs as well as paths; the package is copied to the cache
+  // since InstallContent needs a real file.
+  size_t size = 0;
+  std::unique_ptr<void, decltype(&SDL_free)> data(SDL_LoadFile(picked.c_str(), &size), SDL_free);
+  if (!data || !LooksLikeStfsPackage(data.get(), size)) {
+    REXLOG_WARN("DLC: '{}' is not an STFS package", picked);
+    return;
+  }
+  const std::string name = PackageName(picked);
+  const auto cache = kernel_state->emulator()->user_data_root() / "cache";
   std::error_code ec;
-  const auto dlc_dir = std::filesystem::current_path(ec) / kDlcDirName;
-  if (ec || !std::filesystem::is_directory(dlc_dir, ec)) {
-    REXLOG_INFO("DLC auto-install: no '{}' directory, nothing to install", kDlcDirName);
+  std::filesystem::create_directories(cache, ec);
+  const auto package = cache / name;
+  {
+    std::ofstream out(package, std::ios::binary | std::ios::trunc);
+    out.write(static_cast<const char*>(data.get()), std::streamsize(size));
+    if (!out) {
+      REXLOG_WARN("DLC: could not write '{}'", package.string());
+      return;
+    }
+  }
+  const auto result = content_manager->InstallContent(package);
+  std::filesystem::remove(package, ec);
+  if (XFAILED(result)) {
+    REXLOG_WARN("DLC: failed to install '{}' (0x{:08X})", package.string(), uint32_t(result));
     return;
   }
-
-  // Recursive so the retail package can be dropped in with its original
-  // directory tree intact (.../4E4D07E4/00000002/<40-hex-char name>) rather
-  // than requiring the user to dig the container file out of it.
-  int installed = 0;
-  std::filesystem::recursive_directory_iterator it(
-      dlc_dir, std::filesystem::directory_options::skip_permission_denied, ec);
-  if (ec) {
-    REXLOG_WARN("DLC auto-install: could not walk '{}': {}", dlc_dir.string(), ec.message());
-    return;
-  }
-  for (const auto& entry : it) {
-    if (!entry.is_regular_file(ec) || ec) {
-      continue;
-    }
-    if (!LooksLikeStfsPackage(entry.path())) {
-      continue;
-    }
-    const auto result = content_manager->InstallContent(entry.path());
-    if (XFAILED(result)) {
-      REXLOG_WARN("DLC auto-install: failed to install '{}' (0x{:08X})", entry.path().string(),
-                  uint32_t(result));
-      continue;
-    }
-    REXLOG_INFO("DLC auto-install: installed '{}'", entry.path().string());
-    ++installed;
-  }
-
-  if (!installed) {
-    REXLOG_WARN("DLC auto-install: no STFS content packages found under '{}'", dlc_dir.string());
-  }
+  REXLOG_INFO("DLC: installed '{}'", package.string());
 }
 
 }  // namespace
 
-// sub_82209A18 - state 2 of the unlock-key state machine. Runs once per
-// player-initiated unlock attempt, so retrying after dropping a package into
-// `dlc/` works without a restart; the ListContent check above keeps the
-// repeat cost to a directory scan.
+// sub_82209A18 - state 2 of the unlock-key state machine.
 REX_EXTERN(__imp__sub_82209A18);
 REX_HOOK_RAW(sub_82209A18) {
-    InstallPackagesFromDlcDir();
+    InstallPickedPackage();
     __imp__sub_82209A18(ctx, base);
 }
