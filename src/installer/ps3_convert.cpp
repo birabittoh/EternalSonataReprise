@@ -429,13 +429,16 @@ std::optional<Bytes> ConvertColours(const Bytes& d, size_t o, const std::string&
   const int64_t size = Rd32(d, o + 4);
   Bytes buf = Slice(d, o, o + size_t(size));
   if (tag == "NMTR") {
-    // 96 byte materials; +8 is a flags word. With its bit 0 set, +4 is the
-    // texture index rather than a colour.
+    // 96 byte materials (sub_82115F80). +2 counts layers of 8 bytes from +4:
+    // a colour, then a flags word whose bit 0 makes the colour a texture index.
     for (int64_t m = 8; m < size - 95; m += 96) {
-      for (int64_t k : {4, 36, 40, 44}) {
-        if (k != 4 || !(At(buf, size_t(m + 11)) & 1))
-          RotateWord(buf, m + k);
+      const int64_t layers = std::clamp<int64_t>(At(buf, size_t(m + 2)), 1, 4);
+      for (int64_t i = 0; i < layers; ++i) {
+        if (!(At(buf, size_t(m + 11 + 8 * i)) & 1))
+          RotateWord(buf, m + 4 + 8 * i);
       }
+      for (int64_t k : {36, 40, 44})
+        RotateWord(buf, m + k);
     }
   } else if (tag == "NLIT") {
     for (int64_t r = 8; r < size - 47; r += 48) {
@@ -448,8 +451,9 @@ std::optional<Bytes> ConvertColours(const Bytes& d, size_t o, const std::string&
     RotateWord(buf, 20);
     RotateWord(buf, 36);
   } else if (tag == "NOL2") {
-    // Type 0 records keep their colour at +8, the typed ones at +24.
-    for (int64_t r = 8; r < size - 31; r += 32)
+    // Type 0 records keep their colour at +8, the typed ones at +24. Records
+    // whose type has bit 7 set are 48 bytes long.
+    for (int64_t r = 8; r < size - 31; r += At(buf, size_t(r)) & 0x80 ? 48 : 32)
       RotateWord(buf, r + (At(buf, size_t(r)) & 3 ? 24 : 8));
   } else if (tag == "NATR") {
     // Layout from sub_821100D8: after 8 byte nodes, 12 byte triangles, 6 byte
@@ -707,6 +711,12 @@ void EmitNlef(Rebuild& rb, const Bytes& d, size_t o, size_t size, Report& report
 
 void EmitNmdl(Rebuild& rb, const Bytes& d, size_t o, size_t size, Report& report) {
   rb.Mark(o);
+  // A few PS3 models are still the 360's (version 0x82), byte for byte.
+  if (At(d, o + 8) != 0x83) {
+    Append(rb.out, Slice(d, o, o + size));
+    ++report.counts["NMDL already 360"];
+    return;
+  }
   const size_t start = rb.out.size();
   const size_t hdr = NmdlHeader(d, o);
   Append(rb.out, Slice(d, o, o + hdr));

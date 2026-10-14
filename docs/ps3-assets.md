@@ -438,7 +438,7 @@ Surveyed over the 805 files present on both releases:
 
 | Chunk | Difference | Handled |
 |---|---|---|
-| `NMDL` | version byte `0x83`, 360 accepts only `0x82` | yes |
+| `NMDL` | version byte `0x83`, 360 accepts only `0x82`; the eight `0x82` ones (`lnt01..07`, `nis01`) are the 360's and pass through | yes |
 | `NTX3` | GTF texture, 360 wants `NTEX`/`NTX2` | yes |
 | `NSHP` | RSX vertex packing | yes |
 | `NMTR`, `NLIT`, `NFOG`, `NCLC`, `NOL2` | colours RGBA vs ARGB | yes |
@@ -524,12 +524,14 @@ the 360 supports, so it is left alone.
 
 ### 3.3 Materials and lights
 
-`NMTR` holds 96 byte materials; the colours are at +4, +36, +40 and +44, and
-+8 is a flags word. When its bit 0 is set the material is textured and +4
-holds the texture index (u16) instead of a colour, so it must not be rotated.
+`NMTR` holds 96 byte materials (`sub_82115F80`); the colours are at +36, +40
+and +44, plus one per layer. +2 counts the layers, 8 bytes each from +4: a
+colour, then a flags word whose bit 0 (+11, +19, ...) makes the colour a u16
+texture index instead, which must not be rotated.
 `NLIT` is 48 byte records from +8 with colours at +20 and +28, `NFOG` has one
-at +12, `NCLC` at +20 and +36, and `NOL2` 32 byte records with the colour at
-+24, or +8 for type 0 records.
+at +12, `NCLC` at +20 and +36, and `NOL2` records with the colour at +24, or
++8 for type 0 records; a record is 48 bytes when bit 7 of its type is set,
+32 otherwise.
 
 `NATR` is map collision (`sub_821100D8`): a 32 byte header whose u16s at +16,
 +20, +22 and +18 count 8 byte nodes, 12 byte triangles, 6 byte records and a
