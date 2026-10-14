@@ -662,30 +662,6 @@ uint64_t SourceExtentBytes(const TextureFetch& fetch, const FormatInfo& info) {
   return uint64_t(pitch_blocks) * info.block_bytes * height_blocks;
 }
 
-// Where level 0 starts, as an offset from the fetch constant's base.
-//
-// Zero unless `mip_address` is 0 with a non-zero `mip_max_level`, which covers
-// two layouts:
-//
-// Smallest dimension below 16: the whole chain is packed into one tile and
-// level 0 sits at 16 >> (4 - log2_size) blocks into it. The SDK's texture_util
-// GetPackedMipOffset describes the same tile but clamps `packed_mip_base` at
-// zero, so it reports 16 blocks for every base below 16.
-//
-// Otherwise: the mip chain comes first and level 0 follows one extent in.
-uint64_t Level0ByteOffset(const TextureFetch& fetch, const FormatInfo& info) {
-  if (fetch.mip_address != 0 || fetch.mip_max_level == 0)
-    return 0;
-
-  const uint32_t log2_size =
-      Log2Ceil(fetch.width < fetch.height ? fetch.width : fetch.height);
-  if (log2_size < 4) {
-    const uint32_t offset_blocks = 16u >> (4 - log2_size);
-    return uint64_t(offset_blocks) * info.block_bytes;
-  }
-  return SourceExtentBytes(fetch, info);
-}
-
 uint32_t MipLevelCount(const TextureFetch& fetch) {
   if (!g_texture_mips_enabled.load(std::memory_order_relaxed))
     return 1;
@@ -707,6 +683,47 @@ bool PackedMipOffset(uint32_t width, uint32_t height, uint32_t block, uint32_t m
   x = along_x ? offset / block : 0;
   y = along_x ? 0 : offset / block;
   return true;
+}
+
+// A packed texture no larger than 16 on its short side keeps level 0 inside the
+// mip tail tile, 16 texels along x, or along y when wider than tall
+// (texture_util GetGuestTextureLayout).
+bool PackedLevel0Blocks(const TextureFetch& fetch, const FormatInfo& info, uint32_t& x,
+                        uint32_t& y) {
+  x = y = 0;
+  return fetch.packed_mips && PackedMipOffset(1u << Log2Ceil(fetch.width),
+                                              1u << Log2Ceil(fetch.height), info.block, 0, x, y);
+}
+
+// Where level 0 starts, as an offset from the fetch constant's base. A packed
+// linear level 0 is a plain byte offset; a packed tiled one is an origin inside
+// the tile instead, see PackedLevel0Origin.
+//
+// Unpacked, it is zero unless `mip_address` is 0 with a non-zero
+// `mip_max_level`, where the mip chain comes first and level 0 follows one
+// extent in.
+uint64_t Level0ByteOffset(const TextureFetch& fetch, const FormatInfo& info) {
+  uint32_t x, y;
+  if (PackedLevel0Blocks(fetch, info, x, y)) {
+    if (fetch.tiled)
+      return 0;
+    const uint32_t pitch_texels = fetch.pitch > fetch.width ? fetch.pitch : fetch.width;
+    const uint32_t pitch_blocks = (pitch_texels + info.block - 1) / info.block;
+    return (uint64_t(y) * pitch_blocks + x) * info.block_bytes;
+  }
+  if (fetch.mip_address != 0 || fetch.mip_max_level == 0)
+    return 0;
+  return SourceExtentBytes(fetch, info);
+}
+
+// The tiled counterpart of Level0ByteOffset's packed case. The tiled read is
+// bounded by the whole tile, so the origin stays in reach.
+bool PackedLevel0Origin(const TextureFetch& fetch, const FormatInfo& info, uint32_t& x,
+                        uint32_t& y) {
+  if (fetch.tiled && PackedLevel0Blocks(fetch, info, x, y))
+    return true;
+  x = y = 0;
+  return false;
 }
 
 uint32_t TexturePhysicalAddress(uint32_t raw_address) {
@@ -1173,6 +1190,8 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
           extent = uint64_t(32 * 32) * info.block_bytes;
         else
           mip_offset += AlignUp(uint32_t(extent), 4096);
+      } else {
+        PackedLevel0Origin(fetch, info, x, y);
       }
       // Host APIs derive non-power-of-two mip extents from the actual base
       // size, while Xenos lays their source rows out from the next power of
@@ -1255,12 +1274,14 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
       expanding ? width_blocks * info.block_bytes : upload_row_bytes;
 
   std::vector<uint8_t> texels;
+  uint32_t origin_x = 0, origin_y = 0;
+  PackedLevel0Origin(fetch, info, origin_x, origin_y);
   if (!ReadTexels(GuestPhysicalPointer(memory_base,
                                        fetch.base_address +
                                            uint32_t(Level0ByteOffset(fetch, info)),
                                        SourceExtentBytes(fetch, info)),
                   fetch, info,
-                  read_row_bytes, texels)) {
+                  read_row_bytes, texels, origin_x, origin_y)) {
     // ReadTexels has already counted why, so this does not count it again.
     // Only on the first attempt at an address: a retry that fails again is the
     // expected case for a slot holding a stale fetch constant, and logging it
