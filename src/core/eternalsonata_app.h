@@ -40,6 +40,7 @@
 #include "ps3_item_tables.h"
 #include "guest_image.h"
 #include "guest_profiler.h"
+#include "active_input.h"
 #include "fast_forward_key.h"
 #include "host_menu.h"
 #include "equipment_system.h"
@@ -544,6 +545,8 @@ class EternalsonataApp : public rex::ReXApp {
                                                            cache_root());
 
     fast_forward_key_ = eternalsonata::CreateFastForwardKey(window());
+    active_input_ = eternalsonata::CreateActiveInputTracker(
+        window(), static_cast<rex::input::InputSystem*>(runtime()->input_system()));
 
     // On-screen pad. Registered on every platform; the touch_controls cvar (on
     // by default only on Android) decides whether it is shown.
@@ -636,6 +639,7 @@ class EternalsonataApp : public rex::ReXApp {
   // See host_menu.h.
   std::unique_ptr<eternalsonata::HostMenu> host_menu_;
   std::unique_ptr<eternalsonata::FastForwardKey> fast_forward_key_;
+  std::unique_ptr<eternalsonata::ActiveInputTracker> active_input_;
 
   // Guest frame present count, bumped by the per-swap callback (any thread).
   std::atomic<uint64_t> guest_swap_count_{0};
