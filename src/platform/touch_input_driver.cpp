@@ -37,6 +37,8 @@ REXCVAR_DEFINE_DOUBLE(touch_scale, 1.0, "Input/Touch",
                       "Size of the on-screen touch controls (0.5..2)");
 REXCVAR_DEFINE_DOUBLE(touch_opacity, 0.45, "Input/Touch",
                       "Opacity of the on-screen touch controls (0..1)");
+REXCVAR_DEFINE_DOUBLE(touch_hide_delay, 3.0, "Input/Touch",
+                      "Seconds without a touch before the on-screen controls fade out (1..10, above 10 never)");
 
 namespace eternalsonata::touch {
 
@@ -52,7 +54,6 @@ int64_t NowMs() {
 }
 
 constexpr rex::input::DeviceId kTouchDevice = static_cast<rex::input::DeviceId>(0x544F5543);
-constexpr auto kTouchAutoHideDelay = std::chrono::milliseconds(3333);
 
 // Deflection at which a stick reports full range, as a fraction of the travel
 // from its centre to the edge of the ring. Short of 1.0 so the last sliver of
@@ -439,9 +440,16 @@ bool TouchInputDriver::GetVisualState(TouchVisualState* out_state) {
     ReleaseAll();
     return false;
   }
-  if (!keep_visible && finger_targets_.empty() &&
-      std::chrono::steady_clock::now() - last_touch_time_ >= kTouchAutoHideDelay) {
-    return false;
+  out_state->fade = 1.0f;
+  const double delay = REXCVAR_GET(touch_hide_delay);
+  if (!keep_visible && finger_targets_.empty() && delay <= 10.0) {
+    const double idle =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - last_touch_time_).count();
+    const double left = 1.0 - idle / std::max(delay, 1.0);
+    if (left <= 0.0) {
+      return false;
+    }
+    out_state->fade = float(left);
   }
   out_state->pressed_mask = pressed_mask_;
   out_state->control_buttons = control_buttons_;

@@ -164,6 +164,8 @@ struct TouchVisualState {
   std::vector<uint16_t> control_buttons;
   // Parallel to the layout's sticks.
   std::vector<TouchStickVisual> sticks;
+  // 1 while the pad is in use, falling to 0 as the hide delay runs out.
+  float fade = 1.0f;
 };
 
 /// Keeps the pad drawn while a settings slider is being dragged, even with the

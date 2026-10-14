@@ -333,7 +333,7 @@ constexpr std::array kBasicCvarNames = {
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
     "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
-    "touch_controls", "touch_scale", "touch_opacity", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "override_button_glyphs", "prompt_device",
+    "touch_controls", "touch_scale", "touch_opacity", "touch_hide_delay", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "override_button_glyphs", "prompt_device",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
@@ -819,6 +819,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         if (rex::cvar::GetFlagByName("touch_controls") == "true") {
           DrawSensitivityRow("touch_scale", 0.5f, 2.0f, true);
           DrawSensitivityRow("touch_opacity", 0.1f, 1.0f, true);
+          DrawSensitivityRow("touch_hide_delay", 1.0f, 11.0f, true, true);
         }
         DrawCvarRow("fast_forward_button");
         DrawMultiplierRow("fast_forward_max_speed", kFastForwardSpeedSteps, true);
@@ -1113,7 +1114,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // The generic Double widget is a bare input box; a slider reads better, and
   // the file is written once the drag ends rather than on every frame of it.
   void DrawSensitivityRow(const char* name, float min = 0.1f, float max = 5.0f,
-                          bool touch_preview = false) {
+                          bool touch_preview = false, bool infinite_at_max = false) {
     const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
@@ -1125,10 +1126,36 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID(name);
-    if (ImGui::SliderFloat("##v", &value, min, max, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+    // Whole steps, the last one standing for "never".
+    if (infinite_at_max) {
+      value = std::round(value);
+    }
+    const bool infinite = infinite_at_max && value >= max;
+    if (ImGui::SliderFloat("##v", &value, min, max,
+                           infinite ? "" : (infinite_at_max ? "%.0f" : "%.2f"),
+                           ImGuiSliderFlags_AlwaysClamp)) {
+      if (infinite_at_max) {
+        value = std::round(value);
+      }
       char text[16];
       std::snprintf(text, sizeof(text), "%.2f", value);
       rex::cvar::SetFlagByName(name, text, /*persist=*/true);
+    }
+    if (infinite) {
+      // A lemniscate over the slider, since the font has no infinity sign.
+      const ImVec2 lo = ImGui::GetItemRectMin();
+      const ImVec2 hi = ImGui::GetItemRectMax();
+      const ImVec2 mid((lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f);
+      const float a = (hi.y - lo.y) * 0.62f;
+      ImVec2 pts[48];
+      for (int i = 0; i < 48; ++i) {
+        const float t = 6.2831853f * float(i) / 48.0f;
+        const float s = std::sin(t);
+        const float k = 1.0f / (1.0f + s * s);
+        pts[i] = ImVec2(mid.x + a * std::cos(t) * k, mid.y + a * 0.9f * s * std::cos(t) * k);
+      }
+      ImGui::GetWindowDrawList()->AddPolyline(pts, 48, ImGui::GetColorU32(ImGuiCol_Text),
+                                              ImDrawFlags_Closed, std::max(1.5f, a * 0.14f));
     }
     if (touch_preview && ImGui::IsItemActive()) {
       eternalsonata::touch::TouchKeepVisible();

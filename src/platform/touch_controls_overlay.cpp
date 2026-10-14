@@ -560,7 +560,7 @@ void TouchControlsOverlay::OnDraw(ImGuiIO& io) {
     return;
   }
 
-  const float alpha = float(std::clamp(REXCVAR_GET(touch_opacity), 0.0, 1.0));
+  const float alpha = float(std::clamp(REXCVAR_GET(touch_opacity), 0.0, 1.0)) * state.fade;
   if (alpha <= 0.0f) {
     return;
   }
