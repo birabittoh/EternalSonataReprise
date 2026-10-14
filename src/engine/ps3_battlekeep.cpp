@@ -65,7 +65,7 @@ REX_HOOK_RAW(sub_821A0F18) {
   const uint32_t voice = file[FileSlot(kVoiceTable)];
   if (count != kSlots360 || !voice || REX_LOAD_U32(voice) != kTagBmd) {
     REXLOG_ERROR("ps3 battlekeep: {} entries, not the PS3's plus the 360's eight; "
-                 "rerun ps3_convert.py",
+                 "unpack the PS3 files again",
                  count);
     return;
   }

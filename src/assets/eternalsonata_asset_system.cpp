@@ -167,7 +167,7 @@ struct State {
   std::map<std::string, ModVoiceBanks> mod_voice;  // mod folder name -> its banks
   bool bound = false;
   std::map<std::array<uint8_t, 16>, AudioPatch*> tagged_audio;
-  // Clips a converted game directory ships as PCM (scripts/ps3_audio.py), keyed
+  // Clips a converted game directory ships as PCM (src/installer/ps3_audio.cpp), keyed
   // on the tag its banks already carry; loaded on first play.
   std::map<std::array<uint8_t, 16>, AudioPatch> game_pcm;
 };

@@ -58,7 +58,7 @@ for a character.
 ## 3. Model files
 
 A costume is a complete `NOBJ` chunk in the Xbox 360 layout: the same thing
-`AppKeep.bmd` entries 0..9 are, or a PS3 `.p3obj` once `ps3_convert.py` has
+`AppKeep.bmd` entries 0..9 are, or a PS3 `.p3obj` once the installer has
 converted it. Only the `NOBJ` tag and size are checked; anything else wrong
 with the model shows up when the game builds it. The motions are the
 character's own (bone names have to match its skeleton), and the field leader

@@ -1,8 +1,6 @@
 #pragma once
 
 // Conversion of the PS3 release's files into what the 360 executable loads.
-// A port of scripts/ps3_convert.py and scripts/ps3_audio.py, which stay the
-// reference: every non audio output must equal theirs byte for byte.
 // docs/ps3-assets.md has the formats.
 
 #include <array>

@@ -1,7 +1,7 @@
 #pragma once
 
-// Byte helpers with Python's semantics, so the port of ps3_convert.py reads
-// like it: slices clamp, reads past the end throw like struct.error.
+// Byte helpers with Python's semantics (the converter began as a Python port):
+// slices clamp, reads past the end throw like struct.error.
 
 #include <algorithm>
 #include <cstdint>

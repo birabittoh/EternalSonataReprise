@@ -26,7 +26,7 @@ constexpr const char* kOriginal = ".orig";
 // The unpacked PS3 files, listed on the first run: what the conversion added
 // must not be taken for PS3 data.
 constexpr const char* kShipped = "ps3-shipped.txt";
-// Bumped with every conversion change, here and in ps3_convert.py.
+// Bumped with every conversion change.
 constexpr const char* kStamp = "ps3-convert.stamp";
 constexpr const char* kStampVersion = "5";
 // Present while a conversion runs: the tree needs another.
@@ -218,7 +218,7 @@ void ListConvertedTree(const fs::path& root, const std::map<std::string, std::st
   ReplaceFile(root / kConverted, text);
 }
 
-// index.vmtoc as ps3_convert.py's Toc writes it: 48 byte records sorted by
+// index.vmtoc: 48 byte records sorted by
 // name, binary searched by sub_8210D080.
 class TocBuilder {
  public:
@@ -522,7 +522,7 @@ bool IsPs3Converted(const fs::path& dir) {
   Bytes stamp;
   if (ReadFile(dir / kStamp, stamp))
     return std::string(stamp.begin(), stamp.end()) == kStampVersion && !fs::exists(dir / kBusy, ec);
-  // Built by an older ps3_convert.py into a directory of its own: converting
+  // Built by the old Python converter into a directory of its own: converting
   // it again would convert converted files.
   return fs::is_regular_file(dir / "index.vmtoc", ec) && !fs::exists(dir / kShipped, ec);
 }

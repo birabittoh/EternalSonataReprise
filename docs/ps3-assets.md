@@ -24,8 +24,7 @@ therefore a **second target** of this executable:
   mode, with their own save state.
 * Formats that carry no game logic (textures, vertex packing, colour byte
   order, audio) are converted into what the 360 renderer and audio system
-  read, once, at install (`src/installer/ps3_install.cpp`, with
-  `scripts/ps3_convert.py` as its reference).
+  read, once, at install (`src/installer/ps3_install.cpp`).
 
 The eight null slots appended to BattleKeep (§4) are a stopgap that goes away
 as PS3 slot addressing replaces the 360's.
@@ -33,7 +32,8 @@ as PS3 slot addressing replaces the 360's.
 The 360 decoded tree (`scripts/unpack_e.exe` output under `extracted/`) is the
 reference for format work: almost every PS3 file has a 360 counterpart, so a
 format rule is only trusted once converting the PS3 file reproduces the 360
-bytes. `ps3_convert.py --verify` runs that comparison.
+bytes; diffing a converted file against its decoded 360 counterpart also shows
+converter faults (exact byte rotations betray a misplaced colour swap).
 
 ## 1. Getting the files
 
@@ -55,40 +55,30 @@ python scripts/unpack_ps3.py assets-ps3-raw/PS3_GAME/USRDIR/archives -o assets-p
 The guest asks for mixed case names (`btldata\BattleKeep.bop`), but every
 host lookup folds case (the SDK's `HostPathDevice`, the asset system's
 `ResolveUnderRoot`), so the lowercase names serve as they are. Unlike the 360 the PS3 applies no codec: every file is already decoded, which
-is the form `ps3_convert.py` and the 360 tools work on.
+is the form the converter and the 360 tools work on.
 
-Then convert the tree in place and point `game_data_root` in
-`eternalsonata.toml` at it:
+The game converts the tree in place (`src/installer/ps3_install.cpp`): pick
+a PS3 disc folder on the start screen, or point `game_data_root` in
+`eternalsonata.toml` at an unpacked tree, and it unpacks and converts once,
+then writes `ps3-convert.stamp`.
 
-```bash
-python scripts/ps3_convert.py assets-ps3
-```
-
-Like a USA or JP copy, the tree is converted where it lies: each convertible
-PS3 file is written over itself, the shipped file kept as `*.orig`, and every
-run starts from those (`ps3-shipped.txt` lists what the PS3 shipped, so files
-a run added are never taken for PS3 data). The installer's C++ converter
-keeps no `.orig`: each input is deleted once its output is written, so a
-run reads whatever is there. Every same name format keeps its PS3 magic, so
+Like a USA or JP copy, the tree is converted where it lies: each input is
+deleted once its output is written, so a run reads whatever is there
+(`ps3-shipped.txt` lists what the PS3 shipped, so files a run added are never
+taken for PS3 data). Every same name format keeps its PS3 magic, so
 `ps3-converted.txt` records each output written over its input (size and
 CRC32, appended before the rename); a file matching its line is kept as is.
 An input converted under another name (`.p3tex`, `.cps`) is found through
 its output, and a `.cxs` is rebuilt from its own header. An interrupted run
 (`ps3-converting.stamp`) or a new converter version just runs again, and
-nothing is deleted besides converted inputs. No 360 file is needed.
+nothing is deleted besides converted inputs; a fix to a converted format
+therefore needs the files unpacked again. No 360 file is needed.
 `index.vmtoc` gets a stored record for every file, keeping the records of
 files added after conversion (`title_jpn.bmd`). The PS3 only lacks seven files the 360 lists
 (`cfdata/e0041.e`, `e1101.e`, `e7080_010.e`, `e8020.e`,
 `btldata/map/zzz90..92.bop`); nothing PS3 mode runs opens them: the first
 two were start events the PS3 tables replace, the others are reached only
 from 360 scripts.
-
-The game does the same itself (`src/installer/ps3_install.cpp`, a port that
-must match the script byte for byte): pick a PS3 disc folder (or point
-`game_data_root` at an unpacked tree), and it unpacks and converts once,
-then writes `ps3-convert.stamp`. `ps3_convert.py --check` converts without
-writing and compares every output with the tree, which is the regression
-test for the port.
 
 The game runs in PS3 mode when `game_data_root` holds `pcalg_v1.p3obj`, a
 file only the PS3 ships (`src/core/target.cpp`, `IsPs3Target()`). PS3 mode

@@ -1,4 +1,4 @@
-// PS3 audio, a port of scripts/ps3_audio.py.
+// PS3 audio conversion.
 //
 // PS3 sound banks hold mono ATRAC3 clips (192 byte frames) where the 360's
 // hold XMA2, and no XMA encoder exists. Every clip gets a stub payload that

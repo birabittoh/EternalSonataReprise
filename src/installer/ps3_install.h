@@ -3,8 +3,8 @@
 // The PS3 release's install steps: unpacking USRDIR/archives/*.files, then
 // converting the unpacked tree in place, as release_patch.h does for a USA or
 // JP copy. Each converted file replaces the shipped one as it is
-// written, so the tree never needs more room than the unpacked files. scripts/unpack_ps3.py and
-// scripts/ps3_convert.py are the reference.
+// written, so the tree never needs more room than the unpacked files. scripts/unpack_ps3.py is
+// the reference for unpacking.
 
 #include <cstdint>
 #include <filesystem>

@@ -204,7 +204,7 @@ void BuildPs3AppKeep(PPCContext& ctx, uint8_t* base) {
   // The PS3 file's last entry is its slot 373; the 360's are null from 365.
   if (REX_LOAD_U32(kSlotArray + 4 * (kSlotsPs3 - 1)) == 0 ||
       REX_LOAD_U32(kSlotArray + 4 * kSlotsPs3) != 0) {
-    REXLOG_ERROR("ps3 appkeep: AppKeep.bmd is not the PS3's; rerun ps3_convert.py");
+    REXLOG_ERROR("ps3 appkeep: AppKeep.bmd is not the PS3's; unpack the PS3 files again");
   } else {
     for (uint32_t i = 0; i < kSlotsPs3; ++i)
       file[i] = REX_LOAD_U32(kSlotArray + 4 * i);
