@@ -72,6 +72,10 @@ void ConvertEffectColours(Bytes& buf, size_t at, size_t size) {
     if (length < 0x70 || offsets[k] + length != offsets[k + 1] || element + length > end)
       continue;
     const size_t keys = buf[element + 0x59], group = u16(element + 0x66);
+    // Other element kinds keep floats where the counts would be (group 1,
+    // 72 keys in em19's PAT1 effect); rotating those made NaN hit points.
+    if (group % 4 != 0 || group < 0x74)
+      continue;
     for (size_t i = 0; i < keys; ++i) {
       const size_t colour = element + group + 4 + 8 * i + 4;
       if (colour + 4 <= element + length)

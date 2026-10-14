@@ -561,7 +561,10 @@ dir   "CK"  u8 entry size (12)  u8 count, then per entry:
 ```
 
 Tags seen: `TEXn` (`NTX3`), `CBLn` (`NOBJ`), `SE_0` (a
-`CSF ` bank), `EFCT` (`etbl`), `TRCn`, `COMT`, `MLNn`, `ANMn`. The 360 aligns
+`CSF ` bank), `EFCT` (`etbl`), `TRCn`, `COMT`, `MLNn`, `ANMn`. Only `etbl`
+elements whose colour group offset (+0x66) is word aligned and past the
+element header have colour keys; other kinds hold floats there (em19's `PAT1`
+attack path), and rotating them gives NaN hit points. The 360 aligns
 sections to 0x1000, the PS3 to 128. Converting an embedded model or bank
 changes its size, so the converter converts each section and rewrites the
 directory and the `Mefc` size; converting in place without that leaves `SE_0`
