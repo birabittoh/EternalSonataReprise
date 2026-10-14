@@ -147,7 +147,7 @@ public class EternalSonataActivity extends SDLActivity {
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
         } catch (Exception e) {
             Log.w(TAG, "Import staging failed: " + e.getMessage());
-            showHostToast("Could not read that file.");
+            showHostToast(text(T_READ_FAILED));
             return;
         }
         nativeDocumentReady(op, staged.getAbsolutePath());
@@ -169,12 +169,12 @@ public class EternalSonataActivity extends SDLActivity {
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
         } catch (Exception e) {
             Log.w(TAG, "Export copy failed: " + e.getMessage());
-            showHostToast("Could not write to that location.");
+            showHostToast(text(T_WRITE_FAILED));
             return;
         } finally {
             source.delete();
         }
-        showHostToast("Saves exported.");
+        showHostToast(text(T_SAVES_EXPORTED));
     }
 
     // ---------------------------------------------------------------------
@@ -265,14 +265,14 @@ public class EternalSonataActivity extends SDLActivity {
         final java.util.List<String> names = installedDrivers();
         final String current = selectedDriver();
         String[] items = new String[names.size() + 1];
-        items[0] = "System driver";
+        items[0] = text(T_DRIVER_SYSTEM);
         for (int i = 0; i < names.size(); i++) items[i + 1] = names.get(i);
         final int[] choice = { Math.max(0, names.indexOf(current) + 1) };
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
-            .setTitle(atStartup ? "The game did not start last time. GPU driver:" : "GPU driver")
+            .setTitle(text(atStartup ? T_DRIVER_TITLE_STARTUP : T_DRIVER_TITLE))
             .setSingleChoiceItems(items, choice[0], (d, which) -> choice[0] = which)
-            .setPositiveButton(atStartup ? "Start" : "OK", (d, w) -> {
+            .setPositiveButton(text(atStartup ? T_START : T_OK), (d, w) -> {
                 String picked = choice[0] == 0 ? null : names.get(choice[0] - 1);
                 selectDriver(picked);
                 if (atStartup) {
@@ -282,7 +282,7 @@ public class EternalSonataActivity extends SDLActivity {
                     offerCloseForDriver();
                 }
             })
-            .setNeutralButton("Install...", (d, w) -> {
+            .setNeutralButton(text(T_INSTALL), (d, w) -> {
                 driverDialogAtStartup = atStartup;
                 android.content.Intent intent =
                     new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
@@ -291,7 +291,7 @@ public class EternalSonataActivity extends SDLActivity {
                 startActivityForResult(intent, REQUEST_DRIVER);
             });
         if (!names.isEmpty()) {
-            builder.setNegativeButton("Delete", (d, w) -> {
+            builder.setNegativeButton(text(T_DELETE), (d, w) -> {
                 if (choice[0] > 0) {
                     String name = names.get(choice[0] - 1);
                     deleteTree(new File(driversRoot(), name));
@@ -313,11 +313,10 @@ public class EternalSonataActivity extends SDLActivity {
     private void offerCloseForDriver() {
         if (java.util.Objects.equals(selectedDriver(), runningDriver)) return;
         new AlertDialog.Builder(this)
-            .setTitle("GPU driver changed")
-            .setMessage("The new driver is used from the next start. Close the game now? "
-                + "Unsaved progress will be lost.")
-            .setPositiveButton("Close game", (d, w) -> nativeCloseGame())
-            .setNegativeButton("Later", null)
+            .setTitle(text(T_DRIVER_CHANGED_TITLE))
+            .setMessage(text(T_DRIVER_CHANGED_MESSAGE))
+            .setPositiveButton(text(T_CLOSE_GAME), (d, w) -> nativeCloseGame())
+            .setNegativeButton(text(T_LATER), null)
             .show();
     }
 
@@ -331,10 +330,10 @@ public class EternalSonataActivity extends SDLActivity {
             String installed = installDriver(uri);
             runOnUiThread(() -> {
                 if (installed == null) {
-                    showHostToast("That file is not a Vulkan driver package.");
+                    showHostToast(text(T_DRIVER_INVALID));
                 } else {
                     selectDriver(installed);
-                    showHostToast("Installed " + installed + ".");
+                    showHostToast(text(T_DRIVER_INSTALLED).replace("{}", installed));
                 }
                 buildDriverDialog(atStartup);
             });
@@ -436,6 +435,22 @@ public class EternalSonataActivity extends SDLActivity {
         file.delete();
     }
 
+    // Indices into nativeHostTexts(), in the order of JavaTexts() in host_menu.cpp.
+    private static final int T_READ_FAILED = 0, T_WRITE_FAILED = 1, T_SAVES_EXPORTED = 2,
+        T_DRIVER_INVALID = 3, T_DRIVER_INSTALLED = 4, T_DRIVER_SYSTEM = 5,
+        T_DRIVER_TITLE_STARTUP = 6, T_DRIVER_TITLE = 7, T_START = 8, T_OK = 9, T_INSTALL = 10,
+        T_DELETE = 11, T_DRIVER_CHANGED_TITLE = 12, T_DRIVER_CHANGED_MESSAGE = 13,
+        T_CLOSE_GAME = 14, T_LATER = 15;
+
+    private String text(int index) {
+        try {
+            return nativeHostTexts()[index];
+        } catch (Throwable e) {
+            return "";
+        }
+    }
+
+    private native String[] nativeHostTexts();
     private native void nativeHostMenuSelect(int index);
     private native String nativeDocumentReady(int op, String path);
     private native void nativeGpuDriverDialogClosed();

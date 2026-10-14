@@ -22,6 +22,8 @@
 #include <rex/system/kernel_state.h>
 #include <rex/system/mod_state.h>
 #include <rex/system/xcontent.h>
+
+#include "ui_text.h"
 #endif
 
 namespace eternalsonata {
@@ -47,10 +49,32 @@ enum MenuItem : int {
   kExit,
 };
 
-const char* const kMenuItems[] = {
-    "Install mod (.zip)...", "Export saves", "Import saves", "GPU driver...",
-    "Exit",
-};
+std::vector<std::string> MenuItems() {
+  return {Tr("host_menu", "menu_install_mod"), Tr("host_menu", "menu_export_saves"),
+          Tr("host_menu", "menu_import_saves"), Tr("host_menu", "menu_gpu_driver"),
+          Tr("host_menu", "menu_exit")};
+}
+
+// The strings EternalSonataActivity draws itself, in the order of its T_*
+// constants. Fetched whenever a dialog opens, so a language change shows.
+std::vector<std::string> JavaTexts() {
+  return {Tr("host_menu", "read_failed"),
+          Tr("host_menu", "write_failed"),
+          Tr("host_menu", "saves_exported"),
+          Tr("host_menu", "driver_invalid"),
+          Tr("host_menu", "driver_installed"),
+          Tr("host_menu", "driver_system"),
+          Tr("host_menu", "driver_title_startup"),
+          Tr("host_menu", "driver_title"),
+          Tr("host_menu", "start"),
+          Tr("host_menu", "ok"),
+          Tr("host_menu", "install"),
+          Tr("host_menu", "delete"),
+          Tr("host_menu", "driver_changed_title"),
+          Tr("host_menu", "driver_changed_message"),
+          Tr("host_menu", "close_game"),
+          Tr("host_menu", "later")};
+}
 
 // Which document request a JNI file callback belongs to. Passed to Java and
 // handed straight back, since the picker result arrives on a later turn of
@@ -104,8 +128,7 @@ void ShowNativeMenu() {
   jclass cls = env->GetObjectClass(activity);
   jmethodID mid = env->GetMethodID(cls, "showHostMenu", "([Ljava/lang/String;)V");
   if (mid) {
-    std::vector<std::string> items(std::begin(kMenuItems), std::end(kMenuItems));
-    jobjectArray array = ToJavaStringArray(env, items);
+    jobjectArray array = ToJavaStringArray(env, MenuItems());
     env->CallVoidMethod(activity, mid, array);
     env->DeleteLocalRef(array);
   }
@@ -167,14 +190,14 @@ bool StageSavesForExport(const std::filesystem::path& user_data_root,
                               std::filesystem::copy_options::overwrite_existing,
                           ec);
     if (ec) {
-      error = "could not read saves for profile " + name + ": " + ec.message();
+      error = Tr("host_menu", "profile_read_failed", name) + ": " + ec.message();
       return false;
     }
     ++copied;
   }
 
   if (!copied) {
-    error = "no saves found for this game";
+    error = Tr("host_menu", "no_saves");
     return false;
   }
   return true;
@@ -195,7 +218,7 @@ std::string DoExportSaves(const std::filesystem::path& user_data_root,
   std::string error;
   if (!StageSavesForExport(user_data_root, staging, error)) {
     std::filesystem::remove_all(staging, ec);
-    return "Export failed: " + error;
+    return Tr("host_menu", "export_failed", error);
   }
 
   const std::time_t now = std::time(nullptr);
@@ -208,7 +231,7 @@ std::string DoExportSaves(const std::filesystem::path& user_data_root,
   const bool ok = rex::filesystem::CreateZip(staging, archive, error);
   std::filesystem::remove_all(staging, ec);
   if (!ok) {
-    return "Export failed: " + error;
+    return Tr("host_menu", "export_failed", error);
   }
   out_archive = archive;
   return {};
@@ -218,9 +241,9 @@ std::string DoImportSaves(const std::filesystem::path& archive,
                           const std::filesystem::path& user_data_root) {
   std::string error;
   if (!rex::filesystem::ExtractZip(archive, user_data_root, error)) {
-    return "Import failed: " + error;
+    return Tr("host_menu", "import_failed", error);
   }
-  return "Saves imported successfully.";
+  return Tr("host_menu", "import_ok");
 }
 
 std::string DoInstallMod(const std::filesystem::path& archive) {
@@ -228,10 +251,12 @@ std::string DoInstallMod(const std::filesystem::path& archive) {
   const auto result = rex::system::ModState::InstallLocalArchive(
       rex::system::ModState::ResolveModsRoot(), archive, error);
   if (!result) {
-    return "Could not install that mod: " + error;
+    return Tr("host_menu", "mod_install_failed", error);
   }
-  return std::string(result->staged ? "Mod updated: " : "Mod installed: ") + result->id +
-         ". Restart the game to apply it.";
+  if (result->staged) {
+    return Tr("host_menu", "mod_updated", result->id);
+  }
+  return Tr("host_menu", "mod_installed", result->id);
 }
 
 void RunOnUiThread(std::function<void()> work) {
@@ -278,6 +303,11 @@ Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeHostMenuSelect(JNI
     default:  // The dialog was dismissed.
       break;
   }
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeHostTexts(JNIEnv* env, jobject) {
+  return ToJavaStringArray(env, JavaTexts());
 }
 
 extern "C" JNIEXPORT void JNICALL
