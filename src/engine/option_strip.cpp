@@ -54,10 +54,12 @@
 #include "generated/eternalsonata_init.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include <rex/hook.h>
 #include <rex/memory/utils.h>
@@ -67,6 +69,9 @@
 #include "option_strip.h"
 #include "ps3_appkeep.h"
 #include "scrapbook_menu.h"
+
+// sub_82179160(manager, handle, argb, 0, 0, -1): a screen object's colour.
+REX_EXTERN(__imp__sub_82179160);
 
 namespace option_strip {
 namespace {
@@ -98,13 +103,33 @@ constexpr int kTargetIndex = 7;
 // Old index drawn at each new position.
 constexpr int kOrder[kStripCount] = {0, 1, 3, 4, 5, 6, 7, 2, 8, 9, 10};
 
-// With the PS3's Scrapbook unlocked, Item Set's records carry it instead, just
-// after Photos as on the PS3, and Item Set leaves the strip.
+// The fallback when the list cannot be widened: Item Set's records carry the
+// Scrapbook instead, just after Photos as on the PS3, and Item Set leaves.
 constexpr int kScrapbookSource = 1;
 constexpr int kScrapbookIndex = 4;
 constexpr int kOrderScrapbook[kStripCount] = {0, 3, 4, 5, 1, 6, 7, 2, 8, 9, 10};
 static_assert(kOrderScrapbook[kScrapbookIndex] == kScrapbookSource &&
               kOrderScrapbook[kTargetIndex] == kSourceIndex);
+
+// The PS3's twelve entry strip (sub_273788): the Scrapbook is a twelfth entry
+// after Photos, at the PS3's selectable x. The eleven stock records keep kOrder
+// and only move; the Scrapbook's icon and glow are appended to the end of the
+// list, so every stock screen object keeps the index the game reads it by
+// (glows from +144, Items' icon at +92, Save's at +132).
+constexpr int kWideCount = 12;
+constexpr int kWideScrapbookIndex = 5;
+constexpr std::int32_t kWideSelectableX[kWideCount] = {
+    375, 445, 515, 585, 655, 725, 795, 865, 935, 1005, 1075, 1149};
+constexpr std::uint32_t kSelectableStride = 16u;  // {1502, x, y, tag}
+
+// The list opcodes that wrap the appended records like the stock runs: 2100 n
+// pushes the strip's parent node n and 2101 pops it; 3000 n sets the draw
+// priority, 1 for the icons and 0, where the list leaves it, for the glows.
+constexpr std::uint32_t kPushParent = 2100u;
+constexpr std::uint32_t kPopParent = 2101u;
+constexpr std::uint32_t kSetPriority = 3000u;
+
+constexpr std::uint32_t kObjectManagerAddress = 0x824CF500u;
 
 // Its art: the PS3 AppKeep's camp icon and hover glow (PS3 ids 367 and 368).
 constexpr std::uint32_t kScrapbookIconPs3 = 367u;
@@ -307,6 +332,15 @@ void PermuteRun(std::uint8_t* base, std::uint32_t start, std::uint32_t stride,
 std::mutex g_edited_mutex;
 bool g_edited = false;
 bool g_scrapbook = false;  // the edit put the Scrapbook in
+bool g_wide = false;       // as a twelfth entry, rather than over Item Set
+
+std::uint32_t g_list_copy = 0;  // guest heap copy handed to the interpreter
+
+// The appended glow's object handle. Its slot in the screen's object array is
+// not fixed: sub_821DD808 appends the party row to the list first, so the
+// glow lands after a party sized run. It is caught as sub_821EF0E8 makes it.
+std::atomic<std::uint32_t> g_extra_glow_handle{0xFFFFFFFFu};
+std::atomic<bool> g_awaiting_extra_glow{false};
 
 // Set only for the duration of the stock sub_8223B2F8 call made for the moved
 // slot, so the one BTX lookup that call performs is ours. Thread local because
@@ -327,7 +361,37 @@ bool StripHasScrapbook() {
   return g_scrapbook;
 }
 
-const int* Order() { return StripHasScrapbook() ? kOrderScrapbook : kOrder; }
+bool StripIsWide() {
+  std::lock_guard<std::mutex> lock(g_edited_mutex);
+  return g_wide;
+}
+
+int StripCount() { return StripIsWide() ? kWideCount : kStripCount; }
+
+// The stock record drawn at a wide strip position, or -1 for the Scrapbook.
+int WideRecordAt(int index) {
+  if (index == kWideScrapbookIndex) {
+    return -1;
+  }
+  return index < kWideScrapbookIndex ? index : index - 1;
+}
+
+// The stock slot whose label and glow the entry at `index` carries, or -1 for
+// the wide strip's Scrapbook, which has neither.
+int StockSlotAt(int index) {
+  if (StripIsWide()) {
+    const int record = WideRecordAt(index);
+    return record < 0 ? -1 : kOrder[record];
+  }
+  return (StripHasScrapbook() ? kOrderScrapbook : kOrder)[index];
+}
+
+bool ScrapbookAt(int index) {
+  if (StripIsWide()) {
+    return index == kWideScrapbookIndex;
+  }
+  return StripHasScrapbook() && index == kScrapbookIndex;
+}
 
 std::uint32_t TagAt(int index) {
   if (index == kTargetIndex) {
@@ -336,7 +400,7 @@ std::uint32_t TagAt(int index) {
   if (StripHasScrapbook() && index == kScrapbookIndex) {
     return scrapbook_menu::kTag;
   }
-  return kCanonicalTags[Order()[index]];
+  return kCanonicalTags[StockSlotAt(index)];
 }
 
 std::uint32_t WriteLabel(std::uint8_t* base, std::uint32_t* address,
@@ -378,39 +442,132 @@ const char* AchievementsWord(const std::uint8_t* base) {
   return AchievementsLabel(base);
 }
 
-void MaybeEditOptionStrip(std::uint8_t* base, std::uint32_t list) {
+// Restates the eleven stock records at the wide strip's x, then copies the list
+// to the guest heap with the Scrapbook's selectable inserted after Photos and
+// its icon and glow appended. Returns the copy, or 0 to fall back.
+std::uint32_t WidenStrip(std::uint8_t* base, std::uint32_t list,
+                         std::uint32_t end, std::uint32_t strip,
+                         std::uint32_t glow, const Run& sel) {
+  // The glow run sits directly under the parent push the appended records
+  // reuse; the icon run is under the same parent in every language's list.
+  if (sel.stride != kSelectableStride || glow < list + 8u ||
+      ReadU32(base, glow - 8u) != kPushParent) {
+    return 0;
+  }
+  const std::uint32_t parent = ReadU32(base, glow - 4u);
+  const std::int32_t icon_dx = ReadI32(base, strip + 8u) - ReadI32(base, sel.start + 4u);
+  const std::int32_t glow_dx = ReadI32(base, glow + 8u) - ReadI32(base, sel.start + 4u);
+
+  PermuteRun(base, strip, kIconStride, 8u, kOrder);
+  PermuteRun(base, glow, kGlowStride, 8u, kOrder);
+  PermuteRun(base, sel.start, sel.stride, 4u, kOrder);
+  WriteU32(base, sel.start + sel.stride * static_cast<std::uint32_t>(kTargetIndex) + 12u,
+           kAchievementsTag);
+  for (int index = 0; index < kWideCount; ++index) {
+    const int record = WideRecordAt(index);
+    if (record < 0) {
+      continue;
+    }
+    const auto at = static_cast<std::uint32_t>(record);
+    const std::int32_t x = kWideSelectableX[index];
+    WriteU32(base, sel.start + sel.stride * at + 4u, static_cast<std::uint32_t>(x));
+    WriteU32(base, strip + kIconStride * at + 8u, static_cast<std::uint32_t>(x + icon_dx));
+    WriteU32(base, glow + kGlowStride * at + 8u, static_cast<std::uint32_t>(x + glow_dx));
+  }
+
+  std::vector<std::uint32_t> words;
+  for (std::uint32_t at = list; at < end; at += 4u) {
+    words.push_back(ReadU32(base, at));
+  }
+  const std::int32_t x = kWideSelectableX[kWideScrapbookIndex];
+  const std::uint32_t sel_word =
+      (sel.start + sel.stride * static_cast<std::uint32_t>(kWideScrapbookIndex) - list) / 4u;
+  const std::uint32_t selectable[] = {ReadU32(base, sel.start), static_cast<std::uint32_t>(x),
+                                      ReadU32(base, sel.start + 8u), scrapbook_menu::kTag};
+  words.insert(words.begin() + sel_word, std::begin(selectable), std::end(selectable));
+
+  // Copies of the first stock icon and glow, with the Scrapbook's art and x.
+  words.insert(words.end(), {kPushParent, parent, kSetPriority, 1u});
+  for (std::uint32_t off = 0; off < kIconStride; off += 4u) {
+    words.push_back(ReadU32(base, strip + off));
+  }
+  const std::size_t icon_word = words.size() - kIconStride / 4u;
+  words[icon_word + 1u] = eternalsonata::Ps3AppKeepImageId(kScrapbookIconPs3);
+  words[icon_word + 2u] = static_cast<std::uint32_t>(x + icon_dx);
+  words.insert(words.end(), {kSetPriority, 0u, kPopParent, kPushParent, parent});
+  for (std::uint32_t off = 0; off < kGlowStride; off += 4u) {
+    words.push_back(ReadU32(base, glow + off));
+  }
+  const std::size_t glow_word = words.size() - kGlowStride / 4u;
+  words[glow_word + 1u] = eternalsonata::Ps3AppKeepImageId(kScrapbookGlowPs3);
+  words[glow_word + 2u] = static_cast<std::uint32_t>(x + glow_dx);
+  words.push_back(kPopParent);
+
+  constexpr std::uint32_t kCopyWords = kMaxListWords + 64u;
+  if (words.size() + 1u > kCopyWords) {
+    return 0;
+  }
+  if (!g_list_copy) {
+    auto* mem = rex::system::kernel_memory();
+    g_list_copy = mem ? mem->SystemHeapAlloc(4u * kCopyWords, 0x20) : 0;
+    if (!g_list_copy) {
+      return 0;
+    }
+  }
+  std::uint32_t out = g_list_copy;
+  for (const std::uint32_t word : words) {
+    WriteU32(base, out, word);
+    out += 4u;
+  }
+  WriteU32(base, out, kListTerminator);
+  return g_list_copy;
+}
+
+std::uint32_t MaybeEditOptionStrip(std::uint8_t* base, std::uint32_t list) {
   if (!list) {
-    return;
+    return 0;
   }
   const std::uint32_t end = FindListEnd(base, list);
   if (!end) {
-    return;
+    return 0;
   }
   const std::uint32_t strip = FindIconStrip(base, list, end);
   if (!strip) {
-    return;
+    return 0;
   }
   Run sel;
   if (!FindSelectableRun(base, list, end, &sel)) {
-    return;  // never edit the art without the selection, or they drift apart
+    return 0;  // never edit the art without the selection, or they drift apart
   }
   const std::uint32_t glow = FindGlowRun(base, list, end);
   if (!glow) {
-    return;  // same for the glow: a stale one sits behind the wrong icon
+    return 0;  // same for the glow: a stale one sits behind the wrong icon
   }
 
   if (sel.stride > 0x80u) {
-    return;  // beyond what PermuteRun can hold; refuse rather than corrupt
+    return 0;  // beyond what PermuteRun can hold; refuse rather than corrupt
   }
 
   AdjustJapanesePartyLevel(base, list, end);
 
-  // Both runs keep eleven records, so nothing has to be inserted or deleted and
-  // the cursor still stops at Save. The selectable records carry their own tags
-  // and travel with their art, so every option that moves keeps its screen.
   const bool scrapbook = scrapbook_menu::StripShowsScrapbook() &&
                          eternalsonata::Ps3AppKeepImageId(kScrapbookIconPs3) &&
                          eternalsonata::Ps3AppKeepImageId(kScrapbookGlowPs3);
+  if (scrapbook) {
+    if (const std::uint32_t copy = WidenStrip(base, list, end, strip, glow, sel)) {
+      std::lock_guard<std::mutex> lock(g_edited_mutex);
+      g_edited = true;
+      g_scrapbook = true;
+      g_wide = true;
+      g_extra_glow_handle = 0xFFFFFFFFu;
+      g_awaiting_extra_glow = true;
+      return copy;
+    }
+  }
+
+  // Both runs keep eleven records, so nothing has to be inserted or deleted and
+  // the cursor still stops at Save. The selectable records carry their own tags
+  // and travel with their art, so every option that moves keeps its screen.
   const int* order = scrapbook ? kOrderScrapbook : kOrder;
   PermuteRun(base, strip, kIconStride, 8u, order);
   PermuteRun(base, glow, kGlowStride, 8u, order);
@@ -432,7 +589,42 @@ void MaybeEditOptionStrip(std::uint8_t* base, std::uint32_t list) {
     std::lock_guard<std::mutex> lock(g_edited_mutex);
     g_edited = true;
     g_scrapbook = scrapbook;
+    g_wide = false;
+    g_awaiting_extra_glow = false;
   }
+  return 0;
+}
+
+void MaybeCatchExtraGlow(std::uint32_t image_id, std::uint32_t handle) {
+  if (g_awaiting_extra_glow &&
+      image_id == eternalsonata::Ps3AppKeepImageId(kScrapbookGlowPs3)) {
+    g_extra_glow_handle = handle;
+    g_awaiting_extra_glow = false;
+  }
+}
+
+// The wide strip's Scrapbook glow, lit or dimmed the way sub_8223B288 does the
+// stock ones.
+void SetExtraGlow(PPCContext& ctx, std::uint8_t* base, bool lit) {
+  const std::uint32_t handle = g_extra_glow_handle;
+  if (handle == 0xFFFFFFFFu) {
+    return;
+  }
+  const std::uint32_t saved[] = {ctx.r3.u32, ctx.r4.u32, ctx.r5.u32,
+                                 ctx.r6.u32, ctx.r7.u32, ctx.r8.u32};
+  ctx.r3.u32 = kObjectManagerAddress;
+  ctx.r4.u32 = handle;
+  ctx.r5.u32 = lit ? 0xFFFFFFFFu : 0u;
+  ctx.r6.u32 = 0u;
+  ctx.r7.u32 = 0u;
+  ctx.r8.u32 = 0xFFFFFFFFu;
+  __imp__sub_82179160(ctx, base);
+  ctx.r3.u32 = saved[0];
+  ctx.r4.u32 = saved[1];
+  ctx.r5.u32 = saved[2];
+  ctx.r6.u32 = saved[3];
+  ctx.r7.u32 = saved[4];
+  ctx.r8.u32 = saved[5];
 }
 
 // Spanish throws the selectable run away and rebuilds it by hand, so the
@@ -524,29 +716,61 @@ REX_EXTERN(__imp__sub_8223B2F8);
 REX_HOOK_RAW(sub_8223B2F8) {
   const std::uint32_t slot = ctx.r3.u32;
   if (!option_strip::StripEdited() ||
-      slot >= static_cast<std::uint32_t>(option_strip::kStripCount)) {
+      slot >= static_cast<std::uint32_t>(option_strip::StripCount())) {
     __imp__sub_8223B2F8(ctx, base);
     return;
   }
-  ctx.r3.u32 = static_cast<std::uint32_t>(option_strip::Order()[slot]);
-  option_strip::t_want_achievements_label =
-      slot == static_cast<std::uint32_t>(option_strip::kTargetIndex);
-  option_strip::t_want_scrapbook_label =
-      option_strip::StripHasScrapbook() &&
-      slot == static_cast<std::uint32_t>(option_strip::kScrapbookIndex);
+  const int index = static_cast<int>(slot);
+  const int stock = option_strip::StockSlotAt(index);
+  // The Scrapbook rides Item Set's slot, whose one lookup it then answers.
+  ctx.r3.u32 = static_cast<std::uint32_t>(stock < 0 ? option_strip::kScrapbookSource : stock);
+  option_strip::t_want_achievements_label = stock == option_strip::kSourceIndex;
+  option_strip::t_want_scrapbook_label = option_strip::ScrapbookAt(index);
   __imp__sub_8223B2F8(ctx, base);
   option_strip::t_want_achievements_label = false;
   option_strip::t_want_scrapbook_label = false;
+}
+
+// sub_821EF0E8(ui, image id, ...): makes the image objects of list records
+// 100 and 110 and returns the handle.
+REX_EXTERN(__imp__sub_821EF0E8);
+
+REX_HOOK_RAW(sub_821EF0E8) {
+  const std::uint32_t image_id = ctx.r4.u32;
+  __imp__sub_821EF0E8(ctx, base);
+  option_strip::MaybeCatchExtraGlow(image_id, ctx.r3.u32);
+}
+
+// sub_8223B288(slot) lights the glow at object slot and dims the other ten. On
+// the wide strip a slot past the Scrapbook names the record before it, and the
+// Scrapbook's own glow is the appended one.
+REX_EXTERN(__imp__sub_8223B288);
+
+REX_HOOK_RAW(sub_8223B288) {
+  const std::uint32_t slot = ctx.r3.u32;
+  if (!option_strip::StripIsWide() ||
+      slot >= static_cast<std::uint32_t>(option_strip::kWideCount)) {
+    __imp__sub_8223B288(ctx, base);
+    return;
+  }
+  const int record = option_strip::WideRecordAt(static_cast<int>(slot));
+  ctx.r3.u32 = static_cast<std::uint32_t>(record < 0 ? option_strip::kStripCount : record);
+  __imp__sub_8223B288(ctx, base);
+  option_strip::SetExtraGlow(ctx, base, record < 0);
 }
 
 // Spanish alone re-registers the eleven selectables by hand (x = 445 + 70 * i,
 // pitch 70 rather than the list's 75) after clearing group 0, with the tags
 // hardcoded in drawn order. That undoes the permutation MaybeEditOptionStrip
 // made, leaving the art and labels moved but every option opening the screen
-// that used to sit at its position, so the tags are restated here.
+// that used to sit at its position, so the tags are restated here. The wide
+// strip is already at the PS3's tighter pitch, so Spanish keeps it as built.
 REX_EXTERN(__imp__sub_8223B3E8);
 
 REX_HOOK_RAW(sub_8223B3E8) {
+  if (option_strip::StripIsWide()) {
+    return;
+  }
   __imp__sub_8223B3E8(ctx, base);
   option_strip::RepermuteSpanishSelectables(base);
 }

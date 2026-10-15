@@ -3052,8 +3052,11 @@ REX_HOOK_RAW(sub_821F2F38) {
   int page = 0;
   int lang_idx = 0;
   // The status menu's option strip: a different screen, and its list is the
-  // stack copy sub_821EC050 made, so it is edited in place rather than swapped.
-  option_strip::MaybeEditOptionStrip(base, ctx.r4.u32);
+  // stack copy sub_821EC050 made, so it is edited in place, and swapped only
+  // when it has to grow.
+  if (const u32 swapped = option_strip::MaybeEditOptionStrip(base, ctx.r4.u32)) {
+    ctx.r4.u32 = swapped;
+  }
   // The Achievements screen borrows the Music gallery's list; this hands the
   // interpreter an edited copy rather than the shipped, read-only one.
   if (const u32 swapped =

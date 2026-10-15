@@ -9,7 +9,9 @@ namespace option_strip {
 // that hook because a guest function can only be hooked once. `list` is the
 // display list the interpreter is about to walk: for the status menu that is a
 // writable stack copy, not the shipped list. Does nothing for other screens.
-void MaybeEditOptionStrip(std::uint8_t* base, std::uint32_t list);
+// Returns a longer heap copy to walk instead when the strip grows past eleven
+// entries, or 0.
+std::uint32_t MaybeEditOptionStrip(std::uint8_t* base, std::uint32_t list);
 
 // Called from the sub_8223B780 hook in eternalsonata_options.cpp, which owns
 // that hook. Returns a guest string address for the Achievements hover label
