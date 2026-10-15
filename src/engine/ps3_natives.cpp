@@ -262,9 +262,19 @@ bool Ps3CostumesBlocked() {
   return g_menu_flags[0] != 0;
 }
 
+void SetPs3CostumesBlocked(bool blocked) {
+  std::lock_guard lock(g_mutex);
+  g_menu_flags[0] = blocked;
+}
+
 bool Ps3ScrapbookUnlocked() {
   std::lock_guard lock(g_mutex);
   return g_menu_flags[1] != 0;
+}
+
+void SetPs3ScrapbookUnlocked(bool unlocked) {
+  std::lock_guard lock(g_mutex);
+  g_menu_flags[1] = unlocked;
 }
 
 void ResetPs3Record() {

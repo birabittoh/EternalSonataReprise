@@ -139,3 +139,9 @@ No 360 save sets any PS3 only id (highest set bit in the saves surveyed:
 1920), so a 360 save carries over without collisions. Every PS3 id fits the
 same 16384 bit bank. In PS3 mode `ps3_natives.cpp` already maps symbol 548
 onto the 360 bank, so PS3 scripts set and test the 360 bits directly.
+
+The two camp menu flags are not bank flags: `Bel01.e` sets `+0x921` (the
+Scrapbook is unlocked) through native 5029, and native 5032 sets `+0x920`
+(costume changes are blocked). The host keeps both in its own save record.
+Mods reach them with `EternalSonataGet/SetScrapbookUnlocked` and
+`EternalSonataGet/SetCostumesBlocked` (flag API version 3).

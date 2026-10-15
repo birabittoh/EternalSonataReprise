@@ -50,6 +50,8 @@
 
 #include "eternalsonata_flag_api.h"
 #include "flag_system.h"
+#include "ps3_natives.h"
+#include "target.h"
 
 namespace eternalsonata {
 namespace {
@@ -87,6 +89,8 @@ rex::Runtime* g_runtime = nullptr;
 bool g_have_snapshot = false;
 std::vector<uint8_t> g_snapshot;
 int g_scenario_snapshot = 0;
+bool g_scrapbook_snapshot = false;
+bool g_costumes_blocked_snapshot = false;
 
 rex::memory::Memory* Mem() { return g_runtime ? g_runtime->memory() : nullptr; }
 
@@ -149,6 +153,10 @@ void Tick() {
   size_t changed_count = 0;
   bool scenario_changed = false;
   int scenario = 0;
+  bool scrapbook_changed = false;
+  const bool scrapbook = IsPs3Target() && Ps3ScrapbookUnlocked();
+  bool costumes_blocked_changed = false;
+  const bool costumes_blocked = IsPs3Target() && Ps3CostumesBlocked();
 
   {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -183,10 +191,14 @@ void Tick() {
         }
       }
       scenario_changed = scenario != g_scenario_snapshot;
+      scrapbook_changed = scrapbook != g_scrapbook_snapshot;
+      costumes_blocked_changed = costumes_blocked != g_costumes_blocked_snapshot;
     }
 
     g_snapshot.assign(bank, bank + kFlagBytes);
     g_scenario_snapshot = scenario;
+    g_scrapbook_snapshot = scrapbook;
+    g_costumes_blocked_snapshot = costumes_blocked;
     g_have_snapshot = true;
   }
 
@@ -202,6 +214,13 @@ void Tick() {
   if (scenario_changed) {
     Publish(ETERNALSONATA_FLAG_EVENT_SCENARIO_CHANGED, 0,
             static_cast<double>(scenario));
+  }
+  if (scrapbook_changed) {
+    Publish(ETERNALSONATA_FLAG_EVENT_SCRAPBOOK_CHANGED, 0, scrapbook ? 1.0 : 0.0);
+  }
+  if (costumes_blocked_changed) {
+    Publish(ETERNALSONATA_FLAG_EVENT_COSTUMES_BLOCKED_CHANGED, 0,
+            costumes_blocked ? 1.0 : 0.0);
   }
 }
 
@@ -351,5 +370,45 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetScenarioCounter(int value) 
   for (uint32_t i = 0; i < kScenarioBytes; ++i) {
     bank[kFlagBytes + i] = static_cast<uint8_t>(uint32_t(value) >> (8 * (3 - i)));
   }
+  return ETERNALSONATA_FLAG_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetScrapbookUnlocked(void) {
+  using namespace eternalsonata;
+  if (!IsPs3Target()) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  return Ps3ScrapbookUnlocked() ? 1 : 0;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetScrapbookUnlocked(int value) {
+  using namespace eternalsonata;
+  if (value != 0 && value != 1) {
+    return ETERNALSONATA_FLAG_ERR_INVALID_VALUE;
+  }
+  if (!IsPs3Target()) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  SetPs3ScrapbookUnlocked(value != 0);
+  return ETERNALSONATA_FLAG_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetCostumesBlocked(void) {
+  using namespace eternalsonata;
+  if (!IsPs3Target()) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  return Ps3CostumesBlocked() ? 1 : 0;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCostumesBlocked(int value) {
+  using namespace eternalsonata;
+  if (value != 0 && value != 1) {
+    return ETERNALSONATA_FLAG_ERR_INVALID_VALUE;
+  }
+  if (!IsPs3Target()) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  SetPs3CostumesBlocked(value != 0);
   return ETERNALSONATA_FLAG_OK;
 }
