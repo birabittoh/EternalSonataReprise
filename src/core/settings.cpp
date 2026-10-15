@@ -498,6 +498,17 @@ constexpr std::array kTimerResolutionOptions = {
 };
 #endif  // _WIN32
 
+// The backend a gpu_backend value ends up using. Auto picks D3D12 on Windows.
+std::string EffectiveGpuBackend(const std::string& value) {
+  return value == "any" || value.empty() ? "d3d12" : value;
+}
+
+// gpu_backend as of the first call, which happens before the player can change it.
+const std::string& LaunchGpuBackend() {
+  static const std::string value = rex::cvar::GetFlagByName("gpu_backend");
+  return value;
+}
+
 // True once `name`'s cvar has actually been changed at runtime this session
 // and needs a relaunch to take effect. GetPendingRestartFlags() only tracks
 // cvars changed at runtime (settings UI, console, mods), not values applied
@@ -506,7 +517,13 @@ constexpr std::array kTimerResolutionOptions = {
 // See SetFlagByNameImpl's mark_restart parameter in the SDK's cvar.cpp.
 bool CvarPendingRestart(const char* name) {
   auto pending = rex::cvar::GetPendingRestartFlags();
-  return std::find(pending.begin(), pending.end(), name) != pending.end();
+  if (std::find(pending.begin(), pending.end(), name) == pending.end())
+    return false;
+  // "any" and "d3d12" run the same backend, so swapping them needs no relaunch.
+  if (std::string_view(name) == "gpu_backend")
+    return EffectiveGpuBackend(rex::cvar::GetFlagByName("gpu_backend")) !=
+           EffectiveGpuBackend(LaunchGpuBackend());
+  return true;
 }
 
 // True if any cvar this settings UI owns still needs a restart. Filtered to
@@ -519,7 +536,7 @@ bool AnyKnownPendingRestart() {
     return std::find(pending.begin(), pending.end(), name) != pending.end();
   };
   for (const char* name : kBasicCvarNames) {
-    if (is_tracked(name))
+    if (is_tracked(name) && CvarPendingRestart(name))
       return true;
   }
   return false;
@@ -720,7 +737,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawCvarRow("vsync");
 #ifdef _WIN32
         // Elsewhere Vulkan is the only backend.
-        DrawCvarRow("gpu_backend");
+        DrawGpuBackendRow();
 #endif
 #if REX_HAS_VULKAN
 #ifdef _WIN32
@@ -963,6 +980,51 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     }
     ImGui::PopID();
   }
+
+  // gpu_backend with display names for its stored values (any, vulkan, d3d12).
+  // Windows only, the one platform with a choice.
+#ifdef _WIN32
+  void DrawGpuBackendRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("gpu_backend");
+    if (!entry)
+      return;
+    const auto& opts = entry->constraints.allowed_values;
+    if (opts.empty()) {
+      DrawCvarRow("gpu_backend");
+      return;
+    }
+    auto label = [](const std::string& id) {
+      if (id == "any")
+        return OptionText("backend_", "any", "Auto");
+      if (id == "vulkan")
+        return OptionText("backend_", "vulkan", "Vulkan");
+      if (id == "d3d12")
+        return OptionText("backend_", "d3d12", "D3D12");
+      return id.c_str();
+    };
+    const std::string current = entry->getter();
+    if (DrawRowLabel("gpu_backend", "gpu_backend")) {
+      if (const char* tip = Tip("gpu_backend", entry->description.empty()
+                                                   ? nullptr
+                                                   : entry->description.c_str())) {
+        ImGui::SetTooltip("%s", tip);
+      }
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("gpu_backend");
+    if (ImGui::BeginCombo("##v", label(current))) {
+      for (const auto& opt : opts) {
+        if (ImGui::Selectable(label(opt), opt == current)) {
+          rex::cvar::SetFlagByName("gpu_backend", opt, /*persist=*/true);
+          SaveBasic();
+        }
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::PopID();
+  }
+#endif  // _WIN32
 
   // Discrete steps, so the shipped balance is always exactly one notch. The
   // label shows the cvar's real value, which a hand edited config may have
@@ -1820,6 +1882,7 @@ void InitSettingsCaches() {
 void BindSettingsTargets(rex::ui::Window* window,
                          std::filesystem::path user_settings_path) {
   g_window = window;
+  LaunchGpuBackend();
   g_user_settings_path = std::move(user_settings_path);
   rex::cvar::RegisterChangeCallback("fullscreen", [](std::string_view, std::string_view) {
     SaveUserSettings();
@@ -2510,6 +2573,7 @@ std::unique_ptr<rex::ui::ImGuiDialog> CreateSettingsDialog(
     rex::input::InputSystem* input_system) {
   g_user_settings_path = user_settings_path;
   g_window = window;
+  LaunchGpuBackend();
   return std::make_unique<CuratedSettingsDialog>(drawer, window, std::move(user_settings_path),
                                                  std::move(app_config_path), input_system);
 }
