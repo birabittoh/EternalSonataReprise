@@ -42,6 +42,7 @@ constexpr ImU32 kTop = IM_COL32(0x2C, 0x1A, 0x0B, 255);
 constexpr ImU32 kBottom = IM_COL32(0x0E, 0x08, 0x03, 255);
 constexpr ImVec4 kAccent(0x3A / 255.0f, 0xAA / 255.0f, 0xDC / 255.0f, 1.0f);
 constexpr ImVec4 kText(0.96f, 0.93f, 0.88f, 1.0f);
+constexpr ImVec4 kQuitRed(0.90f, 0.22f, 0.22f, 1.0f);
 constexpr ImVec4 kError(1.0f, 0.55f, 0.50f, 1.0f);
 
 rex::ui::ImGuiDrawer* g_drawer = nullptr;
@@ -192,7 +193,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       options_.push_back({IntroText::kStart, GameDataChoice::kStart, 1, 0});
       options_.push_back({IntroText::kAddVersion, GameDataChoice::kAddVersion, 1, 1});
       options_.push_back({IntroText::kDeleteVersion, GameDataChoice::kDelete, 1, 2});
-      options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, 3});
+      options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, kCornerRow});
       selected_ = IndexOf(GameDataChoice::kStart);
       return;
     }
@@ -201,7 +202,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       options_.push_back({IntroText::kSelectFolder, GameDataChoice::kFolder, 0, 1});
     options_.push_back({IntroText::kExtract, GameDataChoice::kExtract, 1, 0});
     if (prompt_.versions.empty())
-      options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, 1});
+      options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, kCornerRow});
     else
       options_.push_back({IntroText::kCancel, GameDataChoice::kCancel, 1, 1});
     selected_ = prompt_.can_extract ? IndexOf(GameDataChoice::kExtract) : 0;
@@ -325,7 +326,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const bool ready = body_in >= 1.0f && !busy_ && !working_;
     // One key press moves focus once, not again in the picker.
     const bool handled = DrawButtons(draw, font, size, unit,
-                                     std::max(y + 22.0f * unit, size.y * 0.62f), body_in, ready);
+                                     std::max(y + 22.0f * unit, size.y * 0.66f), body_in, ready);
     DrawLanguagePicker(draw, font, size, unit, body_in, ready && !handled);
     DrawMusicToggle(draw, font, size, unit, body_in);
     if (!working_)
@@ -341,6 +342,9 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   }
 
  private:
+  // Quit sits in the top right corner, one step above the right column.
+  static constexpr int kCornerRow = -1;
+
   struct Option {
     IntroText label;
     GameDataChoice choice;
@@ -508,6 +512,11 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
           return;
         }
       }
+      if (dy < 0 && from.row == 0) {
+        if (const int i = At(from.column, kCornerRow); i >= 0)
+          Focus(i);
+        return;
+      }
       if (dy > 0)
         on_picker_ = true;
       return;
@@ -595,7 +604,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const float bottom = size.y - 120.0f * unit;
     int visible = 1 << 20;
     if (library) {
-      top = std::min(top, bottom - 4.0f * (h + gap) + gap);
+      top = std::min(top, bottom - 3.0f * (h + gap) + gap);
       visible = std::max(1, int((bottom - top + gap) / (h + gap)));
       const int versions = int(prompt_.versions.size());
       const Option& cursor = options_[size_t(selected_)];
@@ -628,20 +637,25 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const float t = std::chrono::duration<float>(Clock::now() - *g_first_shown).count();
     for (int i = 0; i < count; ++i) {
       const Option& option = options_[size_t(i)];
+      const bool corner = option.row == kCornerRow;
       int row = option.row;
       if (option.version >= 0) {
         row -= scroll_;
         if (row < 0 || row >= visible)
           continue;
       }
-      const float w = widths[option.column];
-      const ImVec2 min(left + (option.column ? widths[0] + column_gap : 0.0f),
-                       top + float(row) * (h + gap));
-      const ImVec2 max(min.x + w, min.y + h);
+      const float corner_size = 44.0f * unit;
+      const float w = corner ? corner_size : widths[option.column];
+      const float box_h = corner ? corner_size : h;
+      const ImVec2 min = corner ? ImVec2(size.x - 24.0f * unit - corner_size, 24.0f * unit)
+                                : ImVec2(left + (option.column ? widths[0] + column_gap : 0.0f),
+                                         top + float(row) * (h + gap));
+      const ImVec2 max(min.x + w, min.y + box_h);
+      const ImVec4& accent = corner ? kQuitRed : kAccent;
       const bool usable = Enabled(i);
       ImGui::SetCursorScreenPos(min);
       ImGui::PushID(i);
-      if (ImGui::InvisibleButton("##option", ImVec2(w, h)) && ready && usable && !picker_open_)
+      if (ImGui::InvisibleButton("##option", ImVec2(w, box_h)) && ready && usable && !picker_open_)
         Press(i);
       // Only a moving mouse selects, so a resting cursor does not undo the keys.
       if (ready && usable && !picker_open_ && ImGui::IsItemHovered() && MouseMoved()) {
@@ -670,7 +684,9 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       draw->AddRectFilled(min, max, IM_COL32(0, 0, 0, int((active ? 150 : 100) * a)), rounding);
       if (picked)
         draw->AddRectFilled(min, max, Color(kAccent, 0.25f * a), rounding);
-      const ImU32 border = active ? Color(kAccent, a)
+      if (corner && active)
+        draw->AddRectFilled(min, max, Color(accent, 0.3f * a), rounding);
+      const ImU32 border = active ? Color(accent, a)
                            : glow ? Color(kAccent, (0.5f + 0.5f * pulse) * a)
                                   : IM_COL32(255, 255, 255, int(60 * a));
       draw->AddRect(min, max, border, rounding, 0,
@@ -682,12 +698,21 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         IntroText text = option.label;
         if (option.choice == GameDataChoice::kDelete && SelectedRow() && SelectedRow()->linked)
           text = IntroText::kForgetVersion;
-        const char* label = Tr(text);
-        const ImVec2 extent = font->CalcTextSizeA(label_size, FLT_MAX, 0.0f, label);
-        draw->AddText(font, label_size,
-                      ImVec2(std::floor(min.x + (w - extent.x) * 0.5f),
-                             std::floor(min.y + (h - extent.y) * 0.5f)),
-                      Color(kText, a * (active ? 1.0f : 0.8f)), label);
+        const ImU32 ink = Color(kText, a * (active ? 1.0f : 0.8f));
+        if (corner) {
+          const ImVec2 c((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+          const float r = box_h * 0.22f;
+          const float thick = std::max(2.0f, 3.0f * unit);
+          draw->AddLine(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), ink, thick);
+          draw->AddLine(ImVec2(c.x - r, c.y + r), ImVec2(c.x + r, c.y - r), ink, thick);
+        } else {
+          const char* label = Tr(text);
+          const ImVec2 extent = font->CalcTextSizeA(label_size, FLT_MAX, 0.0f, label);
+          draw->AddText(font, label_size,
+                        ImVec2(std::floor(min.x + (w - extent.x) * 0.5f),
+                               std::floor(min.y + (box_h - extent.y) * 0.5f)),
+                        ink, label);
+        }
       }
       const GameDataChoice go = library ? GameDataChoice::kStart : GameDataChoice::kExtract;
       if (option.version < 0 && option.choice == go && prompt_.confirm.empty() &&
