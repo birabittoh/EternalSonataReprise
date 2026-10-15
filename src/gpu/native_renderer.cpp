@@ -387,13 +387,11 @@ void InitNativeRenderer(rex::ui::Window* window) {
 #endif
 #if defined(__APPLE__)
   REXLOG_DEBUG(
-      "native_renderer: no GPU plugin loaded, so there is no ring buffer and the guest's D3D "
-      "packet writers are dead code. Native window handle {}, Metal layer {}.",
+      "native_renderer: native window handle {}, Metal layer {}.",
       handle, view);
 #else
   REXLOG_DEBUG(
-      "native_renderer: no GPU plugin loaded, so there is no ring buffer and the guest's D3D "
-      "packet writers are dead code. Native window handle {}.",
+      "native_renderer: native window handle {}.",
       handle);
 #endif
 

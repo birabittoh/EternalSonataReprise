@@ -492,6 +492,10 @@ std::filesystem::path g_pipeline_cache_path;
 std::filesystem::path PipelineCachePath() { return g_pipeline_cache_path; }
 
 void LoadPipelineCache() {
+  if (g_backend.api_name != "Vulkan") {
+    REXLOG_INFO("native_renderer: {} backend has no pipeline cache support", g_backend.api_name);
+    return;
+  }
   const auto path = PipelineCachePath();
   if (path.empty()) {
     REXLOG_WARN("native_renderer: no pipeline cache path, pipelines will not persist");
@@ -788,7 +792,7 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
   const RenderDeviceDescription& description = g_backend.device->getDescription();
   REXLOG_DEBUG(
       "native_renderer: Plume up on {} using \"{}\", swap chain {}x{} with {} buffers, vsync {}, "
-      "present wait {}. The window is now ours to draw into.",
+      "present wait {}.",
       g_backend.api_name, description.name, g_backend.swap_chain->getWidth(),
       g_backend.swap_chain->getHeight(), g_backend.swap_chain->getTextureCount(),
       vsync ? "on" : "off", g_present_wait ? "on" : "off (vsync will quantise the frame rate)");
