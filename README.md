@@ -21,6 +21,12 @@ Nightly builds are available from [CI artifacts](https://nightly.link/birabittoh
 
 Just extract the archive, run the executable and it will prompt you to extract the game.
 
+Several releases (Xbox 360 and PS3, each PAL, USA or JP) can be installed side
+by side. The start screen lists them; the one you start is remembered, and
+later launches go straight into it. To pick another one, use Change Version in
+the F4 settings, or turn on Start Screen at Launch there. A folder that already
+holds extracted files is used where it is rather than copied.
+
 **This project can load assets from the PAL, USA and JAP releases of the game. However, building the actual executable requires the PAL version of `default.xex`.**
 
 ## Making it portable
@@ -32,7 +38,7 @@ The root cvars in `eternalsonata.toml` (or `--name=value` on the command line)
 override each location. Any root left empty falls back to its default.
 
 ```toml
-game_data_root   = "assets"    # extracted game files (default: assets)
+game_data_root   = "assets"    # one folder per installed version (default: assets)
 user_data_root   = "user"      # saves and profiles (default: Documents/eternalsonata)
 cache_root       = "cache"     # shader cache (default: <user_data_root>/cache)
 mods_data_root   = "mods"      # mod folders (default: mods)
@@ -120,7 +126,9 @@ Extract your legally dumped ISO directly into `assets/`:
 extract-xiso -d assets "Eternal Sonata.iso"
 ```
 
-`assets/default.xex` must exist before running codegen.
+`assets/default.xex` must exist before running codegen. The game keeps it as a
+copy of the installed Xbox 360 PAL version's executable, and moves a flat `assets/`
+tree into a version folder (`assets/360-pal/`) the first time it runs.
 
 ### 4. Build
 

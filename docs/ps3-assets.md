@@ -14,8 +14,8 @@ scripts unchanged (`asset-formats.md` §4.1). That cannot work for the PS3: its 
 and data assume engine behaviour the PAL executable lacks. The PS3 release is
 therefore a **second target** of this executable:
 
-* `game_data_root` may point at a PS3 copy, and the game detects it and runs in
-  PS3 mode. A PS3 copy alone must be enough to play.
+* The game version started may be a PS3 copy, and the game detects it and runs
+  in PS3 mode. A PS3 copy alone must be enough to play.
 * PS3 scripts run **unmodified** on a PS3 script VM with the PS3's natives,
   state block and task lists, separate from the 360 VM. PS3 bytecode is never
   rewritten into 360 bytecode.
@@ -58,8 +58,8 @@ host lookup folds case (the SDK's `HostPathDevice`, the asset system's
 is the form the converter and the 360 tools work on.
 
 The game converts the tree in place (`src/installer/ps3_install.cpp`): pick
-a PS3 disc folder on the start screen, or point `game_data_root` in
-`eternalsonata.toml` at an unpacked tree, and it unpacks and converts once,
+a PS3 disc folder on the start screen, or start with `--game_version=<path>`
+pointing at an unpacked tree, and it unpacks and converts once,
 then writes `ps3-convert.stamp`.
 
 Like a USA or JP copy, the tree is converted where it lies: each input is
@@ -80,7 +80,7 @@ files added after conversion (`title_jpn.bmd`). The PS3 only lacks seven files t
 two were start events the PS3 tables replace, the others are reached only
 from 360 scripts.
 
-The game runs in PS3 mode when `game_data_root` holds `pcalg_v1.p3obj`, a
+The game runs in PS3 mode when the version folder holds `pcalg_v1.p3obj`, a
 file only the PS3 ships (`src/core/target.cpp`, `IsPs3Target()`). PS3 mode
 skips every USA/JP container patch and registers the PS3 natives; 360 mode
 does neither.
