@@ -276,8 +276,10 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       for (int i = 0; i < versions; ++i)
         options_.push_back({IntroText::kStart, GameDataChoice::kStart, i / kColumnRows,
                             i % kColumnRows, i});
+      for (int i = 0; i < versions; ++i)
+        options_.push_back({IntroText::kDeleteVersion, GameDataChoice::kDelete, kTrashColumn,
+                            i % kColumnRows, i, true});
       options_.push_back({IntroText::kStart, GameDataChoice::kStart, right, 0});
-      options_.push_back({IntroText::kDeleteVersion, GameDataChoice::kDelete, right, 1});
       if (can_add)
         options_.push_back({IntroText::kAddVersion, GameDataChoice::kAddVersion,
                             versions / kColumnRows, versions % kColumnRows});
@@ -435,6 +437,14 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   // Quit sits in the top right corner, one step above the right column.
   static constexpr int kCornerRow = -1;
   static constexpr int kColumnRows = 3;
+  static constexpr int kTrashColumn = -2;
+
+  bool CanDelete(int version) const {
+    if (version < 0 || version >= int(prompt_.versions.size()))
+      return false;
+    const VersionRow& row = prompt_.versions[size_t(version)];
+    return row.linked || row.can_delete;
+  }
 
   bool ShowsUpdateButton() const {
     return !NewerVersion().empty() && Library() && !working_ && !busy_ && prompt_.confirm.empty();
@@ -509,6 +519,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     int row;
     // A version row in the library, by index; its choice is unused.
     int version = -1;
+    // The trash can beside a version row; kept out of the keyboard grid.
+    bool trash = false;
   };
 
   bool Library() const {
@@ -614,6 +626,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
 
   bool Enabled(int i) const {
     const Option& option = options_[size_t(i)];
+    if (option.trash)
+      return CanDelete(option.version);
     if (option.version >= 0)
       return true;
     const VersionRow* row = SelectedRow();
@@ -751,7 +765,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
                                 ImGuiKey_GamepadFaceDown})) {
       Press(selected_);
     } else if (keys && library && Pressed({ImGuiKey_Delete, ImGuiKey_GamepadFaceLeft})) {
-      if (Enabled(IndexOf(GameDataChoice::kDelete)))
+      if (CanDelete(selected_version_))
         choice_ = GameDataChoice::kDelete;
     } else if (keys && Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight})) {
       choice_ = BackChoice();
@@ -794,11 +808,16 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const float t = std::chrono::duration<float>(Clock::now() - *g_first_shown).count();
     for (int i = 0; i < count; ++i) {
       const Option& option = options_[size_t(i)];
+      if (option.trash) {
+        DrawTrash(draw, i, option, column_x, widths, top, h, unit, alpha, ready);
+        continue;
+      }
       const bool corner = option.row == kCornerRow;
       const bool plus = option.version < 0 && option.choice == GameDataChoice::kAddVersion;
       const int row = option.row;
       const float corner_size = 44.0f * unit;
-      const float w = corner ? corner_size : widths[option.column];
+      const float trash_room = option.version >= 0 && option.version == selected_version_ ? h + 8.0f * unit : 0.0f;
+      const float w = corner ? corner_size : widths[option.column] - trash_room;
       const float box_h = corner ? corner_size : h;
       const ImVec2 min = corner ? ImVec2(size.x - 24.0f * unit - corner_size, 24.0f * unit)
                                 : ImVec2(column_x[option.column], top + float(row) * (h + gap));
@@ -892,8 +911,53 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     }
     if (ShowsUpdateButton())
       DrawUpdateButton(draw, font, unit, alpha,
-                       ImVec2(column_x[columns - 1], top + 2.0f * (h + gap)), widths[columns - 1], h);
+                       ImVec2(column_x[columns - 1], top + 1.0f * (h + gap)), widths[columns - 1], h);
     return keys && handled;
+  }
+
+  // Right of its version row; acts as Delete on that version.
+  void DrawTrash(ImDrawList* draw, int i, const Option& option, const float* column_x,
+                 const float* widths, float top, float h, float unit, float alpha, bool ready) {
+    if (option.version != selected_version_)
+      return;
+    const int column = option.version / kColumnRows;
+    const ImVec2 min(column_x[column] + widths[column] - h, top + float(option.row) * (h + 12.0f * unit));
+    const ImVec2 max(min.x + h, min.y + h);
+    const bool usable = CanDelete(option.version);
+    ImGui::SetCursorScreenPos(min);
+    ImGui::PushID(1000 + i);
+    if (ImGui::InvisibleButton("##trash", ImVec2(h, h)) && ready && usable && !picker_open_) {
+      selected_version_ = option.version;
+      choice_ = GameDataChoice::kDelete;
+    }
+    const bool hot = ready && usable && !picker_open_ && ImGui::IsItemHovered();
+    ImGui::PopID();
+    const float a = alpha * (usable && !working_ && !busy_ ? 1.0f : 0.4f);
+    const float rounding = 6.0f * unit;
+    draw->AddRectFilled(min, max, IM_COL32(0, 0, 0, int((hot ? 150 : 100) * a)), rounding);
+    if (hot)
+      draw->AddRectFilled(min, max, Color(kQuitRed, 0.3f * a), rounding);
+    draw->AddRect(min, max, hot ? Color(kQuitRed, a) : IM_COL32(255, 255, 255, int(60 * a)), rounding,
+                  0, std::max(1.0f, (hot ? 2.0f : 1.0f) * unit));
+    const ImU32 ink = Color(kText, a * (hot ? 1.0f : 0.8f));
+    const float thick = std::max(1.5f, 2.0f * unit);
+    const float cx = (min.x + max.x) * 0.5f;
+    const float top_y = min.y + h * 0.24f;
+    const float lid_y = top_y + h * 0.08f;
+    const float body_top = lid_y + h * 0.06f;
+    const float body_bottom = min.y + h * 0.78f;
+    // Handle, lid, then the tapered bin.
+    draw->PathLineTo(ImVec2(cx - h * 0.07f, lid_y));
+    draw->PathLineTo(ImVec2(cx - h * 0.07f, top_y));
+    draw->PathLineTo(ImVec2(cx + h * 0.07f, top_y));
+    draw->PathLineTo(ImVec2(cx + h * 0.07f, lid_y));
+    draw->PathStroke(ink, 0, thick);
+    draw->AddLine(ImVec2(cx - h * 0.26f, lid_y), ImVec2(cx + h * 0.26f, lid_y), ink, thick);
+    draw->PathLineTo(ImVec2(cx - h * 0.19f, body_top));
+    draw->PathLineTo(ImVec2(cx - h * 0.15f, body_bottom));
+    draw->PathLineTo(ImVec2(cx + h * 0.15f, body_bottom));
+    draw->PathLineTo(ImVec2(cx + h * 0.19f, body_top));
+    draw->PathStroke(ink, 0, thick);
   }
 
   // The label, and under it what sets the version apart.
@@ -961,7 +1025,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     std::string text = std::string("A  ") + Tr(IntroText::kHintSelect) + "      B  " +
                        Tr(BackChoice() == GameDataChoice::kQuit ? IntroText::kHintQuit
                                                                 : IntroText::kHintBack);
-    if (Library() && Enabled(IndexOf(GameDataChoice::kDelete)))
+    if (Library() && CanDelete(selected_version_))
       text += std::string("      X  ") +
               Tr(SelectedRow()->linked ? IntroText::kForgetVersion : IntroText::kDeleteVersion);
     if (!Library() && prompt_.confirm.empty())
