@@ -116,15 +116,6 @@ REXCVAR_DEFINE_BOOL(native_deferred_recording, true, "Eternal Sonata",
                     "Record the frame's Vulkan commands on a worker thread instead of the "
                     "guest's render thread. Read at startup; Vulkan only.");
 
-// Each mip chain adds a second source range to the texture cache, and the
-// aperture walk, content hash and write watch are all paid per range.
-REXCVAR_DEFINE_BOOL(native_texture_mips, false, "Eternal Sonata",
-                    "Upload full mip chains for guest textures. Off uploads only level 0, "
-                    "which halves the texture cache's source ranges and with them the "
-                    "aperture walks, content hashing and write watches. Toggling at runtime "
-                    "leaves the textures cached under the old setting behind until they "
-                    "age out of the mirror.");
-
 // The mirror's own working set is a few hundred textures; the rest of what it
 // accumulates is areas the game has left. Counted in uploaded bytes rather than
 // in entries because a 32x32 icon and a 2048x2048 background are both one entry
@@ -296,7 +287,7 @@ constexpr std::array kBasicCvarNames = {
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
-    "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "render_msaa", "render_fxaa", "aim_invert_x", "aim_invert_y",
+    "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "render_msaa", "render_fxaa", "render_generated_mips", "aim_invert_x", "aim_invert_y",
     "touch_controls", "touch_scale", "touch_opacity", "touch_hide_delay", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "override_button_glyphs", "prompt_device",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
@@ -723,6 +714,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawRenderFilterRow();
         DrawCvarRow("render_fxaa");
         DrawAntiAliasingRow();
+        DrawCvarRow("render_generated_mips");
         // Takes effect on the next present.
         DrawCvarRow("vsync");
 #ifdef _WIN32

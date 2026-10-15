@@ -57,6 +57,9 @@ constexpr bool kDefaultFxaa = true;
 #endif
 bool g_render_fxaa = kDefaultFxaa;
 
+// Storage behind `render_generated_mips`.
+bool g_render_generated_mips = true;
+
 constexpr float kMinRenderScaleF = 0.25f;
 constexpr float kMaxRenderScaleF = 2.0f;
 
@@ -86,6 +89,8 @@ float NativeRenderScaleAtBoot() {
 bool NativeRenderPixelatedScaling() { return g_render_pixelated_scaling; }
 
 bool NativeRenderFxaa() { return g_render_fxaa; }
+
+bool NativeRenderGeneratedMips() { return g_render_generated_mips; }
 
 uint32_t NativeRenderMsaaSamples() {
   if (g_render_msaa >= 8)
@@ -201,6 +206,21 @@ void RegisterNativeRendererCvars() {
   fxaa.lifecycle = rex::cvar::Lifecycle::kHotReload;
   fxaa.default_value = kDefaultFxaa ? "true" : "false";
   rex::cvar::RegisterFlag(std::move(fxaa));
+
+  rex::cvar::FlagEntry mips;
+  mips.name = "render_generated_mips";
+  mips.type = rex::cvar::FlagType::Boolean;
+  mips.category = "GPU";
+  mips.description = "Build mip chains for compressed textures the game ships without one";
+  mips.setter = [](std::string_view value) {
+    g_render_generated_mips = value == "true" || value == "1" || value == "yes";
+    return true;
+  };
+  mips.getter = []() { return std::string(g_render_generated_mips ? "true" : "false"); };
+  mips.command_callback = [](std::string_view) {};
+  mips.lifecycle = rex::cvar::Lifecycle::kHotReload;
+  mips.default_value = "true";
+  rex::cvar::RegisterFlag(std::move(mips));
 
   // SDK cvars that mean nothing here. The video mode only reaches the guest's
   // display scaler, which this renderer never runs, and the window size is

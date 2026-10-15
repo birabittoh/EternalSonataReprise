@@ -26,21 +26,21 @@
 #include <windows.h>
 #endif
 
+#include "native_renderer.h"
 #include "native_renderer_frame.h"
 #include "native_renderer_readback.h"
 #include "native_renderer_plume.h"
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_profile.h"
 
-REXCVAR_DECLARE(bool, native_texture_mips);
 REXCVAR_DECLARE(int32_t, native_texture_budget_mb);
 
 namespace eternalsonata {
 namespace {
 
-// Sampled once per frame, because MipLevelCount runs per texture per draw and a
-// cvar read is a string map lookup. Same reasoning as g_profile_zones_enabled.
-std::atomic<bool> g_texture_mips_enabled{false};
+// Sampled once per frame, so a texture decoded mid frame cannot disagree with
+// the cache key its bind computed.
+std::atomic<bool> g_texture_generated_mips{true};
 
 using namespace plume;
 
@@ -460,7 +460,7 @@ uint64_t TextureKey(uint32_t address, uint32_t format, uint32_t width, uint32_t 
 uint32_t TextureInterpretation(const TextureFetch& fetch) {
   // The mip setting belongs in the key: without it a toggle would keep matching
   // entries built under the old setting and appear to do nothing.
-  return (g_texture_mips_enabled.load(std::memory_order_relaxed) ? 0u : 0x40000000u) ^
+  return (g_texture_generated_mips.load(std::memory_order_relaxed) ? 0u : 0x80000000u) ^
          (fetch.format == 10 ? fetch.swizzle : 0u) ^
          (fetch.mip_address * 0x9E3779B9u) ^ (fetch.mip_min_level << 20) ^
          (fetch.mip_max_level << 24) ^ (uint32_t(fetch.packed_mips) << 28) ^
@@ -470,6 +470,7 @@ uint32_t TextureInterpretation(const TextureFetch& fetch) {
 uint64_t g_resolve_hits = 0;
 uint64_t g_decode_hits = 0;
 uint64_t g_decoded = 0;
+uint64_t g_generated_mip_textures = 0;
 uint64_t g_refused_format = 0;
 uint64_t g_refused_extent = 0;
 uint64_t g_refused_upload = 0;
@@ -663,8 +664,6 @@ uint64_t SourceExtentBytes(const TextureFetch& fetch, const FormatInfo& info) {
 }
 
 uint32_t MipLevelCount(const TextureFetch& fetch) {
-  if (!g_texture_mips_enabled.load(std::memory_order_relaxed))
-    return 1;
   uint32_t last = 0;
   for (uint32_t size = std::max(fetch.width, fetch.height); size > 1; size >>= 1)
     ++last;
@@ -1063,6 +1062,209 @@ void DecodeBlockRows(const std::vector<uint8_t>& in, uint32_t in_row_bytes, uint
   }
 }
 
+// ---------------------------------------------------------------------------
+// Generated mips
+//
+// Character models ship their DXT textures without a mip chain, so a 512x512
+// skin a few dozen pixels tall on screen minifies from level 0 alone and
+// shimmers. Those get levels built here: decoded, box filtered and encoded back
+// to the same BC format, so the cache keeps its compressed footprint.
+
+// How many levels to build for `fetch`, 1 meaning none. Only DXT with no guest
+// chain at all, which also keeps resolve targets out, since those are never
+// block compressed. Power of two sizes only, stopping at a 4x4 level so every
+// level is whole blocks.
+uint32_t GeneratedMipLevelCount(const TextureFetch& fetch) {
+  if (!g_texture_generated_mips.load(std::memory_order_relaxed))
+    return 1;
+  if (fetch.mip_max_level != 0 || fetch.format < 18 || fetch.format > 20)
+    return 1;
+  if ((fetch.width & (fetch.width - 1)) != 0 || (fetch.height & (fetch.height - 1)) != 0)
+    return 1;
+  uint32_t levels = 1;
+  while (std::min(fetch.width, fetch.height) >> levels >= 4)
+    ++levels;
+  return levels;
+}
+
+Expand BlockExpandForFormat(uint32_t format) {
+  return format == 18 ? Expand::kBC1 : format == 19 ? Expand::kBC2 : Expand::kBC3;
+}
+
+// Halve a tightly packed B8G8R8A8 image. Colour is weighted by alpha so the
+// black behind punchthrough texels does not bleed into the edges.
+void DownsampleBGRA(const std::vector<uint8_t>& in, uint32_t width, uint32_t height,
+                    std::vector<uint8_t>& out) {
+  const uint32_t out_width = std::max(width >> 1, 1u), out_height = std::max(height >> 1, 1u);
+  out.resize(size_t(out_width) * out_height * 4);
+  for (uint32_t y = 0; y < out_height; ++y) {
+    for (uint32_t x = 0; x < out_width; ++x) {
+      uint32_t sum[3] = {}, alpha = 0, plain[3] = {};
+      for (uint32_t dy = 0; dy < 2; ++dy) {
+        for (uint32_t dx = 0; dx < 2; ++dx) {
+          const uint32_t sx = std::min(x * 2 + dx, width - 1), sy = std::min(y * 2 + dy, height - 1);
+          const uint8_t* texel = in.data() + (size_t(sy) * width + sx) * 4;
+          for (uint32_t c = 0; c < 3; ++c) {
+            sum[c] += texel[c] * texel[3];
+            plain[c] += texel[c];
+          }
+          alpha += texel[3];
+        }
+      }
+      uint8_t* dest = out.data() + (size_t(y) * out_width + x) * 4;
+      for (uint32_t c = 0; c < 3; ++c)
+        dest[c] = uint8_t(alpha != 0 ? (sum[c] + alpha / 2) / alpha : (plain[c] + 2) / 4);
+      dest[3] = uint8_t((alpha + 2) / 4);
+    }
+  }
+}
+
+uint16_t Pack565(const uint8_t bgr[3]) {
+  return uint16_t((((bgr[2] * 31 + 127) / 255) << 11) | (((bgr[1] * 63 + 127) / 255) << 5) |
+                  ((bgr[0] * 31 + 127) / 255));
+}
+
+void Unpack565(uint16_t value, int bgr[3]) {
+  const int r5 = (value >> 11) & 0x1F, g6 = (value >> 5) & 0x3F, b5 = value & 0x1F;
+  bgr[0] = (b5 << 3) | (b5 >> 2);
+  bgr[1] = (g6 << 2) | (g6 >> 4);
+  bgr[2] = (r5 << 3) | (r5 >> 2);
+}
+
+// One BC colour block from 16 B8G8R8A8 texels. With `punchthrough`, texels
+// under half alpha take BC1's transparent index.
+void EncodeColourBlock(const uint8_t texels[16][4], bool punchthrough, uint8_t* out) {
+  uint8_t low[3] = {255, 255, 255}, high[3] = {0, 0, 0};
+  bool transparent = false, any_opaque = false;
+  for (uint32_t i = 0; i < 16; ++i) {
+    if (punchthrough && texels[i][3] < 128) {
+      transparent = true;
+      continue;
+    }
+    any_opaque = true;
+    for (uint32_t c = 0; c < 3; ++c) {
+      low[c] = std::min(low[c], texels[i][c]);
+      high[c] = std::max(high[c], texels[i][c]);
+    }
+  }
+  if (!any_opaque) {
+    std::memset(out, 0, 4);
+    std::memset(out + 4, 0xFF, 4);
+    return;
+  }
+  // Pulling the box in by a sixteenth puts the endpoints where the error is
+  // lower than at the extremes.
+  for (uint32_t c = 0; c < 3; ++c) {
+    const uint8_t inset = uint8_t((high[c] - low[c]) / 16);
+    low[c] = uint8_t(low[c] + inset);
+    high[c] = uint8_t(high[c] - inset);
+  }
+  uint16_t c0 = Pack565(high), c1 = Pack565(low);
+  // Four colour mode wants c0 > c1, three colour mode c0 <= c1.
+  if (transparent ? c0 > c1 : c0 < c1)
+    std::swap(c0, c1);
+
+  int palette[4][3];
+  Unpack565(c0, palette[0]);
+  Unpack565(c1, palette[1]);
+  const uint32_t choices = transparent ? 3 : 4;
+  for (uint32_t c = 0; c < 3; ++c) {
+    if (transparent) {
+      palette[2][c] = (palette[0][c] + palette[1][c]) / 2;
+    } else {
+      palette[2][c] = (2 * palette[0][c] + palette[1][c]) / 3;
+      palette[3][c] = (palette[0][c] + 2 * palette[1][c]) / 3;
+    }
+  }
+
+  uint32_t bits = 0;
+  for (uint32_t i = 0; i < 16; ++i) {
+    uint32_t index = 3;
+    if (!(punchthrough && texels[i][3] < 128)) {
+      int best = INT32_MAX;
+      for (uint32_t p = 0; p < choices; ++p) {
+        int error = 0;
+        for (uint32_t c = 0; c < 3; ++c) {
+          const int d = int(texels[i][c]) - palette[p][c];
+          error += d * d;
+        }
+        if (error < best) {
+          best = error;
+          index = p;
+        }
+      }
+    }
+    bits |= index << (2 * i);
+  }
+  out[0] = uint8_t(c0);
+  out[1] = uint8_t(c0 >> 8);
+  out[2] = uint8_t(c1);
+  out[3] = uint8_t(c1 >> 8);
+  for (uint32_t i = 0; i < 4; ++i)
+    out[4 + i] = uint8_t(bits >> (8 * i));
+}
+
+void EncodeBC3AlphaBlock(const uint8_t texels[16][4], uint8_t* out) {
+  uint8_t low = 255, high = 0;
+  for (uint32_t i = 0; i < 16; ++i) {
+    low = std::min(low, texels[i][3]);
+    high = std::max(high, texels[i][3]);
+  }
+  std::memset(out, 0, 8);
+  out[0] = high;
+  out[1] = low;
+  if (high == low)
+    return;
+  int palette[8] = {high, low};
+  for (uint32_t i = 1; i < 7; ++i)
+    palette[i + 1] = ((7 - i) * high + i * low) / 7;
+  uint64_t bits = 0;
+  for (uint32_t i = 0; i < 16; ++i) {
+    uint32_t index = 0;
+    int best = INT32_MAX;
+    for (uint32_t p = 0; p < 8; ++p) {
+      const int error = std::abs(int(texels[i][3]) - palette[p]);
+      if (error < best) {
+        best = error;
+        index = p;
+      }
+    }
+    bits |= uint64_t(index) << (3 * i);
+  }
+  for (uint32_t i = 0; i < 6; ++i)
+    out[2 + i] = uint8_t(bits >> (8 * i));
+}
+
+// Encode a tightly packed B8G8R8A8 image whose sides are multiples of 4 into
+// rows of `row_bytes`.
+void EncodeBlocks(const std::vector<uint8_t>& image, uint32_t width, uint32_t height, Expand expand,
+                  uint32_t row_bytes, std::vector<uint8_t>& out) {
+  const uint32_t block_bytes = expand == Expand::kBC1 ? 8 : 16;
+  out.assign(size_t(row_bytes) * (height / 4), 0);
+  uint8_t texels[16][4];
+  for (uint32_t by = 0; by < height / 4; ++by) {
+    for (uint32_t bx = 0; bx < width / 4; ++bx) {
+      for (uint32_t i = 0; i < 16; ++i)
+        std::memcpy(texels[i],
+                    image.data() + ((size_t(by) * 4 + i / 4) * width + bx * 4 + i % 4) * 4, 4);
+      uint8_t* block = out.data() + size_t(by) * row_bytes + size_t(bx) * block_bytes;
+      if (expand == Expand::kBC1) {
+        EncodeColourBlock(texels, true, block);
+        continue;
+      }
+      if (expand == Expand::kBC2) {
+        for (uint32_t i = 0; i < 16; ++i) {
+          const uint8_t nibble = uint8_t((texels[i][3] * 15 + 127) / 255);
+          block[i / 2] |= uint8_t(nibble << ((i & 1) * 4));
+        }
+      } else {
+        EncodeBC3AlphaBlock(texels, block);
+      }
+      EncodeColourBlock(texels, false, block + 8);
+    }
+  }
+}
+
 // Uploads are batched: the copies go into one command list that is submitted
 // once, before the frame's own list, instead of one list, one fence and one
 // blocking GPU round trip per texture. There is a single queue, so submission
@@ -1346,6 +1548,95 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
     texels.swap(widened);
   }
 
+  if (const uint32_t generated = GeneratedMipLevelCount(fetch); generated > 1) {
+    // Level 0 as a tight B8G8R8A8 image, the start of the box filter.
+    std::vector<uint8_t> image(size_t(fetch.width) * fetch.height * 4);
+    std::vector<uint8_t> decoded;
+    const std::vector<uint8_t>* rows = &texels;
+    uint32_t rows_bytes = upload_row_bytes;
+    if (!IsBlockExpand(info.expand)) {
+      rows_bytes = width_blocks * 16;
+      DecodeBlockRows(texels, upload_row_bytes, width_blocks, height_blocks,
+                      BlockExpandForFormat(fetch.format), rows_bytes, decoded);
+      rows = &decoded;
+    }
+    for (uint32_t y = 0; y < fetch.height; ++y)
+      std::memcpy(image.data() + size_t(y) * fetch.width * 4,
+                  rows->data() + size_t(y) * rows_bytes, size_t(fetch.width) * 4);
+
+    struct Level { uint32_t width, height, row_texels; uint64_t offset; std::vector<uint8_t> data; };
+    std::vector<Level> levels;
+    levels.push_back({fetch.width, fetch.height, upload_row_texels, 0, std::move(texels)});
+    uint64_t staging_size = levels[0].data.size();
+    uint32_t width = fetch.width, height = fetch.height;
+    std::vector<uint8_t> smaller;
+    for (uint32_t mip = 1; mip < generated; ++mip) {
+      DownsampleBGRA(image, width, height, smaller);
+      image.swap(smaller);
+      width >>= 1;
+      height >>= 1;
+      Level level{width, height, 0, AlignUp(uint32_t(staging_size), 512), {}};
+      if (IsBlockExpand(info.expand)) {
+        const uint32_t row_bytes = AlignUp(width * 4, kUploadRowAlignment);
+        level.row_texels = row_bytes / 4;
+        level.data.assign(size_t(row_bytes) * height, 0);
+        for (uint32_t y = 0; y < height; ++y)
+          std::memcpy(level.data.data() + size_t(y) * row_bytes,
+                      image.data() + size_t(y) * width * 4, size_t(width) * 4);
+      } else {
+        const uint32_t row_bytes = AlignUp(width / 4 * info.block_bytes, kUploadRowAlignment);
+        level.row_texels = row_bytes / info.block_bytes * 4;
+        EncodeBlocks(image, width, height, BlockExpandForFormat(fetch.format), row_bytes,
+                     level.data);
+      }
+      staging_size = level.offset + level.data.size();
+      levels.push_back(std::move(level));
+    }
+
+    std::unique_ptr<RenderTexture> created;
+    if (existing == nullptr) {
+      created = device->createTexture(
+          RenderTextureDesc::Texture2D(fetch.width, fetch.height, generated, info.host));
+      if (!created) {
+        CountRefusal(g_refused_upload);
+        return nullptr;
+      }
+      existing = created.get();
+    }
+    auto staging = device->createBuffer(RenderBufferDesc::UploadBuffer(staging_size));
+    auto* mapped = staging ? static_cast<uint8_t*>(staging->map()) : nullptr;
+    if (mapped == nullptr) {
+      CountRefusal(g_refused_upload);
+      return nullptr;
+    }
+    for (const Level& level : levels)
+      std::memcpy(mapped + level.offset, level.data.data(), level.data.size());
+    staging->unmap();
+    RenderCommandList* upload = UploadCommands(queue);
+    if (upload == nullptr) {
+      CountRefusal(g_refused_upload);
+      return nullptr;
+    }
+    upload->barriers(RenderBarrierStage::COPY,
+                     RenderTextureBarrier(existing, RenderTextureLayout::COPY_DEST));
+    for (uint32_t mip = 0; mip < levels.size(); ++mip) {
+      const Level& level = levels[mip];
+      upload->copyTextureRegion(
+          RenderTextureCopyLocation::Subresource(existing, mip),
+          RenderTextureCopyLocation::PlacedFootprint(staging.get(), info.host, level.width,
+                                                     level.height, 1, level.row_texels,
+                                                     level.offset));
+    }
+    upload->barriers(RenderBarrierStage::GRAPHICS,
+                     RenderTextureBarrier(existing, RenderTextureLayout::SHADER_READ));
+    EndUpload(std::move(staging), staging_size);
+    if (bytes_out != nullptr)
+      *bytes_out = staging_size;
+    ++g_decoded;
+    ++g_generated_mip_textures;
+    return created;
+  }
+
   std::unique_ptr<RenderTexture> created;
   if (existing == nullptr) {
     created = device->createTexture(
@@ -1567,10 +1858,10 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
 
 void LogTextureMirrorSummary() {
   REXLOG_DEBUG(
-      "native_renderer: textures decoded={} cached={} holding={} MiB evicted={} (budget {}) "
+      "native_renderer: textures decoded={} (generated mips {}) cached={} holding={} MiB evicted={} (budget {}) "
       "refreshed={} hashed={} MiB | binds resolve={} cache={} | "
       "refused format={} extent={} unmapped={} upload={} | retries={} recovered={}",
-      g_decoded, g_textures.size(), g_texture_bytes / (1024 * 1024), g_textures_evicted,
+      g_decoded, g_generated_mip_textures, g_textures.size(), g_texture_bytes / (1024 * 1024), g_textures_evicted,
       g_textures_evicted_budget, g_refreshed, g_hash_bytes / (1024 * 1024), g_resolve_hits,
       g_decode_hits, g_refused_format, g_refused_extent, g_refused_unmapped, g_refused_upload,
       g_retries, g_recovered);
@@ -1759,7 +2050,7 @@ void TextureMirrorBeginFrame() {
   // Before the frame's first bind, so nothing evicted here is a texture a draw
   // in this frame has already been handed.
   EvictStaleTextures();
-  g_texture_mips_enabled.store(REXCVAR_GET(native_texture_mips), std::memory_order_relaxed);
+  g_texture_generated_mips.store(NativeRenderGeneratedMips(), std::memory_order_relaxed);
 }
 
 void ShutdownTextureMirror() {

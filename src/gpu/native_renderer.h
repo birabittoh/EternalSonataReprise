@@ -43,6 +43,10 @@ uint32_t NativeRenderMsaaSamples();
 // Live.
 bool NativeRenderFxaa();
 
+// Whether DXT textures the game ships without mips get a chain built at
+// upload. Live; textures cached under the other setting age out.
+bool NativeRenderGeneratedMips();
+
 // Registers the cvars a GPU plugin would have registered, so selecting this
 // renderer does not silently lose them: `vsync`, which lives inside
 // rexgpu-xenos and therefore never registers when no plugin is loaded. Call from OnPreSetup, after the config file has been read, so a

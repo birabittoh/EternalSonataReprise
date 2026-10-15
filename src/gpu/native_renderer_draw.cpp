@@ -658,6 +658,10 @@ RenderSampler* AcquireSampler(RenderDevice* device, const GuestSamplerState& sta
   desc.addressV = MapClamp(state.clamp_y);
   desc.addressW = MapClamp(state.clamp_z);
   desc.mipLODBias = state.lod_bias;
+  // Basemap asks for level 0 only, which matters once the host has built
+  // levels the guest never had.
+  if (state.mip_filter == 2)
+    desc.maxLOD = 0.0f;
 
   // AnisoFilter: 0 disabled, 1..5 are max 1:1 through 16:1, i.e. 1 << (n-1).
   if (state.aniso >= 1 && state.aniso <= 5) {
