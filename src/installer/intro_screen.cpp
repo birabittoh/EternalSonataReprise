@@ -5,10 +5,12 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -17,7 +19,13 @@
 
 #include <imgui.h>
 
+#include <rex/cvar.h>
 #include <rex/logging.h>
+#include <rex/net/http.h>
+#include <rex/system/auto_updater.h>
+#include <rex/filesystem.h>
+#include <rex/system/mod_state.h>
+#include <rex/system/mod_version.h>
 #include <rex/ui/image_decode.h>
 #include <rex/ui/imgui_dialog.h>
 #include <rex/ui/immediate_drawer.h>
@@ -29,6 +37,8 @@
 #include "native_renderer_plume.h"
 #include "release_id.h"
 #include "settings.h"
+
+REXCVAR_DECLARE(bool, auto_update_enabled);
 
 namespace eternalsonata {
 namespace {
@@ -48,6 +58,75 @@ constexpr ImVec4 kError(1.0f, 0.55f, 0.50f, 1.0f);
 rex::ui::ImGuiDrawer* g_drawer = nullptr;
 rex::ui::WindowedAppContext* g_context = nullptr;
 std::optional<Clock::time_point> g_first_shown;
+
+// The SDK's AutoUpdater cannot check yet (it needs a Runtime, which does not
+// exist here), so the release lookup is done directly and only its installer
+// is used. Leaked on purpose: a download in flight must not block exit.
+struct UpdateCheck {
+  std::mutex mutex;
+  std::string newer;
+  rex::system::UpdateInfo info;
+  rex::system::AutoUpdater updater;
+};
+UpdateCheck* g_update_check = nullptr;
+
+// The string value following `"key":` at or after `from`, empty when absent.
+std::string JsonString(const std::string& body, const char* key, size_t from = 0) {
+  const size_t k = body.find(std::string("\"") + key + "\"", from);
+  if (k == std::string::npos)
+    return {};
+  const size_t open = body.find('"', body.find(':', k) + 1);
+  const size_t close = open == std::string::npos ? open : body.find('"', open + 1);
+  return close == std::string::npos ? std::string() : body.substr(open + 1, close - open - 1);
+}
+
+void StartUpdateCheck() {
+  constexpr const char* kVersion = ETERNALSONATA_VERSION;
+  if (g_update_check || !kVersion[0] || !REXCVAR_GET(auto_update_enabled) ||
+      !rex::system::AutoUpdater::SupportsSelfUpdate())
+    return;
+  g_update_check = new UpdateCheck;
+  std::thread([state = g_update_check] {
+    const auto response =
+        rex::net::HttpGet("https://api.github.com/repos/birabittoh/EternalSonataReprise/releases/latest");
+    if (!response.ok())
+      return;
+    const std::string& body = response.body;
+    const std::string tag = JsonString(body, "tag_name");
+    std::string version = tag;
+    if (!version.empty() && (version.front() == 'v' || version.front() == 'V'))
+      version.erase(0, 1);
+    if (version.empty() || rex::system::CompareVersionStrings(kVersion, version) >= 0)
+      return;
+    // The asset this platform installs, named like the SDK's update_asset_format.
+    const std::string prefix =
+        "\"eternalsonata-" + tag + "-" + rex::system::ModState::HostPlatformId() + ".";
+    const size_t at = body.find(prefix);
+    if (at == std::string::npos)
+      return;
+    rex::system::UpdateInfo info;
+    info.tag = tag;
+    info.version = version;
+    const size_t end = body.find('"', at + 1);
+    info.asset_name = body.substr(at + 1, end - at - 1);
+    info.asset_url = JsonString(body, "browser_download_url", end);
+    const std::string digest = JsonString(body, "digest", end);
+    if (digest.rfind("sha256:", 0) == 0)
+      info.sha256 = digest.substr(7);
+    if (info.asset_url.empty())
+      return;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    state->info = info;
+    state->newer = version;
+  }).detach();
+}
+
+std::string NewerVersion() {
+  if (!g_update_check)
+    return {};
+  std::lock_guard<std::mutex> lock(g_update_check->mutex);
+  return g_update_check->newer;
+}
 
 struct Art {
   std::unique_ptr<rex::ui::ImmediateTexture> texture;
@@ -153,6 +232,8 @@ void Motes(ImDrawList* draw, ImVec2 size, float unit, float t, float alpha) {
     draw->AddCircleFilled(ImVec2(x, y), r, IM_COL32(255, 240, 210, int(150 * glow * alpha)));
   }
 }
+
+void Answer(GameDataChoice choice, int version);
 
 class IntroDialog final : public rex::ui::ImGuiDialog {
  public:
@@ -354,6 +435,72 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   // Quit sits in the top right corner, one step above the right column.
   static constexpr int kCornerRow = -1;
   static constexpr int kColumnRows = 3;
+
+  bool ShowsUpdateButton() const {
+    return !NewerVersion().empty() && Library() && !working_ && !busy_ && prompt_.confirm.empty();
+  }
+
+  // Under Delete in the library's action column: download, progress, restart.
+  void DrawUpdateButton(ImDrawList* draw, ImFont* font, float unit, float alpha, ImVec2 min,
+                        float w, float h) {
+    using rex::system::AutoUpdater;
+    const ImVec4 green(0.45f, 0.85f, 0.55f, 1.0f);
+    const auto install = g_update_check->updater.InstallSnapshot();
+    const bool staged = AutoUpdater::HasPendingSelfUpdate(AutoUpdater::InstallRoot());
+    const std::string version = "v" + NewerVersion();
+    std::string label;
+    ImVec4 ink = kText;
+    bool clickable = !picker_open_;
+    if (install.in_progress) {
+      char percent[16] = "0%";
+      if (install.total_bytes > 0)
+        std::snprintf(percent, sizeof(percent), "%.0f%%",
+                      100.0 * double(install.downloaded_bytes) / double(install.total_bytes));
+      label = percent;
+      clickable = false;
+    } else if (install.done && !install.ok) {
+      label = install.message;
+      ink = kError;
+    } else if (staged) {
+      label = REX_PLATFORM_ANDROID ? std::string(Tr("settings", "install_update")) + " " + version
+                                   : Tr("settings", "update_restart", version);
+    } else {
+      label = Tr("settings", "update_download", version);
+    }
+
+    const ImVec2 max(min.x + w, min.y + h);
+    ImGui::SetCursorScreenPos(min);
+    ImGui::PushID("##update");
+    const bool pressed = ImGui::InvisibleButton("##button", ImVec2(w, h)) && clickable;
+    const bool hovered = clickable && ImGui::IsItemHovered();
+    ImGui::PopID();
+    const float rounding = 6.0f * unit;
+    const float a = alpha * (install.in_progress ? 0.4f : 1.0f);
+    draw->AddRectFilled(min, max, IM_COL32(0, 0, 0, int((hovered ? 150 : 100) * a)), rounding);
+    draw->AddRect(min, max, Color(green, (hovered ? 1.0f : 0.7f) * a), rounding, 0,
+                  std::max(1.0f, (hovered ? 2.0f : 1.0f) * unit));
+    // Shrunk to fit the column.
+    const float pad = 10.0f * unit;
+    float size = 20.0f * unit;
+    ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, label.c_str());
+    if (extent.x > w - 2.0f * pad) {
+      size *= (w - 2.0f * pad) / extent.x;
+      extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, label.c_str());
+    }
+    draw->AddText(font, size,
+                  ImVec2(std::floor(min.x + (w - extent.x) * 0.5f),
+                         std::floor(min.y + (h - extent.y) * 0.5f)),
+                  Color(ink, a * (hovered ? 1.0f : 0.8f)), label.c_str());
+    if (!pressed)
+      return;
+    if (!staged) {
+      g_update_check->updater.InstallAsync(g_update_check->info, AutoUpdater::InstallRoot());
+    } else if (AutoUpdater::ApplyAndRestart(AutoUpdater::InstallRoot(),
+                                            rex::filesystem::GetExecutablePath()) &&
+               !REX_PLATFORM_ANDROID) {
+      g_context->CallInUIThreadDeferred([] { Answer(GameDataChoice::kQuit, -1); });
+    }
+  }
 
   struct Option {
     IntroText label;
@@ -638,6 +785,12 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     if (library)
       top = std::min(top, bottom - float(kColumnRows) * (h + gap) + gap);
 
+    if (ETERNALSONATA_VERSION[0] != '\0') {
+      const std::string version = std::string("v") + ETERNALSONATA_VERSION;
+      draw->AddText(font, 18.0f * unit, ImVec2(24.0f * unit, 24.0f * unit),
+                    IM_COL32(255, 255, 255, int(255 * alpha)), version.c_str());
+    }
+
     const float t = std::chrono::duration<float>(Clock::now() - *g_first_shown).count();
     for (int i = 0; i < count; ++i) {
       const Option& option = options_[size_t(i)];
@@ -737,6 +890,9 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         DrawLanguageWarning(draw, font, size, unit, ImVec2(max.x, min.y), h, alpha, release);
       }
     }
+    if (ShowsUpdateButton())
+      DrawUpdateButton(draw, font, unit, alpha,
+                       ImVec2(column_x[columns - 1], top + 2.0f * (h + gap)), widths[columns - 1], h);
     return keys && handled;
   }
 
@@ -1082,6 +1238,7 @@ void ShowIntroScreen(const GameDataPrompt& prompt,
   if (!g_first_shown)
     g_first_shown = Clock::now();
   g_dialog = std::make_unique<IntroDialog>(g_drawer, prompt);
+  StartUpdateCheck();
   StartTicker();
   StartIntroMusic();
 }
