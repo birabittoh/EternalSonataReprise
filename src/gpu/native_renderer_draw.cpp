@@ -1854,12 +1854,16 @@ bool IsSceneSprite(const GuestDrawCall& call, int vertex_slot) {
 }
 
 bool IsScreenImageSprite(const GuestDrawCall& call, int vertex_slot, int pixel_slot) {
-  if (vertex_slot != 9 || (pixel_slot != 3 && pixel_slot != 5) ||
-      call.indexed || call.primitive_type != 6 || call.count != 4)
+  // vs11/ps6 is the motion blur composite.
+  const bool slots = (vertex_slot == 9 && (pixel_slot == 3 || pixel_slot == 5)) ||
+      (vertex_slot == 11 && pixel_slot == 6);
+  if (!slots || call.indexed || call.primitive_type != 6 || call.count != 4)
     return false;
+  // Its source is a half size downsample of the whole window.
   TextureFetch fetch;
   if (!GetBoundTextureFetch(call.memory_base, 0, fetch, nullptr) ||
-      fetch.width != 1280 || fetch.height != 720 ||
+      !((fetch.width == 1280 && fetch.height == 720) ||
+        (fetch.width == 640 && fetch.height == 360)) ||
       FrameResolveTextureByAddress(fetch.base_address, fetch.width, fetch.height) == nullptr)
     return false;
   const GuestDrawStream& stream = call.streams[0];
