@@ -2679,13 +2679,11 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // rasteriser for every draw, including passes that never touch a screen-space
   // UV.
   //
-  // Half a *host* pixel, so it is not multiplied by the target scale above: it
-  // corrects where the host rasteriser samples within a target pixel, a
-  // property of the target's own grid. The baked half-texel UVs are a separate,
-  // guest-space term. The ripple field is never supersampled (it is not
-  // screen-width, so AcquireTarget leaves it alone).
-  commands->setViewports(
-      RenderViewport(x + 0.5f, y + 0.5f, width, height, g_viewport.min_z, g_viewport.max_z));
+  // Half a *guest* pixel, scaled with the target: the baked half texel is in
+  // guest units, so a host half pixel on a 2x target lands every screen-space
+  // tap on a texel corner and bilinear blurs the whole frame by a pixel.
+  commands->setViewports(RenderViewport(x + 0.5f * target_scale_x, y + 0.5f * target_scale_y,
+                                        width, height, g_viewport.min_z, g_viewport.max_z));
   commands->setScissors(
       RenderRect(int32_t(x), int32_t(y), int32_t(x + width), int32_t(y + height)));
 
