@@ -44,6 +44,9 @@ choose_version = "Choose the version to play."
 hint_select = "Select"
 hint_back = "Back"
 hint_quit = "Quit"
+hint_reorder = "Reorder"
+hint_tabs = "Tabs"
+hint_done = "Done"
 dialog_needs_mouse = "Select File and Select Folder open a system window that needs a mouse or keyboard."
 
 [settings]

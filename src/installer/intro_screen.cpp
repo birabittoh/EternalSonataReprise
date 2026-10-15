@@ -33,6 +33,7 @@
 
 #include "images.generated.h"
 #include "intro_music.h"
+#include "mods_screen.h"
 #include "ui_text.h"
 #include "native_renderer_plume.h"
 #include "release_id.h"
@@ -252,7 +253,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     prompt_ = prompt;
     if (rebuild) {
       BuildOptions();
-      on_picker_ = picker_open_ = false;
+      on_picker_ = picker_open_ = on_music_ = on_trash_ = false;
     }
   }
   // The library lists the versions on the left and what to do on the right.
@@ -280,6 +281,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         options_.push_back({IntroText::kDeleteVersion, GameDataChoice::kDelete, kTrashColumn,
                             i % kColumnRows, i, true});
       options_.push_back({IntroText::kStart, GameDataChoice::kStart, right, 0});
+      options_.push_back({IntroText::kStart, GameDataChoice::kCancel, right, 1, -1, false, true});
       if (can_add)
         options_.push_back({IntroText::kAddVersion, GameDataChoice::kAddVersion,
                             versions / kColumnRows, versions % kColumnRows});
@@ -364,65 +366,84 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
                                   IM_COL32(0, 0, 0, 190));
     Motes(draw, size, unit, t, shown);
 
-    float y = 46.0f * unit;
-    if (g_logo.texture) {
-      const float w = std::min(620.0f * unit, size.x * 0.9f);
-      const float h = w * g_logo.height / g_logo.width;
-      const float rise = (1.0f - Smooth((t - 0.2f) / 1.2f)) * 16.0f * unit;
-      const ImVec2 min((size.x - w) * 0.5f, y + rise);
-      draw->AddImage(g_logo.id(), min, ImVec2(min.x + w, min.y + h), ImVec2(0, 0), ImVec2(1, 1),
-                     IM_COL32(255, 255, 255, int(255 * Smooth((t - 0.2f) / 1.2f))));
-      y += h + 22.0f * unit;
+    if (mods_open_) {
+      const float body_in = Smooth((t - 0.7f) / 0.8f);
+      ImFont* font = FindFont(kIntroFontName);
+      const bool ready = body_in >= 1.0f && !busy_ && !working_;
+      if (mods_->Draw(draw, font, size, unit, body_in, ready && !picker_open_))
+        mods_open_ = false;
+      DrawMusicToggle(draw, font, size, unit, body_in, mods_->MusicFocused(), false);
+      // The picker keeps its keys here too; the page is told where the cursor goes.
+      on_picker_ = mods_->PickerFocused();
+      on_music_ = false;
+      DrawLanguagePicker(draw, font, size, unit, body_in, ready);
+      if (on_picker_ && !mods_->PickerFocused())
+        mods_->FocusPicker();
+      else if (!on_picker_ && mods_->PickerFocused())
+        on_music_ ? mods_->FocusMusic() : mods_->ReturnFocus();
+      on_picker_ = on_music_ = false;
     } else {
-      y += 220.0f * unit;
-    }
-
-    const float body_in = Smooth((t - 0.7f) / 0.8f);
-    ImFont* font = FindFont(kIntroFontName);
-    const float wrap = std::min(820.0f * unit, size.x - 32.0f);
-    if (working_) {
-      y += DrawWork(draw, font, size, unit, y, wrap, body_in);
-    } else {
-      std::string body;
-      if (!prompt_.confirm.empty()) {
-        body = prompt_.confirm;
-      } else if (Library()) {
-        body = Tr(IntroText::kChooseVersion);
-      } else if (prompt_.can_extract) {
-        body = (prompt_.release.empty() ? std::string(Tr(IntroText::kFound))
-                                        : Tr(IntroText::kFoundRelease, prompt_.release)) +
-               "\n" + Tr(IntroText::kPressExtract);
+      float y = 46.0f * unit;
+      if (g_logo.texture) {
+        const float w = std::min(620.0f * unit, size.x * 0.9f);
+        const float h = w * g_logo.height / g_logo.width;
+        const float rise = (1.0f - Smooth((t - 0.2f) / 1.2f)) * 16.0f * unit;
+        const ImVec2 min((size.x - w) * 0.5f, y + rise);
+        draw->AddImage(g_logo.id(), min, ImVec2(min.x + w, min.y + h), ImVec2(0, 0), ImVec2(1, 1),
+                       IM_COL32(255, 255, 255, int(255 * Smooth((t - 0.2f) / 1.2f))));
+        y += h + 22.0f * unit;
       } else {
-        body = Tr(IntroText::kNeedFiles);
-        if (!prompt_.can_pick_folder)
-          body += std::string("\n") + Tr(IntroText::kSelectIsoOnly);
-        if (!prompt_.copy_hint.empty())
-          body += "\n" + Tr(IntroText::kCopyHint, prompt_.copy_hint);
+        y += 220.0f * unit;
       }
-      y += CenteredText(draw, font, 22.0f * unit, size.x * 0.5f, y, wrap, Color(kText, body_in),
-                        body);
-      if (!Library() && !prompt_.error.empty() && !prompt_.can_extract && !prompt_.release.empty() &&
-          prompt_.error.find(prompt_.release) == std::string::npos) {
-        y += 8.0f * unit;
-        y += CenteredText(draw, font, 20.0f * unit, size.x * 0.5f, y, wrap,
-                          Color(kText, body_in), Tr(IntroText::kSelected, prompt_.release));
-      }
-      if (!prompt_.error.empty()) {
-        y += 8.0f * unit;
-        y += CenteredText(draw, font, 20.0f * unit, size.x * 0.5f, y, wrap,
-                          Color(kError, body_in), prompt_.error);
-      }
-    }
 
-    // Ready once faded in, and not while a native dialog is open.
-    const bool ready = body_in >= 1.0f && !busy_ && !working_;
-    // One key press moves focus once, not again in the picker.
-    const bool handled = DrawButtons(draw, font, size, unit,
-                                     std::max(y + 22.0f * unit, size.y * 0.66f), body_in, ready);
-    DrawLanguagePicker(draw, font, size, unit, body_in, ready && !handled);
-    DrawMusicToggle(draw, font, size, unit, body_in);
-    if (!working_)
-      DrawHints(draw, font, size, unit, body_in);
+      const float body_in = Smooth((t - 0.7f) / 0.8f);
+      ImFont* font = FindFont(kIntroFontName);
+      const float wrap = std::min(820.0f * unit, size.x - 32.0f);
+      if (working_) {
+        y += DrawWork(draw, font, size, unit, y, wrap, body_in);
+      } else {
+        std::string body;
+        if (!prompt_.confirm.empty()) {
+          body = prompt_.confirm;
+        } else if (Library()) {
+          body = Tr(IntroText::kChooseVersion);
+        } else if (prompt_.can_extract) {
+          body = (prompt_.release.empty() ? std::string(Tr(IntroText::kFound))
+                                          : Tr(IntroText::kFoundRelease, prompt_.release)) +
+                 "\n" + Tr(IntroText::kPressExtract);
+        } else {
+          body = Tr(IntroText::kNeedFiles);
+          if (!prompt_.can_pick_folder)
+            body += std::string("\n") + Tr(IntroText::kSelectIsoOnly);
+          if (!prompt_.copy_hint.empty())
+            body += "\n" + Tr(IntroText::kCopyHint, prompt_.copy_hint);
+        }
+        y += CenteredText(draw, font, 22.0f * unit, size.x * 0.5f, y, wrap, Color(kText, body_in),
+                          body);
+        if (!Library() && !prompt_.error.empty() && !prompt_.can_extract && !prompt_.release.empty() &&
+            prompt_.error.find(prompt_.release) == std::string::npos) {
+          y += 8.0f * unit;
+          y += CenteredText(draw, font, 20.0f * unit, size.x * 0.5f, y, wrap,
+                            Color(kText, body_in), Tr(IntroText::kSelected, prompt_.release));
+        }
+        if (!prompt_.error.empty()) {
+          y += 8.0f * unit;
+          y += CenteredText(draw, font, 20.0f * unit, size.x * 0.5f, y, wrap,
+                            Color(kError, body_in), prompt_.error);
+        }
+      }
+
+      // Ready once faded in, and not while a native dialog is open.
+      const bool ready = body_in >= 1.0f && !busy_ && !working_;
+      // One key press moves focus once, not again in the picker.
+      const bool handled = DrawButtons(draw, font, size, unit,
+                                       std::max(y + 22.0f * unit, size.y * 0.66f), body_in, ready);
+      DrawLanguagePicker(draw, font, size, unit, body_in, ready && !handled);
+      DrawMusicToggle(draw, font, size, unit, body_in, on_music_, ready && !handled);
+      if (!working_)
+        DrawHints(draw, font, size, unit, body_in);
+
+    }
 
     // Fade from black on the first showing only; a cancelled dialog comes back
     // to the screen as it was.
@@ -521,6 +542,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     int version = -1;
     // The trash can beside a version row; kept out of the keyboard grid.
     bool trash = false;
+    // Opens the Mods page; answers nothing.
+    bool mods = false;
   };
 
   bool Library() const {
@@ -628,6 +651,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const Option& option = options_[size_t(i)];
     if (option.trash)
       return CanDelete(option.version);
+    if (option.mods)
+      return true;
     if (option.version >= 0)
       return true;
     const VersionRow* row = SelectedRow();
@@ -723,6 +748,13 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   // A version row picks that version and hands the cursor to Start.
   void Press(int i) {
     const Option& option = options_[size_t(i)];
+    if (option.mods) {
+      if (!mods_)
+        mods_ = std::make_unique<ModsScreen>(g_drawer->immediate_drawer());
+      mods_->Reopen(gamepad_);
+      mods_open_ = true;
+      return;
+    }
     if (option.version < 0) {
       choice_ = option.choice;
       return;
@@ -751,14 +783,42 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         }
       }
     }
-    const bool keys = ready && !on_picker_ && !picker_open_;
+    const bool keys = ready && !on_picker_ && !on_music_ && !picker_open_;
+    const bool on_version = library && options_[size_t(selected_)].version >= 0 &&
+                            CanDelete(selected_version_);
+    if (!on_version)
+      on_trash_ = false;
     bool handled = true;
-    if (keys && Pressed({ImGuiKey_DownArrow, ImGuiKey_S, ImGuiKey_GamepadDpadDown})) {
+    if (keys && on_trash_) {
+      // Left returns to the version; right goes on to the next column.
+      if (Pressed({ImGuiKey_LeftArrow, ImGuiKey_A, ImGuiKey_GamepadDpadLeft})) {
+        on_trash_ = false;
+      } else if (Pressed({ImGuiKey_RightArrow, ImGuiKey_D, ImGuiKey_GamepadDpadRight})) {
+        on_trash_ = false;
+        Move(1, 0);
+      } else if (Pressed({ImGuiKey_DownArrow, ImGuiKey_S, ImGuiKey_GamepadDpadDown})) {
+        on_trash_ = false;
+        Move(0, 1);
+      } else if (Pressed({ImGuiKey_UpArrow, ImGuiKey_W, ImGuiKey_GamepadDpadUp})) {
+        on_trash_ = false;
+        Move(0, -1);
+      } else if (Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space,
+                          ImGuiKey_GamepadFaceDown, ImGuiKey_Delete, ImGuiKey_GamepadFaceLeft})) {
+        choice_ = GameDataChoice::kDelete;
+      } else if (Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight})) {
+        choice_ = BackChoice();
+      } else {
+        handled = false;
+      }
+    } else if (keys && Pressed({ImGuiKey_DownArrow, ImGuiKey_S, ImGuiKey_GamepadDpadDown})) {
       Move(0, 1);
     } else if (keys && Pressed({ImGuiKey_UpArrow, ImGuiKey_W, ImGuiKey_GamepadDpadUp})) {
       Move(0, -1);
     } else if (keys && Pressed({ImGuiKey_RightArrow, ImGuiKey_D, ImGuiKey_GamepadDpadRight})) {
-      Move(1, 0);
+      if (on_version)
+        on_trash_ = true;
+      else
+        Move(1, 0);
     } else if (keys && Pressed({ImGuiKey_LeftArrow, ImGuiKey_A, ImGuiKey_GamepadDpadLeft})) {
       Move(-1, 0);
     } else if (keys && Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space,
@@ -832,10 +892,12 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       if (ready && usable && !picker_open_ && ImGui::IsItemHovered() && MouseMoved()) {
         selected_ = i;
         on_picker_ = false;
+        on_music_ = false;
+        on_trash_ = false;
       }
       ImGui::PopID();
 
-      const bool active = i == selected_ && usable && !on_picker_;
+      const bool active = i == selected_ && usable && !on_picker_ && !on_music_ && !on_trash_;
       const bool picked = option.version >= 0 && option.version == selected_version_;
       const float rounding = 6.0f * unit;
       // Disabled while working, and what cannot be used yet.
@@ -893,7 +955,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
           draw->AddLine(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), ink, thick);
           draw->AddLine(ImVec2(c.x - r, c.y + r), ImVec2(c.x + r, c.y - r), ink, thick);
         } else {
-          const char* label = Tr(text);
+          const char* label = option.mods ? (SdkUiText("mods_title") ? SdkUiText("mods_title") : "Mods")
+                                          : Tr(text);
           const ImVec2 extent = font->CalcTextSizeA(label_size, FLT_MAX, 0.0f, label);
           draw->AddText(font, label_size,
                         ImVec2(std::floor(min.x + (w - extent.x) * 0.5f),
@@ -911,7 +974,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     }
     if (ShowsUpdateButton())
       DrawUpdateButton(draw, font, unit, alpha,
-                       ImVec2(column_x[columns - 1], top + 1.0f * (h + gap)), widths[columns - 1], h);
+                       ImVec2(column_x[columns - 1], top + 2.0f * (h + gap)), widths[columns - 1], h);
     return keys && handled;
   }
 
@@ -930,7 +993,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       selected_version_ = option.version;
       choice_ = GameDataChoice::kDelete;
     }
-    const bool hot = ready && usable && !picker_open_ && ImGui::IsItemHovered();
+    const bool hot = ready && usable && !picker_open_ && (ImGui::IsItemHovered() || on_trash_);
     ImGui::PopID();
     const float a = alpha * (usable && !working_ && !busy_ ? 1.0f : 0.4f);
     const float rounding = 6.0f * unit;
@@ -1065,15 +1128,20 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       if (Pressed({ImGuiKey_UpArrow, ImGuiKey_W, ImGuiKey_GamepadDpadUp})) {
         on_picker_ = false;
       } else if (Pressed({ImGuiKey_LeftArrow, ImGuiKey_A, ImGuiKey_GamepadDpadLeft})) {
-        pick((current + count - 1) % count);
-      } else if (Pressed({ImGuiKey_RightArrow, ImGuiKey_D, ImGuiKey_GamepadDpadRight})) {
-        pick((current + 1) % count);
+        on_picker_ = false;
+        on_music_ = true;
       } else if (Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space,
                           ImGuiKey_GamepadFaceDown})) {
         picker_open_ = true;
         picker_highlight_ = current;
       } else if (Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight})) {
-        choice_ = GameDataChoice::kQuit;
+        if (mods_open_) {
+          mods_->Commit();
+          mods_open_ = false;
+        } else {
+          choice_ = GameDataChoice::kQuit;
+        }
+        on_picker_ = false;
       }
     }
 
@@ -1148,7 +1216,22 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   }
 
   // Bottom left: a note icon that mutes the music, and the piece playing.
-  void DrawMusicToggle(ImDrawList* draw, ImFont* font, ImVec2 size, float unit, float alpha) {
+  // `keys` lets the cursor on it be moved and pressed here; the Mods page drives it itself.
+  void DrawMusicToggle(ImDrawList* draw, ImFont* font, ImVec2 size, float unit, float alpha,
+                       bool focused, bool keys) {
+    if (keys && focused) {
+      if (Pressed({ImGuiKey_UpArrow, ImGuiKey_W, ImGuiKey_GamepadDpadUp})) {
+        on_music_ = false;
+      } else if (Pressed({ImGuiKey_RightArrow, ImGuiKey_D, ImGuiKey_GamepadDpadRight})) {
+        on_music_ = false;
+        on_picker_ = true;
+      } else if (Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space,
+                          ImGuiKey_GamepadFaceDown})) {
+        SetIntroMusicEnabled(!IntroMusicEnabled());
+      } else if (Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight})) {
+        choice_ = GameDataChoice::kQuit;
+      }
+    }
     const float s = 40.0f * unit;
     const float margin = 24.0f * unit;
     const ImVec2 min(margin, size.y - margin - s);
@@ -1157,7 +1240,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     if (ImGui::InvisibleButton("##music", ImVec2(s, s)))
       SetIntroMusicEnabled(!IntroMusicEnabled());
     const bool on = IntroMusicEnabled();
-    const bool hovered = ImGui::IsItemHovered();
+    const bool hovered = ImGui::IsItemHovered() || focused;
     const float a = alpha;
     draw->AddRectFilled(min, max, IM_COL32(0, 0, 0, int((hovered ? 150 : 100) * a)), 6.0f * unit);
     draw->AddRect(min, max, hovered ? Color(kAccent, a) : IM_COL32(255, 255, 255, int(60 * a)),
@@ -1224,6 +1307,10 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   bool gamepad_ = false;
   // The language picker has the keys instead of selected_.
   bool on_picker_ = false;
+  // The music toggle has the keys instead of selected_.
+  bool on_music_ = false;
+  // The cursor is on the trash can beside the picked version.
+  bool on_trash_ = false;
   bool picker_open_ = false;
   int picker_highlight_ = 0;
   bool busy_ = false;
@@ -1234,6 +1321,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   std::string work_detail_;
   float work_fraction_ = -1.0f;
   std::optional<GameDataChoice> choice_;
+  std::unique_ptr<ModsScreen> mods_;
+  bool mods_open_ = false;
 };
 
 std::unique_ptr<IntroDialog> g_dialog;
