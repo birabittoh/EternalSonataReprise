@@ -596,7 +596,7 @@ uint64_t g_texture_set_forgets_for = 0;
 // The distinct samplers the title asks for. Small in practice, so a linear
 // probe over a flat array is the right shape; the count is reported so a title
 // that has more than this says so instead of falling back silently.
-constexpr uint32_t kMaxSamplers = 64;
+constexpr uint32_t kMaxSamplers = 128;
 
 struct SamplerCacheEntry {
   uint64_t key = 0;
@@ -2871,6 +2871,11 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     s_cached_pixelated = pixelated;
     g_binding_cache.valid = false;
   }
+  static uint32_t s_cached_aniso = 1;
+  if (const uint32_t aniso = NativeRenderAnisotropyCode(); aniso != s_cached_aniso) {
+    s_cached_aniso = aniso;
+    g_binding_cache.valid = false;
+  }
 
   const bool cacheable = fetch_signature != 0 && WaterPinT12() == 0;
   if (cacheable && g_binding_cache.valid && g_binding_cache.epoch == content_epoch &&
@@ -2919,6 +2924,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
             sampler_state.mag_filter = 0;
             sampler_state.mip_filter = 0;
             sampler_state.aniso = 0;
+          } else if (sampler_state.min_filter == 1 && sampler_state.mip_filter != 2) {
+            sampler_state.aniso = std::max(sampler_state.aniso, NativeRenderAnisotropyCode());
           }
           ProfileZone sampler_zone(kPhaseAcquireSampler);
           sampler = AcquireSampler(device, sampler_state);

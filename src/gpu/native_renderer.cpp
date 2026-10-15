@@ -60,6 +60,9 @@ bool g_render_fxaa = kDefaultFxaa;
 // Storage behind `render_generated_mips`.
 bool g_render_generated_mips = true;
 
+// Storage behind `render_anisotropy`, as a maximum ratio.
+uint32_t g_render_anisotropy = 1;
+
 constexpr float kMinRenderScaleF = 0.25f;
 constexpr float kMaxRenderScaleF = 2.0f;
 
@@ -91,6 +94,13 @@ bool NativeRenderPixelatedScaling() { return g_render_pixelated_scaling; }
 bool NativeRenderFxaa() { return g_render_fxaa; }
 
 bool NativeRenderGeneratedMips() { return g_render_generated_mips; }
+
+uint32_t NativeRenderAnisotropyCode() {
+  uint32_t code = 1;
+  while (code < 5 && (1u << code) <= g_render_anisotropy)
+    ++code;
+  return code;
+}
 
 uint32_t NativeRenderMsaaSamples() {
   if (g_render_msaa >= 8)
@@ -221,6 +231,27 @@ void RegisterNativeRendererCvars() {
   mips.lifecycle = rex::cvar::Lifecycle::kHotReload;
   mips.default_value = "true";
   rex::cvar::RegisterFlag(std::move(mips));
+
+  rex::cvar::FlagEntry aniso;
+  aniso.name = "render_anisotropy";
+  aniso.type = rex::cvar::FlagType::Uint32;
+  aniso.category = "GPU";
+  aniso.description = "Anisotropic filtering for textures: 1 (off), 2, 4, 8 or 16";
+  aniso.setter = [](std::string_view value) {
+    uint32_t parsed = 0;
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (error != std::errc())
+      return false;
+    g_render_anisotropy = parsed;
+    return true;
+  };
+  aniso.getter = []() { return std::to_string(g_render_anisotropy); };
+  aniso.command_callback = [](std::string_view) {};
+  aniso.lifecycle = rex::cvar::Lifecycle::kHotReload;
+  aniso.constraints.min = 1.0;
+  aniso.constraints.max = 16.0;
+  aniso.default_value = "1";
+  rex::cvar::RegisterFlag(std::move(aniso));
 
   // SDK cvars that mean nothing here. The video mode only reaches the guest's
   // display scaler, which this renderer never runs, and the window size is

@@ -47,6 +47,11 @@ bool NativeRenderFxaa();
 // upload. Live; textures cached under the other setting age out.
 bool NativeRenderGeneratedMips();
 
+// Anisotropic filtering forced onto mipmapped, linearly filtered textures, as
+// the guest's AnisoFilter code: 0 or 1 off, n meaning 1 << (n - 1) to 1. The
+// game never asks for any itself. Live.
+uint32_t NativeRenderAnisotropyCode();
+
 // Registers the cvars a GPU plugin would have registered, so selecting this
 // renderer does not silently lose them: `vsync`, which lives inside
 // rexgpu-xenos and therefore never registers when no plugin is loaded. Call from OnPreSetup, after the config file has been read, so a

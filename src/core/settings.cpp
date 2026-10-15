@@ -287,7 +287,7 @@ constexpr std::array kBasicCvarNames = {
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
-    "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "render_msaa", "render_fxaa", "render_generated_mips", "aim_invert_x", "aim_invert_y",
+    "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "render_msaa", "render_fxaa", "render_anisotropy", "render_generated_mips", "aim_invert_x", "aim_invert_y",
     "touch_controls", "touch_scale", "touch_opacity", "touch_hide_delay", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "override_button_glyphs", "prompt_device",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
@@ -714,6 +714,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawRenderFilterRow();
         DrawCvarRow("render_fxaa");
         DrawAntiAliasingRow();
+        DrawAnisotropyRow();
         DrawCvarRow("render_generated_mips");
         // Takes effect on the next present.
         DrawCvarRow("vsync");
@@ -1270,6 +1271,35 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     if (ImGui::SliderInt("##v", &sel, 0, 3, OptionText("msaa_", kSamples[sel], kFallback[sel]),
                          ImGuiSliderFlags_NoInput)) {
       rex::cvar::SetFlagByName("render_msaa", kSamples[sel], /*persist=*/true);
+      SaveBasic();
+    }
+    ImGui::PopID();
+  }
+
+  // Applies live: samplers are keyed on it and the draw path drops its cached
+  // bindings on a change.
+  void DrawAnisotropyRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("render_anisotropy");
+    if (!entry)
+      return;
+    static constexpr const char* kRatios[] = {"1", "2", "4", "8", "16"};
+    static constexpr const char* kFallback[] = {"Off", "2x", "4x", "8x", "16x"};
+    const std::string current = entry->getter();
+    int sel = 0;
+    for (int i = 0; i < 5; ++i) {
+      if (current == kRatios[i])
+        sel = i;
+    }
+
+    if (DrawRowLabel("render_anisotropy", "render_anisotropy")) {
+      ImGui::SetTooltip("%s", Tip("render_anisotropy"));
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("render_anisotropy");
+    if (ImGui::SliderInt("##v", &sel, 0, 4, OptionText("aniso_", kRatios[sel], kFallback[sel]),
+                         ImGuiSliderFlags_NoInput)) {
+      rex::cvar::SetFlagByName("render_anisotropy", kRatios[sel], /*persist=*/true);
       SaveBasic();
     }
     ImGui::PopID();
