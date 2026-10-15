@@ -33,3 +33,13 @@ void AnimEntryFixup(PPCContext& ctx, u8* base);
 void AnimPartFixup(PPCContext& ctx, u8* base);
 
 }  // namespace eternalsonata_hooks
+
+namespace eternalsonata {
+
+// The confirm dialog for the Unlock Key package picker. Opens it unless it is
+// already up; the menu tick finishes it and calls ResumeInstallDlc on Yes.
+void AskInstallDlc(PPCContext& ctx, u8* base);
+// False if no package was installed, so the caller should leave the screen.
+bool ResumeInstallDlc(PPCContext& ctx, u8* base);
+
+}  // namespace eternalsonata

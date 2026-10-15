@@ -1,67 +1,22 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
-// Asks for the Piano Unlock Key DLC package when the game looks for it.
+// Asks for the Piano Music Key DLC package when the game looks for it.
 //
-// ---------------------------------------------------------------------------
-// Why this lives here and not in the SDK
-// ---------------------------------------------------------------------------
-//
-// The obvious-looking SDK fix -- prompting the user for a package file from
-// inside XamContentCreate's OPEN_EXISTING path -- is wrong twice over. It
-// never fires for this title (see the flow below, which never calls
-// XamContentCreate at all), and plenty of games probe for optional DLC during
-// normal startup with no user intent behind it, so a modal file picker there
-// would ambush players of every other title built on the SDK. Keep it
-// game-specific.
-//
-// ---------------------------------------------------------------------------
-// The guest-side DLC flow (reverse-engineered from default.xex)
-// ---------------------------------------------------------------------------
-//
-// The music-player menu's "Y: Unlock Key" action drives a 12-state machine in
-// sub_82209FB0 (state byte at +0x15 of the object in dword_8244012C, error
-// code at +0x20). The bctr jump table is byte_82082328, based at
-// loc_8220A008:
-//
-//   state 1  -> XamUserGetSigninState; 0 (not signed in) = error 6
-//   state 2  -> sub_82209A18: XamShowDeviceSelectorUI(user, type=2,
-//               size=0x300, overlapped); must return 997 (IO_PENDING),
-//               otherwise error 5
-//   state 3  -> polls the overlapped; picks up the device id, 0 = cancelled
-//   state 4  -> sub_82209AF0: sub_8223C1E0 -> XamContentCreateEnumerator(
-//               user, device_id, content_type=2 /* kMarketplaceContent */)
-//               followed by XamEnumerate; failure = error 2
-//   state 5  -> waits on the async enumerate
-//   state 6+ -> sub_82209BA0 and friends draw the result
-//   state 11 -> sub_82209E80, the error box: it looks the message up with
-//               sub_8223B780("BTX ", <error code>), i.e. the error code at
-//               +0x20 doubles as a BTX string id. "Failed to read Unlock Key"
-//               is one of those ids.
-//
-// The load is therefore driven entirely by *enumeration* of marketplace
-// content -- XamContentCreateEx is never involved. With nothing installed the
-// enumerator legitimately comes back empty and the game reports failure, which
-// is exactly the symptom.
+// The Music menu's Unlock Key action runs a state machine in sub_82209FB0 (state
+// byte at +0x15 of the object in dword_8244012C, error code at +0x20). State 2,
+// sub_82209A18, opens the device selector; state 4 enumerates marketplace
+// content. XamContentCreate is never called, so the load is driven purely by
+// that enumeration, which comes back empty when nothing is installed.
 //
 // ContentManager::ListContent scans
-//   <content root>/0000000000000000/<title id>/00000002/<name>/
-// and the title id it wants is this game's own (0x4E4D07E2). Note that the
-// retail DLC package ships filed under 4E4D07E4 in its own directory tree --
-// one hex digit off -- so hand-copying the extracted folder lands it where
-// nothing will ever look for it. Installing through the SDK's
-// ContentManager::InstallContent avoids the whole class of mistake: it mounts
-// the STFS container, extracts it to the correct path, and writes a header
-// file in the layout ReadContentHeaderFile actually expects.
+// <content root>/0000000000000000/<title id>/00000002/<name>/ for this game's
+// own title id (0x4E4D07E2), while the retail package is filed under 4E4D07E4.
+// Installing through ContentManager::InstallContent avoids that mismatch.
 //
-// ---------------------------------------------------------------------------
-// What this hook does
-// ---------------------------------------------------------------------------
-//
-// sub_82209A18 is state 2, the first thing that runs once the player has asked
-// for the unlock key. Just before it, if no marketplace content is installed
-// for this title, a file dialog asks for the package and installs it. A
-// cancelled dialog or a bad file changes nothing, so the game goes on to its
-// own "failed to read" message.
+// The hook on sub_82209A18 runs when no marketplace content is installed: it
+// asks the player to confirm, then lets them pick the package and installs it.
+// Declining, cancelling or a bad file changes nothing, so the game goes on to
+// its own "failed to read" message.
 
 #include <cstdint>
 #include <fstream>
@@ -78,6 +33,7 @@
 #include <rex/system/xam/content_manager.h>
 #include <rex/system/xcontent.h>
 
+#include "eternalsonata_hooks_internal.h"
 #include "generated/eternalsonata_init.h"
 
 namespace {
@@ -126,20 +82,24 @@ std::string PickPackage() {
   return picked.get();
 }
 
-void InstallPickedPackage() {
+// False once marketplace content is installed.
+bool NeedsPackage() {
   auto* kernel_state = rex::system::kernel_state();
   auto* content_manager = kernel_state ? kernel_state->content_manager() : nullptr;
   if (!content_manager) {
-    return;
+    return false;
   }
   // Mirrors what state 4 asks for: the dummy HDD, the common xuid 0 that
   // marketplace content is filed under, and the running title id.
-  if (!content_manager->ListContent(1, 0, rex::system::XContentType::kMarketplaceContent).empty()) {
-    return;
-  }
+  return content_manager->ListContent(1, 0, rex::system::XContentType::kMarketplaceContent).empty();
+}
+
+bool InstallPickedPackage() {
+  auto* kernel_state = rex::system::kernel_state();
+  auto* content_manager = kernel_state->content_manager();
   const std::string picked = PickPackage();
   if (picked.empty()) {
-    return;
+    return false;
   }
   // SDL reads content URIs as well as paths; the package is copied to the cache
   // since InstallContent needs a real file.
@@ -147,7 +107,7 @@ void InstallPickedPackage() {
   std::unique_ptr<void, decltype(&SDL_free)> data(SDL_LoadFile(picked.c_str(), &size), SDL_free);
   if (!data || !LooksLikeStfsPackage(data.get(), size)) {
     REXLOG_WARN("DLC: '{}' is not an STFS package", picked);
-    return;
+    return false;
   }
   const std::string name = PackageName(picked);
   const auto cache = kernel_state->emulator()->user_data_root() / "cache";
@@ -159,23 +119,42 @@ void InstallPickedPackage() {
     out.write(static_cast<const char*>(data.get()), std::streamsize(size));
     if (!out) {
       REXLOG_WARN("DLC: could not write '{}'", package.string());
-      return;
+      return false;
     }
   }
   const auto result = content_manager->InstallContent(package);
   std::filesystem::remove(package, ec);
   if (XFAILED(result)) {
     REXLOG_WARN("DLC: failed to install '{}' (0x{:08X})", package.string(), uint32_t(result));
-    return;
+    return false;
   }
   REXLOG_INFO("DLC: installed '{}'", package.string());
+  return true;
 }
 
 }  // namespace
 
 // sub_82209A18 - state 2 of the unlock-key state machine.
 REX_EXTERN(__imp__sub_82209A18);
+
+constexpr uint32_t kUnlockObject = 0x8244012C;
+
+bool eternalsonata::ResumeInstallDlc(PPCContext& ctx, uint8_t* base) {
+  if (!InstallPickedPackage()) {
+    return false;
+  }
+  const PPCContext saved = ctx;
+  ctx.r3.u32 = REX_LOAD_U32(kUnlockObject);
+  __imp__sub_82209A18(ctx, base);
+  ctx = saved;
+  return true;
+}
+
 REX_HOOK_RAW(sub_82209A18) {
-    InstallPickedPackage();
-    __imp__sub_82209A18(ctx, base);
+  if (NeedsPackage()) {
+    // The state stays 2 while the dialog is up; it is left from the menu tick.
+    eternalsonata::AskInstallDlc(ctx, base);
+    return;
+  }
+  __imp__sub_82209A18(ctx, base);
 }

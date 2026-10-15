@@ -10,6 +10,7 @@
 #include <iterator>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "eternalsonata_options_api.h"
@@ -574,6 +575,14 @@ constexpr LocalizedLabel kLabelQuitPrompt = {
      "\xBFSalir del juego?\\nSe perder\xE1 todo el progreso no guardado.",
      "Uscire dal gioco?\\nI progressi non salvati andranno persi.",
      "ゲームを終了しますか？\\nセーブしていない進行状況は失われます。"}};
+// Asked before the Unlock Key package picker opens. The DLC name stays English.
+constexpr LocalizedLabel kLabelDlcPrompt = {
+    {"The Piano Music Key DLC is not installed.\\nDo you want to browse for the package file?",
+     "Der Piano Music Key DLC ist nicht installiert.\\nM\xF6" "chtest du nach der Paketdatei suchen?",
+     "Le DLC Piano Music Key n'est pas install\xE9.\\nVoulez-vous chercher le fichier du paquet ?",
+     "El DLC Piano Music Key no est\xE1 instalado.\\n\xBFQuieres buscar el archivo del paquete?",
+     "Il DLC Piano Music Key non \xE8 installato.\\nVuoi cercare il file del pacchetto?",
+     "Piano Music KeyのDLCがインストールされていません。\\nパッケージファイルを探しますか？"}};
 constexpr LocalizedLabel kLabelOverworldModel = {
     {"Overworld Model", "Weltmodell", "Mod\xE8le monde", "Modelo mapa",
      "Modello mappa", "フィールドモデル"}};
@@ -3667,6 +3676,8 @@ void ResetRowGroup(u8* base, int page) {
 // <Q1>), so the text manager runs the choice and the menu only polls it.
 REX_EXTERN(__imp__sub_82206028);
 REX_EXTERN(__imp__sub_822062D0);
+// Leaves the Unlock Key screen and gives the menu its input back.
+REX_EXTERN(__imp__sub_8222B260);
 
 constexpr u32 kStockConfirmSid = 166;
 constexpr u32 kAlbumObjectBytes = 3040;
@@ -3690,6 +3701,11 @@ constexpr int kQuitNodeGrace = 60;
 
 enum class QuitConfirm { kIdle, kRequested, kOpen };
 QuitConfirm g_quit_confirm = QuitConfirm::kIdle;
+// The same dialog also asks the DLC question; the root is whichever menu opened it.
+enum class ConfirmKind { kQuit, kDlc };
+ConfirmKind g_confirm_kind = ConfirmKind::kQuit;
+u32 g_confirm_root = kUiRootMenu;
+
 bool g_quit_prompt_building = false;
 u32 g_quit_album = 0;
 u32 g_quit_prompt = 0;
@@ -3723,7 +3739,9 @@ u32 WriteQuitPrompt(u8* base, u32 stock) {
     tail = "\\n<l5><a1>Yes\\n<a2>No<Q1>";
   }
   const int lang = DrawLanguage();
-  std::string text = LabelText(kLabelQuitPrompt, kLabelQuitPrompt.text[lang] ? lang : 0);
+  const LocalizedLabel& label =
+      g_confirm_kind == ConfirmKind::kDlc ? kLabelDlcPrompt : kLabelQuitPrompt;
+  std::string text = LabelText(label, label.text[lang] ? lang : 0);
   text += tail;
   text.resize(std::min<size_t>(text.size(), kQuitPromptBytes - 1));
   WriteGuestString(base, g_quit_prompt, text.c_str());
@@ -3737,7 +3755,7 @@ u32 WriteQuitPrompt(u8* base, u32 stock) {
 void CallAlbumRoutine(PPCContext& ctx, u8* base,
                       void (*routine)(PPCContext&, u8*)) {
   const u32 saved_root = REX_LOAD_U32(kUiRootMenu);
-  REX_STORE_U32(kUiRootMenu, REX_LOAD_U32(g_ui_root));
+  REX_STORE_U32(kUiRootMenu, REX_LOAD_U32(g_confirm_root));
   const PPCContext saved = ctx;
   ctx.r3.u64 = g_quit_album;
   routine(ctx, base);
@@ -3747,7 +3765,7 @@ void CallAlbumRoutine(PPCContext& ctx, u8* base,
 
 // 0 while undecided, 1 for Yes, anything else for No, or -1 with no text node.
 int QuitAnswer(u8* base) {
-  const u32 text_obj = g_resolve_object(REX_LOAD_U32(g_ui_root),
+  const u32 text_obj = g_resolve_object(REX_LOAD_U32(g_confirm_root),
                                         REX_LOAD_U32(g_quit_album + kAlbumTextId));
   const u32 node = text_obj ? TextNodeFor(base, text_obj) : 0;
   if (!node) {
@@ -3760,7 +3778,7 @@ int QuitAnswer(u8* base) {
   return static_cast<int>(REX_LOAD_U32(node + kTextNodeAnswerCopy));
 }
 
-void OpenQuitConfirm(PPCContext& ctx, u8* base, u32 menu) {
+void OpenQuitConfirm(PPCContext& ctx, u8* base, u32 menu, ConfirmKind kind, u32 root) {
   auto* mem = rex::system::kernel_memory();
   if (!g_quit_album && mem) {
     g_quit_album = mem->SystemHeapAlloc(kAlbumObjectBytes, 0x20);
@@ -3773,6 +3791,8 @@ void OpenQuitConfirm(PPCContext& ctx, u8* base, u32 menu) {
   for (u32 i = 0; i < kAlbumObjectBytes; i += 4) {
     REX_STORE_U32(g_quit_album + i, 0);
   }
+  g_confirm_kind = kind;
+  g_confirm_root = root;
   g_quit_prompt_building = true;
   CallAlbumRoutine(ctx, base, __imp__sub_82206028);
   g_quit_prompt_building = false;
@@ -3794,15 +3814,22 @@ u32 QuitPromptOverride(PPCContext& ctx, u8* base, u32 blob, u32 sid) {
   return WriteQuitPrompt(base, StockBtxLookup(ctx, base, blob, sid, eternalsonata::IsUiTextBlob(blob)));
 }
 
+bool ConfirmPoll(PPCContext& ctx, u8* base, u32 menu);
+
 // Runs once per menu tick. True while the dialog owns the input.
 bool QuitConfirmTick(PPCContext& ctx, u8* base, int page) {
   const u32 menu = REX_LOAD_U32(kMenuObject);
   if (g_quit_confirm == QuitConfirm::kRequested) {
     g_quit_confirm = QuitConfirm::kIdle;
     if (page >= 0 && GuestPtr(menu)) {
-      OpenQuitConfirm(ctx, base, menu);
+      OpenQuitConfirm(ctx, base, menu, ConfirmKind::kQuit, g_ui_root);
     }
   }
+  return ConfirmPoll(ctx, base, menu);
+}
+
+// Closes the dialog once answered. True while it still owns the input.
+bool ConfirmPoll(PPCContext& ctx, u8* base, u32 menu) {
   if (g_quit_confirm != QuitConfirm::kOpen) {
     return false;
   }
@@ -3813,6 +3840,22 @@ bool QuitConfirmTick(PPCContext& ctx, u8* base, int page) {
   }
   CallAlbumRoutine(ctx, base, __imp__sub_822062D0);
   g_quit_confirm = QuitConfirm::kIdle;
+  if (g_confirm_kind == ConfirmKind::kDlc) {
+    // The Unlock Key screen only ticks with input on, so it cannot finish
+    // itself: Yes carries on into the picker, anything else leaves the screen.
+    if (answer == 1 && GuestPtr(menu)) {
+      REX_STORE_U8(menu + kMenuInputEnabled, 1);
+      REX_STORE_U32(menu + kMenuInputHold, 0);
+    }
+    if (answer != 1 || !eternalsonata::ResumeInstallDlc(ctx, base)) {
+      const PPCContext saved = ctx;
+      ctx.r3.u64 = 0;
+      __imp__sub_8222B260(ctx, base);
+      ctx = saved;
+      PlayMenuSfx(base, kSfxCancel);
+    }
+    return true;
+  }
   if (GuestPtr(menu)) {
     REX_STORE_U32(menu + kMenuInputHold, kMenuInputResume);
   }
@@ -3827,6 +3870,23 @@ bool QuitConfirmTick(PPCContext& ctx, u8* base, int page) {
 }
 
 }  // namespace
+
+// The root holding the screen on top, in-game first.
+static u32 TopScreenRoot(u8* base) {
+  for (const u32 root_ptr : {kUiRootField, kUiRootMenu}) {
+    if (ScreenObjectOf(base, root_ptr)) {
+      return root_ptr;
+    }
+  }
+  return kUiRootMenu;
+}
+
+void eternalsonata::AskInstallDlc(PPCContext& ctx, u8* base) {
+  const u32 menu = REX_LOAD_U32(kMenuObject);
+  if (g_quit_confirm == QuitConfirm::kIdle && GuestPtr(menu)) {
+    OpenQuitConfirm(ctx, base, menu, ConfirmKind::kDlc, TopScreenRoot(base));
+  }
+}
 
 // Every gauge on a menu screen costs one 108 byte element out of the menu
 // manager's own sub-heap, and the game sizes that heap ("CampVolCont", at
