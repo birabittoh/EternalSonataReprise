@@ -683,6 +683,33 @@ uint32_t MipLevelCount(const TextureFetch& fetch) {
   return std::min(fetch.mip_max_level, last) + 1;
 }
 
+// Level `mip` of `fetch`, sized from the power of two base the guest lays mips
+// out from. Mip rows are padded to 32 blocks, and linear ones to 256 bytes too.
+TextureFetch MipLevelFetch(const TextureFetch& fetch, const FormatInfo& info, uint32_t mip) {
+  TextureFetch level = fetch;
+  level.width = std::max((1u << Log2Ceil(fetch.width)) >> mip, 1u);
+  level.height = std::max((1u << Log2Ceil(fetch.height)) >> mip, 1u);
+  uint32_t row_bytes = AlignUp((level.width + info.block - 1) / info.block, 32) * info.block_bytes;
+  if (!fetch.tiled)
+    row_bytes = AlignUp(row_bytes, 256);
+  level.pitch = row_bytes / info.block_bytes * info.block;
+  return level;
+}
+
+// Bytes from one mip level to the next. Every level spans 32 block rows even
+// when it is shorter, so a linear level is not just its used rows, and is 4 KB
+// aligned (texture_util GetGuestTextureLayout).
+uint64_t MipLevelStride(const TextureFetch& level, const FormatInfo& info) {
+  const uint64_t row_bytes = uint64_t(level.pitch / info.block) * info.block_bytes;
+  const uint32_t rows = AlignUp((level.height + info.block - 1) / info.block, 32);
+  return AlignUp(uint32_t(row_bytes * rows), 4096);
+}
+
+// The packed tail is one 32x32 block tile at the level's pitch.
+uint64_t PackedTailBytes(const TextureFetch& level, const FormatInfo& info) {
+  return uint64_t(level.pitch / info.block) * info.block_bytes * 32;
+}
+
 bool PackedMipOffset(uint32_t width, uint32_t height, uint32_t block, uint32_t mip,
                      uint32_t& x, uint32_t& y) {
   const uint32_t lw = Log2Ceil(width), lh = Log2Ceil(height), ls = std::min(lw, lh);
@@ -759,20 +786,14 @@ std::vector<TextureSourceRange> TextureSourceRanges(const TextureFetch& fetch,
   uint64_t mip_offset = 0;
   uint64_t mip_bytes = 0;
   for (uint32_t mip = 1; mip < mip_levels; ++mip) {
-    TextureFetch level_fetch = fetch;
-    level_fetch.width = std::max(pow2_width >> mip, 1u);
-    level_fetch.height = std::max(pow2_height >> mip, 1u);
-    const uint32_t width_blocks = (level_fetch.width + info.block - 1) / info.block;
-    level_fetch.pitch = AlignUp(width_blocks, 32) * info.block;
+    const TextureFetch level_fetch = MipLevelFetch(fetch, info, mip);
     uint32_t x = 0, y = 0;
-    uint64_t extent = SourceExtentBytes(level_fetch, info);
     if (fetch.packed_mips &&
         PackedMipOffset(pow2_width, pow2_height, info.block, mip, x, y)) {
-      extent = uint64_t(32 * 32) * info.block_bytes;
-      mip_bytes = std::max(mip_bytes, mip_offset + extent);
+      mip_bytes = std::max(mip_bytes, mip_offset + PackedTailBytes(level_fetch, info));
     } else {
-      mip_bytes = std::max(mip_bytes, mip_offset + extent);
-      mip_offset += AlignUp(uint32_t(extent), 4096);
+      mip_bytes = std::max(mip_bytes, mip_offset + SourceExtentBytes(level_fetch, info));
+      mip_offset += MipLevelStride(level_fetch, info);
     }
   }
   const uint32_t raw_address = fetch.mip_address ? fetch.mip_address : fetch.raw_base_address;
@@ -1379,14 +1400,7 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
     const uint32_t pow2_width = 1u << Log2Ceil(fetch.width);
     const uint32_t pow2_height = 1u << Log2Ceil(fetch.height);
     for (uint32_t mip = 0; mip < mip_levels; ++mip) {
-      TextureFetch level_fetch = fetch;
-      if (mip) {
-        level_fetch.width = std::max(pow2_width >> mip, 1u);
-        level_fetch.height = std::max(pow2_height >> mip, 1u);
-        const uint32_t width_blocks =
-            (level_fetch.width + info.block - 1) / info.block;
-        level_fetch.pitch = AlignUp(width_blocks, 32) * info.block;
-      }
+      const TextureFetch level_fetch = mip ? MipLevelFetch(fetch, info, mip) : fetch;
       const uint32_t wb = (level_fetch.width + info.block - 1) / info.block;
       const uint32_t hb = (level_fetch.height + info.block - 1) / info.block;
       const uint32_t host_bytes = HostBlockBytes(info);
@@ -1402,9 +1416,9 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
         address = (fetch.mip_address ? fetch.mip_address : fetch.raw_base_address) +
                   uint32_t(mip_offset);
         if (fetch.packed_mips && PackedMipOffset(pow2_width, pow2_height, info.block, mip, x, y))
-          extent = uint64_t(32 * 32) * info.block_bytes;
+          extent = PackedTailBytes(level_fetch, info);
         else
-          mip_offset += AlignUp(uint32_t(extent), 4096);
+          mip_offset += MipLevelStride(level_fetch, info);
       } else {
         PackedLevel0Origin(fetch, info, x, y);
       }
