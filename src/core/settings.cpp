@@ -1860,7 +1860,14 @@ void SetDisplayGammaOption(int index) {
 
 void ApplySettingDefaults() {
   for (const auto& d : kGameDefaults) {
+    // SetDefaultValue also sets the value, which would undo a command line
+    // flag parsed before this runs.
+    const auto* entry = rex::cvar::GetFlagInfo(d.cvar);
+    const bool keep = entry && entry->source != rex::cvar::Source::kDefault;
+    const std::string value = keep ? entry->getter() : std::string();
     rex::cvar::SetDefaultValue(d.cvar, d.value);
+    if (keep)
+      entry->setter(value);
   }
 }
 
