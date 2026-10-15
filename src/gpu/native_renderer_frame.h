@@ -86,6 +86,10 @@ bool FrameResolveTextureScale(uint32_t address, uint32_t width, uint32_t height,
 // the very image it is writing.
 const void* FrameCurrentColorTexture();
 
+// Samples per pixel of the targets the next draw lands in, for the pipeline it
+// is built with.
+uint32_t FrameDrawSampleCount();
+
 // Which guest surface colour target 0 currently stands for, for the layer probe
 // in the draw layer: the question it answers is whether the UI draws into the
 // banded screen target or into a surface of its own, and a target is only

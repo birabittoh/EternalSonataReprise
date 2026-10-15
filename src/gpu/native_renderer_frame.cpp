@@ -27,6 +27,7 @@
 #include "shaders/blitPresentFrag.hlsl.dxil.h"
 #include "shaders/depthResolveVert.hlsl.dxil.h"
 #include "shaders/depthResolveFrag.hlsl.dxil.h"
+#include "shaders/depthResolveMsFrag.hlsl.dxil.h"
 #include "shaders/fxaaFrag.hlsl.dxil.h"
 #endif
 #include "shaders/blitVert.hlsl.spirv.h"
@@ -34,6 +35,7 @@
 #include "shaders/blitPresentFrag.hlsl.spirv.h"
 #include "shaders/depthResolveVert.hlsl.spirv.h"
 #include "shaders/depthResolveFrag.hlsl.spirv.h"
+#include "shaders/depthResolveMsFrag.hlsl.spirv.h"
 #include "shaders/fxaaFrag.hlsl.spirv.h"
 
 #ifdef _WIN32
@@ -166,6 +168,14 @@ struct GuestTarget {
 
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
+
+  // Host samples per pixel, 1 unless the guest multisamples this surface. A
+  // multisampled image cannot be copied, blitted or sampled as a plain 2D
+  // texture, so anything that reads it whole goes through `single`, a one
+  // sample resolve of it made on demand. See SingleSampled.
+  uint32_t samples = 1;
+  std::unique_ptr<RenderTexture> single;
+  RenderTextureLayout single_layout = RenderTextureLayout::UNKNOWN;
   FxaaSet fxaa;
 
   // Composite targets only: the set that samples the world image this one is
@@ -415,6 +425,15 @@ uint32_t g_apply_composite_height = 0;
 uint32_t g_apply_extent_width = 0;
 uint32_t g_apply_extent_height = 0;
 
+// Samples given to the guest's multisampled world surfaces, already clamped to
+// what the device supports. Zero until the first target is built. A change of
+// the cvar goes through the extent's apply path, which retires every target.
+uint32_t g_target_samples = 0;
+uint32_t g_apply_samples = 0;
+// The cvar value g_target_samples was derived from, so the device is asked
+// again only when the setting moves.
+uint32_t g_requested_samples = 0;
+
 // True for the whole of PlumePresentFrame. The frame counter alone cannot stand
 // in for this: it is bumped by FramePreparePresent, part way through the
 // present, so a list reopened after that point (the present blit's own, or a
@@ -583,6 +602,60 @@ void Transition(RenderCommandList* commands, RenderTexture* texture,
 
 uint32_t AlignUp(uint32_t value, uint32_t alignment) {
   return (value + alignment - 1) / alignment * alignment;
+}
+
+// The highest count up to `want` that colour and depth both support, since the
+// two are attached together.
+uint32_t SupportedSamples(uint32_t want) {
+  RenderDevice* device = PlumeDevice();
+  if (device == nullptr)
+    return 1;
+  const RenderSampleCounts counts = device->getSampleCountsSupported(kColorFormat) &
+                                    device->getSampleCountsSupported(kDepthFormat);
+  for (uint32_t samples = want; samples > 1; samples /= 2) {
+    if ((counts & samples) != 0)
+      return samples;
+  }
+  return 1;
+}
+
+uint32_t TargetSamples() {
+  if (g_target_samples == 0) {
+    g_requested_samples = NativeRenderMsaaSamples();
+    g_target_samples = SupportedSamples(g_requested_samples);
+    REXLOG_INFO("native_renderer: {}x multisampling on the guest's multisampled surfaces",
+                g_target_samples);
+  }
+  return g_target_samples;
+}
+
+struct TargetImage {
+  RenderTexture* texture = nullptr;
+  RenderTextureLayout* layout = nullptr;
+};
+
+// A colour target's image at one sample per pixel, for readers that cannot take
+// a multisampled one: copies, blits and plain 2D sampling. The target itself
+// when it is not multisampled, otherwise a resolve of the whole of it.
+TargetImage SingleSampled(RenderCommandList* commands, GuestTarget* target) {
+  if (target->samples <= 1)
+    return {target->texture.get(), &target->layout};
+  if (!target->single) {
+    RenderDevice* device = PlumeDevice();
+    if (device == nullptr)
+      return {};
+    target->single = device->createTexture(
+        RenderTextureDesc::ColorTarget(target->host_width, target->host_height, kColorFormat));
+    target->single_layout = RenderTextureLayout::UNKNOWN;
+    if (!target->single)
+      return {};
+  }
+  Transition(commands, target->texture.get(), target->layout, RenderBarrierStage::COPY,
+             RenderTextureLayout::RESOLVE_SOURCE);
+  Transition(commands, target->single.get(), target->single_layout, RenderBarrierStage::COPY,
+             RenderTextureLayout::RESOLVE_DEST);
+  commands->resolveTexture(target->single.get(), target->texture.get());
+  return {target->single.get(), &target->single_layout};
 }
 
 // D3D12 wants a placed footprint's rows 256 byte aligned, and Plume takes the
@@ -873,6 +946,10 @@ struct DepthResolveResources {
   std::unique_ptr<RenderShader> pixel_shader;
   std::unique_ptr<RenderPipelineLayout> pipeline_layout;
   std::unique_ptr<RenderPipeline> pipeline;
+  // The same resolve out of a multisampled depth image, which takes sample 0
+  // because depth averaged across an edge is a depth no surface has.
+  std::unique_ptr<RenderShader> pixel_shader_ms;
+  std::unique_ptr<RenderPipeline> pipeline_ms;
   std::unique_ptr<RenderSampler> sampler;
   bool initialized = false;
   bool failed = false;
@@ -983,6 +1060,8 @@ bool EnsureDepthResolveResources(RenderDevice* device) {
         depthResolveVertBlobDXIL, sizeof(depthResolveVertBlobDXIL), "VSMain", shader_format);
     g_depth_resolve.pixel_shader = device->createShader(
         depthResolveFragBlobDXIL, sizeof(depthResolveFragBlobDXIL), "PSMain", shader_format);
+    g_depth_resolve.pixel_shader_ms = device->createShader(
+        depthResolveMsFragBlobDXIL, sizeof(depthResolveMsFragBlobDXIL), "PSMain", shader_format);
   } else
 #endif
       if (shader_format == RenderShaderFormat::SPIRV) {
@@ -990,6 +1069,8 @@ bool EnsureDepthResolveResources(RenderDevice* device) {
         depthResolveVertBlobSPIRV, sizeof(depthResolveVertBlobSPIRV), "VSMain", shader_format);
     g_depth_resolve.pixel_shader = device->createShader(
         depthResolveFragBlobSPIRV, sizeof(depthResolveFragBlobSPIRV), "PSMain", shader_format);
+    g_depth_resolve.pixel_shader_ms = device->createShader(
+        depthResolveMsFragBlobSPIRV, sizeof(depthResolveMsFragBlobSPIRV), "PSMain", shader_format);
   }
 
   RenderSamplerDesc sampler_desc;
@@ -1014,6 +1095,10 @@ bool EnsureDepthResolveResources(RenderDevice* device) {
     pipeline_desc.depthWriteEnabled = false;
     pipeline_desc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
     g_depth_resolve.pipeline = device->createGraphicsPipeline(pipeline_desc);
+    if (g_depth_resolve.pixel_shader_ms) {
+      pipeline_desc.pixelShader = g_depth_resolve.pixel_shader_ms.get();
+      g_depth_resolve.pipeline_ms = device->createGraphicsPipeline(pipeline_desc);
+    }
   }
 
   if (!g_depth_resolve.pipeline || !g_depth_resolve.sampler) {
@@ -1035,7 +1120,8 @@ bool DepthResolveDraw(RenderCommandList* commands, GuestTarget* target,
                       ResolvedTexture* destination, const RenderBox& box, int32_t place_x,
                       int32_t place_y) {
   RenderDevice* device = PlumeDevice();
-  if (device == nullptr || !EnsureDepthResolveResources(device)) {
+  if (device == nullptr || !EnsureDepthResolveResources(device) ||
+      (target->samples > 1 && !g_depth_resolve.pipeline_ms)) {
     ++g_depth_resolve_failed;
     return false;
   }
@@ -1109,7 +1195,8 @@ bool DepthResolveDraw(RenderCommandList* commands, GuestTarget* target,
   push.uv_offset[0] = float(box.left) / source_w;
   push.uv_offset[1] = float(box.top) / source_h;
 
-  commands->setPipeline(g_depth_resolve.pipeline.get());
+  commands->setPipeline(target->samples > 1 ? g_depth_resolve.pipeline_ms.get()
+                                             : g_depth_resolve.pipeline.get());
   commands->setGraphicsPipelineLayout(g_depth_resolve.pipeline_layout.get());
   commands->setGraphicsPushConstants(0, &push, 0, sizeof(push));
   commands->setGraphicsDescriptorSet(destination->depth_set.get(), 0);
@@ -1439,9 +1526,15 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
     }
   }
 
+  // Only the world layer: the UI layer is drawn at the window's own size, and a
+  // single sampled image there is what lets the world be copied into it.
+  const uint32_t samples =
+      surface.msaa != 0 && layer == GuestLayer::kWorld ? TargetSamples() : 1;
+
   for (auto& candidate : g_targets) {
     if (candidate->base_tile == surface.base_tile && candidate->width == surface.width &&
         candidate->height == surface.height && candidate->msaa == surface.msaa &&
+        candidate->samples == samples &&
         candidate->depth == depth && candidate->layer == layer &&
         candidate->window_sized == window_sized &&
         candidate->host_width == host_width && candidate->host_height == host_height) {
@@ -1459,6 +1552,7 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
   target->width = surface.width;
   target->height = surface.height;
   target->msaa = surface.msaa;
+  target->samples = samples;
   target->guest_format = surface.format;
   target->depth = depth;
   target->host_width = host_width;
@@ -1475,22 +1569,21 @@ GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer)
   target->window_sized = window_sized;
   target->resolution = is_resolution;
 
-  // Multisampling is recorded and logged, but the host image is single
-  // sampled. The cost is edge quality.
+  const RenderMultisampling multisampling(samples);
   target->texture =
-      depth ? device->createTexture(
-                  RenderTextureDesc::DepthTarget(host_width, host_height, kDepthFormat))
-            : device->createTexture(
-                  RenderTextureDesc::ColorTarget(host_width, host_height, kColorFormat));
+      depth ? device->createTexture(RenderTextureDesc::DepthTarget(host_width, host_height,
+                                                                   kDepthFormat, multisampling))
+            : device->createTexture(RenderTextureDesc::ColorTarget(host_width, host_height,
+                                                                   kColorFormat, multisampling));
   if (!target->texture)
     return nullptr;
 
   REXLOG_DEBUG(
       "native_renderer: host {} {} target for EDRAM tile {}: {}x{} for a {}x{} guest surface, msaa "
-      "{} (guest format 0x{:X})",
+      "{} ({} host samples, guest format 0x{:X})",
       layer == GuestLayer::kComposite ? "composite" : "world", depth ? "depth" : "colour",
       surface.base_tile, host_width, host_height, surface.width, surface.height, surface.msaa,
-      surface.format);
+      samples, surface.format);
 
   g_targets.push_back(std::move(target));
   RippleNoteTargetCreated(g_targets.back().get());
@@ -1504,13 +1597,15 @@ RenderFramebuffer* AcquireFramebuffer(GuestTarget* color, GuestTarget* depth) {
   // dropped draw with a reason, which is the difference between a bug that is
   // findable and one that removes the device.
   if (color != nullptr && depth != nullptr &&
-      (color->host_width != depth->host_width || color->host_height != depth->host_height)) {
+      (color->host_width != depth->host_width || color->host_height != depth->host_height ||
+       color->samples != depth->samples)) {
     if (g_attachment_mismatch_reported < 8) {
       ++g_attachment_mismatch_reported;
       REXLOG_WARN(
-          "native_renderer: colour target is {}x{} but depth is {}x{}; refusing the framebuffer "
-          "rather than rendering past the end of one of them",
-          color->host_width, color->host_height, depth->host_width, depth->host_height);
+          "native_renderer: colour target is {}x{} at {} samples but depth is {}x{} at {}; "
+          "dropping the depth attachment",
+          color->host_width, color->host_height, color->samples, depth->host_width,
+          depth->host_height, depth->samples);
     }
     ++g_attachment_mismatch;
     depth = nullptr;
@@ -2295,8 +2390,9 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     // Not an image copy: the depth image is D32_FLOAT_S8_UINT and the
     // destination is R32_FLOAT, which are not copy compatible on either API now
     // that there is a stencil plane. Vulkan copies the depth plane through a
-    // buffer; D3D12 samples it with a draw.
-    const bool copied = PlumeShaderFormat() == RenderShaderFormat::SPIRV
+    // buffer; D3D12 samples it with a draw. A multisampled image has no buffer
+    // copy on either, so it always takes the draw.
+    const bool copied = PlumeShaderFormat() == RenderShaderFormat::SPIRV && target->samples <= 1
                             ? DepthResolveCopy(commands, target, destination, box, host_place_x,
                                                host_place_y)
                             : DepthResolveDraw(commands, target, destination, box, host_place_x,
@@ -2305,6 +2401,16 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
       ++g_resolves_dropped;
       return;
     }
+  } else if (target->samples > 1) {
+    // Straight into the destination: the resolve takes a rectangle, so this
+    // costs no more than the copy it replaces.
+    Transition(commands, target->texture.get(), target->layout, RenderBarrierStage::COPY,
+               RenderTextureLayout::RESOLVE_SOURCE);
+    Transition(commands, destination->texture.get(), destination->layout, RenderBarrierStage::COPY,
+               RenderTextureLayout::RESOLVE_DEST);
+    const RenderRect rect(host_x1, host_y1, host_x2, host_y2);
+    commands->resolveTextureRegion(destination->texture.get(), uint32_t(host_place_x),
+                                   uint32_t(host_place_y), target->texture.get(), &rect);
   } else {
     Transition(commands, target->texture.get(), target->layout, RenderBarrierStage::COPY,
                RenderTextureLayout::COPY_SOURCE);
@@ -2457,7 +2563,8 @@ void LogFrameSummary() {
       "attachment mismatch={} | scale={}x extent={}x{} downscale failed={} | "
       "composites={} skipped={} | layer boundaries={} composited={} failed={} | "
       "layer draws world={} ui={} resolves world={} ui={} presented layer={} | "
-      "retired batches held={} | fxaa passes={} failed={} | presenting 0x{:08X} ({}x{})",
+      "retired batches held={} | fxaa passes={} failed={} | msaa {}x | presenting 0x{:08X} "
+      "({}x{})",
       g_targets.size(), g_framebuffers.size(), g_resolved.size(), g_clears_applied,
       g_clears_dropped, g_clears_aliased, g_resolves_copied, g_resolves_dropped, g_resolves_banded,
       g_resolve_extent_mismatch, g_resolve_scale_mismatch, g_resolve_scale_undersized,
@@ -2468,7 +2575,7 @@ void LogFrameSummary() {
       g_present_texture == nullptr
           ? "none"
           : (g_present_texture->layer == GuestLayer::kComposite ? "ui" : "world"),
-      g_retired_batches_held, g_fxaa_passes, g_fxaa_failed,
+      g_retired_batches_held, g_fxaa_passes, g_fxaa_failed, g_target_samples,
       g_present_texture ? g_present_texture->address : 0,
       g_present_texture ? g_present_texture->width : 0,
       g_present_texture ? g_present_texture->height : 0);
@@ -2559,8 +2666,37 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
     return false;
   }
 
+  const bool same_size =
+      world->host_width == composite->host_width && world->host_height == composite->host_height;
+
+  // A multisampled world resolves straight into a composite of its own size.
+  if (world->samples > 1 && same_size) {
+    Transition(commands, world->texture.get(), world->layout, RenderBarrierStage::COPY,
+               RenderTextureLayout::RESOLVE_SOURCE);
+    Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::COPY,
+               RenderTextureLayout::RESOLVE_DEST);
+    commands->resolveTexture(composite->texture.get(), world->texture.get());
+    Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::GRAPHICS,
+               RenderTextureLayout::COLOR_WRITE);
+    if (depth && depth->texture) {
+      Transition(commands, depth->texture.get(), depth->layout, RenderBarrierStage::GRAPHICS,
+                 RenderTextureLayout::DEPTH_WRITE);
+      BindFramebuffer(commands, framebuffer);
+      commands->clearDepthStencil(true, true, 1.0f, 0);
+    }
+    FxaaComposite(commands, composite);
+    composite->composited_frame = g_frame;
+    ++g_layer_composites;
+    return true;
+  }
+  const TargetImage source = SingleSampled(commands, world);
+  if (source.texture == nullptr) {
+    ++g_layer_composites_failed;
+    return false;
+  }
+
   const bool composite_linear = !NativeRenderPixelatedScaling();
-  if (composite->composite_source != world->texture.get() ||
+  if (composite->composite_source != source.texture ||
       composite->composite_linear != composite_linear) {
     // Retire rather than rewrite: a set the previous frame's list still reads
     // cannot be written in place. See RetiredBatch.
@@ -2574,11 +2710,10 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
       ++g_layer_composites_failed;
       return false;
     }
-    composite->composite_set->setTexture(0, world->texture.get(),
-                                         RenderTextureLayout::SHADER_READ);
+    composite->composite_set->setTexture(0, source.texture, RenderTextureLayout::SHADER_READ);
     composite->composite_set->setSampler(
         1, composite_linear ? g_downscale.sampler.get() : g_downscale.sampler_nearest.get());
-    composite->composite_source = world->texture.get();
+    composite->composite_source = source.texture;
     composite->composite_linear = composite_linear;
     REXLOG_DEBUG(
         "native_renderer: composite for EDRAM tile {} ({}x{}) now reads the world target at tile "
@@ -2594,18 +2729,15 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
   // additive copy of themselves, the world image blown out to white), and a
   // copy of the same pixels never has. The draw below is the fallback for
   // backends without a blit.
-  const bool same_size =
-      world->host_width == composite->host_width && world->host_height == composite->host_height;
-  Transition(commands, world->texture.get(), world->layout, RenderBarrierStage::COPY,
+  Transition(commands, source.texture, *source.layout, RenderBarrierStage::COPY,
              RenderTextureLayout::COPY_SOURCE);
   Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::COPY,
              RenderTextureLayout::COPY_DEST);
   bool copied = same_size;
   if (same_size)
-    commands->copyTexture(composite->texture.get(), world->texture.get());
+    commands->copyTexture(composite->texture.get(), source.texture);
   else
-    copied = commands->blitTexture(composite->texture.get(), world->texture.get(),
-                                   composite_linear);
+    copied = commands->blitTexture(composite->texture.get(), source.texture, composite_linear);
   if (copied) {
     Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::GRAPHICS,
                RenderTextureLayout::COLOR_WRITE);
@@ -2635,7 +2767,7 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
 
   // Both transitions before the framebuffer is bound: a barrier issued inside a
   // render pass ends it on Plume's Vulkan backend.
-  Transition(commands, world->texture.get(), world->layout, RenderBarrierStage::GRAPHICS,
+  Transition(commands, source.texture, *source.layout, RenderBarrierStage::GRAPHICS,
              RenderTextureLayout::SHADER_READ);
   Transition(commands, composite->texture.get(), composite->layout, RenderBarrierStage::GRAPHICS,
              RenderTextureLayout::COLOR_WRITE);
@@ -2821,6 +2953,15 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   if (clip_scale_x != nullptr && clip_scale_y != nullptr)
     LayerClipScale(sized, clip_scale_x, clip_scale_y, full_screen && scene_sprite);
   return framebuffer;
+}
+
+uint32_t FrameDrawSampleCount() {
+  // The layer FrameBindDrawTargets is about to pick.
+  const GuestLayer layer = g_marker_seen ? GuestLayer::kComposite : g_layer;
+  const GuestTarget* target = BoundColorTarget(0, layer);
+  if (target == nullptr)
+    target = BoundDepthTarget(layer);
+  return target != nullptr ? target->samples : 1;
 }
 
 const void* FrameCurrentColorTexture() {
@@ -3043,6 +3184,24 @@ void FrameResetLayer() {
 }
 
 void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
+  // A new sample count rebuilds every target through the same apply a resize
+  // uses, at the extent already in effect.
+  if (g_target_samples != 0 && !g_extent_apply_pending &&
+      NativeRenderMsaaSamples() != g_requested_samples) {
+    g_requested_samples = NativeRenderMsaaSamples();
+    const uint32_t samples = SupportedSamples(g_requested_samples);
+    if (samples != g_target_samples) {
+      g_extent_apply_pending = true;
+      g_apply_extent_width = g_render_extent_width;
+      g_apply_extent_height = g_render_extent_height;
+      g_apply_composite_width = g_composite_extent_width;
+      g_apply_composite_height = g_composite_extent_height;
+      g_apply_samples = samples;
+      REXLOG_INFO("native_renderer: multisampling becomes {}x", samples);
+      return;
+    }
+  }
+
   if (WindowExtentDisabled())
     return;
   // A minimised window is zero sized. Keeping the extent it had is what lets the
@@ -3150,6 +3309,9 @@ void ApplyPendingExtent() {
   g_composite_extent_width = g_apply_composite_width;
   g_composite_extent_height = g_apply_composite_height;
   ++g_extent_generation;
+  if (g_apply_samples != 0)
+    g_target_samples = g_apply_samples;
+  g_apply_samples = 0;
 
   // Same reason as the per destination rebuild: the draw path's texture sets
   // name these images by pointer and a new allocation lands on a freed one's

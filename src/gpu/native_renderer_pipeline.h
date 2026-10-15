@@ -130,6 +130,10 @@ struct PipelineRequest {
   bool has_color_target = false;
   bool has_depth_target = false;
 
+  // Samples per pixel of the targets the draw lands in, which the pipeline has
+  // to be built for.
+  uint32_t samples = 1;
+
   // Build with the sprite batcher's shader pair instead of the slots' own. The
   // slots stay what the guest bound, so everything keyed on them still applies.
   bool sprite_batch = false;

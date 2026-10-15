@@ -641,6 +641,8 @@ plume_compile_vertex_shader(eternalsonata
     "${CMAKE_SOURCE_DIR}/src/shaders/depth_resolve.vert.hlsl" "depthResolveVert" "VSMain")
 plume_compile_pixel_shader(eternalsonata
     "${CMAKE_SOURCE_DIR}/src/shaders/depth_resolve.frag.hlsl" "depthResolveFrag" "PSMain")
+plume_compile_pixel_shader(eternalsonata
+    "${CMAKE_SOURCE_DIR}/src/shaders/depth_resolve_ms.frag.hlsl" "depthResolveMsFrag" "PSMain")
 
 # FXAA over the finished world image.
 plume_compile_pixel_shader(eternalsonata

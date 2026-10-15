@@ -41,6 +41,14 @@ float g_render_scale = 0.0f;
 // Storage behind `render_pixelated_scaling`.
 bool g_render_pixelated_scaling = false;
 
+// Storage behind `render_msaa`.
+#if defined(__ANDROID__)
+constexpr uint32_t kDefaultMsaaSamples = 1;
+#else
+constexpr uint32_t kDefaultMsaaSamples = 2;
+#endif
+uint32_t g_render_msaa = kDefaultMsaaSamples;
+
 // Storage behind `render_fxaa`.
 #if defined(__ANDROID__)
 constexpr bool kDefaultFxaa = false;
@@ -78,6 +86,14 @@ float NativeRenderScaleAtBoot() {
 bool NativeRenderPixelatedScaling() { return g_render_pixelated_scaling; }
 
 bool NativeRenderFxaa() { return g_render_fxaa; }
+
+uint32_t NativeRenderMsaaSamples() {
+  if (g_render_msaa >= 8)
+    return 8;
+  if (g_render_msaa >= 4)
+    return 4;
+  return g_render_msaa >= 2 ? 2 : 1;
+}
 
 void RegisterNativeRendererCvars() {
   // Same name, type, category, description and default as
@@ -146,6 +162,30 @@ void RegisterNativeRendererCvars() {
   filter.lifecycle = rex::cvar::Lifecycle::kHotReload;
   filter.default_value = "false";
   rex::cvar::RegisterFlag(std::move(filter));
+
+  // The guest asks for 2x on its scene surfaces; this picks how many samples
+  // the host gives them. Hot: the frame retires its targets on a change, the
+  // same way a resize does.
+  rex::cvar::FlagEntry msaa;
+  msaa.name = "render_msaa";
+  msaa.type = rex::cvar::FlagType::Uint32;
+  msaa.category = "GPU";
+  msaa.description = "Multisample anti-aliasing samples for the 3D scene: 1, 2, 4 or 8";
+  msaa.setter = [](std::string_view value) {
+    uint32_t parsed = 0;
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (error != std::errc())
+      return false;
+    g_render_msaa = parsed;
+    return true;
+  };
+  msaa.getter = []() { return std::to_string(g_render_msaa); };
+  msaa.command_callback = [](std::string_view) {};
+  msaa.lifecycle = rex::cvar::Lifecycle::kHotReload;
+  msaa.constraints.min = 1.0;
+  msaa.constraints.max = 8.0;
+  msaa.default_value = std::to_string(kDefaultMsaaSamples);
+  rex::cvar::RegisterFlag(std::move(msaa));
 
   rex::cvar::FlagEntry fxaa;
   fxaa.name = "render_fxaa";

@@ -174,6 +174,7 @@ enum DropReason {
   kDropVertexFormat,
   kDropIndicesMissing,
   kDropShaderDisabled,
+  kDropSampleMismatch,
   kDropCount,
 };
 constexpr const char* kDropNames[kDropCount] = {
@@ -187,6 +188,7 @@ constexpr const char* kDropNames[kDropCount] = {
     "a declaration element is in a format the upload path cannot byte swap",
     "an indexed draw with no index buffer bound",
     "a bound shader is switched off in the shader debugger",
+    "the pipeline was built for another sample count than the target has",
 };
 uint64_t g_drops[kDropCount] = {};
 bool g_drop_reported[kDropCount] = {};
@@ -2115,6 +2117,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   }
   if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
+    return false;
+  }
+  // Only around a change of the MSAA setting, which rebuilds the targets
+  // between a draw's pipeline lookup and its binding.
+  if (GuestPipelineSamples(call.pipeline) != FrameDrawSampleCount()) {
+    Drop(kDropSampleMismatch, "the targets were rebuilt after the pipeline was chosen");
     return false;
   }
   // Screen fills and flat sprites already cover their viewport.

@@ -510,6 +510,8 @@ struct PipelineKey {
   uint8_t topology = 0;
   uint8_t targets = 0;  // bit 0 colour, bit 1 depth
   uint8_t sprite_batch = 0;
+  uint8_t samples = 1;
+  uint8_t alpha_to_coverage = 0;
   uint64_t declaration_identity = 0;
   uint32_t strides[kMaxPipelineStreams] = {};
 
@@ -527,7 +529,8 @@ struct PipelineKey {
   bool operator==(const PipelineKey& other) const {
     if (vertex_slot != other.vertex_slot || pixel_slot != other.pixel_slot ||
         topology != other.topology || targets != other.targets ||
-        sprite_batch != other.sprite_batch ||
+        sprite_batch != other.sprite_batch || samples != other.samples ||
+        alpha_to_coverage != other.alpha_to_coverage ||
         declaration_identity != other.declaration_identity ||
         depth_control != other.depth_control || blend_control != other.blend_control ||
         mode_cntl != other.mode_cntl || color_mask != other.color_mask ||
@@ -770,6 +773,10 @@ const uint8_t* GuestPipelinePixelLiterals(const GuestPipeline* pipeline) {
   return pipeline != nullptr ? pipeline->pixel_literals : nullptr;
 }
 
+uint32_t GuestPipelineSamples(const GuestPipeline* pipeline) {
+  return pipeline != nullptr ? pipeline->key.samples : 1;
+}
+
 void GuestPipelineShaderSlots(const GuestPipeline* pipeline, int* vertex_slot, int* pixel_slot) {
   if (vertex_slot)
     *vertex_slot = pipeline != nullptr ? int(pipeline->key.vertex_slot) : -1;
@@ -851,6 +858,13 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   key.topology = uint8_t(topology);
   key.targets = uint8_t((request.has_color_target ? 1u : 0u) | (request.has_depth_target ? 2u : 0u));
   key.sprite_batch = request.sprite_batch ? 1u : 0u;
+  key.samples = uint8_t(request.samples);
+  // RB_COLORCONTROL alpha_to_mask_enable, which only means anything with
+  // samples to mask.
+  key.alpha_to_coverage = request.samples > 1 && request.has_color_target &&
+                                  request.state.valid && (request.state.color_control & 0x10u) != 0
+                              ? 1u
+                              : 0u;
   key.declaration_identity = request.declaration->identity;
   if (request.state.valid) {
     key.depth_control = request.state.depth_control;
@@ -1164,6 +1178,9 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
 
   if (request.has_color_target && state.valid)
     desc.renderTargetBlend[0] = MapBlend(state);
+
+  desc.multisampling.sampleCount = request.samples;
+  desc.alphaToCoverageEnabled = key.alpha_to_coverage != 0;
 
   {
     HitchTimer hitch(g_hitch.pipeline_ns, g_hitch.pipelines);

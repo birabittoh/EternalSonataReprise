@@ -96,6 +96,10 @@ const uint8_t* GuestPipelinePixelLiterals(const GuestPipeline* pipeline);
 // path can name the shader it fired on rather than only how often.
 void GuestPipelineShaderSlots(const GuestPipeline* pipeline, int* vertex_slot, int* pixel_slot);
 
+// Samples per pixel the pipeline was built for, which the bound framebuffer has
+// to match.
+uint32_t GuestPipelineSamples(const GuestPipeline* pipeline);
+
 // The guest register values this pipeline was built from, as the key kept them.
 // Diagnostic: the draw path already has the pipeline in hand, so this avoids
 // re-reading the register shadows to ask what state a draw runs under.

@@ -658,6 +658,7 @@ void RecordDraw(uint8_t* base, uint32_t device, const DrawParams& params) {
   // Cheap, and it keeps the extent current even if a frame never rebinds a
   // target: the host target is sized from it.
   UpdateTilingExtent(base, device);
+  request.samples = FrameDrawSampleCount();
   const GuestPipeline* pipeline = AcquireGuestPipeline(request);
 
   // And issue it. Everything below turns guest addresses into host pointers;

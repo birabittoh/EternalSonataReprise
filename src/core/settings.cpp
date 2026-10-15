@@ -296,7 +296,7 @@ constexpr std::array kBasicCvarNames = {
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
-    "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "render_fxaa", "aim_invert_x", "aim_invert_y",
+    "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "render_msaa", "render_fxaa", "aim_invert_x", "aim_invert_y",
     "touch_controls", "touch_scale", "touch_opacity", "touch_hide_delay", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "override_button_glyphs", "prompt_device",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
@@ -722,6 +722,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawFrameRateRow();
         DrawRenderFilterRow();
         DrawCvarRow("render_fxaa");
+        DrawAntiAliasingRow();
         // Takes effect on the next present.
         DrawCvarRow("vsync");
 #ifdef _WIN32
@@ -1252,6 +1253,35 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // The sampler every upscale of the world image uses, so it takes effect on the
   // very next frame.
   void DrawRenderFilterRow() { DrawCvarRow("render_pixelated_scaling"); }
+
+  // The 3D scene's sample count. Applies live: the renderer rebuilds its targets
+  // the way a resize does.
+  void DrawAntiAliasingRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("render_msaa");
+    if (!entry)
+      return;
+    static constexpr const char* kSamples[] = {"1", "2", "4", "8"};
+    static constexpr const char* kFallback[] = {"Off", "2x (Xbox 360)", "4x", "8x"};
+    const std::string current = entry->getter();
+    int sel = 0;
+    for (int i = 0; i < 4; ++i) {
+      if (current == kSamples[i])
+        sel = i;
+    }
+
+    if (DrawRowLabel("render_msaa", "render_msaa")) {
+      ImGui::SetTooltip("%s", Tip("render_msaa"));
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("render_msaa");
+    if (ImGui::SliderInt("##v", &sel, 0, 3, OptionText("msaa_", kSamples[sel], kFallback[sel]),
+                         ImGuiSliderFlags_NoInput)) {
+      rex::cvar::SetFlagByName("render_msaa", kSamples[sel], /*persist=*/true);
+      SaveBasic();
+    }
+    ImGui::PopID();
+  }
 
   // Applies to the next camera setup rather than instantly: the guest calls
   // sub_82108180 when a camera changes, so the view widens on the next cut or

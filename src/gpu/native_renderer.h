@@ -34,6 +34,10 @@ float NativeRenderScaleAtBoot();
 // everything uses otherwise. Live, read per frame.
 bool NativeRenderPixelatedScaling();
 
+// Samples per pixel for the surfaces the guest itself multisamples, which in
+// this title is the 3D scene. 1 turns it off; 2 is what the console ran. Live.
+uint32_t NativeRenderMsaaSamples();
+
 // Whether FXAA runs over the finished 3D scene, before the UI is drawn on it.
 // The game outlines everything from depth per pixel, which only this smooths.
 // Live.
