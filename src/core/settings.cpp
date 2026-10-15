@@ -728,10 +728,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawFieldOfViewRow();
         DrawGammaRow();
         DrawFrameRateRow();
-        DrawRenderFilterRow();
-        DrawCvarRow("render_fxaa");
         DrawAntiAliasingRow();
         DrawAnisotropyRow();
+        DrawRenderFilterRow();
+        DrawCvarRow("render_fxaa");
         DrawCvarRow("render_generated_mips");
         // Takes effect on the next present.
         DrawCvarRow("vsync");
