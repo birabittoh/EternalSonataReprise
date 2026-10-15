@@ -2904,8 +2904,8 @@ void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
     g_composite_extent_width = want_composite_width;
     g_composite_extent_height = want_composite_height;
     ++g_extent_generation;
-    REXLOG_DEBUG("native_renderer: render extent is {}x{} for a {}x{} window at {}x", want_width,
-                want_height, width, height, pct);
+    REXLOG_INFO("native_renderer: render extent is {}x{} for a {}x{} window at {}x", want_width,
+               want_height, width, height, pct);
     return;
   }
 
@@ -2918,8 +2918,8 @@ void FrameNoteWindowExtent(uint32_t width, uint32_t height) {
   g_apply_extent_height = want_height;
   g_apply_composite_width = want_composite_width;
   g_apply_composite_height = want_composite_height;
-  REXLOG_DEBUG("native_renderer: window is now {}x{}, so the render extent becomes {}x{} at {}x",
-              width, height, want_width, want_height, pct);
+  REXLOG_INFO("native_renderer: window is now {}x{}, so the render extent becomes {}x{} at {}x",
+             width, height, want_width, want_height, pct);
 }
 
 // Retire everything built at the old extent. Only safe at the top of a frame's

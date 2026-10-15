@@ -136,6 +136,27 @@ void RegisterNativeRendererCvars() {
   filter.lifecycle = rex::cvar::Lifecycle::kHotReload;
   filter.default_value = "false";
   rex::cvar::RegisterFlag(std::move(filter));
+
+  // SDK cvars that mean nothing here. The video mode only reaches the guest's
+  // display scaler, which this renderer never runs, and the window size is
+  // saved on every resize rather than chosen.
+  constexpr const char* kUnusedSdkCvars[] = {
+      "gpu_plugin", "resolution", "video_mode_width", "video_mode_height",
+      "video_mode_refresh_rate", "window_width", "window_height",
+      "host_present_from_non_ui_thread", "present_render_pass_clear", "present_safe_area_x",
+      "present_safe_area_y", "present_effect", "present_cas_additional_sharpness",
+      "present_fsr_max_upsampling_passes", "present_fsr_sharpness_reduction", "present_dither",
+      "present_allow_overscan_cutoff", "d3d12_allow_variable_refresh_rate_and_tearing",
+      "d3d12_debug", "d3d12_break_on_error", "d3d12_break_on_warning", "d3d12_adapter",
+      "d3d12_queue_priority", "vulkan_require_fragment_stores_and_atomics",
+      "vulkan_require_vertex_pipeline_stores_and_atomics", "vulkan_require_geometry_shader",
+      "vulkan_require_fill_mode_non_solid", "vulkan_log_debug_messages",
+      "vulkan_allow_present_mode_immediate", "vulkan_allow_present_mode_mailbox",
+      "vulkan_allow_present_mode_fifo_relaxed", "vulkan_validation_enabled",
+      "vulkan_prefer_geometry_shader", "vulkan_prefer_vertex_pipeline_stores_and_atomics",
+      "vulkan_prefer_fill_mode_non_solid"};
+  for (const char* name : kUnusedSdkCvars)
+    rex::cvar::SetFlagHidden(name);
 }
 
 #if defined(__ANDROID__)

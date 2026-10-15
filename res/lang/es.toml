@@ -131,6 +131,7 @@ frame_rate_tip = "Cada cuánto avanzan la escena y la simulación. El juego orig
 rate_adaptive = "Adaptativo"
 rate_unlocked = "Ilimitado"
 render_pixelated_scaling = "Escalado pixelado"
+gpu_backend = "API gráfica"
 vulkan_device = "Dispositivo Vulkan"
 audio_volume = "Volumen general"
 music_volume = "Volumen de la música"
@@ -159,6 +160,7 @@ gyro_sensitivity_tip = "Cuánto mueve el giroscopio la puntería."
 gyro_invert_x_tip = "Invierte el eje horizontal del giroscopio."
 gyro_invert_y_tip = "Invierte el eje vertical del giroscopio."
 render_pixelated_scaling_tip = "Escala la imagen con píxeles nítidos en lugar de suavizarla."
+gpu_backend_tip = "Qué API gráfica usa el juego para renderizar. Auto elige D3D12."
 vulkan_device_tip = "Qué tarjeta gráfica usar. Auto deja que elija el juego."
 
 [profiler]

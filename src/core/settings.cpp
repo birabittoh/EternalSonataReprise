@@ -242,41 +242,14 @@ struct DefaultValue {
 
 constexpr std::array kGameDefaults = {
     DefaultValue{"game_data_root", "assets"},
-    DefaultValue{"gpu_allow_invalid_fetch_constants", "true"},
-    // "fast" always copies the resolve readback to CPU memory every submission
-    // (reading a one-frame-delayed buffer to avoid a GPU stall); "some" skips
-    // that copy whenever the delayed buffer is still valid and only copies on
-    // a cache miss, so it is the lighter of the two. This ships with "fast"
-    // anyway: the unconditional copy is what keeps the readback in step with
-    // what was drawn. The legacy per-backend
-    // d3d12_readback_resolve/vulkan_readback_resolve bools are aliases this
-    // shared cvar overrides whenever it has a non-default value, so setting
-    // this is enough; they are not set here.
-    DefaultValue{"readback_resolve", "fast"},
-    DefaultValue{"clear_memory_page_state", "true"},
-    // The game binds an 8-tile-wide render target at EDRAM tile 1720 whose draws
-    // give no usable height estimate, so it claims all 2048 tiles and takes
-    // ownership of the scene color target at tile 0 by wrapping. That range then
-    // resolves out of the wrong surface as zeros, which is the black cross-fade
-    // source on camera transitions and the black half of the save screenshot.
-    DefaultValue{"no_edram_wrap_claim", "true"},
     // Static mirror of the mod catalog, attached to every release of the mods
     // repo; used when the Firestore backend is rate limited or down.
     DefaultValue{"mod_catalog_fallback_url",
                  "https://github.com/birabittoh/EternalSonataReprise-Mods/releases/latest/"
                  "download/catalog.json"},
-    // Tearing off by default, on both renderers. The old default was false,
-    // because the SDK's vblank pump ties the presentation-interval wait to
-    // vsync and a real presentation interval then made the frame-clocked sim
-    // run at half speed (game speed = actual fps / declared fps). The frame
-    // limiter no longer asks for a real interval at all -- it declares the rate
-    // and paces in the host, which is independent of vsync; see the NOTE in
-    // eternalsonata_framerate.cpp. On the native renderer this is the swap
-    // chain's own vsync (native_renderer_plume.cpp), where the cost of leaving
-    // it on is quantisation: two buffers plus the present's fence wait means a
-    // frame over 16.7 ms lands on 30 rather than somewhere between.
+    // The swap chain's own vsync (native_renderer_plume.cpp). The frame limiter
+    // paces in the host, independent of it; see eternalsonata_framerate.cpp.
     DefaultValue{"vsync", "true"},
-    DefaultValue{"swap_post_effect", "fxaa"},
     DefaultValue{"mnk_mode", "true"},
     DefaultValue{"gyro_aim", "true"},
     DefaultValue{"keybind_a", "LMB"},
@@ -295,40 +268,31 @@ constexpr std::array kGameDefaults = {
     DefaultValue{"keybind_dpad_down", ""},
     DefaultValue{"keybind_dpad_left", ""},
     DefaultValue{"keybind_dpad_right", ""},
-    DefaultValue{"resolution", "720p"},
     DefaultValue{"fullscreen", "false"},
     DefaultValue{"audio_mute", "false"},
     DefaultValue{"audio_volume", "1"},
-    DefaultValue{"shader_dump_enabled", "false"},
-    DefaultValue{"texture_dump_enabled", "false"},
-    DefaultValue{"texture_dump_format", "png"},
-    DefaultValue{"texture_dump_skip_sizes", "1280x720,640x360,720x720"},
 };
 
 // cvars persisted to the friendly settings.toml by the Basic section.
 // vulkan_device gets a custom row (a dynamic dropdown) rather than the generic
 // DrawCvarWidget path, but is still listed here so the generic Reset-All /
 // restart-tracking loops cover it; GetFlagInfo/ResetToDefault etc. no-op
-// harmlessly for it on a build without Vulkan. gpu_backend no longer has a row
-// at all (it is set from the config file or the All Settings browser), but stays
-// listed so an existing saved value survives a Reset-All round trip.
+// harmlessly for it on a build without Vulkan. gpu_backend only has a row on
+// Windows, the one platform with a choice.
 // host_timer_resolution_ms is likewise listed unconditionally even though the
 // cvar only exists on Windows, for the same reason vulkan_device is: the
 // generic loops no-op on a name that is not registered, and keeping the list
 // platform-independent means a settings.toml written on Windows round-trips
 // unharmed through a Linux build.
-// vsync is listed here even though neither renderer registers it in the
-// executable: the Xenos plugin defines it in its command processor and the
-// native renderer registers it itself (see RegisterNativeRendererCvars), so
-// exactly one of the two owns the name by the time this UI draws. The generic
-// loops no-op on a name that is not registered, same as vulkan_device.
+// vsync is registered by the native renderer (see RegisterNativeRendererCvars),
+// not by the SDK.
 // voice_language is listed even though user_language needed special handling to
 // be (see SaveBasicCvars): this subset is saved from *live* cvar values, and the
 // live voice_language is always exactly what the player chose. There is no
 // donor rewrite for voice (a mod voice language gets a bank path of its own
 // rather than borrowing a built-in's), so nothing ever shadows it.
 constexpr std::array kBasicCvarNames = {
-    "fullscreen",  "resolution",   "user_language",
+    "fullscreen", "user_language",
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
@@ -570,45 +534,11 @@ bool AnyKnownPendingRestart() {
   return false;
 }
 
-// Vertical pixel count of each named resolution preset.
-int ResolutionHeightFor(const char* option) {
-  std::string opt = option;
-  if (opt == "1080p")
-    return 1080;
-  if (opt == "1440p")
-    return 1440;
-  if (opt == "4K")
-    return 2160;
-  return 720;  // 720p
-}
-
 // Remembered from CreateSettingsDialog so settings changed outside the overlay
 // - e.g. the native Fullscreen row in the game's own Options screen - can be
-// persisted to the same file the overlay writes. See SaveUserSettings. Also
-// used by DesktopDisplayHeight below, since it's the only handle to the
-// engine's Window this file has outside the settings dialog itself.
+// persisted to the same file the overlay writes. See SaveUserSettings.
 std::filesystem::path g_user_settings_path;
 rex::ui::Window* g_window = nullptr;
-
-// Height in pixels of the display the window is (or would be) shown on.
-// Falls back to 4K (no filtering) if it can't be determined.
-//
-// Routed through rex::ui::Window::GetDesktopDisplayHeight() (backed by
-// SDL_GetDisplayForWindow/SDL_GetDesktopDisplayMode) rather than a direct
-// platform or SDL call from here: rex::runtime ships as rexruntimerd.dll
-// with SDL3-static as an *interface* link dependency, so the DLL and this
-// exe each get their own statically-linked copy of SDL3 with independent
-// subsystem state. The DLL's copy is the one that calls SDL_Init/creates
-// the window, so a direct SDL_GetPrimaryDisplay() call made from this exe's
-// own copy would see no video subsystem and always fail; going through the
-// Window object's virtual method instead runs inside the DLL, against the
-// copy of SDL that actually owns the window. That also makes this
-// cross-platform for free (Windows/X11/Wayland) instead of the previous
-// GetSystemMetrics(SM_CYSCREEN), which only ever worked on Windows.
-int DesktopDisplayHeight() {
-  uint32_t height = g_window ? g_window->GetDesktopDisplayHeight() : 0;
-  return height > 0 ? static_cast<int>(height) : 2160;
-}
 
 std::vector<std::string> BasicCvarNames() {
   return std::vector<std::string>(kBasicCvarNames.begin(), kBasicCvarNames.end());
@@ -622,7 +552,7 @@ std::vector<std::string> BasicCvarNames() {
 // Saving it as-is would quietly rewrite the config from "Portugues" to "Spanish",
 // so the next launch would come up in the donor language and the mod's language
 // would look like it had unselected itself. Any of the other basic settings
-// changing (frame rate, resolution, fullscreen) is enough to trigger that,
+// changing (frame rate, fullscreen) is enough to trigger that,
 // which is what makes it worth handling here rather than at each call site.
 void SaveBasicCvars(const std::filesystem::path& path) {
   auto* entry = rex::cvar::GetFlagInfo("user_language");
@@ -793,10 +723,15 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawRenderFilterRow();
         // Takes effect on the next present.
         DrawCvarRow("vsync");
+#ifdef _WIN32
+        // Elsewhere Vulkan is the only backend.
+        DrawCvarRow("gpu_backend");
+#endif
 #if REX_HAS_VULKAN
-        if (rex::cvar::GetFlagByName("gpu_backend") == "vulkan") {
+#ifdef _WIN32
+        if (rex::cvar::GetFlagByName("gpu_backend") == "vulkan")
+#endif
           DrawVulkanDeviceRow();
-        }
 #endif
         ImGui::EndTabItem();
       }
@@ -1659,23 +1594,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
 }  // namespace
 
-// Ordered ascending; both this overlay's Resolution row and the native
-// Options screen's Resolution row (eternalsonata_options.cpp) offer the same
-// four presets, each truncated to what the display can actually show by
-// AllowedResolutionCount.
-constexpr std::array<const char*, 4> kResolutionPresetsAscending = {"720p", "1080p", "1440p", "4K"};
-
-int AllowedResolutionCount() {
-  int display_height = DesktopDisplayHeight();
-  int count = 0;
-  for (const char* opt : kResolutionPresetsAscending) {
-    if (ResolutionHeightFor(opt) > display_height)
-      break;
-    ++count;
-  }
-  return count > 0 ? count : 1;  // Always leave at least 720p.
-}
-
 // ---------------------------------------------------------------------------
 // Render resolution, as a percentage
 // ---------------------------------------------------------------------------
@@ -1926,9 +1844,7 @@ void PersistWindowSize() {
     return;
   }
 
-  // Both are kRequiresRestart, and they are deliberately outside
-  // kBasicCvarNames: the settings UI's pending-restart banner scans that list,
-  // and a resize the player just performed is already in effect on screen.
+  // Outside kBasicCvarNames, so Reset All leaves the window size alone.
   rex::cvar::SetFlagByName("window_width", want_width, /*persist=*/true);
   rex::cvar::SetFlagByName("window_height", want_height, /*persist=*/true);
   rex::cvar::SaveConfigSubset(g_user_settings_path, {"window_width", "window_height"});
@@ -1940,8 +1856,8 @@ void SetFrameRateSetting(const char* value) {
     return;
   }
   // frame_rate is hot-reload, not kRequiresRestart, so this doesn't mark a
-  // pending restart -- but going through SetFlagByName (as SetResolutionSetting
-  // does) rather than entry->setter directly still matters: it's what runs
+  // pending restart -- but going through SetFlagByName rather than
+  // entry->setter directly still matters: it's what runs
   // registered change callbacks and sets persist_to_config, same as every
   // other settings path in this file (DrawFrameRateRow included).
   rex::cvar::SetFlagByName("frame_rate", value, /*persist=*/true);
@@ -2527,22 +2443,6 @@ void SetUserLanguageSetting(int index) {
     return;
   }
   ApplyUserLanguage(index);
-}
-
-void SetResolutionSetting(const char* value) {
-  auto* res_entry = rex::cvar::GetFlagInfo("resolution");
-  if (!res_entry || !res_entry->setter || res_entry->getter() == value) {
-    return;
-  }
-  // resolution is kRequiresRestart -- go through
-  // rex::cvar::SetFlagByName (not entry->setter directly, as the other
-  // Set*Setting helpers in this file do) so the change is recorded by
-  // MarkPendingRestart. That's what makes AnyPendingRestart() /
-  // GetPendingRestartFlags() -- and so the overlay's "restart to apply"
-  // banner -- notice a resolution change made from the native Options row,
-  // not just from this file's own DrawResolutionRow.
-  rex::cvar::SetFlagByName("resolution", value, /*persist=*/true);
-  SaveUserSettings();
 }
 
 float UiScale() { return static_cast<float>(std::clamp(REXCVAR_GET(ui_scale), 0.5, 3.0)); }

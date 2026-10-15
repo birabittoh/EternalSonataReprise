@@ -131,6 +131,7 @@ frame_rate_tip = "シーンとシミュレーションが進む頻度。元の�
 rate_adaptive = "自動"
 rate_unlocked = "無制限"
 render_pixelated_scaling = "ドット拡大"
+gpu_backend = "グラフィックスAPI"
 vulkan_device = "Vulkanデバイス"
 audio_volume = "マスター音量"
 music_volume = "BGM音量"
@@ -159,6 +160,7 @@ gyro_sensitivity_tip = "ジャイロが照準を動かす強さ。"
 gyro_invert_x_tip = "ジャイロの水平軸を反転します。"
 gyro_invert_y_tip = "ジャイロの垂直軸を反転します。"
 render_pixelated_scaling_tip = "画像をぼかさず、くっきりしたドットで拡大します。"
+gpu_backend_tip = "ゲームの描画に使うグラフィックスAPI。自動ではD3D12を選びます。"
 vulkan_device_tip = "使用するグラフィックカード。自動ではゲームが選びます。"
 
 [profiler]

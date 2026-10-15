@@ -1,7 +1,7 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
 // Game-curated settings: the game's own defaults for SDK cvars, and a small
-// player-facing settings overlay (Fullscreen/Resolution, plus a collapsed
+// player-facing settings overlay (Fullscreen, Frame Rate, ..., plus a collapsed
 // Advanced section) that replaces the SDK's developer settings panel on F4
 // when `settings_manager_enabled = true`. See rex::cvar::SetDefaultValue,
 // rex::cvar::SaveConfigSubset, and rex::ui::DrawCvarWidget in the SDK for the
@@ -37,13 +37,6 @@ namespace eternalsonata {
 // before rex::ReXApp::SetupEnvironment() (i.e. before any config file is
 // loaded), so a saved config or CLI/env override still takes precedence.
 void ApplySettingDefaults();
-
-// How many entries of the ascending {"720p", "1080p", "1440p", "4K"} preset
-// list fit on the user's actual display (always >= 1). Both this file's
-// Resolution row and the native Options screen's Resolution row
-// (eternalsonata_options.cpp) use this so a resolution wider than the
-// display never shows up as selectable in either place.
-int AllowedResolutionCount();
 
 // Render resolution as discrete steps, shared by the F4 overlay's slider and
 // the native Options screen's gauge so the two cannot drift. Backed by
@@ -83,9 +76,9 @@ float DisplayGamma();
 // overlay is opened.
 void InitSettingsCaches();
 
-// Persists the "basic" settings (Fullscreen, Resolution, ...) to the same file
+// Persists the "basic" settings (Fullscreen, Frame Rate, ...) to the same file
 // the overlay writes, using the path captured by CreateSettingsDialog. Exists
-// so settings changed outside the overlay - notably the native Resolution and
+// so settings changed outside the overlay - notably the native Fullscreen and
 // Frame Rate rows added to the game's own Options screen in
 // eternalsonata_options.cpp - survive a restart. No-op if CreateSettingsDialog
 // has not run yet.
@@ -376,11 +369,6 @@ void ApplyBootLanguageDonorSlot();
 // index space as UserLanguageIndex.
 int BootUserLanguageIndex();
 
-// Applies a named resolution end to end: updates the resolution cvar and persists. `value`
-// is one of "720p"/"1080p"/"1440p"/"4K". Used by the native Resolution row in
-// the game's Options screen.
-void SetResolutionSetting(const char* value);
-
 // Scales every ImGui overlay except the SDK's touch controls, whose layout is in
 // window pixels. Constructing it registers it with the drawer, and it applies
 // ui_scale once per frame from then on, so keep it alive for the whole session.
@@ -390,7 +378,7 @@ std::unique_ptr<rex::ui::ImGuiDialog> CreateUiScaleApplier(rex::ui::ImGuiDrawer*
 float UiScale();
 
 // Creates the curated settings overlay. `user_settings_path` is where the
-// friendly settings (Fullscreen, Resolution) are persisted;
+// friendly settings (Fullscreen, Frame Rate, ...) are persisted;
 // `app_config_path` is the SDK's normal cvar config file, loaded at boot. `window` is used
 // by the "Restart Now" button on the pending-restart banner: it relaunches
 // the process (rex::platform::process::Relaunch) then requests `window`

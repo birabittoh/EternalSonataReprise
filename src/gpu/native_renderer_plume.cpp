@@ -654,26 +654,26 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
   SetVulkanGetInstanceProcAddr(LoadSelectedVulkanDriver());
 #endif
 
-  // D3D12 on Windows, Vulkan elsewhere. Plume's Vulkan backend goes through
-  // volk and loads the loader at runtime, so this does not add a link time
-  // dependency on a Vulkan SDK.
+  // D3D12 on Windows unless gpu_backend asks for Vulkan, Vulkan elsewhere.
+  // Plume's Vulkan backend goes through volk and loads the loader at runtime,
+  // so this does not add a link time dependency on a Vulkan SDK.
   //
-  // Plume always builds its Vulkan backend, including on Windows, so the
-  // Vulkan path can be forced here to reproduce a Linux-only defect on a
-  // Windows box: set ETERNALSONATA_RENDER_API=vulkan (or =d3d12 to be
-  // explicit). Anything else, or unset, keeps the per platform default.
+  // ETERNALSONATA_RENDER_API=vulkan (or d3d12) overrides the cvar without
+  // touching the player's settings.
 #ifdef _WIN32
-  const char* api_override = std::getenv("ETERNALSONATA_RENDER_API");
-  const bool force_vulkan =
-      api_override != nullptr &&
-      (std::strcmp(api_override, "vulkan") == 0 || std::strcmp(api_override, "Vulkan") == 0 ||
-       std::strcmp(api_override, "vk") == 0);
+  std::string backend = rex::cvar::GetFlagByName("gpu_backend");
+  if (const char* api_override = std::getenv("ETERNALSONATA_RENDER_API"))
+    backend = api_override;
+  const bool force_vulkan = backend == "vulkan" || backend == "Vulkan" || backend == "vk";
   if (force_vulkan) {
-    REXLOG_DEBUG("native_renderer: ETERNALSONATA_RENDER_API selects Vulkan over D3D12");
+    REXLOG_DEBUG("native_renderer: Vulkan selected over D3D12");
     g_backend.render_interface = CreateVulkanInterface();
     g_backend.api_name = "Vulkan";
-    if (!g_backend.render_interface)
-      REXLOG_ERROR("native_renderer: Vulkan was forced but no interface could be created");
+    if (!g_backend.render_interface) {
+      REXLOG_WARN("native_renderer: no Vulkan interface could be created, falling back to D3D12");
+      g_backend.render_interface = CreateD3D12Interface();
+      g_backend.api_name = "D3D12";
+    }
   } else {
     g_backend.render_interface = CreateD3D12Interface();
     g_backend.api_name = "D3D12";
@@ -691,7 +691,18 @@ bool InitPlumeBackend(void* window_handle, void* window_view) {
     return false;
   }
 
-  g_backend.device = g_backend.render_interface->createDevice();
+  // vulkan_device indexes vkEnumeratePhysicalDevices, which is also the order
+  // Plume lists its device names in. Plume falls back to its own pick when the
+  // name is empty or no longer present.
+  std::string preferred_device;
+  if (g_backend.api_name == "Vulkan") {
+    const std::string index_text = rex::cvar::GetFlagByName("vulkan_device");
+    const int index = index_text.empty() ? -1 : std::atoi(index_text.c_str());
+    const auto& names = g_backend.render_interface->getDeviceNames();
+    if (index >= 0 && size_t(index) < names.size())
+      preferred_device = names[size_t(index)];
+  }
+  g_backend.device = g_backend.render_interface->createDevice(preferred_device);
   if (!g_backend.device) {
     REXLOG_ERROR("native_renderer: Plume {} interface created no device", g_backend.api_name);
     g_backend.render_interface.reset();

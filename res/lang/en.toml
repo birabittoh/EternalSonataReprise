@@ -134,6 +134,7 @@ frame_rate_tip = "How often the in-game scene and simulation advance. The origin
 rate_adaptive = "Adaptive"
 rate_unlocked = "Unlocked"
 render_pixelated_scaling = "Pixelated Scaling"
+gpu_backend = "Graphics API"
 vulkan_device = "Vulkan Device"
 audio_volume = "Master Volume"
 music_volume = "Music Volume"
@@ -162,6 +163,7 @@ gyro_sensitivity_tip = "How strongly the gyroscope moves the aim."
 gyro_invert_x_tip = "Inverts the gyro's horizontal axis."
 gyro_invert_y_tip = "Inverts the gyro's vertical axis."
 render_pixelated_scaling_tip = "Scales the image with hard pixel edges instead of smoothing it."
+gpu_backend_tip = "Which graphics API the game renders with. Auto picks D3D12."
 vulkan_device_tip = "Which graphics card to use. Auto lets the game choose."
 
 [profiler]
