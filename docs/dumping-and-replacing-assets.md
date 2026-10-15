@@ -6,75 +6,70 @@ the mod folder layout itself (`mods/<name>/textures/`, `enabled_mods`,
 `mod.toml`, etc.), see [making-mods.md](making-mods.md) first; this doc
 assumes you already know how asset-only mods are structured.
 
-All of this is generic SDK functionality (`sdk/include/rex/graphics/...`),
-not game-specific code; it works the same regardless of which title the SDK
-is compiled for.
+Texture replacement is implemented by the native renderer
+(`src/gpu/native_renderer_texture.cpp`) on top of the SDK's hash index and
+loader, using the same hash and file names as the SDK's own path. Shader
+dumping is SDK functionality.
 
 ## Cvars
 
-All of these go in `nocturnerecomp.toml`:
+These go in `eternalsonata.toml`, or on the command line as `--name=value`:
 
 ```toml
-shader_dump_enabled = false
 texture_dump_enabled = false
-texture_dump_format = "png"
-texture_dump_skip_sizes = "512x256,1024x512,2048x1024,1920x1080,1280x720"
+texture_dump_skip_sizes = "640x360,1280x720"
+shader_dump_enabled = false
 ```
 
 | cvar | default | purpose |
 |---|---|---|
-| `texture_dump_enabled` | `false` | dump every texture the game uploads to `dumps/textures/` |
-| `texture_dump_format` | `"dds"` | `"dds"` (lossless, raw compressed blocks) or `"png"` (software-decompressed RGBA8) |
-| `texture_dump_skip_sizes` | unset | comma-separated `WxH` list to skip dumping (cuts noise from UI/font atlases, solid-color fills, etc.) |
+| `texture_dump_enabled` | `false` | dump every texture the game draws to `dumps/textures/` |
+| `texture_dump_skip_sizes` | `"640x360,1280x720"` | comma separated `WxH` list not to dump; empty dumps everything |
 | `shader_dump_enabled` | `false` | dump every shader the game compiles/uses to `dumps/shaders/` |
 | `shader_load_enabled` | `true` | whether mod shader overrides (DXBC/SPIR-V) are applied |
 | `mods_dump_root` | unset | override where dumps are written (default: `<exe folder>/dumps`) |
 
-Toggling `texture_dump_enabled` or `shader_dump_enabled` requires a restart.
-
 ## Dumping textures
 
-With `texture_dump_enabled = true`, every texture the game uploads gets
-written to `dumps/textures/` as:
+With `texture_dump_enabled = true`, every colour texture the native renderer
+decodes is written to `dumps/textures/` as:
 
 ```
-<hash16>_<width>x<height>_<format>.dds   (or .png)
+<hash16>_<width>x<height>_<format>.png
 ```
 
-`<hash16>` is a 16-hex-digit XXH3 hash of the raw guest texture data
-(untiled, still in its native big-endian layout); this is the same hash
-mods use to key texture replacements, so a dumped filename tells you
-directly what to name your replacement.
+`<hash16>` is a 16 hex digit XXH3 of the texture's level 0 exactly as it sits
+in guest memory (tiled, big endian), so it does not depend on where the game
+loaded it or on the run. It is the name a replacement takes. The PNG is the
+decoded RGBA image, whatever the guest format (`DXT1`, `DXT2_3`, `DXT4_5`,
+`8_8_8_8`, `5_6_5`, `1_5_5_5`).
 
-- **DDS mode** (default) is lossless: compressed formats (BC1/BC3/BC5/etc.)
-  are written out as their raw blocks under a standard FOURCC DDS header, so
-  the file round-trips exactly and opens fine in most texture tools.
-- **PNG mode** software-decompresses BC1/BC3/BC5 to RGBA8 before writing;
-  handy for editing in a normal image editor, but not a byte-exact dump.
-
-Use `texture_dump_skip_sizes` to filter out sizes you don't care about (e.g.
-`512x256,640x360,1280x720` for common UI/fullscreen buffer sizes) so
-`dumps/textures/` doesn't fill up with things you'll never replace.
+A file is written once per hash, and a texture whose contents keep changing
+(the font atlas, a readback target) stops dumping after a few versions.
+Two channel normal maps are not dumped or replaced.
 
 ## Replacing textures
 
-Drop a replacement into a mod's `textures/` folder, named by the same
-16-hex-digit hash as the dump:
+Put a replacement in a mod's `textures/` folder, named by the hash from the
+dump:
 
 ```
-mods/<name>/textures/<hash16>.dds
 mods/<name>/textures/<hash16>.png
+mods/<name>/textures/<hash16>.dds    (uncompressed RGBA8 only)
 ```
 
-- DDS replacements can be any power-of-two resolution; you're not limited
-  to the original size.
-- PNG replacements are loaded as RGBA8 (via stb_image).
-- If multiple enabled mods ship a replacement for the same hash, the one
-  from the mod earliest in `enabled_mods` wins.
-- Mods are re-scanned when the mod list changes, so you can add/replace
-  files in a mod's `textures/` folder and toggle mods without restarting the
-  hash index (though the game itself needs to re-touch the texture to see
-  the new file).
+- Any size, up to 16384 on a side, and any aspect ratio. The game keeps
+  sampling with the same coordinates, so a 4x upscale is drawn at four times
+  the detail with nothing else to change.
+- The host builds a full mip chain from the image; mips in the file are
+  ignored.
+- Replacements are stored as uncompressed RGBA8: a 2048x2048 image costs
+  about 21 MiB of video memory with its mips, against 4 MiB for the DXT5
+  original at 512x512.
+- If several enabled mods ship the same hash, the one earliest in
+  `enabled_mods` wins.
+- The image is read the first time its texture is drawn, which can hitch for
+  a very large PNG.
 
 ## Dumping shaders
 
@@ -149,8 +144,8 @@ runtime. To turn a dump into a shareable mod:
 1. Copy the dumped/edited file into `mods/<name>/textures/` or
    `mods/<name>/shaders/`, keeping the hash-based filename.
 2. Add a `mod.toml` (see making-mods.md) and optional `icon.png`.
-3. Add `<name>` to `enabled_mods` in `nocturnerecomp.toml`.
-4. `./nocturnerecomp.exe`, then press **F1** to confirm the mod loaded.
+3. Add `<name>` to `enabled_mods` in `eternalsonata.toml`.
+4. `./eternalsonata.exe`, then press **F1** to confirm the mod loaded.
 
 If you want to distribute it, zip the `mods/<name>/` folder the same way
 `make_mods.py --package` does for code mods; asset mods just don't need

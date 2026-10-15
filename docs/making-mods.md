@@ -162,7 +162,9 @@ allow_resize = true
 Resizing is well tested for text and is what a translation normally needs. It
 does not apply to textures at all: a texture is always spliced into the pixel
 region the shipped chunk already owns, so the replacement has to carry the
-original's dimensions and the container never changes length. Model chunks
+original's dimensions and the container never changes length. To draw a
+texture at a higher resolution, use the hash path instead (see
+[Textures the hash path already covers](#textures-the-hash-path-already-covers)). Model chunks
 often change size, so NSHP, NBN2, and NMTN replacement usually implies
 `allow_resize`.
 
@@ -633,7 +635,10 @@ described under [Whole-file asset replacement](#whole-file-asset-replacement)
 below) is independent of all of this and needs no container knowledge at all:
 it replaces any texture the game uploads to the GPU, wherever it came from. If
 you already have a hash from a dump and only care about how the texture looks
-on screen, that path is simpler and stays the recommended one. Reach for
+on screen, that path is simpler and stays the recommended one. It is also the
+only one that takes an image of a different size: a 4x upscale of a 512x512
+texture is drawn as 2048x2048. See
+[dumping-and-replacing-assets.md](dumping-and-replacing-assets.md). Reach for
 `#tex:` references when you want to address a texture by the name it carries in
 the container rather than by a hash you had to dump first, or when the texture
 is one the game reads but never uploads.
@@ -1799,7 +1804,7 @@ mods/<name>/
   game/        overlays the game data partition (game:\ / d:\)
   update/      overlays the update partition
   dlc/<name>/  overlays an installed DLC package
-  textures/    texture replacements: <hash16>.dds or .png (flat dir)
+  textures/    texture replacements: <hash16>.png or RGBA8 .dds, any size (flat dir)
   shaders/     shader replacements (DXBC/SPIR-V binaries)
   mod.toml     descriptive metadata (see below)
   icon.png     shown in the F1 mod manager overlay

@@ -8,6 +8,8 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <numeric>
@@ -17,8 +19,10 @@
 #include <vector>
 
 #include <rex/cvar.h>
+#include <rex/graphics/pipeline/texture/replacement.h>
 #include <rex/logging.h>
 #include <rex/memory/utils.h>
+#include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/xmemory.h>
 
@@ -400,6 +404,15 @@ struct MirroredTexture {
   // TextureMirrorRebaselineSources, to say in the log whether a cached texture
   // sharing a resolve destination's pages is one the game is still drawing.
   uint64_t bound_frame = ~0ull;
+
+  // The XXH3 of level 0 the host texture was last chosen for, and whether that
+  // choice was a mod's replacement, which has its own extent and format. See
+  // the replacement section.
+  uint64_t replacement_hash = 0;
+  bool replaced = false;
+  uint32_t replaced_width = 0;
+  uint32_t replaced_height = 0;
+  uint32_t dumps = 0;
 
   // Guest write notification state. See the watch section below.
   std::atomic<bool> watch_armed{false};
@@ -1693,6 +1706,298 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
   return created;
 }
 
+// ---------------------------------------------------------------------------
+// Replacement
+//
+// The SDK's content hash scheme: mods/<name>/textures/<hash16>.png|.dds, keyed
+// by an XXH3 of level 0's guest bytes, so the key follows a texture's contents
+// rather than its address. A match replaces the host texture at the image's own
+// extent; the guest keeps its fetch constant and the shaders sample with
+// normalized coordinates, so nothing else has to know.
+//
+// Colour formats only. A two channel normal map would need its own convention
+// for what the image's channels mean.
+
+using rex::graphics::TextureReplacement;
+using rex::graphics::TextureReplacementData;
+
+constexpr uint32_t kMaxReplacementExtent = 16384;
+
+// A texture whose contents keep changing (the font atlas, a readback target)
+// would otherwise dump a file per glyph.
+constexpr uint32_t kMaxDumpsPerTexture = 4;
+
+std::unique_ptr<TextureReplacement> g_replacement;
+bool g_replacement_initialized = false;
+uint64_t g_replaced = 0;
+uint64_t g_dumped = 0;
+
+bool ReplaceableFormat(uint32_t format) {
+  return format == 3 || format == 4 || format == 6 || (format >= 18 && format <= 20);
+}
+
+// Null when no enabled mod ships textures and dumping is off, so the hash is
+// only paid for when something can use it.
+TextureReplacement* ActiveReplacement() {
+  if (!g_replacement_initialized) {
+    g_replacement_initialized = true;
+    if (rex::Runtime* runtime = rex::Runtime::instance())
+      g_replacement = std::make_unique<TextureReplacement>(runtime->ModOverlayRoots("textures"),
+                                                           runtime->ModDumpRoot());
+  }
+  if (!g_replacement)
+    return nullptr;
+  if (g_replacement->mod_roots().empty() && !REXCVAR_GET(texture_dump_enabled))
+    return nullptr;
+  return g_replacement.get();
+}
+
+bool DumpSkippedSize(uint32_t width, uint32_t height) {
+  const std::string sizes = REXCVAR_GET(texture_dump_skip_sizes);
+  size_t start = 0;
+  while (start < sizes.size()) {
+    size_t end = sizes.find(',', start);
+    if (end == std::string::npos)
+      end = sizes.size();
+    const std::string pair = sizes.substr(start, end - start);
+    const size_t x = pair.find('x');
+    if (x != std::string::npos && std::strtoul(pair.c_str(), nullptr, 10) == width &&
+        std::strtoul(pair.c_str() + x + 1, nullptr, 10) == height)
+      return true;
+    start = end + 1;
+  }
+  return false;
+}
+
+uint32_t Crc32(uint32_t crc, const uint8_t* data, size_t bytes) {
+  static uint32_t table[256];
+  static bool built = false;
+  if (!built) {
+    for (uint32_t i = 0; i < 256; ++i) {
+      uint32_t c = i;
+      for (uint32_t k = 0; k < 8; ++k)
+        c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+      table[i] = c;
+    }
+    built = true;
+  }
+  crc = ~crc;
+  for (size_t i = 0; i < bytes; ++i)
+    crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
+  return ~crc;
+}
+
+// An RGBA8 PNG with stored deflate blocks. The deployed SDK carries no encoder,
+// and a dump only has to open in an image editor.
+bool WritePngRGBA(const std::filesystem::path& path, uint32_t width, uint32_t height,
+                  const std::vector<uint8_t>& rgba) {
+  std::vector<uint8_t> raw;
+  raw.reserve((size_t(width) * 4 + 1) * height);
+  for (uint32_t y = 0; y < height; ++y) {
+    raw.push_back(0);
+    const uint8_t* row = rgba.data() + size_t(y) * width * 4;
+    raw.insert(raw.end(), row, row + size_t(width) * 4);
+  }
+
+  std::vector<uint8_t> zlib = {0x78, 0x01};
+  uint32_t a = 1, b = 0;
+  for (const uint8_t byte : raw) {
+    a = (a + byte) % 65521;
+    b = (b + a) % 65521;
+  }
+  for (size_t offset = 0;;) {
+    const size_t length = std::min<size_t>(raw.size() - offset, 65535);
+    const bool last = offset + length == raw.size();
+    zlib.push_back(last ? 1 : 0);
+    zlib.push_back(uint8_t(length));
+    zlib.push_back(uint8_t(length >> 8));
+    zlib.push_back(uint8_t(~length));
+    zlib.push_back(uint8_t(~length >> 8));
+    zlib.insert(zlib.end(), raw.begin() + offset, raw.begin() + offset + length);
+    offset += length;
+    if (last)
+      break;
+  }
+  const uint32_t adler = (b << 16) | a;
+  for (int shift = 24; shift >= 0; shift -= 8)
+    zlib.push_back(uint8_t(adler >> shift));
+
+  std::ofstream file(path, std::ios::binary);
+  if (!file)
+    return false;
+  auto put32 = [&](uint32_t value) {
+    const uint8_t bytes[4] = {uint8_t(value >> 24), uint8_t(value >> 16), uint8_t(value >> 8),
+                              uint8_t(value)};
+    file.write(reinterpret_cast<const char*>(bytes), 4);
+  };
+  auto chunk = [&](const char* type, const uint8_t* data, size_t bytes) {
+    put32(uint32_t(bytes));
+    file.write(type, 4);
+    if (bytes != 0)
+      file.write(reinterpret_cast<const char*>(data), std::streamsize(bytes));
+    put32(Crc32(Crc32(0, reinterpret_cast<const uint8_t*>(type), 4), data, bytes));
+  };
+  static const uint8_t kSignature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+  file.write(reinterpret_cast<const char*>(kSignature), 8);
+  const uint8_t header[13] = {uint8_t(width >> 24), uint8_t(width >> 16), uint8_t(width >> 8),
+                              uint8_t(width), uint8_t(height >> 24), uint8_t(height >> 16),
+                              uint8_t(height >> 8), uint8_t(height), 8, 6, 0, 0, 0};
+  chunk("IHDR", header, sizeof(header));
+  chunk("IDAT", zlib.data(), zlib.size());
+  chunk("IEND", nullptr, 0);
+  return bool(file);
+}
+
+// Level 0 as a tight R8G8B8A8 image, whatever host format the mirror uploads.
+bool DecodeLevel0RGBA(uint8_t* memory_base, const TextureFetch& fetch, const FormatInfo& info,
+                      std::vector<uint8_t>& image) {
+  const uint32_t width_blocks = (fetch.width + info.block - 1) / info.block;
+  const uint32_t height_blocks = (fetch.height + info.block - 1) / info.block;
+  const uint32_t read_row = width_blocks * info.block_bytes;
+  uint32_t origin_x = 0, origin_y = 0;
+  PackedLevel0Origin(fetch, info, origin_x, origin_y);
+  std::vector<uint8_t> texels;
+  const bool counting = g_count_refusals;
+  g_count_refusals = false;
+  const bool read = ReadTexels(
+      GuestPhysicalPointer(memory_base, fetch.base_address + uint32_t(Level0ByteOffset(fetch, info)),
+                           SourceExtentBytes(fetch, info)),
+      fetch, info, read_row, texels, origin_x, origin_y);
+  g_count_refusals = counting;
+  if (!read)
+    return false;
+
+  // B8G8R8A8 rows from here on.
+  std::vector<uint8_t> bgra;
+  uint32_t row_bytes = read_row;
+  if (info.block == 4) {
+    row_bytes = width_blocks * 16;
+    DecodeBlockRows(texels, read_row, width_blocks, height_blocks,
+                    BlockExpandForFormat(fetch.format), row_bytes, bgra);
+  } else if (info.expand != Expand::kNone) {
+    row_bytes = width_blocks * 4;
+    ExpandRows(texels, read_row, width_blocks, height_blocks, info.expand, row_bytes, bgra, fetch);
+  } else {
+    bgra.swap(texels);
+  }
+
+  image.resize(size_t(fetch.width) * fetch.height * 4);
+  for (uint32_t y = 0; y < fetch.height; ++y) {
+    const uint8_t* source = bgra.data() + size_t(y) * row_bytes;
+    uint8_t* dest = image.data() + size_t(y) * fetch.width * 4;
+    for (uint32_t x = 0; x < fetch.width; ++x) {
+      dest[x * 4 + 0] = source[x * 4 + 2];
+      dest[x * 4 + 1] = source[x * 4 + 1];
+      dest[x * 4 + 2] = source[x * 4 + 0];
+      dest[x * 4 + 3] = source[x * 4 + 3];
+    }
+  }
+  return true;
+}
+
+const char* DumpFormatName(uint32_t format) {
+  switch (format) {
+    case 3: return "1_5_5_5";
+    case 4: return "5_6_5";
+    case 6: return "8_8_8_8";
+    case 18: return "DXT1";
+    case 19: return "DXT2_3";
+    default: return "DXT4_5";
+  }
+}
+
+// Under the SDK's dump name, <hash16>_<w>x<h>_<format>.png, so the first
+// sixteen characters are what to name a replacement.
+void DumpTexture(TextureReplacement* replacement, uint64_t hash, uint8_t* memory_base,
+                 const TextureFetch& fetch, const FormatInfo& info) {
+  if (DumpSkippedSize(fetch.width, fetch.height))
+    return;
+  const std::filesystem::path path =
+      replacement->dump_dir() / fmt::format("{:016x}_{}x{}_{}.png", hash, fetch.width,
+                                            fetch.height, DumpFormatName(fetch.format));
+  std::error_code ec;
+  if (std::filesystem::exists(path, ec))
+    return;
+  std::vector<uint8_t> image;
+  if (!DecodeLevel0RGBA(memory_base, fetch, info, image))
+    return;
+  std::filesystem::create_directories(replacement->dump_dir(), ec);
+  if (WritePngRGBA(path, fetch.width, fetch.height, image))
+    ++g_dumped;
+}
+
+// Upload a replacement with a full box filtered mip chain, sized by the image
+// rather than the guest. Into `existing` when it already has that extent, as
+// DecodeAndUpload does on a refresh.
+std::unique_ptr<RenderTexture> UploadReplacement(const TextureReplacementData& data,
+                                                 RenderTexture* existing, uint64_t* bytes_out) {
+  ProfileZone zone(kPhaseTextureUpload);
+  RenderDevice* device = PlumeDevice();
+  RenderCommandQueue* queue = PlumeQueue();
+  if (device == nullptr || queue == nullptr)
+    return nullptr;
+
+  const uint32_t mip_levels = Log2Ceil(std::max(data.width, data.height) + 1);
+  struct Level { uint32_t width, height, row_texels; uint64_t offset; };
+  std::vector<Level> levels;
+  uint64_t staging_size = 0;
+  for (uint32_t mip = 0, width = data.width, height = data.height; mip < mip_levels; ++mip) {
+    const uint32_t row_bytes = AlignUp(width * 4, kUploadRowAlignment);
+    const uint64_t offset = AlignUp(uint32_t(staging_size), 512);
+    levels.push_back({width, height, row_bytes / 4, offset});
+    staging_size = offset + uint64_t(row_bytes) * height;
+    width = std::max(width >> 1, 1u);
+    height = std::max(height >> 1, 1u);
+  }
+
+  std::unique_ptr<RenderTexture> created;
+  if (existing == nullptr) {
+    created = device->createTexture(RenderTextureDesc::Texture2D(
+        data.width, data.height, mip_levels, RenderFormat::R8G8B8A8_UNORM));
+    if (!created)
+      return nullptr;
+    existing = created.get();
+  }
+  auto staging = device->createBuffer(RenderBufferDesc::UploadBuffer(staging_size));
+  auto* mapped = staging ? static_cast<uint8_t*>(staging->map()) : nullptr;
+  if (mapped == nullptr)
+    return nullptr;
+
+  // DownsampleBGRA only needs alpha to be the fourth channel.
+  std::vector<uint8_t> image = data.pixels, smaller;
+  for (uint32_t mip = 0; mip < mip_levels; ++mip) {
+    const Level& level = levels[mip];
+    if (mip != 0) {
+      DownsampleBGRA(image, levels[mip - 1].width, levels[mip - 1].height, smaller);
+      image.swap(smaller);
+    }
+    for (uint32_t y = 0; y < level.height; ++y)
+      std::memcpy(mapped + level.offset + size_t(y) * level.row_texels * 4,
+                  image.data() + size_t(y) * level.width * 4, size_t(level.width) * 4);
+  }
+  staging->unmap();
+
+  RenderCommandList* upload = UploadCommands(queue);
+  if (upload == nullptr)
+    return nullptr;
+  upload->barriers(RenderBarrierStage::COPY,
+                   RenderTextureBarrier(existing, RenderTextureLayout::COPY_DEST));
+  for (uint32_t mip = 0; mip < mip_levels; ++mip) {
+    const Level& level = levels[mip];
+    upload->copyTextureRegion(
+        RenderTextureCopyLocation::Subresource(existing, mip),
+        RenderTextureCopyLocation::PlacedFootprint(staging.get(), RenderFormat::R8G8B8A8_UNORM,
+                                                   level.width, level.height, 1,
+                                                   level.row_texels, level.offset));
+  }
+  upload->barriers(RenderBarrierStage::GRAPHICS,
+                   RenderTextureBarrier(existing, RenderTextureLayout::SHADER_READ));
+  EndUpload(std::move(staging), staging_size);
+  if (bytes_out != nullptr)
+    *bytes_out = staging_size;
+  return created;
+}
+
 }  // namespace
 
 // The source pointer for an entry the mirror already holds, resolving the
@@ -1729,6 +2034,88 @@ uint64_t HashSources(MirroredTexture* entry, uint8_t* memory_base) {
   }
   return combined;
 }
+
+namespace {
+
+// Swap in a texture of a different extent or format. Draws hold raw pointers
+// to the old one, so it is retired rather than destroyed.
+void ReplaceEntryTexture(MirroredTexture* entry, std::unique_ptr<RenderTexture> texture,
+                         uint64_t bytes) {
+  if (entry->texture) {
+    DrawForgetTextureBindingsFor(entry->texture.get());
+    FrameRetireTexture(std::move(entry->texture));
+  }
+  g_texture_bytes -= std::min(g_texture_bytes, entry->bytes);
+  entry->texture = std::move(texture);
+  entry->bytes = bytes;
+  g_texture_bytes += bytes;
+}
+
+// Bring `entry`'s host texture up to what guest memory holds now: a mod's image
+// when one matches level 0's hash, else the decode. False when neither could
+// be produced and the entry has nothing to show.
+bool FillTexture(MirroredTexture* entry, uint8_t* memory_base, const TextureFetch& fetch,
+                 const FormatInfo& info) {
+  TextureReplacement* replacement =
+      ReplaceableFormat(fetch.format) ? ActiveReplacement() : nullptr;
+  uint64_t hash = 0;
+  const TextureReplacementData* image = nullptr;
+  if (replacement != nullptr) {
+    TextureSourceRange& level0 = entry->sources.front();
+    const uint8_t* source = EntrySourcePointer(level0, memory_base);
+    if (source != nullptr && GuestRangeReadable(source, level0.bytes))
+      hash = TextureReplacement::HashGuestData(source, level0.bytes);
+    if (hash != 0)
+      image = replacement->FindReplacement(hash);
+    if (image != nullptr && (image->width == 0 || image->height == 0 ||
+                             image->width > kMaxReplacementExtent ||
+                             image->height > kMaxReplacementExtent ||
+                             image->pixels.size() < size_t(image->width) * image->height * 4))
+      image = nullptr;
+  }
+
+  if (image != nullptr) {
+    if (entry->texture && entry->replaced && entry->replacement_hash == hash)
+      return true;
+    const bool fits = entry->texture && entry->replaced && entry->replaced_width == image->width &&
+                      entry->replaced_height == image->height;
+    uint64_t bytes = entry->bytes;
+    auto created = UploadReplacement(*image, fits ? entry->texture.get() : nullptr, &bytes);
+    if (fits || created) {
+      if (created)
+        ReplaceEntryTexture(entry, std::move(created), bytes);
+      entry->replaced = true;
+      entry->replaced_width = image->width;
+      entry->replaced_height = image->height;
+      entry->replacement_hash = hash;
+      ++g_replaced;
+      if (g_replaced <= 32)
+        REXLOG_INFO("native_renderer: replaced {}x{} fmt {} texture {:016x} with a {}x{} image",
+                    fetch.width, fetch.height, fetch.format, hash, image->width, image->height);
+      return true;
+    }
+  }
+
+  // The decode can only refresh in place a texture it made itself.
+  RenderTexture* existing = entry->replaced ? nullptr : entry->texture.get();
+  uint64_t bytes = 0;
+  auto created = DecodeAndUpload(memory_base, fetch, info, existing, &bytes);
+  if (created) {
+    ReplaceEntryTexture(entry, std::move(created), bytes);
+    entry->replaced = false;
+  } else if (existing == nullptr) {
+    return false;
+  }
+  entry->replacement_hash = hash;
+  if (replacement != nullptr && hash != 0 && REXCVAR_GET(texture_dump_enabled) &&
+      entry->dumps < kMaxDumpsPerTexture) {
+    ++entry->dumps;
+    DumpTexture(replacement, hash, memory_base, fetch, info);
+  }
+  return true;
+}
+
+}  // namespace
 
 void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   if (memory_base == nullptr || fetch.base_address == 0)
@@ -1781,11 +2168,10 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     if (!candidate->texture) {
       ++g_retries;
       g_count_refusals = false;
-      candidate->texture = DecodeAndUpload(memory_base, fetch, info, nullptr, &candidate->bytes);
+      const bool filled = FillTexture(candidate, memory_base, fetch, info);
       g_count_refusals = true;
-      if (!candidate->texture)
+      if (!filled)
         return nullptr;
-      g_texture_bytes += candidate->bytes;
       ++g_recovered;
       candidate->hashed_frame = g_frame;
       candidate->content_hash = HashSources(candidate, memory_base);
@@ -1822,7 +2208,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
         ++g_refreshed;
         if (candidate->sources.size() > 1)
           ++g_mip_ranges_refreshed;
-        DecodeAndUpload(memory_base, fetch, info, candidate->texture.get());
+        FillTexture(candidate, memory_base, fetch, info);
         candidate->content_hash = hash;
       }
     }
@@ -1838,8 +2224,7 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
   entry->key_layout = key.layout;
   entry->key_interpretation = key.interpretation;
   entry->sources = TextureSourceRanges(fetch, info);
-  entry->texture = DecodeAndUpload(memory_base, fetch, info, nullptr, &entry->bytes);
-  g_texture_bytes += entry->bytes;
+  FillTexture(entry.get(), memory_base, fetch, info);
 
   // Hashed after the upload rather than before, so a source that changed
   // between the two is noticed on the next bind instead of being recorded as
@@ -1860,11 +2245,12 @@ void LogTextureMirrorSummary() {
   REXLOG_DEBUG(
       "native_renderer: textures decoded={} (generated mips {}) cached={} holding={} MiB evicted={} (budget {}) "
       "refreshed={} hashed={} MiB | binds resolve={} cache={} | "
-      "refused format={} extent={} unmapped={} upload={} | retries={} recovered={}",
+      "refused format={} extent={} unmapped={} upload={} | retries={} recovered={} | "
+      "replaced={} dumped={}",
       g_decoded, g_generated_mip_textures, g_textures.size(), g_texture_bytes / (1024 * 1024), g_textures_evicted,
       g_textures_evicted_budget, g_refreshed, g_hash_bytes / (1024 * 1024), g_resolve_hits,
       g_decode_hits, g_refused_format, g_refused_extent, g_refused_unmapped, g_refused_upload,
-      g_retries, g_recovered);
+      g_retries, g_recovered, g_replaced, g_dumped);
 
   REXLOG_DEBUG("native_renderer:   aperture walks={} reused={}", g_aperture_walks,
               g_aperture_reuses);
@@ -2067,6 +2453,8 @@ void ShutdownTextureMirror() {
   }
   g_texture_index.clear();
   g_textures.clear();
+  g_replacement.reset();
+  g_replacement_initialized = false;
   // Dropped rather than flushed: the queue is already idle and the device is
   // going away, so a batch left open has nothing left to copy into.
   g_upload_batch = UploadBatch{};
