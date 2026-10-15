@@ -296,7 +296,7 @@ bool Pressed(std::initializer_list<ImGuiKey> keys) {
 }  // namespace
 
 int ModsScreen::TabCount() const {
-  return catalog_state_ == CatalogLoad::kFailed ? 1 : 2;
+  return 2;
 }
 
 void ModsScreen::BuildLists() {
@@ -1065,6 +1065,9 @@ void ModsScreen::DrawDetail(ImVec2 min, ImVec2 max) {
     lines.push_back({T("no_mods", "No mods installed."), kMuted, 18.0f});
   } else if (tab_ == 1 && catalog_state_ == CatalogLoad::kLoading) {
     lines.push_back({T("loading_catalog", "Loading catalog..."), kMuted, 18.0f});
+  } else if (tab_ == 1 && catalog_state_ == CatalogLoad::kFailed) {
+    lines.push_back({T("catalog_failed", "Could not load the mod catalog. Select Refresh to retry."),
+                     kWarn, 18.0f});
   }
 
   const float pad = 14.0f * u;
