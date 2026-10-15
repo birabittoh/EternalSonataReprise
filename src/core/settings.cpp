@@ -1887,14 +1887,22 @@ void InitSettingsCaches() {
 #endif
 }
 
+void BindWindowTarget(rex::ui::Window* window, std::filesystem::path user_settings_path) {
+  g_window = window;
+  g_user_settings_path = std::move(user_settings_path);
+  static bool registered = false;
+  if (!registered) {
+    registered = true;
+    rex::cvar::RegisterChangeCallback("fullscreen", [](std::string_view, std::string_view) {
+      SaveUserSettings();
+    });
+  }
+}
+
 void BindSettingsTargets(rex::ui::Window* window,
                          std::filesystem::path user_settings_path) {
-  g_window = window;
+  BindWindowTarget(window, std::move(user_settings_path));
   LaunchGpuBackend();
-  g_user_settings_path = std::move(user_settings_path);
-  rex::cvar::RegisterChangeCallback("fullscreen", [](std::string_view, std::string_view) {
-    SaveUserSettings();
-  });
 }
 
 bool IsCvarPendingRestart(const char* name) {

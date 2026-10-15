@@ -28,6 +28,7 @@
 #include "ui_text.h"
 #include "native_renderer_plume.h"
 #include "release_id.h"
+#include "settings.h"
 
 namespace eternalsonata {
 namespace {
@@ -228,11 +229,24 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   }
 
  protected:
+  ImVec2 seen_size_{0, 0};
+  Clock::time_point size_changed_;
+  bool size_pending_ = false;
+
   void OnDraw(ImGuiIO& io) override {
     Load(g_background, "background");
     Load(g_logo, "logo");
 
     const ImVec2 size = io.DisplaySize;
+    // Saved once the size has held still, not while the edge is being dragged.
+    if (size.x != seen_size_.x || size.y != seen_size_.y) {
+      seen_size_ = size;
+      size_changed_ = Clock::now();
+      size_pending_ = true;
+    } else if (size_pending_ && Clock::now() - size_changed_ > std::chrono::milliseconds(500)) {
+      size_pending_ = false;
+      PersistWindowSize();
+    }
     const float t = std::chrono::duration<float>(Clock::now() - *g_first_shown).count();
     const float shown = Smooth(t / kFadeSeconds);
     // Laid out for 1280x720 and scaled to the window.
@@ -431,6 +445,9 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   }
 
   static bool Pressed(std::initializer_list<ImGuiKey> keys) {
+    // Alt+Enter toggles fullscreen.
+    if (ImGui::GetIO().KeyAlt)
+      return false;
     return std::any_of(keys.begin(), keys.end(), [](ImGuiKey k) { return ImGui::IsKeyPressed(k); });
   }
 

@@ -121,6 +121,7 @@ class EternalsonataApp : public rex::ReXApp {
     eternalsonata::PlumeSetPipelineCachePath(user_data_root() / "cache" / "pipelines.bin");
     eternalsonata::InitNativeRenderer(window());
     eternalsonata::BindIntroScreen(imgui_drawer(), &app_context());
+    eternalsonata::BindWindowTarget(window(), user_settings_path());
 
     eternalsonata::GameDataOptions options;
     options.config_path = config_path();

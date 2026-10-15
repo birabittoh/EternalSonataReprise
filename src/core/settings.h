@@ -91,6 +91,10 @@ void SaveUserSettings();
 // No-op while fullscreen, or before BindSettingsTargets has run.
 void PersistWindowSize();
 
+// Just the window and file PersistWindowSize needs, for the start screen that
+// runs before BindSettingsTargets.
+void BindWindowTarget(rex::ui::Window* window, std::filesystem::path user_settings_path);
+
 // Binds the window and settings file that SaveUserSettings and the resolution
 // path act on. Call this at startup (OnPostSetup). The F4 overlay is created
 // lazily, so capturing these in CreateSettingsDialog alone leaves the native
