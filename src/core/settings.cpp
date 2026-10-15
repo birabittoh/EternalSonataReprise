@@ -296,7 +296,7 @@ constexpr std::array kBasicCvarNames = {
     "input_backend", "gpu_backend", "vulkan_device", "frame_rate",
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
-    "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "aim_invert_x", "aim_invert_y",
+    "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "render_fxaa", "aim_invert_x", "aim_invert_y",
     "touch_controls", "touch_scale", "touch_opacity", "touch_hide_delay", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "override_button_glyphs", "prompt_device",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
@@ -721,6 +721,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawGammaRow();
         DrawFrameRateRow();
         DrawRenderFilterRow();
+        DrawCvarRow("render_fxaa");
         // Takes effect on the next present.
         DrawCvarRow("vsync");
 #ifdef _WIN32

@@ -41,6 +41,14 @@ float g_render_scale = 0.0f;
 // Storage behind `render_pixelated_scaling`.
 bool g_render_pixelated_scaling = false;
 
+// Storage behind `render_fxaa`.
+#if defined(__ANDROID__)
+constexpr bool kDefaultFxaa = false;
+#else
+constexpr bool kDefaultFxaa = true;
+#endif
+bool g_render_fxaa = kDefaultFxaa;
+
 constexpr float kMinRenderScaleF = 0.25f;
 constexpr float kMaxRenderScaleF = 2.0f;
 
@@ -68,6 +76,8 @@ float NativeRenderScaleAtBoot() {
 }
 
 bool NativeRenderPixelatedScaling() { return g_render_pixelated_scaling; }
+
+bool NativeRenderFxaa() { return g_render_fxaa; }
 
 void RegisterNativeRendererCvars() {
   // Same name, type, category, description and default as
@@ -136,6 +146,21 @@ void RegisterNativeRendererCvars() {
   filter.lifecycle = rex::cvar::Lifecycle::kHotReload;
   filter.default_value = "false";
   rex::cvar::RegisterFlag(std::move(filter));
+
+  rex::cvar::FlagEntry fxaa;
+  fxaa.name = "render_fxaa";
+  fxaa.type = rex::cvar::FlagType::Boolean;
+  fxaa.category = "GPU";
+  fxaa.description = "Smooth the 3D scene's edges and outlines with FXAA";
+  fxaa.setter = [](std::string_view value) {
+    g_render_fxaa = value == "true" || value == "1" || value == "yes";
+    return true;
+  };
+  fxaa.getter = []() { return std::string(g_render_fxaa ? "true" : "false"); };
+  fxaa.command_callback = [](std::string_view) {};
+  fxaa.lifecycle = rex::cvar::Lifecycle::kHotReload;
+  fxaa.default_value = kDefaultFxaa ? "true" : "false";
+  rex::cvar::RegisterFlag(std::move(fxaa));
 
   // SDK cvars that mean nothing here. The video mode only reaches the guest's
   // display scaler, which this renderer never runs, and the window size is

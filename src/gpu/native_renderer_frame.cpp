@@ -27,12 +27,14 @@
 #include "shaders/blitPresentFrag.hlsl.dxil.h"
 #include "shaders/depthResolveVert.hlsl.dxil.h"
 #include "shaders/depthResolveFrag.hlsl.dxil.h"
+#include "shaders/fxaaFrag.hlsl.dxil.h"
 #endif
 #include "shaders/blitVert.hlsl.spirv.h"
 #include "shaders/blitFrag.hlsl.spirv.h"
 #include "shaders/blitPresentFrag.hlsl.spirv.h"
 #include "shaders/depthResolveVert.hlsl.spirv.h"
 #include "shaders/depthResolveFrag.hlsl.spirv.h"
+#include "shaders/fxaaFrag.hlsl.spirv.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -92,6 +94,13 @@ enum class GuestLayer : uint32_t { kWorld = 0, kComposite = 1 };
 // by the surface object's address, because the guest creates and destroys
 // surface objects freely over the same tiles and the image behind them is the
 // same one.
+// The set an FXAA pass samples its image through, kept by whatever owns that
+// image and rebuilt only when the image changes, like the depth resolve's.
+struct FxaaSet {
+  std::unique_ptr<RenderDescriptorSet> set;
+  const RenderTexture* source = nullptr;
+};
+
 struct GuestTarget {
   uint32_t base_tile = 0;
   uint32_t tiles = 0;  // EDRAM footprint, so two targets can be asked to overlap
@@ -157,6 +166,7 @@ struct GuestTarget {
 
   std::unique_ptr<RenderTexture> texture;
   RenderTextureLayout layout = RenderTextureLayout::UNKNOWN;
+  FxaaSet fxaa;
 
   // Composite targets only: the set that samples the world image this one is
   // composited from, and the pointer it names. Written once and rebuilt only
@@ -266,6 +276,9 @@ struct ResolvedTexture {
   // above, one texel row per row of the resolved box. See DepthResolveCopy.
   std::unique_ptr<RenderBuffer> depth_staging;
   uint64_t depth_staging_bytes = 0;
+  FxaaSet fxaa;
+  // Resolved from the finished world this frame and not yet smoothed.
+  bool fxaa_pending = false;
 
   // The guest's own copy of this image, for the guest's CPU to read. See
   // native_renderer_readback.h: the copy into this buffer is recorded into the
@@ -685,6 +698,170 @@ bool EnsureDownscaleResources(RenderDevice* device) {
   }
 
   g_downscale.initialized = true;
+  return true;
+}
+
+// --- FXAA ---
+//
+// Run in place over the finished world image, once the outline pass has drawn
+// into it and before the UI goes on top. Through a scratch image and a copy
+// back, so everything that already names the image keeps naming it.
+struct FxaaResources {
+  std::unique_ptr<RenderShader> pixel_shader;
+  std::unique_ptr<RenderPipelineLayout> pipeline_layout;
+  std::unique_ptr<RenderPipeline> pipeline;
+  std::unique_ptr<RenderTexture> scratch;
+  RenderTextureLayout scratch_layout = RenderTextureLayout::UNKNOWN;
+  std::unique_ptr<RenderFramebuffer> framebuffer;
+  uint32_t width = 0;
+  uint32_t height = 0;
+  bool initialized = false;
+  bool failed = false;
+};
+
+FxaaResources g_fxaa;
+uint64_t g_fxaa_passes = 0;
+uint64_t g_fxaa_failed = 0;
+// Whether some destination is waiting for FXAA; see FxaaPendingResolves.
+bool g_fxaa_pending = false;
+
+struct FxaaConstants {
+  float texel[2] = {0.0f, 0.0f};
+  float pad[2] = {0.0f, 0.0f};
+};
+
+bool EnsureFxaaResources(RenderDevice* device) {
+  if (g_fxaa.initialized)
+    return true;
+  if (g_fxaa.failed || device == nullptr || !EnsureDownscaleResources(device))
+    return false;
+
+  RenderDescriptorRange ranges[2];
+  RenderDescriptorSetDesc set_desc = DownscaleSetDesc(ranges);
+  const RenderPushConstantRange push_constants(0, 0, 0, sizeof(FxaaConstants),
+                                               RenderShaderStageFlag::PIXEL);
+  RenderPipelineLayoutDesc layout_desc;
+  layout_desc.pushConstantRanges = &push_constants;
+  layout_desc.pushConstantRangesCount = 1;
+  layout_desc.descriptorSetDescs = &set_desc;
+  layout_desc.descriptorSetDescsCount = 1;
+  layout_desc.allowInputLayout = false;
+  g_fxaa.pipeline_layout = device->createPipelineLayout(layout_desc);
+
+  const RenderShaderFormat shader_format = PlumeShaderFormat();
+#ifdef _WIN32
+  if (shader_format == RenderShaderFormat::DXIL) {
+    g_fxaa.pixel_shader =
+        device->createShader(fxaaFragBlobDXIL, sizeof(fxaaFragBlobDXIL), "PSMain", shader_format);
+  } else
+#endif
+      if (shader_format == RenderShaderFormat::SPIRV) {
+    g_fxaa.pixel_shader =
+        device->createShader(fxaaFragBlobSPIRV, sizeof(fxaaFragBlobSPIRV), "PSMain", shader_format);
+  }
+
+  if (g_fxaa.pixel_shader && g_fxaa.pipeline_layout) {
+    RenderGraphicsPipelineDesc pipeline_desc;
+    pipeline_desc.pipelineLayout = g_fxaa.pipeline_layout.get();
+    pipeline_desc.vertexShader = g_downscale.vertex_shader.get();
+    pipeline_desc.pixelShader = g_fxaa.pixel_shader.get();
+    pipeline_desc.renderTargetFormat[0] = kColorFormat;
+    pipeline_desc.renderTargetCount = 1;
+    pipeline_desc.cullMode = RenderCullMode::NONE;
+    pipeline_desc.depthEnabled = false;
+    pipeline_desc.depthWriteEnabled = false;
+    pipeline_desc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
+    g_fxaa.pipeline = device->createGraphicsPipeline(pipeline_desc);
+  }
+
+  if (!g_fxaa.pipeline) {
+    REXLOG_ERROR("native_renderer: could not create the FXAA pipeline");
+    g_fxaa.failed = true;
+    return false;
+  }
+  g_fxaa.initialized = true;
+  return true;
+}
+
+// FXAA over the whole of `image`, which is left in SHADER_READ with no
+// framebuffer bound.
+bool FxaaInPlace(RenderCommandList* commands, RenderTexture* image, RenderTextureLayout& layout,
+                 FxaaSet& binding, uint32_t width, uint32_t height) {
+  RenderDevice* device = PlumeDevice();
+  if (device == nullptr || image == nullptr || width == 0 || height == 0 ||
+      !EnsureFxaaResources(device)) {
+    ++g_fxaa_failed;
+    return false;
+  }
+
+  if (!g_fxaa.scratch || g_fxaa.width != width || g_fxaa.height != height) {
+    if (g_fxaa.framebuffer)
+      RetireBatch().framebuffers.push_back(std::move(g_fxaa.framebuffer));
+    if (g_fxaa.scratch)
+      RetireBatch().textures.push_back(std::move(g_fxaa.scratch));
+    g_fxaa.scratch =
+        device->createTexture(RenderTextureDesc::ColorTarget(width, height, kColorFormat));
+    g_fxaa.scratch_layout = RenderTextureLayout::UNKNOWN;
+    if (!g_fxaa.scratch) {
+      ++g_fxaa_failed;
+      return false;
+    }
+    const RenderTexture* attachment = g_fxaa.scratch.get();
+    RenderFramebufferDesc fb_desc;
+    fb_desc.colorAttachments = &attachment;
+    fb_desc.colorAttachmentsCount = 1;
+    g_fxaa.framebuffer = device->createFramebuffer(fb_desc);
+    if (!g_fxaa.framebuffer) {
+      RetireBatch().textures.push_back(std::move(g_fxaa.scratch));
+      ++g_fxaa_failed;
+      return false;
+    }
+    g_fxaa.width = width;
+    g_fxaa.height = height;
+  }
+
+  if (!binding.set || binding.source != image) {
+    if (binding.set)
+      RetireBatch().sets.push_back(std::move(binding.set));
+    RenderDescriptorRange ranges[2];
+    binding.set = device->createDescriptorSet(DownscaleSetDesc(ranges));
+    if (!binding.set) {
+      binding.source = nullptr;
+      ++g_fxaa_failed;
+      return false;
+    }
+    binding.set->setTexture(0, image, RenderTextureLayout::SHADER_READ);
+    binding.set->setSampler(1, g_downscale.sampler.get());
+    binding.source = image;
+  }
+
+  Transition(commands, image, layout, RenderBarrierStage::GRAPHICS,
+             RenderTextureLayout::SHADER_READ);
+  Transition(commands, g_fxaa.scratch.get(), g_fxaa.scratch_layout, RenderBarrierStage::GRAPHICS,
+             RenderTextureLayout::COLOR_WRITE);
+  commands->setFramebuffer(nullptr);
+  g_bound_framebuffer = nullptr;
+  BindFramebuffer(commands, g_fxaa.framebuffer.get());
+  commands->setViewports(RenderViewport(0.0f, 0.0f, float(width), float(height)));
+  commands->setScissors(RenderRect(0, 0, int32_t(width), int32_t(height)));
+  FxaaConstants push;
+  push.texel[0] = 1.0f / float(width);
+  push.texel[1] = 1.0f / float(height);
+  commands->setPipeline(g_fxaa.pipeline.get());
+  commands->setGraphicsPipelineLayout(g_fxaa.pipeline_layout.get());
+  commands->setGraphicsPushConstants(0, &push, 0, sizeof(push));
+  commands->setGraphicsDescriptorSet(binding.set.get(), 0);
+  commands->drawInstanced(3, 1, 0, 0);
+  commands->setFramebuffer(nullptr);
+  g_bound_framebuffer = nullptr;
+
+  Transition(commands, g_fxaa.scratch.get(), g_fxaa.scratch_layout, RenderBarrierStage::COPY,
+             RenderTextureLayout::COPY_SOURCE);
+  Transition(commands, image, layout, RenderBarrierStage::COPY, RenderTextureLayout::COPY_DEST);
+  commands->copyTexture(image, g_fxaa.scratch.get());
+  Transition(commands, image, layout, RenderBarrierStage::GRAPHICS,
+             RenderTextureLayout::SHADER_READ);
+  ++g_fxaa_passes;
   return true;
 }
 
@@ -1996,6 +2173,9 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
       RetireBatch().framebuffers.push_back(std::move(destination->depth_framebuffer));
     if (destination->depth_set)
       RetireBatch().sets.push_back(std::move(destination->depth_set));
+    if (destination->fxaa.set)
+      RetireBatch().sets.push_back(std::move(destination->fxaa.set));
+    destination->fxaa.source = nullptr;
     destination->depth_set_source = nullptr;
     destination->readback_source_layout = RenderTextureLayout::UNKNOWN;
     PresentBlitForgetTexture();
@@ -2187,6 +2367,14 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
   // must not steal that slot from it.
   if (!is_depth)
     g_present_texture = destination;
+  // After the marker the world band holds the finished scene, outlines and all,
+  // and this is the copy the guest's composite quad puts under the UI. Smoothed
+  // at the next draw, so a banded resolve has both its halves in first.
+  if (!is_depth && g_marker_seen && target->layer == GuestLayer::kWorld &&
+      target->resolution && target->width >= 1280) {
+    destination->fxaa_pending = true;
+    g_fxaa_pending = true;
+  }
 }
 
 void* FrameResolveTextureByAddress(uint32_t address, uint32_t width, uint32_t height) {
@@ -2269,7 +2457,7 @@ void LogFrameSummary() {
       "attachment mismatch={} | scale={}x extent={}x{} downscale failed={} | "
       "composites={} skipped={} | layer boundaries={} composited={} failed={} | "
       "layer draws world={} ui={} resolves world={} ui={} presented layer={} | "
-      "retired batches held={} | presenting 0x{:08X} ({}x{})",
+      "retired batches held={} | fxaa passes={} failed={} | presenting 0x{:08X} ({}x{})",
       g_targets.size(), g_framebuffers.size(), g_resolved.size(), g_clears_applied,
       g_clears_dropped, g_clears_aliased, g_resolves_copied, g_resolves_dropped, g_resolves_banded,
       g_resolve_extent_mismatch, g_resolve_scale_mismatch, g_resolve_scale_undersized,
@@ -2280,7 +2468,7 @@ void LogFrameSummary() {
       g_present_texture == nullptr
           ? "none"
           : (g_present_texture->layer == GuestLayer::kComposite ? "ui" : "world"),
-      g_retired_batches_held,
+      g_retired_batches_held, g_fxaa_passes, g_fxaa_failed,
       g_present_texture ? g_present_texture->address : 0,
       g_present_texture ? g_present_texture->width : 0,
       g_present_texture ? g_present_texture->height : 0);
@@ -2297,6 +2485,31 @@ void LogFrameSummary() {
 // The depth attachment is not carried across. The UI is strictly 2D, so the
 // composite's depth buffer starts clear and a UI draw that tests depth tests
 // against an empty buffer.
+void FxaaPendingResolves(RenderCommandList* commands) {
+  if (!g_fxaa_pending)
+    return;
+  g_fxaa_pending = false;
+  const bool enabled = NativeRenderFxaa();
+  for (auto& destination : g_resolved) {
+    if (!destination->fxaa_pending)
+      continue;
+    destination->fxaa_pending = false;
+    if (enabled && destination->texture) {
+      FxaaInPlace(commands, destination->texture.get(), destination->layout, destination->fxaa,
+                  destination->image_width, destination->image_height);
+    }
+  }
+}
+
+// The same FXAA for frames that bring the world across by copying it into the
+// UI layer, before the first UI draw lands on it.
+void FxaaComposite(RenderCommandList* commands, GuestTarget* composite) {
+  if (NativeRenderFxaa()) {
+    FxaaInPlace(commands, composite->texture.get(), composite->layout, composite->fxaa,
+                composite->host_width, composite->host_height);
+  }
+}
+
 bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite) {
   if (composite == nullptr || composite->layer != GuestLayer::kComposite || !composite->texture)
     return false;
@@ -2402,6 +2615,7 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
       BindFramebuffer(commands, framebuffer);
       commands->clearDepthStencil(true, true, 1.0f, 0);
     }
+    FxaaComposite(commands, composite);
     composite->composited_frame = g_frame;
     ++g_layer_composites;
     return true;
@@ -2456,6 +2670,7 @@ bool CompositeWorldIntoLayer(RenderCommandList* commands, GuestTarget* composite
   commands->setFramebuffer(nullptr);
   g_bound_framebuffer = nullptr;
 
+  FxaaComposite(commands, composite);
   composite->composited_frame = g_frame;
   ++g_layer_composites;
   LayerTrace("world blit from", composite, world->host_width);
@@ -2518,6 +2733,7 @@ RenderFramebuffer* FrameBindDrawTargets(RenderCommandList* commands, uint32_t* w
   // Resolves between the marker and this draw still read the world surface.
   if (g_marker_seen)
     g_layer = GuestLayer::kComposite;
+  FxaaPendingResolves(commands);
   // Colour target 0 and the depth stencil. The guest binds targets 1..3 in this
   // title only for the resolve source selector to name, and the pixel shaders
   // export a single colour (e0, all 128 of them), so one attachment is the whole

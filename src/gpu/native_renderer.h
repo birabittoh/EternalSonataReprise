@@ -34,6 +34,11 @@ float NativeRenderScaleAtBoot();
 // everything uses otherwise. Live, read per frame.
 bool NativeRenderPixelatedScaling();
 
+// Whether FXAA runs over the finished 3D scene, before the UI is drawn on it.
+// The game outlines everything from depth per pixel, which only this smooths.
+// Live.
+bool NativeRenderFxaa();
+
 // Registers the cvars a GPU plugin would have registered, so selecting this
 // renderer does not silently lose them: `vsync`, which lives inside
 // rexgpu-xenos and therefore never registers when no plugin is loaded. Call from OnPreSetup, after the config file has been read, so a
