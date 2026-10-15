@@ -2187,9 +2187,10 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     Drop(kDropSampleMismatch, "the targets were rebuilt after the pipeline was chosen");
     return false;
   }
-  // Screen fills and flat sprites already cover their viewport.
-  if (screen_fill || screen_image ||
-      (draw_vertex_slot >= 0x0d && draw_vertex_slot <= 0x12 && !scene_sprite)) {
+  // Screen fills and full width flat sprites already cover their viewport.
+  const bool flat_screen_sprite = draw_vertex_slot >= 0x0d && draw_vertex_slot <= 0x12 &&
+      !scene_sprite && !call.host_order_streams && SpansGuestWidth(call);
+  if (screen_fill || screen_image || flat_screen_sprite) {
     clip_scale_x = 1.0f;
     clip_scale_y = 1.0f;
   }
