@@ -209,6 +209,9 @@ bool SpriteBatchAbsorb(const GuestDrawCall& call, const PipelineRequest& request
     ++g_sprites_rejected;
     return false;
   }
+  // Drawn alone so it alone can be stretched over the window.
+  if (IsScreenSprite(call))
+    return false;
 
   const uint8_t* bank = call.device + d3d::kVertexConstantShadow;
   float world[4][4];

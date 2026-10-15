@@ -99,6 +99,9 @@ struct GuestDrawCall {
 // and reported once per reason.
 bool IssueGuestDraw(const GuestDrawCall& call);
 
+// A vs_015 UI sprite spanning the guest's whole width; drawn over the window.
+bool IsScreenSprite(const GuestDrawCall& call);
+
 // D3DDevice__SetViewport, mirrored. The rectangle is in the bound surface's own
 // space and is clamped to it at draw time.
 void DrawSetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height, float min_z,

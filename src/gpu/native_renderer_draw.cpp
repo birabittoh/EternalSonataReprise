@@ -1888,6 +1888,45 @@ bool IsScreenImageSprite(const GuestDrawCall& call, int vertex_slot, int pixel_s
   return corners == 15;
 }
 
+}  // namespace
+
+// A flat UI sprite spanning the guest's whole width, like the pause tint and the
+// overlay that slides in with it. Stretched over the window so neither is
+// pillarboxed.
+bool IsScreenSprite(const GuestDrawCall& call) {
+  if (call.device == nullptr || call.indexed || call.primitive_type != 6 || call.count != 4 ||
+      IsSceneSprite(call, 15))
+    return false;
+  const GuestDrawStream& stream = call.streams[0];
+  if (stream.data == nullptr || stream.stride < 12 || stream.size < stream.stride * 4)
+    return false;
+  const uint8_t* bank = GuestVertexBank(call);
+  float left = 0.0f, right = 0.0f;
+  for (uint32_t i = 0; i < 4; ++i) {
+    const uint8_t* vertex = stream.data + i * stream.stride;
+    const float position[4] = {GuestFloat(vertex, 0, 0), GuestFloat(vertex, 0, 1),
+                               GuestFloat(vertex, 0, 2), 1.0f};
+    // vs_015: world c0..c3, then projection c4..c7.
+    float world[4] = {};
+    float clip[4] = {};
+    for (uint32_t row = 0; row < 4; ++row) {
+      for (uint32_t column = 0; column < 4; ++column)
+        world[row] += position[column] * GuestFloat(bank, row, column);
+    }
+    for (uint32_t row = 0; row < 4; ++row) {
+      for (uint32_t column = 0; column < 4; ++column)
+        clip[row] += world[column] * GuestFloat(bank, 4 + row, column);
+    }
+    if (clip[3] <= 0.0f)
+      return false;
+    left = std::min(left, clip[0] / clip[3]);
+    right = std::max(right, clip[0] / clip[3]);
+  }
+  return left <= -0.99f && right >= 0.99f;
+}
+
+namespace {
+
 bool IsScreenColorFill(const GuestDrawCall& call) {
   const GuestDrawStream& stream = call.streams[0];
   if (call.indexed || call.primitive_type != 6 || call.count != 4 ||
@@ -2102,8 +2141,9 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   GuestPipelineShaderSlots(call.pipeline, &draw_vertex_slot, &draw_pixel_slot);
   const bool scene_sprite = IsSceneSprite(call, draw_vertex_slot);
   // The bloom setup fills the screen through the same shader used by UI boxes.
-  const bool screen_fill = draw_vertex_slot == 7 && draw_pixel_slot == 1 &&
-      IsScreenColorFill(call);
+  const bool screen_fill = (draw_vertex_slot == 7 && draw_pixel_slot == 1 &&
+      IsScreenColorFill(call)) ||
+      (draw_vertex_slot == 15 && draw_pixel_slot == 3 && IsScreenSprite(call));
   // DoF combines scene color and depth, then filters using the blur amount in alpha.
   // Both passes sample the expanded scene and must cover the same viewport.
   const bool screen_image = IsScreenImageSprite(call, draw_vertex_slot, draw_pixel_slot);
