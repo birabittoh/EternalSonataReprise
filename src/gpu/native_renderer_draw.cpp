@@ -1859,43 +1859,48 @@ bool IsScreenImageSprite(const GuestDrawCall& call, int vertex_slot, int pixel_s
       (vertex_slot == 11 && pixel_slot == 6);
   if (!slots || call.indexed || call.primitive_type != 6 || call.count != 4)
     return false;
-  // Its source is a half size downsample of the whole window.
-  TextureFetch fetch;
-  if (!GetBoundTextureFetch(call.memory_base, 0, fetch, nullptr) ||
-      !((fetch.width == 1280 && fetch.height == 720) ||
-        (fetch.width == 640 && fetch.height == 360)) ||
-      FrameResolveTextureByAddress(fetch.base_address, fetch.width, fetch.height) == nullptr)
-    return false;
   const GuestDrawStream& stream = call.streams[0];
   if (stream.data == nullptr || stream.stride < 12 || stream.size < stream.stride * 4)
     return false;
+
+  // Geometry before the texture, which costs a fetch decode and a resolve lookup.
+  // Only clip x, y and w matter, so c14 is never read.
   const uint8_t* bank = GuestVertexBank(call);
+  float matrix[3][4];
+  for (uint32_t column = 0; column < 4; ++column) {
+    matrix[0][column] = GuestFloat(bank, 12, column);
+    matrix[1][column] = GuestFloat(bank, 13, column);
+    matrix[2][column] = GuestFloat(bank, 15, column);
+  }
   uint32_t corners = 0;
-  for (uint32_t i = 0; i < 4; i += 1) {
+  for (uint32_t i = 0; i < 4; ++i) {
     const uint8_t* vertex = stream.data + i * stream.stride;
     const float position[4] = {GuestFloat(vertex, 0, 0), GuestFloat(vertex, 0, 1),
                                GuestFloat(vertex, 0, 2), 1.0f};
-    float clip[4] = {};
-    for (uint32_t row = 0; row < 4; row += 1) {
-      for (uint32_t column = 0; column < 4; column += 1)
-        clip[row] += position[column] * GuestFloat(bank, 12 + row, column);
+    float clip[3] = {};
+    for (uint32_t row = 0; row < 3; ++row) {
+      for (uint32_t column = 0; column < 4; ++column)
+        clip[row] += position[column] * matrix[row][column];
     }
-    if (clip[3] <= 0.0f || std::abs(clip[0]) < clip[3] * 0.98f ||
-        std::abs(clip[1]) < clip[3] * 0.98f)
+    const float edge = clip[2] * 0.98f;
+    if (clip[2] <= 0.0f || std::abs(clip[0]) < edge || std::abs(clip[1]) < edge)
       return false;
     corners |= 1u << (uint32_t(clip[0] > 0.0f) + 2u * uint32_t(clip[1] > 0.0f));
   }
-  return corners == 15;
+  if (corners != 15)
+    return false;
+
+  // Its source is a half size downsample of the whole window.
+  TextureFetch fetch;
+  return GetBoundTextureFetch(call.memory_base, 0, fetch, nullptr) &&
+      ((fetch.width == 1280 && fetch.height == 720) ||
+       (fetch.width == 640 && fetch.height == 360)) &&
+      FrameResolveTextureByAddress(fetch.base_address, fetch.width, fetch.height) != nullptr;
 }
 
-}  // namespace
-
-// A flat UI sprite spanning the guest's whole width, like the pause tint and the
-// overlay that slides in with it. Stretched over the window so neither is
-// pillarboxed.
-bool IsScreenSprite(const GuestDrawCall& call) {
-  if (call.device == nullptr || call.indexed || call.primitive_type != 6 || call.count != 4 ||
-      IsSceneSprite(call, 15))
+// IsScreenSprite without the scene sprite test, for callers that already ran it.
+bool SpansGuestWidth(const GuestDrawCall& call) {
+  if (call.device == nullptr || call.indexed || call.primitive_type != 6 || call.count != 4)
     return false;
   const GuestDrawStream& stream = call.streams[0];
   if (stream.data == nullptr || stream.stride < 12 || stream.size < stream.stride * 4)
@@ -1923,6 +1928,15 @@ bool IsScreenSprite(const GuestDrawCall& call) {
     right = std::max(right, clip[0] / clip[3]);
   }
   return left <= -0.99f && right >= 0.99f;
+}
+
+}  // namespace
+
+// A flat UI sprite spanning the guest's whole width, like the pause tint and the
+// overlay that slides in with it. Stretched over the window so neither is
+// pillarboxed.
+bool IsScreenSprite(const GuestDrawCall& call) {
+  return !IsSceneSprite(call, 15) && SpansGuestWidth(call);
 }
 
 namespace {
@@ -2143,15 +2157,15 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // The bloom setup fills the screen through the same shader used by UI boxes.
   const bool screen_fill = (draw_vertex_slot == 7 && draw_pixel_slot == 1 &&
       IsScreenColorFill(call)) ||
-      (draw_vertex_slot == 15 && draw_pixel_slot == 3 && IsScreenSprite(call));
+      (draw_vertex_slot == 15 && draw_pixel_slot == 3 && !scene_sprite && SpansGuestWidth(call));
   // DoF combines scene color and depth, then filters using the blur amount in alpha.
   // Both passes sample the expanded scene and must cover the same viewport.
   const bool screen_image = IsScreenImageSprite(call, draw_vertex_slot, draw_pixel_slot);
-  const bool screen_composite = (screen_image || screen_fill || (draw_vertex_slot == 3 &&
-      (draw_pixel_slot == 4 || draw_pixel_slot == 9 ||
-       draw_pixel_slot == 0x67 || draw_pixel_slot == 0x68 || draw_pixel_slot == 0x80))) &&
-      g_viewport.set && g_viewport.x == 0 && g_viewport.y == 0 &&
+  const bool full_viewport = g_viewport.set && g_viewport.x == 0 && g_viewport.y == 0 &&
       g_viewport.width >= 1280 && g_viewport.height >= 720;
+  const bool screen_composite = full_viewport && (screen_image || screen_fill ||
+      (draw_vertex_slot == 3 && (draw_pixel_slot == 4 || draw_pixel_slot == 9 ||
+       draw_pixel_slot == 0x67 || draw_pixel_slot == 0x68 || draw_pixel_slot == 0x80)));
   // This copy uses additive blending and expects an empty destination.
   const bool self_composite = screen_composite && draw_vertex_slot == 3 && draw_pixel_slot == 4;
   bool have_targets;
@@ -2161,7 +2175,7 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
                                         &target_scale_y, &target_offset_x, &target_offset_y,
                                         &clip_scale_x, &clip_scale_y, screen_composite,
                                         scene_sprite, self_composite,
-                                        screen_image && screen_composite) != nullptr;
+                                        screen_image && full_viewport) != nullptr;
   }
   if (!have_targets) {
     Drop(kDropNoTarget, "no colour or depth surface is bound, so there is nowhere to draw");
