@@ -151,6 +151,12 @@ int BaseItemIdMax() {
   return g_applied ? kPs3BaseItemMax : kRetailBaseItemMax;
 }
 
+const char* Ps3ScrapbookText(uint32_t language, uint32_t id) {
+  if (language >= std::size(kPs3ScrapbookText))
+    language = 1;
+  return id < std::size(kPs3ScrapbookText[0]) ? kPs3ScrapbookText[language][id] : "";
+}
+
 }  // namespace eternalsonata
 
 // sub_821E51B0 sizes the magic list at the 360's 118 records.

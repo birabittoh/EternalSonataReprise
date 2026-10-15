@@ -24,6 +24,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -91,7 +92,10 @@ static_assert(eternalsonata::kPs3CostumePortraitSlot + std::size(kCostumePortrai
 // 3n + 12v + character - 13 (PLK v3: n + 24), kinds 0..2 here.
 constexpr uint16_t kCostumeArt[] = {12, 15, 18, 13, 16, 19, 24, 25, 26, 14, 17, 20};
 static_assert(eternalsonata::kPs3CostumeArtSlot + std::size(kCostumeArt) ==
+              eternalsonata::kPs3ScrapbookSlot);
+static_assert(eternalsonata::kPs3ScrapbookSlot + eternalsonata::kPs3ScrapbookCount ==
               eternalsonata::kFirstFreeAppKeepSlot);
+constexpr const char* kScrapbookFile = "campdata/characterphoto.bmd";
 static_assert(eternalsonata::kFirstFreeAppKeepSlot <= eternalsonata::kAppKeepSlotCount);
 
 constexpr const char* kCharacterFiles[] = {"pcalg_v1.p3obj", "pcplk_v1.p3obj",
@@ -270,6 +274,41 @@ uint32_t Ps3AppKeepImageId(uint32_t ps3_id) {
 
 uint32_t Ps3AppKeep2Model(uint32_t index) {
   return index < kAppKeep2Entries ? g_appkeep2[index] : 0;
+}
+
+bool Ps3ScrapbookAvailable() {
+  std::error_code ec;
+  return IsPs3Target() && std::filesystem::is_regular_file(GameDataRoot() / kScrapbookFile, ec);
+}
+
+bool LoadPs3Scrapbook() {
+  static std::once_flag once;
+  static std::array<uint32_t, kPs3ScrapbookCount> pictures{};
+  auto* memory = rex::Runtime::instance()->memory();
+  std::call_once(once, [memory] {
+    Bmd bmd;
+    if (!IsPs3Target() || !bmd.Load(kScrapbookFile) || bmd.entries.size() < kPs3ScrapbookCount) {
+      REXLOG_ERROR("ps3 appkeep: {} missing or short", kScrapbookFile);
+      return;
+    }
+    for (uint32_t i = 0; i < kPs3ScrapbookCount; ++i) {
+      const auto [begin, end] = bmd.entries[i];
+      const uint32_t at = begin < end ? memory->SystemHeapAlloc(end - begin, kAlign,
+                                                                rex::memory::kSystemHeapPhysical)
+                                      : 0;
+      if (!at)
+        return;
+      std::memcpy(memory->TranslateVirtual(at), bmd.data.data() + begin, end - begin);
+      pictures[i] = at;
+    }
+  });
+  if (!pictures.back())
+    return false;
+  // Restated every time: an AppKeep reload rebuilds the array.
+  for (uint32_t i = 0; i < kPs3ScrapbookCount; ++i)
+    rex::memory::store_and_swap<uint32_t>(
+        memory->TranslateVirtual<uint8_t*>(kSlotArray + 4 * (kPs3ScrapbookSlot + i)), pictures[i]);
+  return true;
 }
 
 }  // namespace eternalsonata

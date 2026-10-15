@@ -50,6 +50,7 @@
 #include "eternalsonata_asset_container.h"
 #include "images.generated.h"
 #include "option_strip.h"
+#include "scrapbook_menu.h"
 #include "target.h"
 
 // Defined in eternalsonata_asset_system.cpp as part of the mod-facing C ABI;
@@ -482,12 +483,15 @@ std::string TabLabel(const std::uint8_t* base, std::uint32_t sid) {
   return LocalText(kTabLabel[tab], ReadU32(base, kLanguageIndexAddr));
 }
 
-// Paints the third tab's frame out. sub_82227CB0 builds the strip from three
-// widgets held at screen + 1544 / 1548 / 1552; each one is a group of sprite
-// handles (the body at +0, the two end caps at +8 and +12, the highlight at
-// +44), so an empty label still leaves its frame on screen. Colour 0 is alpha
-// 0, which is the only handle the widget offers: it has no visibility flag.
-void HideCustomTab(PPCContext& ctx, std::uint8_t* base) {
+}  // namespace
+
+// Paints a tab's frame out. sub_82227CB0 builds the strip from three widgets
+// held at screen + 1544 / 1548 / 1552; each one is a group of sprite handles
+// (the body at +0, the two end caps at +8 and +12, the highlight at +44), so
+// an empty label still leaves its frame on screen. Colour 0 is alpha 0, which
+// is the only handle the widget offers: it has no visibility flag.
+
+void HideTabFrame(PPCContext& ctx, std::uint8_t* base, std::uint32_t widget_offset) {
   const std::uint32_t ui = REX_LOAD_U32(0x824400E4u);
   const std::uint32_t screen = ui ? REX_LOAD_U32(ui + 2836u) : 0u;
   if (!screen) {
@@ -501,7 +505,7 @@ void HideCustomTab(PPCContext& ctx, std::uint8_t* base) {
   const std::uint32_t saved_r7 = ctx.r7.u32;
 
   ctx.r3.u32 = ui;
-  ctx.r4.u32 = REX_LOAD_U32(screen + kCustomTabWidgetOffset);
+  ctx.r4.u32 = REX_LOAD_U32(screen + widget_offset);
   __imp__sub_821F6580(ctx, base);
   const std::uint32_t widget = ctx.r3.u32;
   if (widget) {
@@ -525,6 +529,8 @@ void HideCustomTab(PPCContext& ctx, std::uint8_t* base) {
   ctx.r6.u32 = saved_r6;
   ctx.r7.u32 = saved_r7;
 }
+
+namespace {
 
 // Japanese adds a D-pad beside the LB/RB Change Tab prompt. Its two type 707
 // records reference screen object 355; the object's first field is its sprite
@@ -870,12 +876,12 @@ std::uint32_t RowTitleOverride(std::uint8_t* base, std::uint32_t blob,
 }
 
 bool WantsTitleSwap(std::uint32_t blob) {
-  return g_active && blob == kMenuBlobAddr;
+  return (g_active || scrapbook_menu::Active()) && blob == kMenuBlobAddr;
 }
 
 std::uint32_t TitleOverrideFor(std::uint8_t* base, std::uint32_t result,
                                std::uint32_t music_text) {
-  if (!g_active || !result || !music_text) {
+  if (!(g_active || scrapbook_menu::Active()) || !result || !music_text) {
     return 0;
   }
   const std::string text = ReadGuestString(base, result);
@@ -904,8 +910,14 @@ std::uint32_t TitleOverrideFor(std::uint8_t* base, std::uint32_t result,
     }
   }
   WriteGuestString(base, g_screen_title_string,
-                   text.substr(0, at) + AchievementsWord(base));
+                   text.substr(0, at) + (g_active ? AchievementsWord(base)
+                                                  : scrapbook_menu::EntryLabel(base)));
   return g_screen_title_string;
+}
+
+bool IsMusicScreenList(std::uint32_t list) {
+  return std::find(std::begin(kScreenLists), std::end(kScreenLists), list) !=
+         std::end(kScreenLists);
 }
 
 std::uint32_t MaybeSwapScreenList(std::uint8_t* base, std::uint32_t list) {
@@ -1042,6 +1054,10 @@ REX_EXTERN(__imp__sub_82236CD0);
 REX_HOOK_RAW(sub_82236CD0) {
   using namespace achievements_menu;
   const std::uint32_t tag = ReadU32(base, kScratchAddr);
+  if (scrapbook_menu::Dispatch(base, tag)) {
+    g_active = false;
+    return;
+  }
   if (tag != kAchievementsTag) {
     g_active = false;
     __imp__sub_82236CD0(ctx, base);
@@ -1082,12 +1098,19 @@ REX_HOOK_RAW(sub_822265C8) {
     REX_STORE_U8(achievements_menu::kMutedFlagAddr, 0u);
     achievements_menu::FixRowCount(base, 0);
   }
+  if (scrapbook_menu::Active()) {
+    scrapbook_menu::FixRowCount(base);
+  }
 }
 
 REX_EXTERN(__imp__sub_821DD108);
 
 REX_HOOK_RAW(sub_821DD108) {
   __imp__sub_821DD108(ctx, base);
+  if (scrapbook_menu::Active()) {
+    scrapbook_menu::Tick(ctx, base);
+    return;
+  }
   if (!achievements_menu::Active()) {
     return;
   }
@@ -1095,7 +1118,8 @@ REX_HOOK_RAW(sub_821DD108) {
   // made transparent as well. Per tick rather than once: the tab strip repaints
   // itself and recolours the frame on every tab change.
   if (!achievements_menu::CustomTabVisible()) {
-    achievements_menu::HideCustomTab(ctx, base);
+    achievements_menu::HideTabFrame(ctx, base,
+                                    achievements_menu::kCustomTabWidgetOffset);
   }
   achievements_menu::HideJapaneseTabPrompt(ctx, base);
   // State 3 has the current tab's cursor and text objects ready.
@@ -1111,11 +1135,15 @@ REX_EXTERN(__imp__sub_822273A0);
 
 REX_HOOK_RAW(sub_822273A0) {
   const int tab = static_cast<int>(ctx.r3.u32);
-  achievements_menu::t_building_tab = achievements_menu::Active() ? tab : -1;
+  achievements_menu::t_building_tab =
+      achievements_menu::Active() || scrapbook_menu::Active() ? tab : -1;
   __imp__sub_822273A0(ctx, base);
   achievements_menu::t_building_tab = -1;
   if (achievements_menu::Active()) {
     achievements_menu::FixRowCount(base, tab);
+  }
+  if (scrapbook_menu::Active()) {
+    scrapbook_menu::FixRowCount(base);
   }
 }
 
@@ -1123,8 +1151,9 @@ REX_EXTERN(__imp__sub_821F8B38);
 
 REX_HOOK_RAW(sub_821F8B38) {
   using namespace achievements_menu;
-  if (g_active && t_building_tab >= 0) {
-    const std::uint32_t rows = RowCount(t_building_tab);
+  if ((g_active || scrapbook_menu::Active()) && t_building_tab >= 0) {
+    const std::uint32_t rows =
+        g_active ? RowCount(t_building_tab) : scrapbook_menu::RowCount();
     const std::uint32_t maximum = rows > 4u ? rows - 4u : 0u;
     const std::uint32_t scrollbar = ctx.r3.u32;
     REX_STORE_U32(scrollbar + 48u, maximum);
@@ -1143,6 +1172,13 @@ REX_EXTERN(__imp__sub_821F2890);
 
 REX_HOOK_RAW(sub_821F2890) {
   using namespace achievements_menu;
+  if (scrapbook_menu::Active()) {
+    scrapbook_menu::BeginRow(static_cast<int>(ctx.r7.u32) - 1);
+    ctx.r6.u32 = kPlaceholderTrackId;
+    __imp__sub_821F2890(ctx, base);
+    scrapbook_menu::EndRow();
+    return;
+  }
   if (!g_active) {
     __imp__sub_821F2890(ctx, base);
     return;
@@ -1204,6 +1240,10 @@ REX_EXTERN(__imp__sub_82226858);
 
 REX_HOOK_RAW(sub_82226858) {
   using namespace achievements_menu;
+  if (scrapbook_menu::Active()) {
+    scrapbook_menu::Input(ctx, base);
+    return;
+  }
   if (!Active() || CustomTabVisible()) {
     __imp__sub_82226858(ctx, base);
     return;

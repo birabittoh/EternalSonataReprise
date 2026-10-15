@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Compile src/guest_data/ps3/text/ into the PS3 item and magic text blocks
 (src/engine/ps3_item_text.generated.inc), each tagged with the 360 block its
-readers are pointed away from.
+readers are pointed away from, and the Scrapbook's strings, which no 360 block
+holds.
 
 usage:
     python scripts/gen-ps3-item-text.py [output]
@@ -16,6 +17,16 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 TEXT_DIR = os.path.join(ROOT, "src", "guest_data", "ps3", "text")
 OUT = os.path.join(ROOT, "src", "engine", "ps3_item_text.generated.inc")
 FILES = ["items", "item_descriptions", "party_skills", "party_skill_help"]
+SCRAPBOOK = "scrapbook"
+
+
+def c_string(raw):
+    # Octal escapes are fixed width, so a following digit cannot extend one.
+    out = []
+    for b in raw:
+        c = chr(b)
+        out.append(c if 0x20 <= b < 0x7F and c not in '"\\?' else "\\%03o" % b)
+    return '"' + "".join(out) + '"'
 
 
 def main():
@@ -31,6 +42,12 @@ def main():
         lines.append("};")
         names.append("{0x%08Xu, kPs3TextBlock%d, sizeof(kPs3TextBlock%d)}" % (address, i, i))
     lines.append("constexpr Ps3TextBlock kPs3TextBlocks[] = {%s};" % ", ".join(names))
+    _, langs = read_text(os.path.join(TEXT_DIR, SCRAPBOOK + ".txt"))
+    count = len(next(iter(langs.values())))
+    lines.append("constexpr const char* kPs3ScrapbookText[%d][%d] = {" % (len(langs), count))
+    for strings in langs.values():
+        lines.append("    {" + ", ".join(c_string(s) for s in strings) + "},")
+    lines.append("};")
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
 

@@ -16,6 +16,9 @@ void MaybeEditOptionStrip(std::uint8_t* base, std::uint32_t list);
 // while the strip is asking for the moved slot, or 0 to fall through.
 std::uint32_t AchievementsLabelOverride(std::uint8_t* base, std::uint32_t sid);
 
+// The same for the Scrapbook entry, when the strip has one.
+std::uint32_t ScrapbookLabelOverride(std::uint8_t* base, std::uint32_t sid);
+
 // The entry's own name, in the language the menu is drawn in, so the screen it
 // opens can head itself with the same word.
 const char* AchievementsWord(const std::uint8_t* base);

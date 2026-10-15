@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#include "generated/eternalsonata_init.h"
+
 namespace achievements_menu {
 
 // True while the Music gallery is standing in for the Achievements screen.
@@ -42,5 +44,12 @@ std::uint32_t TitleOverrideFor(std::uint8_t* base, std::uint32_t result,
 // prompts taken out. Returns the replacement list address, or 0 to leave the
 // incoming one alone.
 std::uint32_t MaybeSwapScreenList(std::uint8_t* base, std::uint32_t list);
+
+// One of the seven per language Music gallery lists.
+bool IsMusicScreenList(std::uint32_t list);
+
+// Paints out the gallery tab whose widget id sits at `widget_offset` of the
+// screen object (1544, 1548 or 1552).
+void HideTabFrame(PPCContext& ctx, std::uint8_t* base, std::uint32_t widget_offset);
 
 }  // namespace achievements_menu

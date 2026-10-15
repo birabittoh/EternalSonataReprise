@@ -23,11 +23,15 @@ inline constexpr uint32_t kPs3CostumePortraitSlot = 430;
 // member panel's, the large face and the small face.
 inline constexpr uint32_t kPs3CostumeArtSlot = 434;
 
+// The Scrapbook's ten pictures, campdata/characterphoto.bmd in order.
+inline constexpr uint32_t kPs3ScrapbookSlot = 446;
+inline constexpr uint32_t kPs3ScrapbookCount = 10;
+
 // dword_82420AFC, the loader's slot array, and the first slot nothing uses
 // on either release; mods' costume portraits go there.
 inline constexpr uint32_t kAppKeepSlotArray = 0x82420AFCu;
 inline constexpr uint32_t kAppKeepSlotCount = 512;
-inline constexpr uint32_t kFirstFreeAppKeepSlot = 446;
+inline constexpr uint32_t kFirstFreeAppKeepSlot = 456;
 
 // Rebuilds the AppKeep slot array in the 360's numbering and loads the
 // characters and camp entries the PS3 keeps in other files. Call from the
@@ -41,5 +45,12 @@ uint32_t Ps3AppKeepImageId(uint32_t ps3_id);
 // appkeep2.bmd entry: CRS, SRN, CPN, VOL, SLS, JRB, FST, MCH, CLV; 0 if not
 // loaded.
 uint32_t Ps3AppKeep2Model(uint32_t index);
+
+// Whether the PS3 data has the Scrapbook's pictures.
+bool Ps3ScrapbookAvailable();
+
+// Puts the pictures in their slots on first use, so a player who never opens
+// the Scrapbook keeps the memory. False if they could not be loaded.
+bool LoadPs3Scrapbook();
 
 }  // namespace eternalsonata

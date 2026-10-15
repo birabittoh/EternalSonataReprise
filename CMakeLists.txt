@@ -422,6 +422,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/music_system.cpp
     src/engine/option_strip.cpp
     src/engine/achievements_menu.cpp
+    src/engine/scrapbook_menu.cpp
     src/engine/button_glyphs.cpp
     src/engine/achievement_system.cpp
     src/engine/item_system.cpp

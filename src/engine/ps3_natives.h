@@ -15,4 +15,7 @@ void LoadPs3Record(const SaveRecord& record);
 // Camp menu flag +0x920: the story has costume changes off for now.
 bool Ps3CostumesBlocked();
 
+// Camp menu flag +0x921, set from Bel01.e: the Scrapbook entry is shown.
+bool Ps3ScrapbookUnlocked();
+
 }  // namespace eternalsonata

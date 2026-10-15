@@ -53,6 +53,7 @@
 
 #include "generated/eternalsonata_init.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -64,6 +65,8 @@
 
 #include "eternalsonata_asset_container.h"
 #include "option_strip.h"
+#include "ps3_appkeep.h"
+#include "scrapbook_menu.h"
 
 namespace option_strip {
 namespace {
@@ -94,6 +97,21 @@ constexpr int kTargetIndex = 7;
 
 // Old index drawn at each new position.
 constexpr int kOrder[kStripCount] = {0, 1, 3, 4, 5, 6, 7, 2, 8, 9, 10};
+
+// With the PS3's Scrapbook unlocked, Item Set's records carry it instead, just
+// after Photos as on the PS3, and Item Set leaves the strip.
+constexpr int kScrapbookSource = 1;
+constexpr int kScrapbookIndex = 4;
+constexpr int kOrderScrapbook[kStripCount] = {0, 3, 4, 5, 1, 6, 7, 2, 8, 9, 10};
+static_assert(kOrderScrapbook[kScrapbookIndex] == kScrapbookSource &&
+              kOrderScrapbook[kTargetIndex] == kSourceIndex);
+
+// Its art: the PS3 AppKeep's camp icon and hover glow (PS3 ids 367 and 368).
+constexpr std::uint32_t kScrapbookIconPs3 = 367u;
+constexpr std::uint32_t kScrapbookGlowPs3 = 368u;
+
+// Item Set's BTX id in sub_8223B2F8's switch, answered for the Scrapbook.
+constexpr std::uint32_t kItemSetLabelSid = 33u;
 
 // The selectable record's tag is the option's identity: sub_82236CD0 switches
 // on it through byte_82082148 (index = tag - 1) and stores a screen id in
@@ -260,13 +278,13 @@ void AdjustJapanesePartyLevel(std::uint8_t* base, std::uint32_t list,
   }
 }
 
-// Reorder one run in place: record at new position i is old position kOrder[i],
+// Reorder one run in place: record at new position i is old position order[i],
 // with x restated so the run stays evenly spaced from its own first record.
 // Both runs are permuted the same way, which is what keeps the art, the cursor
 // and the label in step. Safe because the list is the interpreter's writable
 // stack copy.
 void PermuteRun(std::uint8_t* base, std::uint32_t start, std::uint32_t stride,
-                std::uint32_t x_offset) {
+                std::uint32_t x_offset, const int* order) {
   constexpr std::uint32_t kMaxStride = 0x80u;
   std::uint32_t saved[kStripCount][kMaxStride / 4u];
   for (int i = 0; i < kStripCount; ++i) {
@@ -279,7 +297,7 @@ void PermuteRun(std::uint8_t* base, std::uint32_t start, std::uint32_t stride,
   for (int i = 0; i < kStripCount; ++i) {
     const std::uint32_t dst = start + stride * static_cast<std::uint32_t>(i);
     for (std::uint32_t off = 0; off < stride; off += 4u) {
-      WriteU32(base, dst + off, saved[kOrder[i]][off / 4u]);
+      WriteU32(base, dst + off, saved[order[i]][off / 4u]);
     }
     WriteU32(base, dst + x_offset,
              static_cast<std::uint32_t>(first_x + kIconSpacing * i));
@@ -288,17 +306,56 @@ void PermuteRun(std::uint8_t* base, std::uint32_t start, std::uint32_t stride,
 
 std::mutex g_edited_mutex;
 bool g_edited = false;
+bool g_scrapbook = false;  // the edit put the Scrapbook in
 
 // Set only for the duration of the stock sub_8223B2F8 call made for the moved
 // slot, so the one BTX lookup that call performs is ours. Thread local because
 // the flag is only ever meaningful inside that single guest call.
 thread_local bool t_want_achievements_label = false;
+thread_local bool t_want_scrapbook_label = false;
 
-std::uint32_t g_label_string = 0;  // guest address, allocated on first use
+std::uint32_t g_label_string = 0;  // guest addresses, allocated on first use
+std::uint32_t g_scrapbook_label_string = 0;
 
 bool StripEdited() {
   std::lock_guard<std::mutex> lock(g_edited_mutex);
   return g_edited;
+}
+
+bool StripHasScrapbook() {
+  std::lock_guard<std::mutex> lock(g_edited_mutex);
+  return g_scrapbook;
+}
+
+const int* Order() { return StripHasScrapbook() ? kOrderScrapbook : kOrder; }
+
+std::uint32_t TagAt(int index) {
+  if (index == kTargetIndex) {
+    return kAchievementsTag;
+  }
+  if (StripHasScrapbook() && index == kScrapbookIndex) {
+    return scrapbook_menu::kTag;
+  }
+  return kCanonicalTags[Order()[index]];
+}
+
+std::uint32_t WriteLabel(std::uint8_t* base, std::uint32_t* address,
+                         const std::string& label) {
+  if (!*address) {
+    auto* mem = rex::system::kernel_memory();
+    *address = mem ? mem->SystemHeapAlloc(64, 0x20) : 0;
+    if (!*address) {
+      return 0;
+    }
+  }
+  // Rewritten on every lookup: the language can change without a restart.
+  const std::size_t length = std::min<std::size_t>(label.size(), 63);
+  for (std::size_t i = 0; i < length; ++i) {
+    REX_STORE_U8(*address + static_cast<std::uint32_t>(i),
+                 static_cast<std::uint8_t>(label[i]));
+  }
+  REX_STORE_U8(*address + static_cast<std::uint32_t>(length), 0);
+  return *address;
 }
 
 const char* AchievementsLabel(const std::uint8_t* base) {
@@ -351,17 +408,30 @@ void MaybeEditOptionStrip(std::uint8_t* base, std::uint32_t list) {
   // Both runs keep eleven records, so nothing has to be inserted or deleted and
   // the cursor still stops at Save. The selectable records carry their own tags
   // and travel with their art, so every option that moves keeps its screen.
-  PermuteRun(base, strip, kIconStride, 8u);
-  PermuteRun(base, glow, kGlowStride, 8u);
-  PermuteRun(base, sel.start, sel.stride, 4u);
+  const bool scrapbook = scrapbook_menu::StripShowsScrapbook() &&
+                         eternalsonata::Ps3AppKeepImageId(kScrapbookIconPs3) &&
+                         eternalsonata::Ps3AppKeepImageId(kScrapbookGlowPs3);
+  const int* order = scrapbook ? kOrderScrapbook : kOrder;
+  PermuteRun(base, strip, kIconStride, 8u, order);
+  PermuteRun(base, glow, kGlowStride, 8u, order);
+  PermuteRun(base, sel.start, sel.stride, 4u, order);
   WriteU32(base,
            sel.start + sel.stride * static_cast<std::uint32_t>(kTargetIndex) +
                12u,
            kAchievementsTag);
+  if (scrapbook) {
+    const auto at = static_cast<std::uint32_t>(kScrapbookIndex);
+    WriteU32(base, strip + kIconStride * at + 4u,
+             eternalsonata::Ps3AppKeepImageId(kScrapbookIconPs3));
+    WriteU32(base, glow + kGlowStride * at + 4u,
+             eternalsonata::Ps3AppKeepImageId(kScrapbookGlowPs3));
+    WriteU32(base, sel.start + sel.stride * at + 12u, scrapbook_menu::kTag);
+  }
 
   {
     std::lock_guard<std::mutex> lock(g_edited_mutex);
     g_edited = true;
+    g_scrapbook = scrapbook;
   }
 }
 
@@ -408,10 +478,7 @@ void RepermuteSpanishSelectables(std::uint8_t* base) {
   }
 
   for (int i = 0; i < kStripCount; ++i) {
-    const std::uint32_t tag = i == kTargetIndex
-                                  ? kAchievementsTag
-                                  : kCanonicalTags[kOrder[i]];
-    REX_STORE_U32(entries + 16u * static_cast<std::uint32_t>(i) + 12u, tag);
+    REX_STORE_U32(entries + 16u * static_cast<std::uint32_t>(i) + 12u, TagAt(i));
   }
 }
 
@@ -422,22 +489,15 @@ std::uint32_t AchievementsLabelOverride(std::uint8_t* base, std::uint32_t sid) {
   if (!t_want_achievements_label || sid != kStatusLabelSid) {
     return 0;
   }
-  if (!g_label_string) {
-    auto* mem = rex::system::kernel_memory();
-    g_label_string = mem ? mem->SystemHeapAlloc(64, 0x20) : 0;
-    if (!g_label_string) {
-      return 0;
-    }
+  return WriteLabel(base, &g_label_string, AchievementsLabel(base));
+}
+
+// The same for the Scrapbook, which rides Item Set's id.
+std::uint32_t ScrapbookLabelOverride(std::uint8_t* base, std::uint32_t sid) {
+  if (!t_want_scrapbook_label || sid != kItemSetLabelSid) {
+    return 0;
   }
-  // Rewritten on every lookup: the language can change without a restart.
-  const char* label = AchievementsLabel(base);
-  for (std::uint32_t i = 0;; ++i) {
-    REX_STORE_U8(g_label_string + i, static_cast<std::uint8_t>(label[i]));
-    if (!label[i]) {
-      break;
-    }
-  }
-  return g_label_string;
+  return WriteLabel(base, &g_scrapbook_label_string, scrapbook_menu::EntryLabel(base));
 }
 
 }  // namespace option_strip
@@ -468,11 +528,15 @@ REX_HOOK_RAW(sub_8223B2F8) {
     __imp__sub_8223B2F8(ctx, base);
     return;
   }
-  ctx.r3.u32 = static_cast<std::uint32_t>(option_strip::kOrder[slot]);
+  ctx.r3.u32 = static_cast<std::uint32_t>(option_strip::Order()[slot]);
   option_strip::t_want_achievements_label =
       slot == static_cast<std::uint32_t>(option_strip::kTargetIndex);
+  option_strip::t_want_scrapbook_label =
+      option_strip::StripHasScrapbook() &&
+      slot == static_cast<std::uint32_t>(option_strip::kScrapbookIndex);
   __imp__sub_8223B2F8(ctx, base);
   option_strip::t_want_achievements_label = false;
+  option_strip::t_want_scrapbook_label = false;
 }
 
 // Spanish alone re-registers the eleven selectables by hand (x = 445 + 70 * i,

@@ -31,6 +31,7 @@
 #include "party_status_menu.h"
 #include "party_system.h"
 #include "ps3_item_tables.h"
+#include "scrapbook_menu.h"
 #include "settings.h"
 #include "ui_language.h"
 
@@ -2942,6 +2943,14 @@ REX_HOOK_RAW(sub_8223B780) {
     ctx.r3.u32 = label;
     return;
   }
+  if (const u32 label = option_strip::ScrapbookLabelOverride(base, sid)) {
+    ctx.r3.u32 = label;
+    return;
+  }
+  if (const u32 text = scrapbook_menu::TextOverride(base, blob, sid)) {
+    ctx.r3.u32 = text;
+    return;
+  }
   // A row of the Achievements screen: same reason, it rides the Music
   // gallery's own title ids.
   if (const u32 title = achievements_menu::RowTitleOverride(base, blob, sid)) {
@@ -3051,6 +3060,9 @@ REX_HOOK_RAW(sub_821F2F38) {
           achievements_menu::MaybeSwapScreenList(base, ctx.r4.u32)) {
     ctx.r4.u32 = swapped;
   }
+  if (const u32 swapped = scrapbook_menu::MaybeSwapScreenList(base, ctx.r4.u32)) {
+    ctx.r4.u32 = swapped;
+  }
   if (const u32 swapped =
           party_status_menu::MaybeSwapStatusList(base, ctx.r4.u32)) {
     ctx.r4.u32 = swapped;
@@ -3081,6 +3093,7 @@ REX_HOOK_RAW(sub_821F2F38) {
     }
   }
   __imp__sub_821F2F38(ctx, base);
+  scrapbook_menu::ScreenBuilt(base, built_root);
   // Which root was handed the screen, as one of the two known ones.
   u32 built_root_ptr = 0;
   for (const u32 root_ptr : kUiRoots) {

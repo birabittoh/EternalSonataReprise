@@ -1,0 +1,169 @@
+0x00000000
+[JPN]
+0	午後のひととき
+1	だまされた！
+2	完全なる勝利
+3	もう少し！
+4	旋律のように
+5	太陽のように
+6	過去
+7	ホンモノ！？
+8	花封薬いかが？
+9	恋のおまじない
+10	ほーんと姉さんと\nビートさんは仲が\nよいです♪\n<g2>ｂｙマーチ
+11	キノコと間違えて\n引き抜いちまうこと\nあるよな…\n<g2>ｂｙビオラ
+12	ワルツ様は完璧\nに勝つまで許して\nくれません…\n<g2>ｂｙチューバ
+13	兄ちゃん達には\n世話になりっぱ\nなしだな！！\n<g2>ｂｙフィル
+14	１つとして同じものの\nない旋律のような\n笑顔です\n<g2>ｂｙショパン
+15	皆さんの太陽の\nような心に勇気\nづけられました\n<g2>ｂｙポルカ
+16	これは昔、私が\n任務についてい\nた頃のものね…\n<g2>ｂｙクラベス
+17	ショ、ショパンの\n肩に乗っている\nのって…！？\n<g2>ｂｙアレグレット
+18	アレグレット！\nあなた真面目に\n手伝いなさいよ！\n<g2>ｂｙファルセット
+19	あはは！　サルサ\nおまじないの相手\nいるのかよ\n<g2>ｂｙビート
+20	キャラクターフォト
+21	<g><m2>キャラクターフォト
+22	表示
+[USA]
+0	Afternoon Nap
+1	Tricked!
+2	Total Victory
+3	Almost!
+4	Like a Melody
+5	Like Sunshine
+6	The Past
+7	No way!
+8	Floral Powder?
+9	Love Charm
+10	Salsa and Beat\nreally do get\nalong well.\n<g2>- by March
+11	They do kind\nof look like\nmushrooms.\n<g2>- by Viola
+12	Lord Waltz\ndoesn't ever\nlike to lose.\n<g2>- by Tuba
+13	Thanks again\nfor all your\nhelp, guys!\n<g2>- by Phil
+14	Smiles like a\ntranscendent\nmelody.\n<g2>- by Frederic
+15	Everyone's\nkindness is\nlike sunshine.\n<g2>- by Polka
+16	This picture is\nfrom an old\njob I did.\n<g2>- by Claves
+17	W-What's that\non Frederic's\nshoulder?!\n<g2>- by Allegretto
+18	Allegretto!\nStop flirting\nand help out!\n<g2>- by Falsetto
+19	Ha! Hey, Salsa!\nWho's the love\ncharm for?\n<g2>- by Beat
+20	Scrapbook
+21	<g><m2>Scrapbook
+22	Display
+[GBR]
+0	Afternoon Nap
+1	Tricked!
+2	Total Victory
+3	Almost!
+4	Like a Melody
+5	Like Sunshine
+6	The Past
+7	No way!
+8	Floral Powder?
+9	Love Charm
+10	Salsa and Beatreally do get along very well.- by March
+11	It's easy to mistakethose things for real mushrooms.- by Viola
+12	Lord Waltz won'tforgive me until he wins.- by Tuba
+13	Thanks againfor your help! Ireally owe you!- by Phil
+14	A smile like atranscendent,fleeting melody.- by Frederic
+15	Everyone's kindnessis like sunshinegiving me courange.- by Polka
+16	This picture is fromback when I wasworking on a job.- by Claves
+17	W-What's that on Frederic's shoulder?!- by Allegretto
+18	Allegretto! Quit playing around and help out!- by Falsetto
+19	Hey, Salsa! Whoyou using thatlove charm on?- by Beat
+20	Scrapbook
+21	<g><m2>Scrapbook
+22	Display
+[FRA]
+0	Un après-midi
+1	Mauvais tour !
+2	Victoire totale
+3	Presque !
+4	Comme une mélodie
+5	Un rayon de soleil
+6	Le passé
+7	Vraiment ?
+8	La fille aux fleurs
+9	Les charmes de l'amour
+10	Salsa et Piccolo\ns'entendent vraiment très bien. \n<g2>par Marcia
+11	Il est facile de confondre ces choses avec de vrais champignons.\n<g2>par Harpe
+12	Le Comte Valse ne me pardonnera pas tant que je ne serai pas victorieux.\n<g2>par Tuba
+13	Merci de m'avoir sauvé, les amis ! Je vous suis vraiment redevable !\n<g2>par Phil
+14	Un sourire tel une mélodie flottante et éthérée.\n<g2>par Frédéric
+15	La gentillesse de tout le monde, telle un soleil, me donne du courage.\n<g2>par Polka
+16	Cette image date de quand j'étais en mission.\n<g2>par Claves
+17	C'est quoi cette chose sur l'épaule de Frédéric ?\n<g2>par Allegretto
+18	Allegretto !\nArrête de t'amuser et rends-toi utile !\n<g2>par Mazurka
+19	Ha ha ! Hé, Salsa !\nSur qui utilises-tu ce charme d'amour ?\n<g2>par Piccolo
+20	Photos du personnage
+21	<g><m2>Photos du personnage
+22	Afficher
+[ITA]
+0	Un pomeriggio
+1	Inganno!
+2	Vittoria completa
+3	Per poco!
+4	Come una melodia
+5	Come la luce del sole
+6	Il passato
+7	Per davvero?
+8	La ragazza dei fiori
+9	Amuleto d'amore
+10	Salsa e Beat\nvanno proprio\nd'accordo. \n<g2>Marcia
+11	È facile scambiare\nquelle cose\nper veri funghi.\n<g2>Viola
+12	Il Conte Valzer non\nmi perdonerà\nfinché non vinco.\n<g2>Tuba
+13	Grazie per avermi\nsalvato, ragazzi! Sono\nin debito con voi!\n<g2>Phil
+14	Un sorriso come\nuna melodia straordinaria,\ne passeggera.\n<g2>Frederic
+15	La gentilezza altrui\nè come la luce del sole\ne mi dà coraggio.\n<g2>Polka
+16	Questa fotografia risale\na quando lavoravo\na un progetto.\n<g2>Claves
+17	C-cos'è quella cosa\nsulla spalla di\nFrederic?\n<g2>Allegretto
+18	Allegretto!\nSmettila di cincischiare\ne dà una mano!\n<g2>Mazurka
+19	Ha ha! Ehi, Salsa!\nPer chi è\nquell'amuleto d'amore?\n<g2>Beat
+20	Foto personaggi
+21	<g><m2>Album foto
+22	OK
+[DEU]
+0	Eines Nachmittags
+1	Reingelegt!
+2	Totaler Sieg
+3	Fast!
+4	Wie eine Melodie
+5	Wie Sonnenschein
+6	Die Vergangenheit
+7	Im Ernst?!
+8	Blumenmädchen
+9	Liebeszauber
+10	Salsa und Beat\nverstehen sich\nwirklich gut. \n<g2>von Gavotte
+11	Man verwechselt\ndiese Dinger leicht\nmit echten Pilzen.\n<g2>von Viola
+12	Graf Walzer vergibt\nmir nicht, bevor ich\nsiegreich bin.\n<g2>von Tuba
+13	Danke für die\nRettung, Leute! Ich\nschulde euch was!\n<g2>von Phil
+14	Ein Lächeln wie\neine überirdisch\nleichte Melodie.\n<g2>von Frédéric
+15	Diese Freundlichkeit\nist wie Sonnenschein\nund macht mir Mut.\n<g2>von Polka
+16	Dieses Bild stammt\naus der Zeit, als ich\nin einem Job war.\n<g2>von Claves
+17	W-Was ist das für ein\nDing über Frédérics\nSchulter?!\n<g2>von Allegretto
+18	Allegretto! Hör auf\nherumzuspielen\nund hilf!\n<g2>von Mazurka
+19	Ha ha! He, Salsa!\nAuf wen wendest du\nden Liebeszauber an?\n<g2>von Beat
+20	Fotoalbum
+21	<g><m2>Fotoalbum
+22	OK
+[ESP]
+0	Una tarde
+1	¡Te engañé!
+2	Victoria total
+3	¡Casi!
+4	Como una melodía
+5	Como un rayo de sol
+6	El pasado
+7	¡¿De veras?!
+8	La niña de las flores
+9	Amuleto del amor
+10	Una sonrisa como\nuna melodía fugaz\ny trascendental.\n<g2>por Frederic
+11	Es fácil\n confundirlas\npor setas\n de verdad.\n<g2>por Arpa
+12	Lord Vals no\nme perdonará\nhasta que\ngane.\n<g2>por Tuba
+13	¡Gracias por\n salvarme!\n¡Os debo\nuna, chicos!\n<g2>por Phil
+14	Una sonrisa\n como una\nmelodía fugaz\ny vital.\n <g2>por Frederic
+15	La amabilidad\n de todos es un\n rayo de sol\nque me anima.\n<g2>por Polka
+16	Esta foto\nes de cuando\nestaba trabajando.\n<g2>por Claves
+17	¿Qué eso que\nlleva Frederic\nen el hombro?\n<g2>por Allegretto
+18	¡Allegretto!\n¡Deja de hacer\n el tonino y\n ayuda!\n<g2>por Mazurka
+19	¡Ja, ja! ¡Salsa!\n¿Con quién\n usas el amuleto\n del amor?\n<g2>por Beat
+20	Álbum
+21	<g><m2>Fotos de los personajes
+22	OK

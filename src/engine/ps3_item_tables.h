@@ -23,4 +23,9 @@ uint32_t Ps3ItemIconAddress(uint32_t address, uint32_t pc);
 // The highest item id the loaded master table names.
 int BaseItemIdMax();
 
+// A Scrapbook string from the PS3 EBOOT, as the game's text bytes: ids 0..9
+// picture titles, 10..19 their captions, 20 the entry name, 21 its heading
+// and 22 the open prompt. `language` is dword_8243D370's numbering.
+const char* Ps3ScrapbookText(uint32_t language, uint32_t id);
+
 }  // namespace eternalsonata
