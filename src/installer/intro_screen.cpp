@@ -188,12 +188,19 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       return;
     }
     if (Library()) {
-      for (int i = 0; i < int(prompt_.versions.size()); ++i)
-        options_.push_back({IntroText::kStart, GameDataChoice::kStart, 0, i, i});
-      options_.push_back({IntroText::kStart, GameDataChoice::kStart, 1, 0});
-      options_.push_back({IntroText::kAddVersion, GameDataChoice::kAddVersion, 1, 1});
-      options_.push_back({IntroText::kDeleteVersion, GameDataChoice::kDelete, 1, 2});
-      options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, kCornerRow});
+      // Versions fill a column top down, then the next; the plus takes the slot after.
+      const int versions = std::min(int(prompt_.versions.size()), kMaxVersions);
+      const bool can_add = versions < kMaxVersions;
+      const int right = versions + (can_add ? 1 : 0) > kColumnRows ? 2 : 1;
+      for (int i = 0; i < versions; ++i)
+        options_.push_back({IntroText::kStart, GameDataChoice::kStart, i / kColumnRows,
+                            i % kColumnRows, i});
+      options_.push_back({IntroText::kStart, GameDataChoice::kStart, right, 0});
+      options_.push_back({IntroText::kDeleteVersion, GameDataChoice::kDelete, right, 1});
+      if (can_add)
+        options_.push_back({IntroText::kAddVersion, GameDataChoice::kAddVersion,
+                            versions / kColumnRows, versions % kColumnRows});
+      options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, right, kCornerRow});
       selected_ = IndexOf(GameDataChoice::kStart);
       return;
     }
@@ -233,6 +240,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   ImVec2 seen_size_{0, 0};
   Clock::time_point size_changed_;
   bool size_pending_ = false;
+  int scroll_owner_ = -1;
+  Clock::time_point scroll_since_;
 
   void OnDraw(ImGuiIO& io) override {
     Load(g_background, "background");
@@ -344,6 +353,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
  private:
   // Quit sits in the top right corner, one step above the right column.
   static constexpr int kCornerRow = -1;
+  static constexpr int kColumnRows = 3;
 
   struct Option {
     IntroText label;
@@ -521,10 +531,18 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         on_picker_ = true;
       return;
     }
-    const int column = (from.column + dx + 2) % 2;
-    if (Library() && column == 0 && selected_version_ >= 0) {
-      Focus(At(0, selected_version_));
-      return;
+    int columns = 0;
+    for (const Option& option : options_)
+      columns = std::max(columns, option.column + 1);
+    const int column = (from.column + dx + columns) % columns;
+    if (Library() && column < columns - 1 && from.column == columns - 1 &&
+        selected_version_ >= 0) {
+      for (int i = 0; i < int(options_.size()); ++i) {
+        if (options_[size_t(i)].version == selected_version_) {
+          Focus(i);
+          return;
+        }
+      }
     }
     const int last = LastRow(column);
     for (int row = std::min(from.row, last); row >= 0; --row) {
@@ -595,61 +613,42 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     }
 
     const float h = 50.0f * unit;
+    const float label_size = 24.0f * unit;
     const float gap = 12.0f * unit;
     const float column_gap = 24.0f * unit;
-    const float widths[2] = {(library ? 400.0f : 300.0f) * unit, 300.0f * unit};
-    const float left = (size.x - (widths[0] + widths[1] + column_gap)) * 0.5f;
-    const float label_size = 24.0f * unit;
-    // The list ends above the hints and the corner controls, and scrolls.
-    const float bottom = size.y - 120.0f * unit;
-    int visible = 1 << 20;
+    int columns = 0;
+    for (const Option& option : options_)
+      columns = std::max(columns, option.column + 1);
+    // Library: narrow version columns then the actions; otherwise two equal columns.
+    float widths[3] = {300.0f * unit, 300.0f * unit, 0.0f};
     if (library) {
-      top = std::min(top, bottom - 3.0f * (h + gap) + gap);
-      visible = std::max(1, int((bottom - top + gap) / (h + gap)));
-      const int versions = int(prompt_.versions.size());
-      const Option& cursor = options_[size_t(selected_)];
-      const int focus = cursor.version >= 0 ? cursor.version : selected_version_;
-      if (focus != scroll_focus_ && focus >= 0) {
-        scroll_focus_ = focus;
-        scroll_ = std::clamp(scroll_, focus - visible + 1, focus);
-      }
-      const ImVec2 list_min(left, top);
-      const ImVec2 list_max(left + widths[0],
-                            top + float(std::min(visible, versions)) * (h + gap));
-      if (ImGui::IsMouseHoveringRect(list_min, list_max) && ImGui::GetIO().MouseWheel != 0.0f)
-        scroll_ -= ImGui::GetIO().MouseWheel > 0.0f ? 1 : -1;
-      scroll_ = std::clamp(scroll_, 0, std::max(0, versions - visible));
-      const ImU32 arrow = Color(kText, 0.6f * alpha);
-      const float s = 6.0f * unit;
-      const float cx = left + widths[0] * 0.5f;
-      if (scroll_ > 0) {
-        const float y = top - 4.0f * unit;
-        draw->AddTriangleFilled(ImVec2(cx - s, y), ImVec2(cx + s, y), ImVec2(cx, y - s), arrow);
-      }
-      if (scroll_ + visible < versions) {
-        const float y = top + float(visible) * (h + gap) - gap + 4.0f * unit;
-        draw->AddTriangleFilled(ImVec2(cx - s, y), ImVec2(cx + s, y), ImVec2(cx, y + s), arrow);
-      }
-    } else {
-      scroll_ = 0;
+      for (int c = 0; c < columns - 1; ++c)
+        widths[c] = (columns == 3 ? 320.0f : 400.0f) * unit;
+      widths[columns - 1] = 200.0f * unit;
     }
+    float total = float(columns - 1) * column_gap;
+    for (int c = 0; c < columns; ++c)
+      total += widths[c];
+    float column_x[3];
+    column_x[0] = (size.x - total) * 0.5f;
+    for (int c = 1; c < columns; ++c)
+      column_x[c] = column_x[c - 1] + widths[c - 1] + column_gap;
+    // The list ends above the hints and the corner controls.
+    const float bottom = size.y - 120.0f * unit;
+    if (library)
+      top = std::min(top, bottom - float(kColumnRows) * (h + gap) + gap);
 
     const float t = std::chrono::duration<float>(Clock::now() - *g_first_shown).count();
     for (int i = 0; i < count; ++i) {
       const Option& option = options_[size_t(i)];
       const bool corner = option.row == kCornerRow;
-      int row = option.row;
-      if (option.version >= 0) {
-        row -= scroll_;
-        if (row < 0 || row >= visible)
-          continue;
-      }
+      const bool plus = option.version < 0 && option.choice == GameDataChoice::kAddVersion;
+      const int row = option.row;
       const float corner_size = 44.0f * unit;
       const float w = corner ? corner_size : widths[option.column];
       const float box_h = corner ? corner_size : h;
       const ImVec2 min = corner ? ImVec2(size.x - 24.0f * unit - corner_size, 24.0f * unit)
-                                : ImVec2(left + (option.column ? widths[0] + column_gap : 0.0f),
-                                         top + float(row) * (h + gap));
+                                : ImVec2(column_x[option.column], top + float(row) * (h + gap));
       const ImVec2 max(min.x + w, min.y + box_h);
       const ImVec4& accent = corner ? kQuitRed : kAccent;
       const bool usable = Enabled(i);
@@ -692,14 +691,30 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       draw->AddRect(min, max, border, rounding, 0,
                     std::max(1.0f, (active || glow ? 2.0f : 1.0f) * unit));
       if (option.version >= 0) {
+        // Text slides only under the cursor, from the start each time it lands.
+        if (!active) {
+          if (scroll_owner_ == i)
+            scroll_owner_ = -1;
+        } else if (scroll_owner_ != i) {
+          scroll_owner_ = i;
+          scroll_since_ = Clock::now();
+        }
         DrawVersionRow(draw, font, unit, min, max, prompt_.versions[size_t(option.version)],
-                       a * (active || picked ? 1.0f : 0.8f));
+                       a * (active || picked ? 1.0f : 0.8f),
+                       active ? std::chrono::duration<float>(Clock::now() - scroll_since_).count()
+                              : -1.0f);
       } else {
         IntroText text = option.label;
         if (option.choice == GameDataChoice::kDelete && SelectedRow() && SelectedRow()->linked)
           text = IntroText::kForgetVersion;
         const ImU32 ink = Color(kText, a * (active ? 1.0f : 0.8f));
-        if (corner) {
+        if (plus) {
+          const ImVec2 c((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+          const float r = box_h * 0.22f;
+          const float thick = std::max(2.0f, 3.0f * unit);
+          draw->AddLine(ImVec2(c.x - r, c.y), ImVec2(c.x + r, c.y), ink, thick);
+          draw->AddLine(ImVec2(c.x, c.y - r), ImVec2(c.x, c.y + r), ink, thick);
+        } else if (corner) {
           const ImVec2 c((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
           const float r = box_h * 0.22f;
           const float thick = std::max(2.0f, 3.0f * unit);
@@ -727,23 +742,49 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
 
   // The label, and under it what sets the version apart.
   void DrawVersionRow(ImDrawList* draw, ImFont* font, float unit, ImVec2 min, ImVec2 max,
-                      const VersionRow& row, float a) {
+                      const VersionRow& row, float a, float scroll_t) {
     const float pad = 16.0f * unit;
     const float label_size = 21.0f * unit;
     const float note_size = 15.0f * unit;
     const float h = max.y - min.y;
+    const float avail = max.x - min.x - 2.0f * pad;
     draw->PushClipRect(ImVec2(min.x + pad, min.y), ImVec2(max.x - pad, max.y), true);
     if (row.note.empty()) {
-      draw->AddText(font, label_size,
-                    ImVec2(min.x + pad, std::floor(min.y + (h - label_size) * 0.5f)),
-                    Color(kText, a), row.label.c_str());
+      DrawScrolling(draw, font, label_size, min.x + pad,
+                    std::floor(min.y + (h - label_size) * 0.5f), avail, unit, scroll_t, Color(kText, a),
+                    row.label.c_str());
     } else {
       const float y = std::floor(min.y + (h - label_size - note_size - 2.0f * unit) * 0.5f);
-      draw->AddText(font, label_size, ImVec2(min.x + pad, y), Color(kText, a), row.label.c_str());
-      draw->AddText(font, note_size, ImVec2(min.x + pad, y + label_size + 2.0f * unit),
+      DrawScrolling(draw, font, label_size, min.x + pad, y, avail, unit, scroll_t, Color(kText, a),
+                    row.label.c_str());
+      DrawScrolling(draw, font, note_size, min.x + pad, y + label_size + 2.0f * unit, avail, unit, scroll_t,
                     Color(kText, 0.6f * a), row.note.c_str());
     }
     draw->PopClipRect();
+  }
+
+  // Text wider than its button slides to show the rest, pausing at both ends.
+  static void DrawScrolling(ImDrawList* draw, ImFont* font, float text_size, float x, float y,
+                            float avail, float unit, float scroll_t, ImU32 color,
+                            const char* text) {
+    const float width = font->CalcTextSizeA(text_size, FLT_MAX, 0.0f, text).x;
+    float offset = 0.0f;
+    if (width > avail && scroll_t >= 0.0f) {
+      constexpr float kPause = 1.0f;
+      const float travel = (width - avail) / (50.0f * unit);
+      const float phase = std::fmod(scroll_t, 2.0f * (travel + kPause));
+      float along = 0.0f;
+      if (phase < kPause)
+        along = 0.0f;
+      else if (phase < kPause + travel)
+        along = (phase - kPause) / travel;
+      else if (phase < 2.0f * kPause + travel)
+        along = 1.0f;
+      else
+        along = 1.0f - (phase - 2.0f * kPause - travel) / travel;
+      offset = (width - avail) * along;
+    }
+    draw->AddText(font, text_size, ImVec2(std::floor(x - offset), y), color, text);
   }
 
   // Button hints while a gamepad drives the screen; the file dialogs need a
@@ -960,8 +1001,6 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   int selected_ = 0;
   // The version Start applies to, and the version list's first shown row.
   int selected_version_ = -1;
-  int scroll_ = 0;
-  int scroll_focus_ = -1;
   bool gamepad_ = false;
   // The language picker has the keys instead of selected_.
   bool on_picker_ = false;

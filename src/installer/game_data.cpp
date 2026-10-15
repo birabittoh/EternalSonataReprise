@@ -329,7 +329,8 @@ GameDataChoice MessageBoxPrompt(const GameDataPrompt& prompt) {
     message += prompt.versions[size_t(at)].label;
     buttons[count++] = {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, int(GameDataChoice::kStart),
                         Tr(IntroText::kStart)};
-    buttons[count++] = {0, int(GameDataChoice::kAddVersion), Tr(IntroText::kAddVersion)};
+    if (int(prompt.versions.size()) < kMaxVersions)
+      buttons[count++] = {0, int(GameDataChoice::kAddVersion), Tr(IntroText::kAddVersion)};
   } else {
     message += Tr(IntroText::kNeedFiles);
     if (!prompt.can_pick_folder)
@@ -671,6 +672,10 @@ void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice, int version) {
       Ask(flow);
       return;
     case GameDataChoice::kAddVersion:
+      if (int(flow->prompt.versions.size()) >= kMaxVersions) {
+        Ask(flow);
+        return;
+      }
       flow->prompt.adding = true;
       flow->prompt.can_extract = false;
       flow->prompt.release.clear();

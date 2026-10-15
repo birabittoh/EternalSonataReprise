@@ -31,6 +31,9 @@ enum class GameDataChoice {
   kAddVersion,
 };
 
+// The library holds this many versions.
+constexpr int kMaxVersions = 6;
+
 // One installed version, as the start screen lists it.
 struct VersionRow {
   std::string label;
