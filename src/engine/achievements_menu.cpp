@@ -1319,6 +1319,7 @@ REX_HOOK_RAW(sub_821FEBC8) {
     ctx.r6.u32 = kLockedCrystalTab;
   }
   __imp__sub_821FEBC8(ctx, base);
+  scrapbook_menu::RowBuilt(ctx, base, row_object);
   if (!ours) {
     return;
   }

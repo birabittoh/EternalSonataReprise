@@ -80,6 +80,14 @@ constexpr std::uint32_t kResultOffset = 444u;
 constexpr std::uint32_t kButtonsOffset = 448u;
 constexpr std::uint32_t kCooldownFlagOffset = 425u;
 constexpr std::uint32_t kCooldownOffset = 428u;
+// The group the cursor moves in, and the flag that puts it on the group's
+// first selectable (both as sub_821FFC48 and sub_821FFEF8 use them).
+constexpr std::uint32_t kActiveGroupOffset = 396u;
+constexpr std::uint32_t kCursorInitOffset = 424u;
+// The menu's linked list of groups: id at +0, selectable table at +8, next at +48.
+constexpr std::uint32_t kGroupListOffset = 392u;
+constexpr std::uint32_t kGroupTableOffset = 8u;
+constexpr std::uint32_t kGroupNextOffset = 48u;
 constexpr std::uint32_t kButtonTabLeft = 0x100u;
 constexpr std::uint32_t kButtonTabRight = 0x200u;
 constexpr std::uint32_t kButtonStop = 0x8000u;
@@ -91,6 +99,13 @@ constexpr std::uint32_t kRowContainers = 1672u;
 constexpr std::uint32_t kRowContainerCount = 5u;
 constexpr std::uint32_t kGlows[] = {104u, 108u, 112u};
 constexpr float kAway = 1000.0f;
+
+// A row object's crystal, as sub_821FEBC8 fills it.
+constexpr std::uint32_t kRowIconOffset = 32u;
+
+// The track name panel above the list, and the record sliding it in.
+constexpr std::uint32_t kNamePanel = 1u;
+constexpr std::uint32_t kTypeSlide = 2u;
 
 // The tab strip's second and third widgets.
 constexpr std::uint32_t kHiddenTabs[] = {1548u, 1552u};
@@ -140,6 +155,8 @@ struct View {
 View g_view;
 bool g_pending_build = false;
 int g_open = -1;
+std::uint32_t g_list_group = 0;
+std::uint32_t g_picture_group = 0xFFFFFFFFu;
 
 std::uint32_t g_list_copy = 0;
 std::uint32_t g_scratch = 0;
@@ -303,7 +320,59 @@ void Cooldown(std::uint8_t* base, std::uint32_t menu, std::uint32_t frames) {
   REX_STORE_U32(menu + kCooldownOffset, frames);
 }
 
-void OpenPicture(PPCContext& ctx, std::uint8_t* base, int picture) {
+// While a picture is up the cursor sits in a group of its own with one
+// selectable, as sub_210A50 does on the PS3, so the rows behind cannot be
+// reached. Confirm still answers with its tag, which closes the picture.
+void IsolateCursor(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu) {
+  PPCContext call = ctx;
+  call.r3.u64 = menu;
+  sub_821FFC48(call, base);
+  const std::uint32_t group = call.r3.u32;
+  if (group == 0xFFFFFFFFu)
+    return;
+  call = ctx;
+  call.r3.u64 = menu;
+  call.r4.u64 = group;
+  call.r5.u64 = kOffscreen;
+  call.r6.u64 = kOffscreen;
+  call.r7.u64 = 1;
+  sub_821FFEF8(call, base);
+  g_list_group = REX_LOAD_U32(menu + kActiveGroupOffset);
+  g_picture_group = group;
+  REX_STORE_U32(menu + kActiveGroupOffset, group);
+  REX_STORE_U8(menu + kCursorInitOffset, 1);
+}
+
+// sub_821FFB20 frees a group's selectables but not its 192 byte table at +8,
+// so every picture opened would leak one until sub_821FFC48's allocation fails.
+void FreeGroupTable(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu, std::uint32_t id) {
+  for (std::uint32_t group = REX_LOAD_U32(menu + kGroupListOffset); group;
+       group = REX_LOAD_U32(group + kGroupNextOffset)) {
+    if (REX_LOAD_U32(group) != id)
+      continue;
+    if (const std::uint32_t table = REX_LOAD_U32(group + kGroupTableOffset)) {
+      PPCContext call = ctx;
+      call.r3.u64 = table;
+      sub_82113FD0(call, base);
+      REX_STORE_U32(group + kGroupTableOffset, 0);
+    }
+    return;
+  }
+}
+
+void RestoreCursor(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu) {
+  if (g_picture_group == 0xFFFFFFFFu)
+    return;
+  REX_STORE_U32(menu + kActiveGroupOffset, g_list_group);
+  FreeGroupTable(ctx, base, menu, g_picture_group);
+  PPCContext call = ctx;
+  call.r3.u64 = menu;
+  call.r4.u64 = g_picture_group;
+  sub_821FFB20(call, base);
+  g_picture_group = 0xFFFFFFFFu;
+}
+
+void OpenPicture(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu, int picture) {
   if (!g_view.ready)
     return;
   if (!g_title_text)
@@ -318,12 +387,14 @@ void OpenPicture(PPCContext& ctx, std::uint8_t* base, int picture) {
   ShiftList(ctx, base, kAway);
   Place(ctx, base, g_view.panel, kPanelX, kPanelY);
   PlayClip(ctx, base, picture);
+  IsolateCursor(ctx, base, menu);
   g_open = picture;
 }
 
-void ClosePicture(PPCContext& ctx, std::uint8_t* base) {
+void ClosePicture(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu) {
   if (g_open < 0)
     return;
+  RestoreCursor(ctx, base, menu);
   Place(ctx, base, g_view.panel, kPanelX, kPanelHiddenY);
   ShiftList(ctx, base, -kAway);
   g_open = -1;
@@ -354,6 +425,17 @@ void HideRecord(std::vector<std::uint32_t>& words, std::uint32_t type, std::uint
   }
 }
 
+// Leaves panel `panel` where its record parks it, below the screen, by giving
+// its slide in that same spot as the target.
+void KeepPanelParked(std::vector<std::uint32_t>& words, std::uint32_t panel) {
+  for (std::size_t i = 1; i + 4 <= words.size(); ++i) {
+    if (words[i - 1] == 2101u && words[i] == kTypeSlide && words[i + 1] == panel) {
+      words[i + 3] = static_cast<std::uint32_t>(kPanelHiddenY);
+      return;
+    }
+  }
+}
+
 }  // namespace
 
 bool StripShowsScrapbook() {
@@ -377,6 +459,7 @@ bool Dispatch(std::uint8_t* base, std::uint32_t tag) {
   }
   g_active = true;
   g_open = -1;
+  g_picture_group = 0xFFFFFFFFu;
   g_view = {};
   // loc_82236F08 with the Music gallery's id, as achievements_menu.cpp does.
   const std::uint8_t depth = base[kHistoryDepthAddr];
@@ -398,6 +481,14 @@ void FixRowCount(std::uint8_t* base) {
 void BeginRow(int index) { t_row = index; }
 void EndRow() { t_row = -1; }
 
+void RowBuilt(PPCContext& ctx, std::uint8_t* base, std::uint32_t row_object) {
+  if (!g_active || t_row < 0)
+    return;
+  const std::uint32_t icon = REX_LOAD_U32(row_object + kRowIconOffset);
+  if (icon && icon != 0xFFFFFFFFu)
+    Tint(ctx, base, icon, 0u);
+}
+
 void Tick(PPCContext& ctx, std::uint8_t* base) {
   for (const std::uint32_t tab : kHiddenTabs)
     achievements_menu::HideTabFrame(ctx, base, tab);
@@ -412,9 +503,9 @@ void Input(PPCContext& ctx, std::uint8_t* base) {
   const auto result = static_cast<std::int32_t>(REX_LOAD_U32(menu + kResultOffset));
   const std::uint32_t buttons = REX_LOAD_U32(menu + kButtonsOffset);
   if (g_open >= 0) {
-    // The list is away; the cursor may move behind the picture, nothing else.
+    // The list is away and the cursor is held by the picture's own group.
     if (result != -1 || (buttons & kButtonStop)) {
-      ClosePicture(ctx, base);
+      ClosePicture(ctx, base, menu);
       PlaySound(ctx, base, kSoundCancel);
       Cooldown(base, menu, 15);
     }
@@ -423,7 +514,7 @@ void Input(PPCContext& ctx, std::uint8_t* base) {
   if (result >= 1 && result <= 4 && REX_LOAD_U8(kGalleryStateAddr) == kGalleryInput) {
     const auto row = static_cast<int>(REX_LOAD_U32(kScrollAddr)) + result - 1;
     if (row >= 0 && row < static_cast<int>(kPictures)) {
-      OpenPicture(ctx, base, row);
+      OpenPicture(ctx, base, menu, row);
       Cooldown(base, menu, 30);
       return;
     }
@@ -468,6 +559,7 @@ std::uint32_t MaybeSwapScreenList(std::uint8_t* base, std::uint32_t list) {
   HideRecord(words, 200u, 64u);
   HideRecord(words, 200u, 125u);  // the Japanese D-pad and its label
   HideRecord(words, 700u, 148u);
+  KeepPanelParked(words, kNamePanel);  // the PS3 page has no track name line
 
   const std::uint32_t pictures = eternalsonata::kPs3ScrapbookSlot + 1u;
   const std::initializer_list<std::uint32_t> panel = {

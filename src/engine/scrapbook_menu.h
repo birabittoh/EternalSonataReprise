@@ -32,6 +32,10 @@ std::uint32_t RowCount();
 void BeginRow(int index);
 void EndRow();
 
+// After sub_821FEBC8 built a row into `row_object`: drops the track crystal,
+// which the PS3 cells do not have.
+void RowBuilt(PPCContext& ctx, std::uint8_t* base, std::uint32_t row_object);
+
 // After the gallery's per frame tick.
 void Tick(PPCContext& ctx, std::uint8_t* base);
 
