@@ -74,6 +74,7 @@ class ModsScreen {
   void Reload();
   void Persist();
   void StartCatalogFetch();
+  CatalogLoad CatalogStatus() const;
 
   // Model.
   void BuildLists();
@@ -158,10 +159,6 @@ class ModsScreen {
   bool was_installing_ = false;
 
   rex::system::ModCatalog installer_;
-  std::mutex catalog_mutex_;
-  std::vector<rex::system::CatalogMod> catalog_;
-  std::atomic<CatalogLoad> catalog_state_{CatalogLoad::kIdle};
-  std::thread catalog_thread_;
   rex::net::CancelToken cancel_;
 
   std::unordered_map<std::string, std::unique_ptr<rex::ui::ImmediateTexture>> icons_;

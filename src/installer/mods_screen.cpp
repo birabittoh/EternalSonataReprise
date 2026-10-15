@@ -138,8 +138,6 @@ ModsScreen::~ModsScreen() {
       graveyard.push_back(std::move(texture));
   }
   cancel_.Cancel();
-  if (catalog_thread_.joinable())
-    catalog_thread_.join();
   for (auto& [url, thread] : icon_threads_) {
     if (thread.joinable())
       thread.join();
@@ -173,26 +171,21 @@ void ModsScreen::Persist() {
                                             rex::system::ModState::HostPlatformId());
 }
 
-// The SDK's own fetch needs a Runtime for the catalog name, so the static
-// mirror of the same catalog is read here; installs still go through the SDK.
 void ModsScreen::StartCatalogFetch() {
-  const std::string url = REXCVAR_GET(mod_catalog_fallback_url);
-  if (url.empty()) {
-    catalog_state_ = CatalogLoad::kFailed;
-    return;
+  installer_.Refresh("eternalsonata");
+}
+
+ModsScreen::CatalogLoad ModsScreen::CatalogStatus() const {
+  switch (installer_.state()) {
+    case rex::system::CatalogState::kLoading:
+      return CatalogLoad::kLoading;
+    case rex::system::CatalogState::kReady:
+      return CatalogLoad::kReady;
+    case rex::system::CatalogState::kFailed:
+      return CatalogLoad::kFailed;
+    default:
+      return CatalogLoad::kIdle;
   }
-  catalog_state_ = CatalogLoad::kLoading;
-  catalog_thread_ = std::thread([this, url] {
-    const auto response = rex::net::HttpGet(url, {}, &cancel_);
-    if (!response.ok()) {
-      catalog_state_ = CatalogLoad::kFailed;
-      return;
-    }
-    auto mods = rex::system::ParseFallbackCatalog(response.body);
-    std::lock_guard<std::mutex> lock(catalog_mutex_);
-    catalog_ = std::move(mods);
-    catalog_state_ = CatalogLoad::kReady;
-  });
 }
 
 rex::ui::ImmediateTexture* ModsScreen::LocalIcon(const rex::system::ModInfo& mod) {
@@ -305,10 +298,8 @@ void ModsScreen::BuildLists() {
   for (size_t i = 0; i < entries_.size(); ++i)
     (entries_[i].enabled ? enabled_ : available_).push_back(i);
   view_.clear();
-  if (catalog_state_ == CatalogLoad::kReady) {
-    std::lock_guard<std::mutex> lock(catalog_mutex_);
-    view_ = catalog_;
-  }
+  if (CatalogStatus() == CatalogLoad::kReady)
+    view_ = installer_.Snapshot();
   if (tab_ >= TabCount())
     tab_ = 0;
 }
@@ -350,7 +341,7 @@ std::string ModsScreen::Incompatible(const rex::system::CatalogMod& mod) const {
 void ModsScreen::BuildTools() {
   tools_.clear();
   if (tab_ == 1) {
-    tools_.push_back({T("refresh", "Refresh"), catalog_state_ != CatalogLoad::kLoading});
+    tools_.push_back({T("refresh", "Refresh"), CatalogStatus() != CatalogLoad::kLoading});
     return;
   }
   const bool has = !current_.empty() &&
@@ -634,8 +625,6 @@ void ModsScreen::MoveEnabled(const std::string& id, int delta) {
 
 void ModsScreen::ActivateTool(int index) {
   if (tab_ == 1) {
-    if (catalog_thread_.joinable())
-      catalog_thread_.join();
     StartCatalogFetch();
     return;
   }
@@ -951,7 +940,7 @@ void ModsScreen::DrawModRow(Zone zone, int index, ImVec2 min, ImVec2 max) {
     second.push_back({"  " + Fmt("update_available", "Update available (v%s)",
                                  Listed(id)->version.c_str()),
                       kGood});
-  else if (catalog_state_ == CatalogLoad::kReady && !Listed(id))
+  else if (CatalogStatus() == CatalogLoad::kReady && !Listed(id))
     second.push_back({"  " + std::string(T("sideloaded_badge", "[Sideloaded]")), kMuted});
 
   draw_->PushClipRect(ImVec2(text_x, min.y), ImVec2(max.x - pad, max.y), true);
@@ -1063,9 +1052,9 @@ void ModsScreen::DrawDetail(ImVec2 min, ImVec2 max) {
       lines.push_back({reason, kWarn, 15.0f});
   } else if (tab_ == 0 && entries_.empty()) {
     lines.push_back({T("no_mods", "No mods installed."), kMuted, 18.0f});
-  } else if (tab_ == 1 && catalog_state_ == CatalogLoad::kLoading) {
+  } else if (tab_ == 1 && CatalogStatus() == CatalogLoad::kLoading) {
     lines.push_back({T("loading_catalog", "Loading catalog..."), kMuted, 18.0f});
-  } else if (tab_ == 1 && catalog_state_ == CatalogLoad::kFailed) {
+  } else if (tab_ == 1 && CatalogStatus() == CatalogLoad::kFailed) {
     lines.push_back({T("catalog_failed", "Could not load the mod catalog. Select Refresh to retry."),
                      kWarn, 18.0f});
   }
@@ -1125,9 +1114,7 @@ bool ModsScreen::Draw(ImDrawList* draw, ImFont* font, ImVec2 size, float unit, f
   back_ = false;
   if (!loaded_) {
     Reload();
-    if (catalog_state_ != CatalogLoad::kLoading) {
-      if (catalog_thread_.joinable())
-        catalog_thread_.join();
+    if (CatalogStatus() != CatalogLoad::kLoading) {
       StartCatalogFetch();
     }
   }
