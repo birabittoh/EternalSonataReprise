@@ -294,7 +294,7 @@ constexpr std::array kBasicCvarNames = {
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
     "enemy_hp_multiplier",
     "enemy_damage_multiplier", "auto_parry", "ui_scale",
-    "save_row_portraits", "force_japanese_font", "skip_intro"};
+    "save_row_portraits", "force_japanese_font", "skip_intro", "show_start_screen"};
 
 // Steps for the multiplier rows. HP stops short of zero, the
 // same floor enemy_hp_multiplier has.
@@ -793,6 +793,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawPhotoPriceAlgorithmRow();
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();
+        DrawCvarRow("show_start_screen");
         DrawStartScreenRow();
         ImGui::EndTabItem();
       }
@@ -1188,8 +1189,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // through its mixer and land in the save exactly as the Options screen's do.
   // From this thread a write is queued to the next guest frame, so the value
   // being dragged is held here until then rather than snapping back.
-  // Restarts into the start screen, where the game files can be deleted or
-  // another source picked.
+  // Restarts into the start screen, where another version can be picked,
+  // added or deleted.
   void DrawStartScreenRow() {
     bool open_confirm = ImGui::Button(WithId(T("start_screen"), "start_screen"));
     if (ImGui::IsItemHovered()) {

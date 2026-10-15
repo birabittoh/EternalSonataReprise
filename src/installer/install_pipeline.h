@@ -38,9 +38,9 @@ bool IsGameDirectory(const std::filesystem::path& dir);
 bool NeedsConversion(const std::filesystem::path& dir);
 bool NeedsPatching(const std::filesystem::path& dir);
 
-// Whether `picked` (a path or an Android content URI) is a game directory,
-// or a file inside one, that needs no extraction.
-bool IsExtractedSource(const std::string& picked);
+// The game directory `picked` (a path or an Android content URI) is, or holds
+// the picked file, when it needs no extraction; else empty.
+std::filesystem::path ExtractedSource(const std::string& picked);
 
 struct SourceInfo {
   // The release, for the player; empty when not known.
@@ -51,6 +51,8 @@ struct SourceInfo {
   uint32_t languages = 0;
   // Disk space Install needs at its peak, 0 when it writes next to nothing.
   uint64_t required_bytes = 0;
+  // The library folder name (Release::id), empty when not known.
+  std::string id;
 };
 
 // Identifies `picked` (as Install takes it) without extracting anything.

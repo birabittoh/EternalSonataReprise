@@ -112,7 +112,6 @@ class EternalsonataApp : public rex::ReXApp {
   // loading screen the mod asset build uses.
   std::optional<rex::PathConfig> OnFinalizePaths(
       const rex::PathConfig& defaults, std::function<void(rex::PathConfig)> resume) override {
-    (void)defaults;
     // Before the start screen, which can sit open for a long while.
     window()->SetIcon(eternalsonata::kIconPNG, eternalsonata::kIconPNGSize);
     window()->SetTitle("Eternal Sonata: Reprise");
@@ -126,16 +125,17 @@ class EternalsonataApp : public rex::ReXApp {
     eternalsonata::GameDataOptions options;
     options.config_path = config_path();
     options.start_screen_flag = eternalsonata::StartScreenFlagPath(user_settings_path());
+    options.user_settings_path = user_settings_path();
+    options.game_data_root = defaults.game_data_root;
     // The F4 Language row saves through it too, start screen or not.
     // So the start screen lists the languages mods add.
     eternalsonata::ScanModLanguagesEarly();
     eternalsonata::BindIntroLanguageConfig(user_settings_path());
-    std::string pending;
-    if (eternalsonata::UsePreparedGameData(options, pending))
+    if (eternalsonata::UsePreparedGameData(options))
       return FinishGameDataPaths();
 
     // Asynchronous, so the main loop runs and feeds the intro screen input.
-    eternalsonata::AskForGameData(options, app_context(), pending, [this, resume](bool ready) {
+    eternalsonata::AskForGameData(options, app_context(), [this, resume](bool ready) {
       if (!ready) {
         // Teardown takes a moment; nothing is left to show meanwhile.
         window()->Hide();
@@ -147,11 +147,15 @@ class EternalsonataApp : public rex::ReXApp {
     return std::nullopt;
   }
 
+  // The runtime mounts the picked version folder. game_data_root stays the
+  // library root, since the SDK settings save every cvar to the config.
   rex::PathConfig FinishGameDataPaths() {
     eternalsonata::ReleaseIntroScreen();
     RefreshPathDefaultsIfCvarsChanged();
-    eternalsonata::DetectTarget(resolved_path_defaults().game_data_root);
-    return resolved_path_defaults();
+    rex::PathConfig paths = resolved_path_defaults();
+    paths.game_data_root = eternalsonata::SelectedGameDirectory();
+    eternalsonata::DetectTarget(paths.game_data_root);
+    return paths;
   }
 
   // Closing from the intro quits through it; during the install phases the UI

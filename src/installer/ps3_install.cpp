@@ -38,7 +38,8 @@ constexpr const char* kConverted = "ps3-converted.txt";
 // The disc's title id, in a name Walk skips so no conversion touches it.
 constexpr const char* kTitleId = "ps3-title-id.stamp";
 constexpr std::array kNotData = {".i64", ".idb", ".id0", ".id1", ".id2",
-                                 ".nam", ".til", ".bak", ".orig", ".stamp"};
+                                 ".nam", ".til", ".bak", ".orig", ".stamp",
+                                 "reprise-version.toml"};
 
 std::string Lower(std::string s) {
   std::transform(s.begin(), s.end(), s.begin(),

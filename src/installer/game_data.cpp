@@ -24,6 +24,7 @@
 #include <windows.h>
 #endif
 
+#include "game_library.h"
 #include "install_pipeline.h"
 #include "intro_screen.h"
 #include "ui_text.h"
@@ -32,7 +33,7 @@
 // (src/system/game_data_selector.cpp), which this replaces.
 
 REXCVAR_DEFINE_BOOL(show_start_screen, false, "Eternal Sonata",
-                    "Show the start screen even when game data is already prepared");
+                    "Show the start screen on every launch, to pick the game version");
 
 namespace eternalsonata {
 namespace {
@@ -65,6 +66,7 @@ fs::path WritableBaseDir() {
 #endif
 }
 
+// Where single version installs went before the library.
 std::vector<fs::path> PreparedCandidates() {
   std::vector<fs::path> dirs;
   auto push = [&dirs](fs::path p) {
@@ -110,11 +112,15 @@ bool IsLink(const fs::path& path) {
 #endif
 }
 
-// Any game directory, the installer's or one the player pointed at. A link
-// cannot be emptied without going through it.
+// A link cannot be emptied without going through it.
 bool IsDeletable(const fs::path& dir) {
   std::error_code ec;
   return !IsLink(dir) && fs::is_directory(dir, ec) && IsGameDirectory(dir);
+}
+
+bool SameDir(const fs::path& a, const fs::path& b) {
+  std::error_code ec;
+  return fs::equivalent(a, b, ec) || a.lexically_normal() == b.lexically_normal();
 }
 
 struct DeleteJob {
@@ -191,28 +197,35 @@ struct Flow {
   rex::ui::WindowedAppContext* context = nullptr;
   std::function<void(bool)> done;
   GameDataPrompt prompt;
+  std::vector<GameVersion> versions;
+  // The version Start applies to, or -1.
+  int selected = -1;
   // The identified source Extract installs, and the room it needs.
   std::string picked;
+  SourceInfo picked_info;
   uint64_t required_bytes = 0;
-  // The prepared directory on offer, when the screen was asked for on demand.
-  fs::path prepared;
   bool finished = false;
 };
 
 std::atomic<bool> g_extracting{false};
-// A finished directory is on offer; set by UsePreparedGameData.
-bool g_review = false;
+fs::path g_root;
+std::vector<GameVersion> g_versions;
+int g_selected = -1;
+// The screen was asked for, so it waits for Start.
+bool g_asked = false;
+fs::path g_selected_dir;
 
-fs::path ConfigDir(const GameDataOptions& options) {
-  return options.config_path.parent_path();
-}
-
-// Stored relative to the config when inside it, so the folder can move whole.
-void Use(const GameDataOptions& options, const fs::path& dir) {
-  REXCVAR_SET(game_data_root, rex::filesystem::RelativeIfInside(dir, ConfigDir(options)).string());
-  if (!options.config_path.empty())
-    rex::cvar::SaveConfigSubset(options.config_path, {"game_data_root"});
-  REXLOG_INFO("Game data set to {}", dir.string());
+fs::path LibraryRoot(const GameDataOptions& options) {
+  fs::path root = options.game_data_root;
+#if REX_PLATFORM_ANDROID
+  // Installs stay where earlier builds put them, not in the config folder.
+  const auto* entry = rex::cvar::GetFlagInfo("game_data_root");
+  if (!entry || entry->source == rex::cvar::Source::kDefault)
+    root.clear();
+#endif
+  if (root.empty())
+    root = WritableBaseDir() / "assets";
+  return root;
 }
 
 InstallHooks MakeHooks() {
@@ -267,20 +280,6 @@ void PostJobUpdates(const std::shared_ptr<Flow>& flow, const std::shared_ptr<Ins
   flow->context->CallInUIThreadDeferred([job] { ApplyJobUpdates(job); });
 }
 
-// Runs the install phases on `picked` and makes the result game_data_root.
-// Empty when it worked, else why not.
-std::string Prepare(const GameDataOptions& options, const std::string& picked) {
-  fs::path dir;
-  BeginIntroWork();
-  g_extracting = true;
-  std::string error = Install(picked, WritableBaseDir() / "assets", MakeHooks(), dir);
-  g_extracting = false;
-  EndIntroWork();
-  if (error.empty())
-    Use(options, dir);
-  return error;
-}
-
 struct DialogRequest {
   std::shared_ptr<Flow> flow;
   std::function<void(std::shared_ptr<Flow>, std::string)> then;
@@ -316,25 +315,37 @@ void ShowDialog(std::shared_ptr<Flow> flow, bool folder,
     SDL_ShowOpenFileDialog(DialogCallback, request, nullptr, kFilters, 2, nullptr, false);
 }
 
+bool Library(const GameDataPrompt& prompt) {
+  return prompt.confirm.empty() && !prompt.adding && !prompt.versions.empty();
+}
+
 // Where no intro screen can draw.
 GameDataChoice MessageBoxPrompt(const GameDataPrompt& prompt) {
-  std::string message = prompt.error.empty() ? "" : prompt.error + "\n\n";
-  message += Tr(IntroText::kNeedFiles);
-  if (!prompt.can_pick_folder)
-    message += std::string(" ") + Tr(IntroText::kSelectIsoOnly);
-  if (!prompt.copy_hint.empty())
-    message += "\n\n" + Tr(IntroText::kCopyHint, prompt.copy_hint);
-  if (prompt.can_extract)
-    message = Tr(IntroText::kFoundRelease, prompt.release) + "\n\n" + message;
   SDL_MessageBoxButtonData buttons[4];
   int count = 0;
-  if (prompt.can_extract)
-    buttons[count++] = {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, int(GameDataChoice::kExtract),
-                        Tr(IntroText::kExtract)};
-  buttons[count++] = {prompt.can_extract ? 0u : SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,
-                      int(GameDataChoice::kDiscImage), Tr(IntroText::kSelectFile)};
-  if (prompt.can_pick_folder)
-    buttons[count++] = {0, int(GameDataChoice::kFolder), Tr(IntroText::kSelectFolder)};
+  std::string message = prompt.error.empty() ? "" : prompt.error + "\n\n";
+  if (Library(prompt)) {
+    const int at = std::max(prompt.selected_version, 0);
+    message += prompt.versions[size_t(at)].label;
+    buttons[count++] = {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, int(GameDataChoice::kStart),
+                        Tr(IntroText::kStart)};
+    buttons[count++] = {0, int(GameDataChoice::kAddVersion), Tr(IntroText::kAddVersion)};
+  } else {
+    message += Tr(IntroText::kNeedFiles);
+    if (!prompt.can_pick_folder)
+      message += std::string(" ") + Tr(IntroText::kSelectIsoOnly);
+    if (!prompt.copy_hint.empty())
+      message += "\n\n" + Tr(IntroText::kCopyHint, prompt.copy_hint);
+    if (prompt.can_extract)
+      message = Tr(IntroText::kFoundRelease, prompt.release) + "\n\n" + message;
+    if (prompt.can_extract)
+      buttons[count++] = {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, int(GameDataChoice::kExtract),
+                          Tr(IntroText::kExtract)};
+    buttons[count++] = {prompt.can_extract ? 0u : SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,
+                        int(GameDataChoice::kDiscImage), Tr(IntroText::kSelectFile)};
+    if (prompt.can_pick_folder)
+      buttons[count++] = {0, int(GameDataChoice::kFolder), Tr(IntroText::kSelectFolder)};
+  }
   buttons[count++] = {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, int(GameDataChoice::kQuit), Tr(IntroText::kQuit)};
   const SDL_MessageBoxData box = {SDL_MESSAGEBOX_INFORMATION, nullptr, Tr(IntroText::kTitle),
                                   message.c_str(), count, buttons, nullptr};
@@ -356,8 +367,10 @@ void Ask(std::shared_ptr<Flow> flow);
 
 // Turns Extract off while the drive the files go to cannot hold them.
 void CheckSpace(Flow& flow) {
+  if (!flow.required_bytes)
+    return;
   std::error_code ec;
-  const uint64_t available = fs::space(WritableBaseDir(), ec).available;
+  const uint64_t available = fs::space(g_root, ec).available;
   if (ec || flow.required_bytes <= available)
     return;
   std::string message = Tr(IntroText::kNotEnoughSpace, FormatSize(flow.required_bytes));
@@ -367,28 +380,54 @@ void CheckSpace(Flow& flow) {
   flow.prompt.error = message;
 }
 
-// What follows the phases: back to the intro, ready or with the error.
-void Conclude(std::shared_ptr<Flow> flow, std::string error) {
-  flow->prompt.error = std::move(error);
-  if (flow->prompt.error.empty()) {
-    // The player starts the game from the intro once every phase is done.
-    if (!IntroScreenAvailable()) {
-      Finish(flow, true);
-      return;
+// Rescans after an install, delete or forget, keeping a command line
+// directory listed, and selects `prefer` when given.
+void Rescan(Flow& flow, const fs::path& prefer) {
+  flow.versions = ScanLibrary(g_root);
+  FindVersion(flow.versions, SelectedVersion());
+  RefreshRootExecutable(g_root, flow.versions);
+  const int count = int(flow.versions.size());
+  if (!prefer.empty()) {
+    for (int i = 0; i < count; ++i) {
+      if (SameDir(flow.versions[size_t(i)].dir, prefer))
+        flow.selected = i;
     }
-    flow->prompt.ready = true;
-  } else {
-    REXLOG_ERROR("{}: {}", flow->picked, flow->prompt.error);
-    // Extract again after fixing what went wrong.
-    flow->prompt.can_extract = true;
-    CheckSpace(*flow);
   }
-  Ask(flow);
+  flow.selected = count ? std::clamp(flow.selected, 0, count - 1) : -1;
 }
+
+void Begin(const std::shared_ptr<Flow>& flow) {
+  const GameVersion& version = flow->versions[size_t(flow->selected)];
+  // A directory given on the command line is a one off.
+  if (!version.temporary)
+    SaveSelectedVersion(version.key);
+  g_selected_dir = version.dir;
+  REXLOG_INFO("Starting {} from {}", version.release.empty() ? version.key : version.release,
+              version.dir.string());
+  Finish(flow, true);
+}
+
+using JobWork = std::function<std::string(const InstallHooks&, fs::path&)>;
+using JobDone = std::function<void(std::shared_ptr<Flow>, std::string, fs::path)>;
 
 std::shared_ptr<InstallJob> g_job;
 
-void StartInstallJob(std::shared_ptr<Flow> flow) {
+// Runs `work` on a worker while the intro shows the phases, or right here
+// where no intro can draw; `then` runs on the UI thread.
+void StartJob(std::shared_ptr<Flow> flow, JobWork work, JobDone then) {
+  if (!IntroScreenAvailable()) {
+    fs::path dir;
+    std::string error;
+    g_extracting = true;
+    try {
+      error = work(MakeHooks(), dir);
+    } catch (const std::exception& e) {
+      error = std::string("Preparing the game files failed: ") + e.what();
+    }
+    g_extracting = false;
+    then(std::move(flow), std::move(error), std::move(dir));
+    return;
+  }
   auto job = std::make_shared<InstallJob>();
   g_job = job;
   BeginIntroWork();
@@ -407,122 +446,205 @@ void StartInstallJob(std::shared_ptr<Flow> flow) {
     job->phases.emplace_back(phase, state);
     PostJobUpdates(flow, job);
   };
-  const std::string picked = flow->picked;
-  job->worker = std::thread([flow, job, hooks, picked] {
+  job->worker = std::thread([flow, job, hooks, work, then] {
     try {
-      job->error = Install(picked, WritableBaseDir() / "assets", hooks, job->dir);
+      job->error = work(hooks, job->dir);
     } catch (const std::exception& e) {
       job->error = std::string("Preparing the game files failed: ") + e.what();
     }
-    flow->context->CallInUIThreadDeferred([flow, job] {
+    flow->context->CallInUIThreadDeferred([flow, job, then] {
       job->worker.join();
       ApplyJobUpdates(job);
       g_job.reset();
       g_extracting = false;
       EndIntroWork();
-      std::string error = std::move(job->error);
-      if (error.empty())
-        Use(flow->options, job->dir);
       // A quit asked for mid-install is honored now.
       if (job->quit_requested) {
         Finish(flow, false);
         return;
       }
-      Conclude(flow, std::move(error));
+      then(flow, std::move(job->error), std::move(job->dir));
     });
   });
 }
 
-// Runs the phases on the identified source.
+// The phases a saved or picked version still needs, then Start when
+// `start` (or back to the library).
+void RunPhases(std::shared_ptr<Flow> flow, bool start) {
+  const fs::path dir = flow->versions[size_t(flow->selected)].dir;
+  StartJob(
+      std::move(flow),
+      [dir](const InstallHooks& hooks, fs::path& out) {
+        out = dir;
+        return InstallDirectory(dir, hooks);
+      },
+      [start](std::shared_ptr<Flow> flow, std::string error, fs::path dir) {
+        Rescan(*flow, dir);
+        flow->prompt.error = std::move(error);
+        if (!flow->prompt.error.empty()) {
+          REXLOG_ERROR("{}: {}", dir.string(), flow->prompt.error);
+        } else if (start || !IntroScreenAvailable()) {
+          Begin(flow);
+          return;
+        }
+        Ask(flow);
+      });
+}
+
+void OnInstalled(std::shared_ptr<Flow> flow, std::string error, fs::path dir) {
+  flow->prompt.error = std::move(error);
+  if (!flow->prompt.error.empty()) {
+    REXLOG_ERROR("{}: {}", flow->picked, flow->prompt.error);
+    // Extract again after fixing what went wrong.
+    flow->prompt.can_extract = true;
+    CheckSpace(*flow);
+    Ask(flow);
+    return;
+  }
+  const SourceInfo& info = flow->picked_info;
+  // A folder picked outside the library is used where it is.
+  if (!SameDir(dir.parent_path(), g_root))
+    AddLinkedVersion(dir);
+  if (!info.release.empty())
+    WriteVersionInfo(dir, info.id, info.release, info.languages);
+  Rescan(*flow, dir);
+  flow->picked.clear();
+  flow->picked_info = {};
+  flow->prompt.adding = false;
+  flow->prompt.can_extract = false;
+  flow->prompt.release.clear();
+  flow->prompt.languages = 0;
+  if (!IntroScreenAvailable()) {
+    Begin(flow);
+    return;
+  }
+  Ask(flow);
+}
+
+// Runs the phases on the identified source, into its own version folder.
 void Extract(std::shared_ptr<Flow> flow) {
   if (flow->finished)
     return;
   flow->prompt.can_extract = false;
-  if (IntroScreenAvailable()) {
-    StartInstallJob(std::move(flow));
-    return;
-  }
-  std::string error;
-  try {
-    error = Prepare(flow->options, flow->picked);
-  } catch (const std::exception& e) {
-    g_extracting = false;
-    EndIntroWork();
-    error = std::string("Preparing the game files failed: ") + e.what();
-  }
-  Conclude(std::move(flow), std::move(error));
+  const std::string picked = flow->picked;
+  const fs::path target = flow->picked_info.id.empty()
+                              ? FreeVersionDir(g_root, {})
+                              : g_root / flow->picked_info.id;
+  StartJob(
+      std::move(flow),
+      [picked, target](const InstallHooks& hooks, fs::path& dir) {
+        std::error_code ec;
+        fs::create_directories(target.parent_path(), ec);
+        return Install(picked, target, hooks, dir);
+      },
+      OnInstalled);
 }
 
 // Identifies the pick; extracting waits for the player.
 void OnPicked(std::shared_ptr<Flow> flow, std::string picked) {
   if (flow->finished)
     return;
-  if (!picked.empty()) {
-    REXLOG_INFO("Selected {}", picked);
-    const SourceInfo info = IdentifySource(picked);
-    flow->prompt.ready = false;
-    flow->prompt.release = info.release;
-    flow->prompt.languages = info.languages;
-    flow->prompt.error = info.error;
-    flow->prompt.can_extract = info.error.empty();
-    flow->picked = info.error.empty() ? picked : std::string();
-    flow->required_bytes = info.required_bytes;
-    if (info.error.empty())
-      CheckSpace(*flow);
-    if (!info.release.empty())
-      REXLOG_INFO("Identified {}", info.release);
-    if (!info.error.empty())
-      REXLOG_ERROR("{}: {}", picked, info.error);
-  }
-  Ask(flow);
-}
-
-void AskToDelete(std::shared_ptr<Flow> flow) {
-  const fs::path dir = flow->prepared;
-  if (!flow->prompt.can_delete || dir.empty() || !IsDeletable(dir)) {
+  if (picked.empty()) {
     Ask(flow);
     return;
   }
-  flow->prompt.confirm = DeleteQuestion(flow->prompt.release, dir, TreeSize(dir));
-  Ask(flow);
-}
-
-void DeletePrepared(std::shared_ptr<Flow> flow) {
-  const fs::path dir = flow->prepared;
-  const uint64_t total = TreeSize(dir);
-  REXLOG_INFO("Deleting {}", dir.string());
-  BeginIntroWork();
-  for (Phase phase : {Phase::kExtract, Phase::kConvert, Phase::kPatch})
-    SetIntroPhase(phase, PhaseState::kSkipped);
-  DeleteJob job;
-  g_extracting = true;
-  std::thread worker(DeleteTree, dir, std::ref(job));
-  while (!job.finished) {
-    const uint64_t done = job.done;
-    ReportIntroProgress("Deleting game files...", total ? float(double(done) / double(total)) : -1.0f,
-                        FormatSize(done) + " / " + FormatSize(total));
-    std::this_thread::sleep_for(std::chrono::milliseconds(16));
+  REXLOG_INFO("Selected {}", picked);
+  const SourceInfo info = IdentifySource(picked);
+  const fs::path extracted = ExtractedSource(picked);
+  if (!extracted.empty()) {
+    // One already listed is just selected.
+    for (size_t i = 0; i < flow->versions.size(); ++i) {
+      if (SameDir(flow->versions[i].dir, extracted)) {
+        flow->selected = int(i);
+        flow->prompt.adding = false;
+        Ask(flow);
+        return;
+      }
+    }
   }
-  worker.join();
-  g_extracting = false;
-  EndIntroWork();
-
-  g_review = false;
-  flow->prepared.clear();
-  flow->picked.clear();
-  flow->prompt.release.clear();
-  flow->prompt.languages = 0;
-  flow->prompt.ready = false;
-  flow->prompt.can_extract = false;
-  flow->prompt.can_delete = false;
-  flow->prompt.error = job.error;
-  REXCVAR_SET(game_data_root, std::string());
-  if (!flow->options.config_path.empty())
-    rex::cvar::SaveConfigSubset(flow->options.config_path, {"game_data_root"});
+  flow->prompt.release = info.release;
+  flow->prompt.languages = info.languages;
+  flow->prompt.error = info.error;
+  flow->picked_info = info;
+  // Extracted files are used in place and need no room.
+  flow->required_bytes = extracted.empty() ? info.required_bytes : 0;
+  if (info.error.empty() && extracted.empty()) {
+    for (const GameVersion& version : flow->versions) {
+      if (!version.linked && !version.temporary && version.id == info.id) {
+        flow->prompt.error = Tr(IntroText::kAlreadyInstalled, info.release);
+        break;
+      }
+    }
+  }
+  flow->prompt.can_extract = flow->prompt.error.empty();
+  flow->picked = flow->prompt.can_extract ? picked : std::string();
+  if (flow->prompt.can_extract)
+    CheckSpace(*flow);
+  if (!info.release.empty())
+    REXLOG_INFO("Identified {}", info.release);
+  if (!flow->prompt.error.empty())
+    REXLOG_ERROR("{}: {}", picked, flow->prompt.error);
   Ask(flow);
 }
 
-void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice) {
+const GameVersion* Selected(const Flow& flow) {
+  return flow.selected >= 0 && flow.selected < int(flow.versions.size())
+             ? &flow.versions[size_t(flow.selected)]
+             : nullptr;
+}
+
+void AskToDelete(std::shared_ptr<Flow> flow) {
+  const GameVersion* version = Selected(*flow);
+  if (version && version->linked) {
+    flow->prompt.confirm = Tr(IntroText::kConfirmForget, VersionLabel(*version)) + "\n" +
+                           version->dir.string();
+    flow->prompt.confirm_forget = true;
+  } else if (version && !version->temporary && IsDeletable(version->dir)) {
+    flow->prompt.confirm =
+        DeleteQuestion(VersionLabel(*version), version->dir, TreeSize(version->dir));
+    flow->prompt.confirm_forget = false;
+  }
+  Ask(flow);
+}
+
+void DeleteSelected(std::shared_ptr<Flow> flow) {
+  const GameVersion* version = Selected(*flow);
+  if (!version) {
+    Ask(flow);
+    return;
+  }
+  const GameVersion removed = *version;
+  if (removed.linked) {
+    REXLOG_INFO("Forgetting the linked {}", removed.dir.string());
+    ForgetLinkedVersion(removed.dir);
+  } else if (!removed.temporary && IsDeletable(removed.dir)) {
+    const uint64_t total = TreeSize(removed.dir);
+    REXLOG_INFO("Deleting {}", removed.dir.string());
+    BeginIntroWork();
+    for (Phase phase : {Phase::kExtract, Phase::kConvert, Phase::kPatch})
+      SetIntroPhase(phase, PhaseState::kSkipped);
+    DeleteJob job;
+    g_extracting = true;
+    std::thread worker(DeleteTree, removed.dir, std::ref(job));
+    while (!job.finished) {
+      const uint64_t done = job.done;
+      ReportIntroProgress("Deleting game files...",
+                          total ? float(double(done) / double(total)) : -1.0f,
+                          FormatSize(done) + " / " + FormatSize(total));
+      std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    }
+    worker.join();
+    g_extracting = false;
+    EndIntroWork();
+    flow->prompt.error = job.error;
+  }
+  if (SelectedVersion() == removed.key)
+    SaveSelectedVersion({});
+  Rescan(*flow, {});
+  Ask(flow);
+}
+
+void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice, int version) {
   if (flow->finished)
     return;
   if (g_job) {
@@ -531,46 +653,87 @@ void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice) {
       g_job->quit_requested = true;
     return;
   }
+  if (version >= 0 && version < int(flow->versions.size()))
+    flow->selected = version;
   flow->prompt.error.clear();
-  if (choice == GameDataChoice::kQuit || choice == GameDataChoice::kStart) {
-    Finish(flow, choice == GameDataChoice::kStart);
-    return;
-  }
-  if (choice == GameDataChoice::kDelete) {
-    AskToDelete(flow);
-    return;
-  }
-  if (choice == GameDataChoice::kCancel) {
-    flow->prompt.confirm.clear();
-    Ask(flow);
-    return;
-  }
-  if (choice == GameDataChoice::kConfirmDelete) {
-    flow->prompt.confirm.clear();
-    if (flow->prompt.can_delete && IsDeletable(flow->prepared))
-      DeletePrepared(flow);
-    else
+  switch (choice) {
+    case GameDataChoice::kQuit:
+      Finish(flow, false);
+      return;
+    case GameDataChoice::kStart:
+      if (const GameVersion* selected = Selected(*flow)) {
+        if (selected->needs_phases)
+          RunPhases(flow, true);
+        else
+          Begin(flow);
+        return;
+      }
       Ask(flow);
-    return;
-  }
-  if (choice == GameDataChoice::kExtract) {
-    if (flow->prompt.can_extract)
-      Extract(flow);
-    else
+      return;
+    case GameDataChoice::kAddVersion:
+      flow->prompt.adding = true;
+      flow->prompt.can_extract = false;
+      flow->prompt.release.clear();
+      flow->prompt.languages = 0;
+      flow->picked.clear();
       Ask(flow);
-    return;
+      return;
+    case GameDataChoice::kCancel:
+      if (!flow->prompt.confirm.empty())
+        flow->prompt.confirm.clear();
+      else
+        flow->prompt.adding = false;
+      Ask(flow);
+      return;
+    case GameDataChoice::kDelete:
+      AskToDelete(flow);
+      return;
+    case GameDataChoice::kConfirmDelete:
+      flow->prompt.confirm.clear();
+      DeleteSelected(flow);
+      return;
+    case GameDataChoice::kExtract:
+      if (flow->prompt.can_extract)
+        Extract(flow);
+      else
+        Ask(flow);
+      return;
+    case GameDataChoice::kDiscImage:
+    case GameDataChoice::kFolder:
+      SetIntroBusy(true);
+      ShowDialog(flow, kCanPickFolder && choice == GameDataChoice::kFolder, OnPicked);
+      return;
   }
-  SetIntroBusy(true);
-  ShowDialog(flow, kCanPickFolder && choice == GameDataChoice::kFolder, OnPicked);
+}
+
+// The rows the screen lists, from the scanned versions.
+void FillVersionRows(Flow& flow) {
+  GameDataPrompt& prompt = flow.prompt;
+  prompt.versions.clear();
+  for (const GameVersion& version : flow.versions) {
+    VersionRow row;
+    row.label = VersionLabel(version);
+    if (version.linked || version.temporary)
+      row.note = Tr(IntroText::kLinked, version.dir.string());
+    if (version.needs_phases)
+      row.note = Tr(IntroText::kNeedsUpdate) + (row.note.empty() ? "" : "   " + row.note);
+    row.languages = version.languages;
+    row.linked = version.linked;
+    row.can_delete = !version.linked && !version.temporary && IsDeletable(version.dir);
+    prompt.versions.push_back(std::move(row));
+  }
+  prompt.selected_version = flow.selected;
 }
 
 void Ask(std::shared_ptr<Flow> flow) {
+  FillVersionRows(*flow);
   if (IntroScreenAvailable()) {
-    ShowIntroScreen(flow->prompt, [flow](GameDataChoice choice) { OnChoice(flow, choice); });
+    ShowIntroScreen(flow->prompt,
+                    [flow](GameDataChoice choice, int version) { OnChoice(flow, choice, version); });
     return;
   }
   flow->context->CallInUIThreadDeferred(
-      [flow]() { OnChoice(flow, MessageBoxPrompt(flow->prompt)); });
+      [flow]() { OnChoice(flow, MessageBoxPrompt(flow->prompt), flow->selected); });
 }
 
 }  // namespace
@@ -588,65 +751,56 @@ void RequestStartScreenOnNextLaunch(const fs::path& flag, bool request) {
   }
 }
 
-bool UsePreparedGameData(const GameDataOptions& options, std::string& pending) {
-  std::vector<fs::path> dirs;
-  const std::string value = REXCVAR_GET(game_data_root);
-  if (!value.empty())
-    dirs.push_back(rex::filesystem::ResolveRelativeTo(fs::path(value), ConfigDir(options)));
-  for (fs::path& dir : PreparedCandidates())
-    dirs.push_back(std::move(dir));
-  for (const fs::path& dir : dirs) {
-    if (!IsGameDirectory(dir))
-      continue;
-    REXLOG_INFO("Found game data at {}", dir.string());
-    if (NeedsConversion(dir) || NeedsPatching(dir)) {
-      pending = dir.string();
-      return false;
-    }
-    Use(options, dir);
-    if (ConsumeStartScreenRequest(options.start_screen_flag) || REXCVAR_GET(show_start_screen)) {
-      pending = dir.string();
-      g_review = true;
-      return false;
-    }
-    return true;
-  }
-  return false;
+bool UsePreparedGameData(const GameDataOptions& options) {
+  g_root = LibraryRoot(options);
+  REXLOG_INFO("Game library: {}", g_root.string());
+  BindLibrarySettings(options.user_settings_path);
+  MigrateLibrary(g_root, PreparedCandidates());
+  g_versions = ScanLibrary(g_root);
+  g_selected = FindVersion(g_versions, SelectedVersion());
+  RefreshRootExecutable(g_root, g_versions);
+  g_asked = ConsumeStartScreenRequest(options.start_screen_flag) || REXCVAR_GET(show_start_screen);
+  if (g_selected < 0)
+    return false;
+  const GameVersion& version = g_versions[size_t(g_selected)];
+  REXLOG_INFO("Game version {} at {}", version.key, version.dir.string());
+  if (g_asked || version.needs_phases)
+    return false;
+  g_selected_dir = version.dir;
+  return true;
+}
+
+fs::path SelectedGameDirectory() {
+  return g_selected_dir;
 }
 
 void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext& context,
-                    std::string pending, std::function<void(bool ready)> done) {
+                    std::function<void(bool ready)> done) {
   auto flow = std::make_shared<Flow>();
   flow->options = options;
   flow->context = &context;
   flow->done = std::move(done);
   flow->prompt.can_pick_folder = kCanPickFolder;
   flow->prompt.copy_hint = CopyHint();
-  if (pending.empty()) {
+  flow->versions = std::move(g_versions);
+  flow->selected = g_selected;
+  if (flow->selected < 0 && !flow->versions.empty())
+    flow->selected = 0;
+  const GameVersion* saved = g_selected >= 0 ? Selected(*flow) : nullptr;
+  if (!saved || !saved->needs_phases) {
     Ask(flow);
     return;
   }
-  if (g_review) {
-    // Finished data: Start works at once, and another source can still be picked.
-    const SourceInfo info = IdentifySource(pending);
-    flow->prompt.release = info.release;
-    flow->prompt.languages = info.languages;
-    flow->prompt.ready = true;
-    flow->prepared = pending;
-    flow->prompt.can_delete = IsDeletable(flow->prepared);
-    Ask(flow);
-    return;
-  }
-  // Found but not through every phase: the intro shows the rest running.
+  // The saved version is behind this build: the intro shows its phases
+  // running, then starts it unless the screen was asked for.
   if (IntroScreenAvailable()) {
-    ShowIntroScreen(flow->prompt, [flow](GameDataChoice choice) { OnChoice(flow, choice); });
+    FillVersionRows(*flow);
+    ShowIntroScreen(flow->prompt,
+                    [flow](GameDataChoice choice, int version) { OnChoice(flow, choice, version); });
     SetIntroBusy(true);
   }
-  flow->picked = pending;
-  const SourceInfo info = IdentifySource(pending);
-  flow->prompt.release = info.release;
-  flow->prompt.languages = info.languages;
-  context.CallInUIThreadDeferred([flow]() { Extract(flow); });
+  const bool start = !g_asked;
+  context.CallInUIThreadDeferred([flow, start]() { RunPhases(flow, start); });
 }
 
 bool IsExtractingGameData() {

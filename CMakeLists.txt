@@ -431,6 +431,7 @@ set(ETERNALSONATA_SOURCES
     src/core/ui_language.cpp
     src/installer/disc_image.cpp
     src/installer/game_data.cpp
+    src/installer/game_library.cpp
     src/installer/install_pipeline.cpp
     src/installer/intro_screen.cpp
     src/installer/intro_music.cpp

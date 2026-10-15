@@ -27,8 +27,10 @@ void BindIntroScreen(rex::ui::ImGuiDrawer* drawer, rex::ui::WindowedAppContext* 
 bool IntroScreenAvailable();
 
 // Shows the screen, or updates it when already showing, and returns at once.
-// `on_choice` runs on the UI thread, outside any frame.
-void ShowIntroScreen(const GameDataPrompt& prompt, std::function<void(GameDataChoice)> on_choice);
+// `on_choice` runs on the UI thread, outside any frame, with the version row
+// it applies to (-1 for none).
+void ShowIntroScreen(const GameDataPrompt& prompt,
+                     std::function<void(GameDataChoice, int)> on_choice);
 
 // Shows the screen in its working state with no phases, for work after the
 // game data is resolved. False when it cannot draw.

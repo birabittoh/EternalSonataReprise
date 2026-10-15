@@ -1,14 +1,15 @@
 #pragma once
 
-// Resolves game_data_root before the runtime starts, through the install
-// phases of install_pipeline.h, shown on the intro screen. A picked source is
-// identified first and installed only when the player presses Extract; the
-// game starts only when the player presses Start after every phase is done. A
-// prepared directory with nothing left to do skips the screen.
+// Picks the installed version (game_library.h) the runtime starts, and installs
+// new ones through the phases of install_pipeline.h, shown on the intro
+// screen. A picked source is identified first and installed only when the
+// player presses Extract. A saved version with nothing left to do skips the
+// screen.
 
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "install_pipeline.h"
 
@@ -18,9 +19,32 @@ class WindowedAppContext;
 
 namespace eternalsonata {
 
-enum class GameDataChoice { kQuit, kDiscImage, kFolder, kExtract, kStart, kDelete, kConfirmDelete, kCancel };
+enum class GameDataChoice {
+  kQuit,
+  kDiscImage,
+  kFolder,
+  kExtract,
+  kStart,
+  kDelete,
+  kConfirmDelete,
+  kCancel,
+  kAddVersion,
+};
 
-// What the prompt is asked to offer.
+// One installed version, as the start screen lists it.
+struct VersionRow {
+  std::string label;
+  // Under the label: linked path, update needed.
+  std::string note;
+  // The text it ships (release_id.h bits); 0 offers every language.
+  uint32_t languages = 0;
+  bool linked = false;
+  // Its files are ours to delete; a linked one is forgotten instead.
+  bool can_delete = false;
+};
+
+// What the prompt is asked to offer. With versions installed it lists them
+// (the library); `adding`, or an empty list, asks for a source instead.
 struct GameDataPrompt {
   // False on Android, where SDL has no folder picker.
   bool can_pick_folder = true;
@@ -34,12 +58,15 @@ struct GameDataPrompt {
   uint32_t languages = 0;
   // A supported source is picked: Extract is enabled.
   bool can_extract = false;
-  // Every phase is done: Start is enabled.
-  bool ready = false;
-  // The prepared files are ours to delete: Delete Files is offered.
-  bool can_delete = false;
-  // Asking whether to delete: the question, shown with Delete Files and Cancel.
+  std::vector<VersionRow> versions;
+  // The row the cursor starts on, or -1.
+  int selected_version = -1;
+  // Picking a source for another version, over the library.
+  bool adding = false;
+  // Asking whether to delete: the question, shown with Cancel and Delete
+  // Files, or Forget for a linked version.
   std::string confirm;
+  bool confirm_forget = false;
 };
 
 struct GameDataOptions {
@@ -48,12 +75,19 @@ struct GameDataOptions {
   std::filesystem::path config_path;
   // The one launch flag file (StartScreenFlagPath).
   std::filesystem::path start_screen_flag;
+  // Where the picked version and the linked ones are saved.
+  std::filesystem::path user_settings_path;
+  // The resolved game_data_root, the library root; empty for the default.
+  std::filesystem::path game_data_root;
 };
 
-// Sets and persists game_data_root from the cvar or an earlier extraction when
-// it needs no more work. False otherwise, with `pending` set to a directory
-// that still needs conversion or patching, or left empty when none was found.
-bool UsePreparedGameData(const GameDataOptions& options, std::string& pending);
+// Migrates and scans the library, and picks the version to start. True when
+// it can start with no screen: the saved version needs no more work and no
+// screen was asked for.
+bool UsePreparedGameData(const GameDataOptions& options);
+
+// The version folder the runtime mounts, once one is picked.
+std::filesystem::path SelectedGameDirectory();
 
 // Where a start screen request is kept, next to the user settings. A file
 // rather than an environment variable, since Android restarts the app without
@@ -64,12 +98,12 @@ std::filesystem::path StartScreenFlagPath(const std::filesystem::path& user_sett
 // that launch only; false withdraws the request.
 void RequestStartScreenOnNextLaunch(const std::filesystem::path& flag, bool request);
 
-// Asks through the intro screen (a message box where it cannot draw) until
-// game data is ready and started, or the player quits. A non empty `pending`
-// runs the phases on that directory first. Returns at once: the main loop has
-// to run for the screen to get input. `done` runs on the UI thread.
+// Asks through the intro screen (a message box where it cannot draw) until a
+// version is started, or the player quits. A saved version that still needs
+// work runs its phases first. Returns at once: the main loop has to run for
+// the screen to get input. `done` runs on the UI thread.
 void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext& context,
-                    std::string pending, std::function<void(bool ready)> done);
+                    std::function<void(bool ready)> done);
 
 // Whether game files are being installed; the window must not
 // close then.

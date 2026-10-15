@@ -4,6 +4,7 @@
 
 #include <rex/logging.h>
 
+#include "game_library.h"
 #include "install_pipeline.h"
 
 namespace eternalsonata {
@@ -35,7 +36,9 @@ const std::filesystem::path& GameDataRoot() {
 
 const std::string& TargetRelease() {
   static const std::string release = [] {
-    std::string name = IdentifySource(g_root.string()).release;
+    std::string name = ReadVersionRelease(g_root);
+    if (name.empty())
+      name = IdentifySource(g_root.string()).release;
     const size_t open = name.rfind('(');
     const size_t close = name.rfind(')');
     return open != std::string::npos && close > open ? name.substr(open + 1, close - open - 1)

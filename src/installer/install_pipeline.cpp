@@ -96,9 +96,19 @@ SourceInfo FromHash(const std::vector<uint8_t>& file, const std::string& unknown
     return {{}, unknown};
   }
   SourceInfo info{release->name, {}, release->languages};
+  info.id = release->id;
   if (!release->supported)
     info.error = info.release + " is not supported yet.";
   return info;
+}
+
+const char* RegionId(Ps3Region region) {
+  switch (region) {
+    case Ps3Region::kPal: return "ps3-pal";
+    case Ps3Region::kUsa: return "ps3-usa";
+    case Ps3Region::kJapan: return "ps3-jp";
+  }
+  return "";
 }
 
 const char* RegionName(Ps3Region region) {
@@ -143,7 +153,8 @@ SourceInfo IdentifyGameDirectory(const fs::path& dir) {
   if (IsPs3Directory(dir)) {
     const Ps3Region region = ReadPs3Region(dir);
     return {std::string("Eternal Sonata (PS3, ") + RegionName(region) + ")", {},
-            region == Ps3Region::kJapan ? uint32_t(kTextJa) : uint32_t(kTextAll)};
+            region == Ps3Region::kJapan ? uint32_t(kTextJa) : uint32_t(kTextAll), 0,
+            RegionId(region)};
   }
   std::vector<uint8_t> file;
   fs::path xex = ChildNamed(dir, "default.xex.orig");
@@ -191,12 +202,12 @@ bool NeedsPatching(const fs::path& dir) {
   return !IsReleasePatched(dir);
 }
 
-bool IsExtractedSource(const std::string& picked) {
+fs::path ExtractedSource(const std::string& picked) {
   if (IsContentUri(picked))
-    return false;
+    return {};
   std::error_code ec;
   const fs::path path = Resolve(picked);
-  return fs::is_directory(path, ec) && IsGameDirectory(path);
+  return fs::is_directory(path, ec) && IsGameDirectory(path) ? path : fs::path();
 }
 
 SourceInfo IdentifySource(const std::string& picked) {

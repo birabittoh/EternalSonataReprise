@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <imgui.h>
@@ -159,43 +160,50 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   }
 
   void Update(const GameDataPrompt& prompt) {
-    // Land on Extract or Start once it can be used.
-    const bool usable = prompt.ready || prompt.can_extract;
-    if (prompt.confirm.empty() != prompt_.confirm.empty() ||
-        prompt.can_delete != prompt_.can_delete) {
-      prompt_ = prompt;
+    const bool rebuild = prompt.confirm.empty() != prompt_.confirm.empty() ||
+                         prompt.adding != prompt_.adding ||
+                         prompt.versions.size() != prompt_.versions.size() ||
+                         prompt.selected_version != selected_version_ ||
+                         prompt.can_extract != prompt_.can_extract ||
+                         prompt.confirm_forget != prompt_.confirm_forget;
+    prompt_ = prompt;
+    if (rebuild) {
       BuildOptions();
       on_picker_ = picker_open_ = false;
-      return;
     }
-    if (usable && (prompt.ready != prompt_.ready || prompt.can_extract != prompt_.can_extract)) {
-      selected_ = StartIndex();
-      on_picker_ = picker_open_ = false;
-    } else if (!usable && selected_ == StartIndex())
-      selected_ = 0;
-    prompt_ = prompt;
   }
-  // Sources on the left, then what to do with them on the right. Extract
-  // until the phases are done, then Start. Asking to delete has only a choice.
+  // The library lists the versions on the left and what to do on the right.
+  // Picking a source has the sources on the left, then Extract. Asking to
+  // delete has only a choice.
   void BuildOptions() {
     options_.clear();
+    selected_version_ = prompt_.selected_version;
     if (!prompt_.confirm.empty()) {
       options_.push_back({IntroText::kCancel, GameDataChoice::kCancel, 0, 0});
-      options_.push_back({IntroText::kDeleteFiles, GameDataChoice::kConfirmDelete, 1, 0});
+      options_.push_back({prompt_.confirm_forget ? IntroText::kForgetVersion : IntroText::kDeleteFiles,
+                          GameDataChoice::kConfirmDelete, 1, 0});
       selected_ = 0;
       return;
     }
-    // Processed files are replaced by deleting them, not by picking a source.
-    if (prompt_.can_delete) {
-      options_.push_back({IntroText::kDeleteFiles, GameDataChoice::kDelete, 0, 0});
-    } else {
-      options_.push_back({IntroText::kSelectFile, GameDataChoice::kDiscImage, 0, 0});
-      if (prompt_.can_pick_folder)
-        options_.push_back({IntroText::kSelectFolder, GameDataChoice::kFolder, 0, 1});
+    if (Library()) {
+      for (int i = 0; i < int(prompt_.versions.size()); ++i)
+        options_.push_back({IntroText::kStart, GameDataChoice::kStart, 0, i, i});
+      options_.push_back({IntroText::kStart, GameDataChoice::kStart, 1, 0});
+      options_.push_back({IntroText::kAddVersion, GameDataChoice::kAddVersion, 1, 1});
+      options_.push_back({IntroText::kDeleteVersion, GameDataChoice::kDelete, 1, 2});
+      options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, 3});
+      selected_ = IndexOf(GameDataChoice::kStart);
+      return;
     }
-    options_.push_back({IntroText::kStart, GameDataChoice::kStart, 1, 0});
-    options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, 1});
-    selected_ = prompt_.ready || prompt_.can_extract ? StartIndex() : 0;
+    options_.push_back({IntroText::kSelectFile, GameDataChoice::kDiscImage, 0, 0});
+    if (prompt_.can_pick_folder)
+      options_.push_back({IntroText::kSelectFolder, GameDataChoice::kFolder, 0, 1});
+    options_.push_back({IntroText::kExtract, GameDataChoice::kExtract, 1, 0});
+    if (prompt_.versions.empty())
+      options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, 1});
+    else
+      options_.push_back({IntroText::kCancel, GameDataChoice::kCancel, 1, 1});
+    selected_ = prompt_.can_extract ? IndexOf(GameDataChoice::kExtract) : 0;
   }
   void SetBusy(bool busy) { busy_ = busy; }
   void SetWorking(bool working) {
@@ -210,8 +218,11 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     work_detail_ = detail;
   }
 
-  std::optional<GameDataChoice> TakeChoice() {
-    auto choice = choice_;
+  // With the version row it applies to.
+  std::optional<std::pair<GameDataChoice, int>> TakeChoice() {
+    if (!choice_)
+      return std::nullopt;
+    const auto choice = std::make_pair(*choice_, selected_version_);
     choice_.reset();
     return choice;
   }
@@ -268,9 +279,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       std::string body;
       if (!prompt_.confirm.empty()) {
         body = prompt_.confirm;
-      } else if (prompt_.ready) {
-        body = prompt_.release.empty() ? Tr(IntroText::kReady)
-                                       : Tr(IntroText::kReadyRelease, prompt_.release);
+      } else if (Library()) {
+        body = Tr(IntroText::kChooseVersion);
       } else if (prompt_.can_extract) {
         body = (prompt_.release.empty() ? std::string(Tr(IntroText::kFound))
                                         : Tr(IntroText::kFoundRelease, prompt_.release)) +
@@ -284,7 +294,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       }
       y += CenteredText(draw, font, 22.0f * unit, size.x * 0.5f, y, wrap, Color(kText, body_in),
                         body);
-      if (!prompt_.error.empty() && !prompt_.can_extract && !prompt_.release.empty() &&
+      if (!Library() && !prompt_.error.empty() && !prompt_.can_extract && !prompt_.release.empty() &&
           prompt_.error.find(prompt_.release) == std::string::npos) {
         y += 8.0f * unit;
         y += CenteredText(draw, font, 20.0f * unit, size.x * 0.5f, y, wrap,
@@ -304,6 +314,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
                                      std::max(y + 22.0f * unit, size.y * 0.62f), body_in, ready);
     DrawLanguagePicker(draw, font, size, unit, body_in, ready && !handled);
     DrawMusicToggle(draw, font, size, unit, body_in);
+    if (!working_)
+      DrawHints(draw, font, size, unit, body_in);
 
     // Fade from black on the first showing only; a cancelled dialog comes back
     // to the screen as it was.
@@ -320,18 +332,38 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     GameDataChoice choice;
     int column;
     int row;
+    // A version row in the library, by index; its choice is unused.
+    int version = -1;
   };
 
-  // Whether the picked release has text in language `index`; any does
-  // before one is picked.
-  bool Supported(int index) const {
-    return !prompt_.languages ||
-           (prompt_.languages & TextLanguageBit(IntroLanguageCodeAt(index))) != 0;
+  bool Library() const {
+    return prompt_.confirm.empty() && !prompt_.adding && !prompt_.versions.empty();
   }
 
-  int StartIndex() const {
+  const VersionRow* SelectedRow() const {
+    return selected_version_ >= 0 && selected_version_ < int(prompt_.versions.size())
+               ? &prompt_.versions[size_t(selected_version_)]
+               : nullptr;
+  }
+
+  // The release Start or Extract applies to.
+  uint32_t Languages() const {
+    if (!Library())
+      return prompt_.languages;
+    const VersionRow* row = SelectedRow();
+    return row ? row->languages : 0;
+  }
+
+  // Whether that release has text in language `index`; any does before one
+  // is picked.
+  bool Supported(int index) const {
+    const uint32_t languages = Languages();
+    return !languages || (languages & TextLanguageBit(IntroLanguageCodeAt(index))) != 0;
+  }
+
+  int IndexOf(GameDataChoice choice) const {
     for (size_t i = 0; i < options_.size(); ++i) {
-      if (options_[i].choice == GameDataChoice::kStart)
+      if (options_[i].version < 0 && options_[i].choice == choice)
         return int(i);
     }
     return 0;
@@ -402,92 +434,198 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     return std::any_of(keys.begin(), keys.end(), [](ImGuiKey k) { return ImGui::IsKeyPressed(k); });
   }
 
+  bool Enabled(int i) const {
+    const Option& option = options_[size_t(i)];
+    if (option.version >= 0)
+      return true;
+    const VersionRow* row = SelectedRow();
+    switch (option.choice) {
+      case GameDataChoice::kStart:
+        return row && Supported(IntroLanguage());
+      case GameDataChoice::kExtract:
+        return prompt_.can_extract;
+      case GameDataChoice::kDelete:
+        return row && (row->linked || row->can_delete);
+      default:
+        return true;
+    }
+  }
+
+  // Moves the cursor; landing on a version row picks that version.
+  void Focus(int i) {
+    if (i < 0)
+      return;
+    selected_ = i;
+    if (options_[size_t(i)].version >= 0)
+      selected_version_ = options_[size_t(i)].version;
+  }
+
+  int At(int column, int row) const {
+    for (int i = 0; i < int(options_.size()); ++i) {
+      const Option& option = options_[size_t(i)];
+      if (option.column == column && option.row == row && Enabled(i))
+        return i;
+    }
+    return -1;
+  }
+
+  int LastRow(int column) const {
+    int last = -1;
+    for (const Option& option : options_) {
+      if (option.column == column)
+        last = std::max(last, option.row);
+    }
+    return last;
+  }
+
+  // Up and down stay in a column, skipping what cannot be used, and below its
+  // last button is the language picker. Left and right keep the row, or take
+  // the nearest usable one; into the version list they land on the picked
+  // version.
+  void Move(int dx, int dy) {
+    const Option& from = options_[size_t(selected_)];
+    if (dy != 0) {
+      for (int row = from.row + dy; row >= 0 && row <= LastRow(from.column); row += dy) {
+        if (const int i = At(from.column, row); i >= 0) {
+          Focus(i);
+          return;
+        }
+      }
+      if (dy > 0)
+        on_picker_ = true;
+      return;
+    }
+    const int column = (from.column + dx + 2) % 2;
+    if (Library() && column == 0 && selected_version_ >= 0) {
+      Focus(At(0, selected_version_));
+      return;
+    }
+    const int last = LastRow(column);
+    for (int row = std::min(from.row, last); row >= 0; --row) {
+      if (const int i = At(column, row); i >= 0) {
+        Focus(i);
+        return;
+      }
+    }
+    for (int row = from.row + 1; row <= last; ++row) {
+      if (const int i = At(column, row); i >= 0) {
+        Focus(i);
+        return;
+      }
+    }
+  }
+
+  // A version row picks that version and hands the cursor to Start.
+  void Press(int i) {
+    const Option& option = options_[size_t(i)];
+    if (option.version < 0) {
+      choice_ = option.choice;
+      return;
+    }
+    selected_version_ = option.version;
+    const int start = IndexOf(GameDataChoice::kStart);
+    selected_ = Enabled(start) ? start : i;
+  }
+
+  GameDataChoice BackChoice() const {
+    return !prompt_.confirm.empty() || (!Library() && !prompt_.versions.empty())
+               ? GameDataChoice::kCancel
+               : GameDataChoice::kQuit;
+  }
+
   // Returns whether it handled a key.
   bool DrawButtons(ImDrawList* draw, ImFont* font, ImVec2 size, float unit, float top, float alpha,
                    bool ready) {
     const int count = int(options_.size());
-    // Start stays out of reach until there is something to extract or start.
-    auto enabled = [&](int i) {
-      const GameDataChoice choice = options_[size_t(i)].choice;
-      if (choice == GameDataChoice::kDelete)
-        return prompt_.can_delete;
-      return choice != GameDataChoice::kStart ||
-             (prompt_.can_extract || (prompt_.ready && Supported(IntroLanguage())));
-    };
-    if (!enabled(selected_))
-      selected_ = 0;
-    auto choice_of = [&](int i) {
-      const GameDataChoice choice = options_[size_t(i)].choice;
-      return choice == GameDataChoice::kStart && !prompt_.ready ? GameDataChoice::kExtract
-                                                                : choice;
-    };
-    auto at = [&](int column, int row) {
+    const bool library = Library();
+    if (!Enabled(selected_)) {
       for (int i = 0; i < count; ++i) {
-        const Option& option = options_[size_t(i)];
-        if (option.column == column && option.row == row && enabled(i))
-          return i;
-      }
-      return -1;
-    };
-    // Up and down stay in a column, and below its last usable button is the
-    // language picker; left and right keep the row, or take the other
-    // column's remaining usable button.
-    auto move = [&](int dx, int dy) {
-      const Option& from = options_[size_t(selected_)];
-      if (dy != 0) {
-        const int row = from.row + dy;
-        const int i = row >= 0 && row <= 2 ? at(from.column, row) : -1;
-        if (i >= 0)
+        if (Enabled(i)) {
           selected_ = i;
-        else if (dy > 0)
-          on_picker_ = true;
-        return;
-      }
-      const int column = (from.column + dx + 2) % 2;
-      for (int i : {at(column, from.row), at(column, 1), at(column, 0)}) {
-        if (i >= 0) {
-          selected_ = i;
-          return;
+          break;
         }
       }
-    };
+    }
     const bool keys = ready && !on_picker_ && !picker_open_;
     bool handled = true;
-    if (keys && Pressed({ImGuiKey_DownArrow, ImGuiKey_S, ImGuiKey_GamepadDpadDown}))
-      move(0, 1);
-    else if (keys && Pressed({ImGuiKey_UpArrow, ImGuiKey_W, ImGuiKey_GamepadDpadUp}))
-      move(0, -1);
-    else if (keys && Pressed({ImGuiKey_RightArrow, ImGuiKey_D, ImGuiKey_GamepadDpadRight}))
-      move(1, 0);
-    else if (keys && Pressed({ImGuiKey_LeftArrow, ImGuiKey_A, ImGuiKey_GamepadDpadLeft}))
-      move(-1, 0);
-    else if (keys && Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space,
-                              ImGuiKey_GamepadFaceDown}))
-      choice_ = choice_of(selected_);
-    else if (keys && Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight}))
-      choice_ = prompt_.confirm.empty() ? GameDataChoice::kQuit : GameDataChoice::kCancel;
-    else
+    if (keys && Pressed({ImGuiKey_DownArrow, ImGuiKey_S, ImGuiKey_GamepadDpadDown})) {
+      Move(0, 1);
+    } else if (keys && Pressed({ImGuiKey_UpArrow, ImGuiKey_W, ImGuiKey_GamepadDpadUp})) {
+      Move(0, -1);
+    } else if (keys && Pressed({ImGuiKey_RightArrow, ImGuiKey_D, ImGuiKey_GamepadDpadRight})) {
+      Move(1, 0);
+    } else if (keys && Pressed({ImGuiKey_LeftArrow, ImGuiKey_A, ImGuiKey_GamepadDpadLeft})) {
+      Move(-1, 0);
+    } else if (keys && Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space,
+                                ImGuiKey_GamepadFaceDown})) {
+      Press(selected_);
+    } else if (keys && library && Pressed({ImGuiKey_Delete, ImGuiKey_GamepadFaceLeft})) {
+      if (Enabled(IndexOf(GameDataChoice::kDelete)))
+        choice_ = GameDataChoice::kDelete;
+    } else if (keys && Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight})) {
+      choice_ = BackChoice();
+    } else {
       handled = false;
+    }
 
-    const float w = 300.0f * unit;
     const float h = 50.0f * unit;
     const float gap = 12.0f * unit;
     const float column_gap = 24.0f * unit;
-    const float left = (size.x - (2.0f * w + column_gap)) * 0.5f;
+    const float widths[2] = {(library ? 400.0f : 300.0f) * unit, 300.0f * unit};
+    const float left = (size.x - (widths[0] + widths[1] + column_gap)) * 0.5f;
     const float label_size = 24.0f * unit;
+    // The list ends above the hints and the corner controls, and scrolls.
+    const float bottom = size.y - 120.0f * unit;
+    int visible = 1 << 20;
+    if (library) {
+      top = std::min(top, bottom - 4.0f * (h + gap) + gap);
+      visible = std::max(1, int((bottom - top + gap) / (h + gap)));
+      const int versions = int(prompt_.versions.size());
+      const Option& cursor = options_[size_t(selected_)];
+      const int focus = cursor.version >= 0 ? cursor.version : selected_version_;
+      if (focus != scroll_focus_ && focus >= 0) {
+        scroll_focus_ = focus;
+        scroll_ = std::clamp(scroll_, focus - visible + 1, focus);
+      }
+      const ImVec2 list_min(left, top);
+      const ImVec2 list_max(left + widths[0],
+                            top + float(std::min(visible, versions)) * (h + gap));
+      if (ImGui::IsMouseHoveringRect(list_min, list_max) && ImGui::GetIO().MouseWheel != 0.0f)
+        scroll_ -= ImGui::GetIO().MouseWheel > 0.0f ? 1 : -1;
+      scroll_ = std::clamp(scroll_, 0, std::max(0, versions - visible));
+      const ImU32 arrow = Color(kText, 0.6f * alpha);
+      const float s = 6.0f * unit;
+      const float cx = left + widths[0] * 0.5f;
+      if (scroll_ > 0) {
+        const float y = top - 4.0f * unit;
+        draw->AddTriangleFilled(ImVec2(cx - s, y), ImVec2(cx + s, y), ImVec2(cx, y - s), arrow);
+      }
+      if (scroll_ + visible < versions) {
+        const float y = top + float(visible) * (h + gap) - gap + 4.0f * unit;
+        draw->AddTriangleFilled(ImVec2(cx - s, y), ImVec2(cx + s, y), ImVec2(cx, y + s), arrow);
+      }
+    } else {
+      scroll_ = 0;
+    }
+
+    const float t = std::chrono::duration<float>(Clock::now() - *g_first_shown).count();
     for (int i = 0; i < count; ++i) {
       const Option& option = options_[size_t(i)];
-      const ImVec2 min(left + float(option.column) * (w + column_gap),
-                       top + float(option.row) * (h + gap));
+      int row = option.row;
+      if (option.version >= 0) {
+        row -= scroll_;
+        if (row < 0 || row >= visible)
+          continue;
+      }
+      const float w = widths[option.column];
+      const ImVec2 min(left + (option.column ? widths[0] + column_gap : 0.0f),
+                       top + float(row) * (h + gap));
       const ImVec2 max(min.x + w, min.y + h);
-      const bool usable = enabled(i);
-      // Delete Files only shows where it can be used.
-      if (option.choice == GameDataChoice::kDelete && !usable)
-        continue;
+      const bool usable = Enabled(i);
       ImGui::SetCursorScreenPos(min);
       ImGui::PushID(i);
       if (ImGui::InvisibleButton("##option", ImVec2(w, h)) && ready && usable && !picker_open_)
-        choice_ = choice_of(i);
+        Press(i);
       // Only a moving mouse selects, so a resting cursor does not undo the keys.
       if (ready && usable && !picker_open_ && ImGui::IsItemHovered() && MouseMoved()) {
         selected_ = i;
@@ -496,12 +634,12 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       ImGui::PopID();
 
       const bool active = i == selected_ && usable && !on_picker_;
+      const bool picked = option.version >= 0 && option.version == selected_version_;
       const float rounding = 6.0f * unit;
-      // Disabled while working, and Start before it is ready.
+      // Disabled while working, and what cannot be used yet.
       const float a = alpha * (usable && !working_ && !busy_ ? 1.0f : 0.4f);
       // Extract pulses a soft halo
-      const bool glow = usable && choice_of(i) == GameDataChoice::kExtract;
-      const float t = std::chrono::duration<float>(Clock::now() - *g_first_shown).count();
+      const bool glow = usable && option.version < 0 && option.choice == GameDataChoice::kExtract;
       const float pulse = 0.55f + 0.45f * std::sin(t * 3.0f);
       if (glow) {
         constexpr int kLayers = 8;
@@ -513,22 +651,84 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         }
       }
       draw->AddRectFilled(min, max, IM_COL32(0, 0, 0, int((active ? 150 : 100) * a)), rounding);
+      if (picked)
+        draw->AddRectFilled(min, max, Color(kAccent, 0.25f * a), rounding);
       const ImU32 border = active ? Color(kAccent, a)
                            : glow ? Color(kAccent, (0.5f + 0.5f * pulse) * a)
                                   : IM_COL32(255, 255, 255, int(60 * a));
       draw->AddRect(min, max, border, rounding, 0,
                     std::max(1.0f, (active || glow ? 2.0f : 1.0f) * unit));
-      const char* label =
-          Tr(choice_of(i) == GameDataChoice::kExtract ? IntroText::kExtract : option.label);
-      const ImVec2 extent = font->CalcTextSizeA(label_size, FLT_MAX, 0.0f, label);
-      draw->AddText(font, label_size,
-                    ImVec2(std::floor(min.x + (w - extent.x) * 0.5f),
-                           std::floor(min.y + (h - extent.y) * 0.5f)),
-                    Color(kText, a * (active ? 1.0f : 0.8f)), label);
-      if (option.choice == GameDataChoice::kStart && !Supported(IntroLanguage()))
-        DrawLanguageWarning(draw, font, size, unit, ImVec2(max.x, min.y), h, alpha);
+      if (option.version >= 0) {
+        DrawVersionRow(draw, font, unit, min, max, prompt_.versions[size_t(option.version)],
+                       a * (active || picked ? 1.0f : 0.8f));
+      } else {
+        IntroText text = option.label;
+        if (option.choice == GameDataChoice::kDelete && SelectedRow() && SelectedRow()->linked)
+          text = IntroText::kForgetVersion;
+        const char* label = Tr(text);
+        const ImVec2 extent = font->CalcTextSizeA(label_size, FLT_MAX, 0.0f, label);
+        draw->AddText(font, label_size,
+                      ImVec2(std::floor(min.x + (w - extent.x) * 0.5f),
+                             std::floor(min.y + (h - extent.y) * 0.5f)),
+                      Color(kText, a * (active ? 1.0f : 0.8f)), label);
+      }
+      const GameDataChoice go = library ? GameDataChoice::kStart : GameDataChoice::kExtract;
+      if (option.version < 0 && option.choice == go && prompt_.confirm.empty() &&
+          !Supported(IntroLanguage())) {
+        const std::string release =
+            library ? (SelectedRow() ? SelectedRow()->label : std::string()) : prompt_.release;
+        DrawLanguageWarning(draw, font, size, unit, ImVec2(max.x, min.y), h, alpha, release);
+      }
     }
     return keys && handled;
+  }
+
+  // The label, and under it what sets the version apart.
+  void DrawVersionRow(ImDrawList* draw, ImFont* font, float unit, ImVec2 min, ImVec2 max,
+                      const VersionRow& row, float a) {
+    const float pad = 16.0f * unit;
+    const float label_size = 21.0f * unit;
+    const float note_size = 15.0f * unit;
+    const float h = max.y - min.y;
+    draw->PushClipRect(ImVec2(min.x + pad, min.y), ImVec2(max.x - pad, max.y), true);
+    if (row.note.empty()) {
+      draw->AddText(font, label_size,
+                    ImVec2(min.x + pad, std::floor(min.y + (h - label_size) * 0.5f)),
+                    Color(kText, a), row.label.c_str());
+    } else {
+      const float y = std::floor(min.y + (h - label_size - note_size - 2.0f * unit) * 0.5f);
+      draw->AddText(font, label_size, ImVec2(min.x + pad, y), Color(kText, a), row.label.c_str());
+      draw->AddText(font, note_size, ImVec2(min.x + pad, y + label_size + 2.0f * unit),
+                    Color(kText, 0.6f * a), row.note.c_str());
+    }
+    draw->PopClipRect();
+  }
+
+  // Button hints while a gamepad drives the screen; the file dialogs need a
+  // mouse or keyboard.
+  void DrawHints(ImDrawList* draw, ImFont* font, ImVec2 size, float unit, float alpha) {
+    for (int k = ImGuiKey_GamepadStart; k <= ImGuiKey_GamepadRStickDown; ++k) {
+      if (ImGui::IsKeyPressed(ImGuiKey(k), false))
+        gamepad_ = true;
+    }
+    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_GamepadStart; ++k) {
+      if (ImGui::IsKeyPressed(ImGuiKey(k), false))
+        gamepad_ = false;
+    }
+    if (MouseMoved() || ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+      gamepad_ = false;
+    if (!gamepad_)
+      return;
+    std::string text = std::string("A  ") + Tr(IntroText::kHintSelect) + "      B  " +
+                       Tr(BackChoice() == GameDataChoice::kQuit ? IntroText::kHintQuit
+                                                                : IntroText::kHintBack);
+    if (Library() && Enabled(IndexOf(GameDataChoice::kDelete)))
+      text += std::string("      X  ") +
+              Tr(SelectedRow()->linked ? IntroText::kForgetVersion : IntroText::kDeleteVersion);
+    if (!Library() && prompt_.confirm.empty())
+      text += std::string("\n") + Tr(IntroText::kDialogNeedsMouse);
+    CenteredText(draw, font, 17.0f * unit, size.x * 0.5f, size.y - 112.0f * unit,
+                 std::min(640.0f * unit, size.x - 32.0f), Color(kText, 0.7f * alpha), text);
   }
 
   static bool MouseMoved() {
@@ -702,8 +902,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   // The reason Start is off, to the right of the Start button whose top right
   // corner is `start_max`.
   void DrawLanguageWarning(ImDrawList* draw, ImFont* font, ImVec2 size, float unit,
-                           ImVec2 start_max, float h, float a) {
-    const std::string text = Tr(IntroText::kUnsupportedLanguage, prompt_.release);
+                           ImVec2 start_max, float h, float a, const std::string& release) {
+    const std::string text = Tr(IntroText::kUnsupportedLanguage, release);
     const float text_size = 18.0f * unit;
     const float text_x = start_max.x + 16.0f * unit;
     const float wrap = std::max(size.x - text_x - 16.0f * unit, 120.0f * unit);
@@ -716,6 +916,11 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   GameDataPrompt prompt_;
   std::vector<Option> options_;
   int selected_ = 0;
+  // The version Start applies to, and the version list's first shown row.
+  int selected_version_ = -1;
+  int scroll_ = 0;
+  int scroll_focus_ = -1;
+  bool gamepad_ = false;
   // The language picker has the keys instead of selected_.
   bool on_picker_ = false;
   bool picker_open_ = false;
@@ -731,7 +936,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
 };
 
 std::unique_ptr<IntroDialog> g_dialog;
-std::function<void(GameDataChoice)> g_on_choice;
+std::function<void(GameDataChoice, int)> g_on_choice;
 
 // The main loop sleeps until an event arrives, so frames are posted to it.
 // One at a time: a busy UI thread (extraction) must not pile them up.
@@ -739,9 +944,9 @@ std::thread g_ticker;
 std::atomic<bool> g_ticking{false};
 std::atomic<bool> g_frame_queued{false};
 
-void Answer(GameDataChoice choice) {
+void Answer(GameDataChoice choice, int version) {
   if (auto on_choice = g_on_choice)
-    on_choice(choice);
+    on_choice(choice, version);
 }
 
 void PresentFrame() {
@@ -752,7 +957,7 @@ void PresentFrame() {
   // Taken after the frame, so answering can destroy the dialog safely.
   if (g_dialog) {
     if (const auto choice = g_dialog->TakeChoice())
-      Answer(*choice);
+      Answer(choice->first, choice->second);
   }
 }
 
@@ -785,7 +990,8 @@ bool IntroScreenAvailable() {
   return g_drawer && g_context && PlumeBackendReady();
 }
 
-void ShowIntroScreen(const GameDataPrompt& prompt, std::function<void(GameDataChoice)> on_choice) {
+void ShowIntroScreen(const GameDataPrompt& prompt,
+                     std::function<void(GameDataChoice, int)> on_choice) {
   g_on_choice = std::move(on_choice);
   if (g_dialog) {
     g_dialog->Update(prompt);
@@ -864,7 +1070,7 @@ bool RequestIntroQuit() {
   if (!g_dialog)
     return false;
   // Deferred: this runs inside the window's own event handling.
-  g_context->CallInUIThreadDeferred([] { Answer(GameDataChoice::kQuit); });
+  g_context->CallInUIThreadDeferred([] { Answer(GameDataChoice::kQuit, -1); });
   return true;
 }
 

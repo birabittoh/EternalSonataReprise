@@ -38,6 +38,18 @@ enum class IntroText {
   kCancel,
   kConfirmDelete,
   kNotEnoughSpace,
+  kAddVersion,
+  kDeleteVersion,
+  kForgetVersion,
+  kConfirmForget,
+  kAlreadyInstalled,
+  kLinked,
+  kNeedsUpdate,
+  kChooseVersion,
+  kHintSelect,
+  kHintBack,
+  kHintQuit,
+  kDialogNeedsMouse,
   kCount,
 };
 

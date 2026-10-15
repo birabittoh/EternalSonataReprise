@@ -26,6 +26,8 @@ enum : uint32_t {
 uint32_t TextLanguageBit(std::string_view code);
 
 struct Release {
+  // The library folder an install goes to: "360-pal", "ps3-jp".
+  const char* id;
   const char* name;
   const char* file;
   const char* file_sha256;
