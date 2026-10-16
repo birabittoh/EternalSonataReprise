@@ -994,12 +994,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       return;
     }
     auto label = [](const std::string& id) {
-      if (id == "any")
-        return OptionText("backend_", "any", "Auto");
+      if (id == "any" || id == "d3d12")
+        return OptionText("backend_", "any", "DirectX 12");
       if (id == "vulkan")
         return OptionText("backend_", "vulkan", "Vulkan");
-      if (id == "d3d12")
-        return OptionText("backend_", "d3d12", "D3D12");
       return id.c_str();
     };
     const std::string current = entry->getter();
@@ -1015,7 +1013,9 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PushID("gpu_backend");
     if (ImGui::BeginCombo("##v", label(current))) {
       for (const auto& opt : opts) {
-        if (ImGui::Selectable(label(opt), opt == current)) {
+        if (opt == "d3d12")
+          continue;
+        if (ImGui::Selectable(label(opt), opt == current || (opt == "any" && current == "d3d12"))) {
           rex::cvar::SetFlagByName("gpu_backend", opt, /*persist=*/true);
           SaveBasic();
         }

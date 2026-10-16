@@ -193,7 +193,7 @@ render_fxaa_tip = "Smooths the jagged edges and outlines of the 3D scene, withou
 render_generated_mips_tip = "Builds smaller copies of textures the game ships without them, mostly character models, so they stop shimmering at a distance."
 render_anisotropy_tip = "Keeps textures sharp on surfaces seen at a steep angle, like floors and paths stretching away from the camera."
 render_msaa_tip = "Multisampling for the 3D scene's geometry. \"2x\" is what the Xbox 360 used. It cannot smooth the outlines; FXAA does that."
-gpu_backend_tip = "Which graphics API the game renders with. Auto picks D3D12."
+gpu_backend_tip = "Which graphics API the game renders with."
 vulkan_device_tip = "Which graphics card to use. Auto lets the game choose."
 
 [profiler]
