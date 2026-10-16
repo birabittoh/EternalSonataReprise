@@ -92,8 +92,11 @@ continues in PS3 mode. A PS3 save made on a PS3 only map would not load on
 360 data, and twelve slots and costumes do not fit the party block, so that
 state goes in a host side record saved alongside (`reprise.txt` in the save
 container, `src/engine/save_record.cpp`), which 360 mode can later use to
-refuse such a save. It holds the costumes worn, the PS3's costume unlocks and
-its camp menu flags so far.
+refuse such a save. It holds the costumes worn, the PS3's costume unlocks,
+its camp menu flags and members 11 and 12, plus `target` (`360` or `ps3`).
+Members 11 and 12 are Crescendo and Serenade only on PS3 data, so their
+`party.*` entries are dropped when the save was made on the other target, and
+they load as on a new game.
 
 `--verify extracted/e --verify extracted/other` compares converted models
 against the decoded 360 release.

@@ -13,6 +13,7 @@
 #include "generated/eternalsonata_init.h"
 #include "ps3_natives.h"
 #include "save_system.h"
+#include "target.h"
 
 #include <filesystem>
 #include <fstream>
@@ -67,6 +68,30 @@ bool Read(const std::filesystem::path& path, eternalsonata::SaveRecord& record) 
   return true;
 }
 
+const char* Target() {
+  return eternalsonata::IsPs3Target() ? "ps3" : "360";
+}
+
+// Records from before the target key: only PS3 mode wrote the camp flags.
+std::string RecordTarget(const eternalsonata::SaveRecord& record) {
+  const auto it = record.find("target");
+  if (it != record.end())
+    return it->second;
+  return record.count("ps3.camp_menu_flags") ? "ps3" : "360";
+}
+
+// Members 11 and 12 are different characters on 360 and PS3 data, so their
+// entries only carry over within one target; otherwise they start as new.
+void DropOtherTargetParty(eternalsonata::SaveRecord& record) {
+  if (record.empty() || RecordTarget(record) == Target())
+    return;
+  REXLOG_INFO("save record: written on {} data, members 11 and 12 start new",
+              RecordTarget(record));
+  auto it = record.lower_bound("party.");
+  while (it != record.end() && it->first.rfind("party.", 0) == 0)
+    it = record.erase(it);
+}
+
 }  // namespace
 
 namespace eternalsonata {
@@ -74,6 +99,7 @@ namespace eternalsonata {
 void CaptureSaveRecord() {
   SaveRecord record;
   record["version"] = "1";
+  record["target"] = Target();
   SaveCostumeRecord(record);
   SavePs3Record(record);
   SavePartyRecord(record);
@@ -122,6 +148,7 @@ void NotifySaveRecordLoaded(uint32_t save) {
     Read(SaveContainerDirectory(slot) / kFileName, record);
   else
     REXLOG_WARN("save record: loaded a save from no known slot");
+  DropOtherTargetParty(record);
   // Anything the record lacks takes its new game value.
   ResetPs3Record();
   LoadPs3Record(record);
