@@ -41,7 +41,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_BATTLE_ABI_VERSION 1u
+#define ETERNALSONATA_BATTLE_ABI_VERSION 2u
 
 // Battle action events on the shared mod registry bus. Each carries an
 // EternalSonataBattleAction in payload.bytes. payload.u64 is action_id and
@@ -592,6 +592,43 @@ typedef int (*EternalSonataGetBattleUnitFacingFn)(
 // position setter returns.
 typedef int (*EternalSonataSetBattleUnitFacingFn)(
     int side, int slot, const EternalSonataBattlePosition* rotation);
+
+// ---------------------------------------------------------------------------
+// Special attack controls (version 2)
+// ---------------------------------------------------------------------------
+//
+// A character can have two special attacks per light and dark side. The 360
+// switches Y to the second one after it is held for the hold time; the PS3
+// fires Y on the press and picks the second one while R2 is held. These are
+// the player's right_trigger_behavior and special_hold_time settings. A write
+// here lasts for the session and is not saved to the player's settings.
+
+enum {
+  // ALT_SPECIAL on PS3 data, CAMERA on 360 data.
+  ETERNALSONATA_BATTLE_RIGHT_TRIGGER_AUTO = 0,
+  // The 360's own: RT switches the camera, holding Y picks the special.
+  ETERNALSONATA_BATTLE_RIGHT_TRIGGER_CAMERA = 1,
+  // The PS3's: RT held picks the second special, Y fires on the press.
+  ETERNALSONATA_BATTLE_RIGHT_TRIGGER_ALT_SPECIAL = 2
+};
+
+// The setting, AUTO included.
+typedef int (*EternalSonataGetRightTriggerBehaviorFn)(void);
+
+// What AUTO resolves to on this run: CAMERA or ALT_SPECIAL.
+typedef int (*EternalSonataGetEffectiveRightTriggerBehaviorFn)(void);
+
+// Returns ETERNALSONATA_BATTLE_OK, or ETERNALSONATA_BATTLE_ERR_INVALID_ARGUMENT
+// for a value outside the enum.
+typedef int (*EternalSonataSetRightTriggerBehaviorFn)(int behavior);
+
+// Seconds Y must be held for the second special in CAMERA mode, scaled like
+// the rest of the battle clock. 0.5 as shipped.
+typedef float (*EternalSonataGetSpecialHoldTimeFn)(void);
+
+// Accepts 0.1 to 5.0. Returns ETERNALSONATA_BATTLE_OK, or
+// ETERNALSONATA_BATTLE_ERR_INVALID_ARGUMENT.
+typedef int (*EternalSonataSetSpecialHoldTimeFn)(float seconds);
 
 #ifdef __cplusplus
 }  // extern "C"

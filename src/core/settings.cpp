@@ -4,12 +4,15 @@
 #include "settings.h"
 
 #include "eternalsonata_asset_system.h"
+#include "eternalsonata_battle_api.h"
 #include "eternalsonata_options_api.h"
 #include "eternalsonata_settings_api.h"
 
 // Exported by game_settings.cpp for mods; the overlay uses the same entry points.
 extern "C" int EternalSonataGetSetting(int setting);
 extern "C" int EternalSonataSetSetting(int setting, int value);
+// Exported by special_attack_input.cpp.
+extern "C" int EternalSonataGetEffectiveRightTriggerBehavior(void);
 #include "field_player_model_override.h"
 #include "game_data.h"
 #include "game_settings.h"
@@ -298,6 +301,7 @@ constexpr std::array kBasicCvarNames = {
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
     "enemy_hp_multiplier",
     "enemy_damage_multiplier", "auto_parry", "ui_scale",
+    "right_trigger_behavior", "special_hold_time",
     "save_row_portraits", "force_japanese_font", "skip_intro", "show_start_screen"};
 
 // Steps for the multiplier rows. HP stops short of zero, the
@@ -794,6 +798,11 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawPromptDeviceRow();
         DrawOverrideButtonGlyphsRow();
         DrawPhotoPriceAlgorithmRow();
+        DrawRightTriggerRow();
+        if (EternalSonataGetEffectiveRightTriggerBehavior() ==
+            ETERNALSONATA_BATTLE_RIGHT_TRIGGER_CAMERA) {
+          DrawSensitivityRow("special_hold_time", 0.1f, 5.0f);
+        }
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();
         DrawCvarRow("show_start_screen");
@@ -1626,6 +1635,45 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         const bool selected = i == cur_idx;
         if (ImGui::Selectable(options[i].label, selected)) {
           rex::cvar::SetFlagByName("prompt_device", options[i].id, /*persist=*/true);
+          SaveBasic();
+        }
+        if (selected)
+          ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::PopID();
+  }
+
+  void DrawRightTriggerRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("right_trigger_behavior");
+    if (!entry)
+      return;
+    struct Option {
+      const char* id;
+      const char* label;
+    };
+    const std::array<Option, 3> options = {{{"auto", T("auto")},
+                                            {"camera", T("rt_camera")},
+                                            {"special", T("rt_special")}}};
+    const std::string current = entry->getter();
+    int cur_idx = 0;
+    for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+      if (current == options[i].id)
+        cur_idx = i;
+    }
+
+    if (DrawRowLabel("right_trigger_behavior", "right_trigger_behavior")) {
+      ImGui::SetTooltip("%s", Tip("right_trigger_behavior"));
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("right_trigger_behavior");
+    if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
+      for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+        const bool selected = i == cur_idx;
+        if (ImGui::Selectable(options[i].label, selected)) {
+          rex::cvar::SetFlagByName("right_trigger_behavior", options[i].id, /*persist=*/true);
           SaveBasic();
         }
         if (selected)
