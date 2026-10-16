@@ -1178,6 +1178,8 @@ struct PageState {
   // Whether a page turn left this page's bars off-screen. Decides which y an
   // instant placement uses; see InstantBarBiasY.
   bool bars_parked = false;
+  // Value each plain row's bar sits on, to catch changes made outside the menu.
+  std::vector<int> shown_index;
   // How many objects the screen's id array held the instant the display list
   // had finished being walked, or 0 if that could not be read. Our bars are the
   // last `rows` of *those* - not of however many the array holds later, because
@@ -4527,6 +4529,21 @@ REX_HOOK_RAW(sub_821F62B8) {
     --s_replace_frames;
     PlacePageBars(base, page);
   }
+  {
+    PageState& sync = Page(page);
+    sync.shown_index.resize(rows, -1);
+    for (u32 r = 0; r < rows; ++r) {
+      const OptionRow& row = all[st.rows[r]];
+      if (row.slider || row.action || row.values.empty()) {
+        continue;
+      }
+      const int idx = row.get_index();
+      if (sync.shown_index[r] >= 0 && sync.shown_index[r] != idx) {
+        MoveOptionBar(base, page, r, idx, /*move=*/false);
+      }
+      sync.shown_index[r] = idx;
+    }
+  }
   // sub_822028C8 places page 2's own bars while the screen is still coming up,
   // where parking them does not stick yet.
   if (IsExtraPage(page)) {
@@ -4726,6 +4743,8 @@ REX_HOOK_RAW(sub_821F62B8) {
         RefreshSlider(base, page, opt_row);
       } else if (!def.action) {
         MoveOptionBar(base, page, opt_row, next, /*move=*/true);
+        Page(page).shown_index.resize(st.rows.size(), -1);
+        Page(page).shown_index[opt_row] = next;
       }
       if (!def.slider || def.slider_sound) {
         PlayMenuSfx(base, pl.change_sfx);
