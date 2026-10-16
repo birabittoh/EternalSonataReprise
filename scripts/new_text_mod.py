@@ -45,6 +45,19 @@ BUILTIN_XLANGUAGE = {"USA": 1, "GBR": 1, "DEU": 3, "FRA": 4, "ESP": 5, "ITA": 6}
 SOURCE_TAG = b"# source: "
 
 
+def release_id():
+    """The release id reprise-version.toml records for ASSETS, or None."""
+    try:
+        with open(os.path.join(ASSETS, "reprise-version.toml"), encoding="utf-8") as f:
+            for line in f:
+                key, _, value = line.partition("=")
+                if key.strip() == "id":
+                    return value.strip().strip('"') or None
+    except OSError:
+        pass
+    return None
+
+
 def decoded_containers():
     """Yield (guest_path, decoded bytes) for every .e in index.vmtoc."""
     toc = load_toc(ASSETS)
@@ -320,6 +333,10 @@ def main(argv=None):
             f.write('description = "Replaces the game\'s %s text."\n' % folder)
         else:
             f.write('description = "Adds %s as a selectable language."\n' % args.label)
+        # String ids differ between releases, so the table only fits this one.
+        target = release_id()
+        if target:
+            f.write('target = "%s"\n' % target)
 
     with open(os.path.join(mod_dir, "assets.toml"), "w", encoding="utf-8") as f:
         f.write("# Edited strings may outgrow the original; this lets the container be\n"

@@ -9,8 +9,6 @@
 #include <utility>
 #include <string_view>
 
-#include <toml++/toml.hpp>
-
 #include <rex/cvar.h>
 #include <rex/logging.h>
 #include <rex/platform.h>
@@ -21,6 +19,7 @@
 
 #include "intro_music.h"
 #include "settings.h"
+#include "target.h"
 #include "ui_text.h"
 
 namespace eternalsonata {
@@ -67,38 +66,6 @@ std::string JoinRequirements(const std::vector<rex::system::ModRequirement>& req
       joined += " >= " + reqs[i].min_version;
   }
   return joined;
-}
-
-// Same fields the runtime reads from mod.toml; a missing or broken one leaves them empty.
-rex::system::ModInfo ParseMod(const std::filesystem::path& root) {
-  rex::system::ModInfo info;
-  info.mod_root = root;
-  info.folder_name = root.filename().string();
-  info.display_name = info.folder_name;
-  if (std::filesystem::is_regular_file(root / "icon.png"))
-    info.icon_path = root / "icon.png";
-  const auto manifest = root / "mod.toml";
-  if (!std::filesystem::is_regular_file(manifest))
-    return info;
-  try {
-    const auto table = toml::parse_file(manifest.string());
-    info.display_name = table["name"].value_or<std::string>(std::string(info.folder_name));
-    info.version = table["version"].value_or<std::string>("");
-    info.author = table["author"].value_or<std::string>("");
-    info.description = table["description"].value_or<std::string>("");
-    info.code = table["code"].value_or<std::string>("");
-    for (const auto& entry : rex::system::SplitCommaList(table["requires"].value_or<std::string>("")))
-      info.requires_mods.push_back(rex::system::ParseRequirement(entry));
-    info.load_after_mods =
-        rex::system::SplitCommaList(table["load_after"].value_or<std::string>(""));
-    info.conflicts_mods = rex::system::SplitCommaList(table["conflicts"].value_or<std::string>(""));
-    info.platforms = rex::system::SplitCommaList(table["platform"].value_or<std::string>(""));
-    info.min_game_version = rex::system::ParseGameVersionConstraint(
-        table["game_version"].value_or<std::string>(""));
-  } catch (const toml::parse_error& error) {
-    REXLOG_WARN("Mods: failed to parse {}: {}", manifest.string(), error.what());
-  }
-  return info;
 }
 
 std::vector<uint8_t> ReadFile(const std::filesystem::path& path) {
@@ -149,8 +116,14 @@ void ModsScreen::Reload() {
   mods_root_ = rex::system::ModState::ResolveModsRoot();
   entries_ = rex::system::ModState::LoadReconciled(mods_root_);
   manifests_.clear();
-  for (const auto& entry : entries_)
-    manifests_.emplace(entry.id, ParseMod(mods_root_ / entry.id));
+  other_target_.clear();
+  const auto game_targets = GameTargets();
+  for (const auto& entry : entries_) {
+    auto info = rex::system::ParseModInfo(mods_root_ / entry.id);
+    if (!rex::system::ModTargetsMatch(info.targets, game_targets))
+      other_target_.emplace(entry.id, Join(info.targets));
+    manifests_.emplace(entry.id, std::move(info));
+  }
   pending_removals_ = rex::system::ModState::PendingRemovals(mods_root_);
   loaded_ = true;
   issues_ = rex::system::ModState::Validate(entries_, manifests_, ETERNALSONATA_VERSION,
@@ -1210,6 +1183,10 @@ void ModsScreen::DrawDetail(ImVec2 min, ImVec2 max) {
       lines.push_back({Fmt("needs_game_version", "needs game version: >= %s",
                            mod.min_game_version.c_str()),
                        kMuted, 15.0f});
+    if (const auto it = other_target_.find(current_); it != other_target_.end())
+      lines.push_back({Fmt("other_target", "made for %s: not used on this game version",
+                           it->second.c_str()),
+                       kWarn, 15.0f});
     if (!mod.conflicts_mods.empty())
       lines.push_back({Fmt("conflicts", "conflicts: %s", Join(mod.conflicts_mods).c_str()), kMuted,
                        15.0f});

@@ -531,6 +531,32 @@ probe does. To do all of this from a code mod instead, publish
 `settings.voice_language_option` with `payload.bytes` set to
 `"id|Label|CODE|SUFFIX"`.
 
+### Game versions
+
+Every selector above means a position in one release's files: string ids,
+blob indices, chunk ordinals. The releases do not agree on them. Of one
+language's 14700 `.e` strings on 360 PAL, about 2600 key to the wrong text on
+PS3 USA: ~2000 hold a different line (ids shifted, or Xbox button names
+reworded for the PS3), ~260 a reworded one, and 634 do not exist at all. Only
+31 of the 1099 shared `.e` files decode to the same size.
+
+So a mod built from one release should say so in `mod.toml`:
+
+```toml
+target = "360-pal"            # or a list: target = ["360-pal", "360-usa"]
+```
+
+| value | runs on |
+|---|---|
+| `any`, or no `target` | every release |
+| `360`, `ps3` | every release of that console |
+| `360-pal`, `360-usa`, `360-jp`, `ps3-pal`, `ps3-usa`, `ps3-jp` | that release only |
+
+The ids are the start screen's version folders. On any other release the mod
+stays enabled in `mods.toml` but is left out of the run entirely: no code, no
+`game/` files, no `assets/` patches or `assets.toml` declarations. The Mods
+page says why.
+
 ### Layering and conflicts
 
 There is **one** patched image per container, built from every enabled mod at

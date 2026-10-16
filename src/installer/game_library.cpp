@@ -349,13 +349,25 @@ void WriteVersionInfo(const fs::path& dir, const std::string& id, const std::str
     REXLOG_WARN("Could not write {}", (dir / kInfoFile).string());
 }
 
-std::string ReadVersionRelease(const fs::path& dir) {
+namespace {
+
+std::string ReadVersionField(const fs::path& dir, const char* key) {
   try {
     const toml::table table = toml::parse_file(Utf8(dir / kInfoFile));
-    return table["release"].value_or(std::string());
+    return table[key].value_or(std::string());
   } catch (const toml::parse_error&) {
     return {};
   }
+}
+
+}  // namespace
+
+std::string ReadVersionRelease(const fs::path& dir) {
+  return ReadVersionField(dir, "release");
+}
+
+std::string ReadVersionId(const fs::path& dir) {
+  return ReadVersionField(dir, "id");
 }
 
 void RefreshRootExecutable(const fs::path& root, const std::vector<GameVersion>& versions) {

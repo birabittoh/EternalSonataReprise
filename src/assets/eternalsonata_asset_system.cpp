@@ -2168,9 +2168,9 @@ std::vector<ModLanguageFont> ModLanguageFonts() {
   std::vector<ModLanguageFont> fonts;
   const auto root = rex::system::ModState::ResolveModsRoot();
   for (const auto& entry : rex::system::ModState::Load(root)) {
-    if (!entry.enabled)
-      continue;
     const auto mod_root = root / entry.id;
+    if (!entry.enabled || !ModRunsOnTarget(mod_root))
+      continue;
     for (const auto& declared : ReadDeclaredLanguages(mod_root / "assets.toml")) {
       if (declared.font.empty())
         continue;

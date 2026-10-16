@@ -56,6 +56,8 @@ void WriteVersionInfo(const std::filesystem::path& dir, const std::string& id,
 
 // The release name reprise-version.toml records, or empty.
 std::string ReadVersionRelease(const std::filesystem::path& dir);
+// The release id it records, or empty.
+std::string ReadVersionId(const std::filesystem::path& dir);
 
 // Keeps <root>/default.xex a copy of the Xbox 360 PAL version's executable
 // for the build and the launcher, or removes it when none is left. A

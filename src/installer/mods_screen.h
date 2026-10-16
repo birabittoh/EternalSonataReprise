@@ -150,6 +150,8 @@ class ModsScreen {
   std::filesystem::path mods_root_;
   std::vector<rex::system::ModStateEntry> entries_;
   std::unordered_map<std::string, rex::system::ModInfo> manifests_;
+  // The `target` list of each mod made for another game version.
+  std::unordered_map<std::string, std::string> other_target_;
   std::unordered_set<std::string> pending_removals_;
   std::vector<rex::system::ModIssue> issues_;
 

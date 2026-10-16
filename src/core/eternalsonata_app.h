@@ -281,6 +281,8 @@ class EternalsonataApp : public rex::ReXApp {
     config.update_repo = "birabittoh/EternalSonataReprise";
     // Empty (updater off) unless CMake found a version; see CMakeLists.txt.
     config.game_version = ETERNALSONATA_VERSION;
+    // Called after FinishGameDataPaths has latched the picked version.
+    config.game_targets = eternalsonata::GameTargets;
 
     // The startup toast is shown from OnPreLaunchModule instead, in the
     // interface language, which mods can still add to until then.

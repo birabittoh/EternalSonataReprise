@@ -3,6 +3,7 @@
 #include "target.h"
 
 #include <rex/logging.h>
+#include <rex/system/mod_version.h>
 
 #include "game_library.h"
 #include "install_pipeline.h"
@@ -23,7 +24,8 @@ void DetectTarget(const std::filesystem::path& game_data_root) {
   g_root = game_data_root;
   std::error_code ec;
   g_ps3 = std::filesystem::is_regular_file(game_data_root / kPs3Probe, ec);
-  REXLOG_INFO("Game data target: {}", g_ps3 ? "PS3" : "Xbox 360");
+  REXLOG_INFO("Game data target: {} ({})", g_ps3 ? "PS3" : "Xbox 360",
+              TargetReleaseId().empty() ? "unknown release" : TargetReleaseId());
 }
 
 bool IsPs3Target() {
@@ -45,6 +47,27 @@ const std::string& TargetRelease() {
                                                       : name;
   }();
   return release;
+}
+
+const std::string& TargetReleaseId() {
+  static const std::string id = [] {
+    std::string value = ReadVersionId(g_root);
+    return value.empty() ? IdentifySource(g_root.string()).id : value;
+  }();
+  return id;
+}
+
+std::vector<std::string> GameTargets() {
+  if (g_root.empty())
+    return {};
+  std::vector<std::string> targets{g_ps3 ? "ps3" : "360"};
+  if (!TargetReleaseId().empty())
+    targets.push_back(TargetReleaseId());
+  return targets;
+}
+
+bool ModRunsOnTarget(const std::filesystem::path& mod_root) {
+  return rex::system::ModTargetsMatch(rex::system::ParseModInfo(mod_root).targets, GameTargets());
 }
 
 }  // namespace eternalsonata
