@@ -1,13 +1,10 @@
 <img width="829" height="375" alt="logo" src="res/logo.png" />
 
-Static recompilation of **Eternal Sonata** (Xbox 360) for Windows
-and Linux, built on the [ReXGlue SDK](https://github.com/birabittoh/rexglue-sdk/tree/thedarkness).
+Static recompilation of **Eternal Sonata**.
 
-This project converts the Xbox 360 PowerPC `default.xex` into native x86_64
-code at build time, then wraps it with a small host runtime (logging,
-overlays, hooks) so the game runs natively and can be modded like a PC port.
+**You can play with both the Xbox 360 and PS3 versions of the game, no matter the region (PAL, USA or JAP). However, building the actual executable yourself requires the Xbox 360 PAL version of the game.**
 
-**You must own the game.** This project does **not** ship any copyrighted code, data, or assets. You provide your own legally dumped game.
+**You must own the game.** This project does **not** ship any copyrighted code, data, or assets. You provide your own copy of the game.
 
 # Get the game on [Goopie](https://goopie.xyz/#/library/eternalsonata)!
 
@@ -19,15 +16,7 @@ Get the latest stable build from the [Releases](../../releases/latest) page.
 
 Nightly builds are available from [CI artifacts](https://nightly.link/birabittoh/EternalSonataReprise/workflows/ci/main?preview).
 
-Just extract the archive, run the executable and it will prompt you to extract the game.
-
-Several releases (Xbox 360 and PS3, each PAL, USA or JP) can be installed side
-by side. The start screen lists them; the one you start is remembered, and
-later launches go straight into it. To pick another one, use Change Version in
-the F4 settings, or turn on Start Screen at Launch there. A folder that already
-holds extracted files is used where it is rather than copied.
-
-**This project can load assets from the PAL, USA and JAP releases of the game. However, building the actual executable requires the PAL version of `default.xex`.**
+**You can play with both the Xbox 360 and PS3 versions of the game, no matter the region (PAL, USA or JAP). However, building the actual executable yourself requires the Xbox 360 PAL version of the game.**
 
 ## Making it portable
 
