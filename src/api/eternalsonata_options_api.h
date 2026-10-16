@@ -159,6 +159,41 @@ typedef int (*EternalSonataSetOptionValueFn)(int row, int value, int language,
 // Safe to call any time; the move shows up the next time each page is built.
 typedef int (*EternalSonataSetOptionRowPageFn)(int row, int page);
 
+// Writes the readout drawn beside a slider for step `index` into `out` (NUL
+// terminated, at most `out_size` bytes, single-byte text like labels) and
+// returns its length. Keep it under ETERNALSONATA_MAX_SLIDER_TEXT characters;
+// a longer one is not drawn. Same threading rules as EternalSonataOptionGetFn.
+typedef int (*EternalSonataOptionTextFn)(int index, char* out, int out_size, void* user);
+
+#define ETERNALSONATA_MAX_SLIDER_STEPS 1001
+#define ETERNALSONATA_MAX_SLIDER_TEXT 11
+
+// Registers a slider row (ABI version 3): the game's own volume gauge, moved
+// one step per left/right and repeating while a direction is held. get/set
+// speak a step index from 0 to `steps` - 1, and the gauge fills in proportion
+// to it. `text` may be null, in which case the readout is the step index.
+// Returns the row index, or -1 for a null/empty label, null get/set, or
+// `steps` outside 2..ETERNALSONATA_MAX_SLIDER_STEPS. Placement, labels and
+// paging work as for EternalSonataRegisterOptionRow; a slider has no values,
+// so EternalSonataSetOptionValue refuses it.
+// Registers an ON/OFF row (ABI version 3) drawn with the game's own localised
+// ON and OFF, like the built-in toggles. `get` returns non-zero for ON; `set`
+// receives 1 for ON and 0 for OFF. Returns the row index, or -1 for a
+// null/empty label or null get/set. Placement, labels and paging work as for
+// EternalSonataRegisterOptionRow.
+typedef int (*EternalSonataToggleGetFn)(void* user);
+typedef void (*EternalSonataToggleSetFn)(int on, void* user);
+typedef int (*EternalSonataRegisterOptionToggleFn)(const char* label,
+                                                  EternalSonataToggleGetFn get,
+                                                  EternalSonataToggleSetFn set,
+                                                  void* user);
+
+typedef int (*EternalSonataRegisterOptionSliderFn)(const char* label, int steps,
+                                                  EternalSonataOptionGetFn get,
+                                                  EternalSonataOptionSetFn set,
+                                                  EternalSonataOptionTextFn text,
+                                                  void* user);
+
 // Host ABI version, so a mod can tell what it is talking to.
 typedef uint32_t (*EternalSonataOptionsAbiVersionFn)(void);
 

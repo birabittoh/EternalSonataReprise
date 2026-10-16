@@ -251,6 +251,7 @@ constexpr u32 kTextNodeWalkMax = 4096u;
 constexpr u32 kNumberRegistry = 0x82555690u;
 // The game writes an eleven-digit number and a sign into this same buffer.
 constexpr u32 kReadoutMaxChars = 12u;
+static_assert(ETERNALSONATA_MAX_SLIDER_TEXT < kReadoutMaxChars, "a mod readout fits the buffer");
 // Live gauge object: maximum, current value.
 constexpr u32 kSliderObjMaxOffset = 100u;
 constexpr u32 kSliderObjValueOffset = 104u;
@@ -4941,6 +4942,73 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterOptionRow(
   const int index = static_cast<int>(rows.size()) - 1;
   REXLOG_INFO("[options] mod row '{}' registered as row {} on page {} ({} values)",
               label, index, page + 1, value_count);
+  return index;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterOptionToggle(
+    const char* label, EternalSonataToggleGetFn get, EternalSonataToggleSetFn set, void* user) {
+  if (!label || !*label || !get || !set) {
+    REXLOG_WARN("[options] mod toggle rejected: null argument");
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(g_registry_mutex);
+  RowStore& rows = Rows();
+  const int page = FirstModPageWithRoom();
+  rows.emplace_back();
+  OptionRow& row = rows.back();
+  MakeBooleanRow(row, {nullptr});
+  row.label[0] = label;
+  row.page = page;
+  row.bar_nudge_x = kBooleanBarNudge;
+  // Value 0 is ON.
+  row.get_index = [get, user] { return get(user) ? 0 : 1; };
+  row.set_index = [set, user](u8*, int idx) { set(idx == 0 ? 1 : 0, user); };
+
+  const int index = static_cast<int>(rows.size()) - 1;
+  REXLOG_INFO("[options] mod toggle '{}' registered as row {} on page {}", label, index,
+              page + 1);
+  return index;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterOptionSlider(
+    const char* label, int steps, EternalSonataOptionGetFn get, EternalSonataOptionSetFn set,
+    EternalSonataOptionTextFn text, void* user) {
+  if (!label || !*label || !get || !set) {
+    REXLOG_WARN("[options] mod slider rejected: null argument");
+    return -1;
+  }
+  if (steps < 2 || steps > ETERNALSONATA_MAX_SLIDER_STEPS) {
+    REXLOG_WARN("[options] mod slider '{}' rejected: {} steps, allowed 2..{}", label, steps,
+                ETERNALSONATA_MAX_SLIDER_STEPS);
+    return -1;
+  }
+
+  std::lock_guard<std::mutex> lock(g_registry_mutex);
+  RowStore& rows = Rows();
+  const int page = FirstModPageWithRoom();
+  rows.emplace_back();
+  OptionRow& row = rows.back();
+  row.label[0] = label;
+  row.page = page;
+  row.slider = true;
+  row.slider_steps = steps;
+  row.slider_max = steps - 1;
+  if (text) {
+    row.slider_text = [text, user](int index) {
+      char out[ETERNALSONATA_MAX_SLIDER_TEXT + 1] = {};
+      text(index, out, static_cast<int>(sizeof(out)), user);
+      out[ETERNALSONATA_MAX_SLIDER_TEXT] = 0;
+      return std::string(out);
+    };
+  } else {
+    row.slider_text = [](int index) { return std::to_string(index); };
+  }
+  row.get_index = [get, user] { return get(user); };
+  row.set_index = [set, user](u8*, int idx) { set(idx, user); };
+
+  const int index = static_cast<int>(rows.size()) - 1;
+  REXLOG_INFO("[options] mod slider '{}' registered as row {} on page {} ({} steps)", label,
+              index, page + 1, steps);
   return index;
 }
 
