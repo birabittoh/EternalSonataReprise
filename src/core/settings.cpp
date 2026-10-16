@@ -722,19 +722,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
     if (ImGui::BeginTabBar("##settings_tabs")) {
       if (ImGui::BeginTabItem(WithId(T("tab_graphics"), "graphics"))) {
-        DrawCvarRow("fullscreen");
-        DrawUiScaleRow();
-        DrawRenderScaleRow();
-        DrawFieldOfViewRow();
-        DrawGammaRow();
-        DrawFrameRateRow();
-        DrawAntiAliasingRow();
-        DrawAnisotropyRow();
-        DrawRenderFilterRow();
-        DrawCvarRow("render_fxaa");
-        DrawCvarRow("render_generated_mips");
-        // Takes effect on the next present.
-        DrawCvarRow("vsync");
 #ifdef _WIN32
         // Elsewhere Vulkan is the only backend.
         DrawGpuBackendRow();
@@ -745,6 +732,18 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 #endif
           DrawVulkanDeviceRow();
 #endif
+        DrawUiScaleRow();
+        DrawRenderScaleRow();
+        DrawFieldOfViewRow();
+        DrawGammaRow();
+        DrawFrameRateRow();
+        DrawAnisotropyRow();
+        DrawAntiAliasingRow();
+        DrawCvarRow("render_fxaa");
+        DrawCvarRow("render_generated_mips");
+        DrawRenderFilterRow();
+        DrawCvarRow("fullscreen");
+        DrawCvarRow("vsync");
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem(WithId(T("tab_audio"), "audio"))) {
