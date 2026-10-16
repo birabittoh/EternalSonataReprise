@@ -49,11 +49,15 @@ field leader is the one model that lives across a change, so it is respawned
 on the next field frame outside a cutscene (`FieldPlayerModelOverride::
 RequestRespawn`, which keeps pad control, ground state and shade).
 
-A costume's file is read into physical guest memory the first time it is
-worn and kept there. Models already built keep reading their buffer, so a
-buffer is never reused for another costume; switching back and forth costs
-nothing after the first load. Each costume costs its file size, about 4 MB
-for a character.
+A costume's file is read into physical guest memory when it is worn. Scene
+objects read their model in place, so the host counts the objects built from
+each costume buffer (`sub_82176398` makes one, `sub_82175620` tears it down).
+A costume taken off keeps its buffer until the last of those objects is gone
+and half a second has passed for the GPU, and the next load frees it; so do
+the models of a slot 11 or 12 occupant a mod redefines. Guest
+memory then holds about one model per character in costume (some 4 MB each),
+whatever the number of costumes installed; free physical memory is scarce, so
+nothing more can be kept.
 
 ## 3. Model files
 
@@ -121,8 +125,13 @@ height, PS3 data, all DXT5 with mipmaps):
 From Viola on, the game's panel shows the status page's art, so a costume of
 theirs without a `PANEL` portrait shows its `STATUS` one there.
 
-The status portrait loads the first time the status page shows it, the others
-when the costume is put on, into the AppKeep image slots from 446 on. Wearing
+The status portrait loads when the status page shows it, the others when the
+costume is put on, each into one of the free AppKeep image slots (456 to
+511). `sub_821E8F58` caches the texture it decodes by image id until the menu
+closes, so every portrait needs an id of its own: a slot goes back to the pool
+once its costume is off and that cache holds nothing for it, and any number
+of costumes fits as long as one menu does not show more than 56 of their
+portraits. Wearing
 points the twelve wide copies of the face tables `0x8202CA28` / `0x8202CA3C`
 at the faces, and taking the costume off puts back what they held at boot.
 The panel is swapped where it is built: after `sub_821DDD00` (its image

@@ -8,9 +8,11 @@
 // Serenade have no slot; their readers ask CostumeModel instead. The field
 // leader is the one model that outlives a change, so it is respawned.
 //
-// Each costume's model loads into physical guest memory the first time it is
-// worn and stays there: models already built read it in place, so a buffer is
-// never reused for another costume.
+// A costume's model loads into physical guest memory when it is worn. Scene
+// objects read it in place, so once it is taken off it stays until every
+// object built from it is gone (sub_82176398 / sub_82175620), then is freed:
+// what costumes hold stays near one model per character however many exist.
+// Portraits borrow free AppKeep slots and give them back the same way.
 
 #include "costume_system.h"
 #include "character_roster.h"
@@ -24,6 +26,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -33,6 +36,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include <rex/cvar.h>
@@ -70,19 +74,38 @@ constexpr std::array<uint32_t, kCharacters> kModelSlot = {1, 2, 3, 4, 5, 6, 7, 8
 // The NOBJ chunk header: tag and u32 size, the size including the header.
 constexpr size_t kChunkHeader = 8;
 
+// A model buffer taken off is freed this long after its last scene object
+// went, as the GPU may still draw from it.
+constexpr auto kModelFreeGrace = std::chrono::milliseconds(500);
+
 struct Costume {
   std::string id, label;
   std::vector<uint8_t> model;  // owned copy, or empty when read from `path`
   std::filesystem::path path;
   bool own_model = false;      // registered with neither: the character's own
-  uint32_t guest = 0;          // loaded model, 0 until first worn
+  uint32_t guest = 0;          // loaded model, 0 while not in guest memory
   bool failed = false;         // did not load; not retried
   bool starts_unlocked = true; // in a new game
   bool unlocked = true;        // in the game in progress
   // Portraits by ETERNALSONATA_COSTUME_PORTRAIT_* kind: AppKeep image ids, or
-  // .dds / NTEX files placed in free AppKeep slots the first time they show.
+  // .dds / NTEX files placed in a free AppKeep slot when shown.
   std::array<uint32_t, kPortraitKinds> portrait{};
   std::array<std::filesystem::path, kPortraitKinds> portrait_path;
+  std::array<bool, kPortraitKinds> portrait_failed{};
+};
+
+// sub_821E8F58's cache: the image list, whose handle of image id n sits at
+// +4 * (n + 3), -1 when not built.
+constexpr uint32_t kImageList = 0x824400DCu;
+
+// A free AppKeep slot lent to one costume's portrait of one kind. The game
+// caches the texture it decodes from a slot by image id (sub_821E8F58), so a
+// slot is only lent again once that cache has let go of it.
+struct PortraitEntry {
+  int character = 0;  // 0 while free
+  std::string costume;
+  int kind = 0;
+  uint32_t guest = 0;
 };
 
 struct State {
@@ -98,7 +121,11 @@ struct State {
   std::array<uint32_t, kCharacters> models{};
   // The face sets' own ids, from the twelve wide copies before any costume.
   std::array<std::array<uint16_t, kCharacters>, 2> default_faces{};
-  uint32_t next_portrait_slot = eternalsonata::kFirstFreeAppKeepSlot;
+  // By slot, from kFirstFreeAppKeepSlot.
+  std::array<PortraitEntry, eternalsonata::kAppKeepSlotCount - eternalsonata::kFirstFreeAppKeepSlot>
+      portraits;
+  // Model buffers of costumes a redefined slot dropped, freed once unread.
+  std::vector<uint32_t> retired;
   bool live = false;
   bool builtins = false;
   rex::Runtime* runtime = nullptr;
@@ -117,6 +144,17 @@ State& state() {
   static State s;
   return s;
 }
+
+// Scene objects built from costume models, kept by the guest hooks. Its own
+// lock, taken after g_mutex when both are.
+struct ModelRefs {
+  int objects = 0;
+  bool built = false;  // an object was ever built from it
+  std::chrono::steady_clock::time_point idle_since;
+};
+std::mutex g_ref_mutex;
+std::unordered_map<uint32_t, ModelRefs> g_model_refs;  // by costume buffer
+std::unordered_map<uint32_t, uint32_t> g_object_model; // scene handle -> buffer
 
 // Retail, the PS3's pair on PS3 data, or a modded slot once defined.
 bool ValidCharacter(int character) {
@@ -215,9 +253,46 @@ int RegisterLocked(int character, const char* id, const char* label, Costume cos
   return static_cast<int>(list.size() - 1);
 }
 
-// Reads a costume's model into guest memory the first time.
-uint32_t LoadModel(Costume& costume, int* error) {
+rex::memory::Memory* GuestMemory() {
   State& s = state();
+  return s.runtime ? s.runtime->memory() : rex::Runtime::instance()->memory();
+}
+
+// Frees a model buffer unless a scene object still reads it. With
+// g_ref_mutex held.
+bool FreeIfUnread(uint32_t guest, std::chrono::steady_clock::time_point now) {
+  const auto it = g_model_refs.find(guest);
+  if (it != g_model_refs.end()) {
+    const ModelRefs& refs = it->second;
+    if (refs.objects > 0 || (refs.built && now - refs.idle_since < kModelFreeGrace))
+      return false;
+    g_model_refs.erase(it);
+  }
+  GuestMemory()->SystemHeapFree(guest);
+  REXLOG_INFO("costumes: model freed from {:08X}", guest);
+  return true;
+}
+
+// Frees the models of costumes nobody wears once no scene object reads them,
+// and those a redefined slot 11 or 12 left behind. The default and a modded
+// character's own file stay.
+void CollectModels() {
+  State& s = state();
+  const auto now = std::chrono::steady_clock::now();
+  std::lock_guard refs_lock(g_ref_mutex);
+  for (int c = 0; c < kCharacters; ++c) {
+    auto& list = s.costumes[c];
+    for (size_t i = 1; i < list.size(); ++i) {
+      Costume& costume = list[i];
+      if (costume.guest && static_cast<int>(i) != s.worn[c] && FreeIfUnread(costume.guest, now))
+        costume.guest = 0;
+    }
+  }
+  std::erase_if(s.retired, [&](uint32_t guest) { return FreeIfUnread(guest, now); });
+}
+
+// Reads a costume's model into guest memory.
+uint32_t LoadModel(Costume& costume, int* error) {
   if (costume.guest || costume.failed) {
     *error = ETERNALSONATA_COSTUME_ERR_INVALID_MODEL;
     return costume.guest;
@@ -235,7 +310,8 @@ uint32_t LoadModel(Costume& costume, int* error) {
     *error = ETERNALSONATA_COSTUME_ERR_INVALID_MODEL;
     return 0;
   }
-  auto* memory = s.runtime ? s.runtime->memory() : rex::Runtime::instance()->memory();
+  CollectModels();
+  auto* memory = GuestMemory();
   const uint32_t size = static_cast<uint32_t>(model->size());
   const uint32_t at = memory->SystemHeapAlloc(size, 0x1000, rex::memory::kSystemHeapPhysical);
   if (!at) {
@@ -245,8 +321,10 @@ uint32_t LoadModel(Costume& costume, int* error) {
   }
   std::memcpy(memory->TranslateVirtual(at), model->data(), size);
   costume.guest = at;
-  costume.model.clear();
-  costume.model.shrink_to_fit();
+  {
+    std::lock_guard refs_lock(g_ref_mutex);
+    g_model_refs[at] = {};
+  }
   REXLOG_INFO("costumes: '{}' loaded at {:08X}, {} bytes", costume.id, at, size);
   return at;
 }
@@ -278,24 +356,73 @@ bool ReadPortrait(const std::filesystem::path& path, std::vector<uint8_t>& out) 
   return true;
 }
 
-// The image id of a costume's portrait, placing its file the first time;
-// 0 for the character's own.
-uint32_t PortraitImage(Costume& costume, int kind) {
+uint32_t LoadGuestU32(uint32_t address) {
+  return rex::memory::load_and_swap<uint32_t>(GuestMemory()->TranslateVirtual(address));
+}
+
+void StoreGuestU32(uint32_t address, uint32_t value) {
+  rex::memory::store_and_swap<uint32_t>(GuestMemory()->TranslateVirtual(address), value);
+}
+
+// AppKeep image ids are the slot plus one.
+uint32_t PoolImage(size_t entry) {
+  return eternalsonata::kFirstFreeAppKeepSlot + static_cast<uint32_t>(entry) + 1;
+}
+
+// Whether the game holds a texture built from this image id, or one is
+// still being decoded from it.
+bool ImageCached(uint32_t image) {
+  const uint32_t list = LoadGuestU32(kImageList);
+  return list && LoadGuestU32(list + 4 * (image + 3)) != 0xFFFFFFFFu;
+}
+
+// Gives back the slots of costumes taken off whose textures the game let go.
+// Those of costumes worn stay, as the face tables and the panel hand their
+// ids out again.
+void CollectPortraits() {
   State& s = state();
-  if (costume.portrait[kind] || costume.portrait_path[kind].empty())
+  for (size_t i = 0; i < s.portraits.size(); ++i) {
+    PortraitEntry& entry = s.portraits[i];
+    if (!entry.character)
+      continue;
+    const auto& list = s.costumes[entry.character - 1];
+    if (list[s.worn[entry.character - 1]].id == entry.costume || ImageCached(PoolImage(i)))
+      continue;
+    StoreGuestU32(eternalsonata::kAppKeepSlotArray + 4 * (PoolImage(i) - 1), 0);
+    GuestMemory()->SystemHeapFree(entry.guest);
+    entry = {};
+  }
+}
+
+// The image id of a costume's portrait, placing its file in a free AppKeep
+// slot when it has none; 0 for the character's own.
+uint32_t PortraitImage(int character, Costume& costume, int kind) {
+  State& s = state();
+  if (costume.portrait[kind] || costume.portrait_path[kind].empty() ||
+      costume.portrait_failed[kind])
     return costume.portrait[kind];
-  const std::filesystem::path path = std::move(costume.portrait_path[kind]);
-  costume.portrait_path[kind].clear();
+  for (size_t i = 0; i < s.portraits.size(); ++i) {
+    const PortraitEntry& entry = s.portraits[i];
+    if (entry.character == character && entry.kind == kind && entry.costume == costume.id)
+      return PoolImage(i);
+  }
+  CollectPortraits();
+  const auto free = std::find_if(s.portraits.begin(), s.portraits.end(),
+                                 [](const PortraitEntry& entry) { return !entry.character; });
+  if (free == s.portraits.end()) {
+    REXLOG_ERROR("costumes: every free AppKeep slot holds a portrait in use, '{}' shows "
+                 "the character's own",
+                 costume.id);
+    return 0;
+  }
   std::vector<uint8_t> chunk;
-  if (!ReadPortrait(path, chunk)) {
-    REXLOG_ERROR("costumes: {} is not a .dds or NTEX portrait", path.string());
+  if (!ReadPortrait(costume.portrait_path[kind], chunk)) {
+    REXLOG_ERROR("costumes: {} is not a .dds or NTEX portrait",
+                 costume.portrait_path[kind].string());
+    costume.portrait_failed[kind] = true;
     return 0;
   }
-  if (s.next_portrait_slot >= eternalsonata::kAppKeepSlotCount) {
-    REXLOG_ERROR("costumes: no AppKeep slot left for the portrait of '{}'", costume.id);
-    return 0;
-  }
-  auto* memory = s.runtime ? s.runtime->memory() : rex::Runtime::instance()->memory();
+  auto* memory = GuestMemory();
   const uint32_t size = static_cast<uint32_t>(chunk.size());
   const uint32_t at = memory->SystemHeapAlloc(size, 0x1000, rex::memory::kSystemHeapPhysical);
   if (!at) {
@@ -303,11 +430,10 @@ uint32_t PortraitImage(Costume& costume, int kind) {
     return 0;
   }
   std::memcpy(memory->TranslateVirtual(at), chunk.data(), size);
-  const uint32_t slot = s.next_portrait_slot++;
-  rex::memory::store_and_swap<uint32_t>(
-      memory->TranslateVirtual(eternalsonata::kAppKeepSlotArray + 4 * slot), at);
-  costume.portrait[kind] = slot + 1;
-  return costume.portrait[kind];
+  *free = {character, costume.id, kind, at};
+  const uint32_t image = PoolImage(static_cast<size_t>(free - s.portraits.begin()));
+  StoreGuestU32(eternalsonata::kAppKeepSlotArray + 4 * (image - 1), at);
+  return image;
 }
 
 void StoreU16(rex::memory::Memory* memory, uint32_t address, uint16_t value) {
@@ -324,11 +450,12 @@ uint16_t LoadU16(rex::memory::Memory* memory, uint32_t address) {
 void ApplyCampPortraits(int character) {
   State& s = state();
   Costume& costume = s.costumes[character - 1][s.worn[character - 1]];
-  auto* memory = s.runtime ? s.runtime->memory() : rex::Runtime::instance()->memory();
+  auto* memory = GuestMemory();
   const uint32_t i = static_cast<uint32_t>(character - 1);
-  PortraitImage(costume, ETERNALSONATA_COSTUME_PORTRAIT_PANEL);
+  PortraitImage(character, costume, ETERNALSONATA_COSTUME_PORTRAIT_PANEL);
   for (int set = 0; set < 2; ++set) {
-    const uint32_t id = PortraitImage(costume, ETERNALSONATA_COSTUME_PORTRAIT_FACE + set);
+    const uint32_t id =
+        PortraitImage(character, costume, ETERNALSONATA_COSTUME_PORTRAIT_FACE + set);
     StoreU16(memory, eternalsonata::PartyArrayAddress(kFaceArrays[set], i),
              static_cast<uint16_t>(id ? id : s.default_faces[set][i]));
   }
@@ -555,9 +682,16 @@ void CostumeCharacterDefined(int character) {
   const int c = character - 1;
   // A new occupant starts from its own default; costumes of the last one go.
   auto& list = s.costumes[c];
+  for (const Costume& costume : list)
+    if (costume.guest)
+      s.retired.push_back(costume.guest);
   list.clear();
   list.push_back({"default", "Default"});
   s.worn[c] = s.boot[c] = ETERNALSONATA_COSTUME_DEFAULT;
+  // The new occupant's costumes may reuse the old one's ids.
+  for (auto& entry : s.portraits)
+    if (entry.character == character)
+      entry.costume.clear();
   ModdedCharacter definition;
   if (ModdedDefinition(character, definition)) {
     list.front().path = definition.model;
@@ -601,20 +735,52 @@ int WornCostume(int character) {
   return state().worn[character - 1];
 }
 
+// The unlocked costume after `from`, wrapping, skipping models known not to
+// load; `from` itself when there is none.
+int NextUnlockedAfter(int character, int from) {
+  const auto& list = state().costumes[character - 1];
+  const int count = static_cast<int>(list.size());
+  for (int k = 1; k < count; ++k) {
+    const int index = (from + k) % count;
+    if (list[index].unlocked && !list[index].failed)
+      return index;
+  }
+  return from;
+}
+
 int NextUnlockedCostume(int character) {
   if (!ValidCharacter(character))
     return ETERNALSONATA_COSTUME_ERR_INVALID_CHARACTER;
   std::lock_guard lock(g_mutex);
   EnsureCharacterLists();
-  const auto& list = state().costumes[character - 1];
-  const int worn = state().worn[character - 1];
-  const int count = static_cast<int>(list.size());
+  return NextUnlockedAfter(character, state().worn[character - 1]);
+}
+
+int WearNextCostume(int character) {
+  if (!ValidCharacter(character))
+    return ETERNALSONATA_COSTUME_ERR_INVALID_CHARACTER;
+  int worn, count;
+  {
+    std::lock_guard lock(g_mutex);
+    EnsureCharacterLists();
+    worn = state().worn[character - 1];
+    count = static_cast<int>(state().costumes[character - 1].size());
+  }
+  // A costume that does not go on is passed over; the default always does,
+  // so the walk ends there at the latest.
   for (int k = 1; k < count; ++k) {
     const int index = (worn + k) % count;
-    if (list[index].unlocked)
+    {
+      std::lock_guard lock(g_mutex);
+      const auto& list = state().costumes[character - 1];
+      if (index >= static_cast<int>(list.size()) || !list[index].unlocked || list[index].failed)
+        continue;
+    }
+    if (WearCostume(character, index) >= 0)
       return index;
+    REXLOG_WARN("costumes: {} cannot wear costume {}, trying the next", Token(character), index);
   }
-  return worn;
+  return ETERNALSONATA_COSTUME_ERR_INVALID_COSTUME;
 }
 
 uint32_t CostumePortrait(int character, int kind) {
@@ -625,7 +791,7 @@ uint32_t CostumePortrait(int character, int kind) {
   State& s = state();
   if (!s.live)
     return 0;
-  return PortraitImage(s.costumes[character - 1][s.worn[character - 1]], kind);
+  return PortraitImage(character, s.costumes[character - 1][s.worn[character - 1]], kind);
 }
 
 uint32_t CostumeModel(int character) {
@@ -864,6 +1030,43 @@ REX_HOOK_RAW(sub_82162058) {
       s.worn[c - 1] = ETERNALSONATA_COSTUME_DEFAULT;
   }
   s.boot = s.worn;
+}
+
+// sub_82176398(list, model, desc) makes every scene object, from a raw model
+// or none, and answers its handle or -1; sub_82175620(element) tears one down,
+// handle at +0. Together they count the objects reading each costume model.
+REX_EXTERN(__imp__sub_82176398);
+
+REX_HOOK_RAW(sub_82176398) {
+  const uint32_t model = ctx.r4.u32;
+  __imp__sub_82176398(ctx, base);
+  const uint32_t handle = ctx.r3.u32;
+  if (!model || handle == 0xFFFFFFFFu)
+    return;
+  std::lock_guard lock(g_ref_mutex);
+  const auto it = g_model_refs.find(model);
+  if (it == g_model_refs.end())
+    return;
+  ++it->second.objects;
+  it->second.built = true;
+  g_object_model[handle] = model;
+}
+
+REX_EXTERN(__imp__sub_82175620);
+
+REX_HOOK_RAW(sub_82175620) {
+  const uint32_t handle = REX_LOAD_U32(ctx.r3.u32);
+  {
+    std::lock_guard lock(g_ref_mutex);
+    const auto it = g_object_model.find(handle);
+    if (it != g_object_model.end()) {
+      const auto refs = g_model_refs.find(it->second);
+      if (refs != g_model_refs.end() && --refs->second.objects == 0)
+        refs->second.idle_since = std::chrono::steady_clock::now();
+      g_object_model.erase(it);
+    }
+  }
+  __imp__sub_82175620(ctx, base);
 }
 
 // ---------------------------------------------------------------------------

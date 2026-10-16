@@ -302,8 +302,7 @@ REX_HOOK_RAW(sub_82230658) {
   const int character = static_cast<int>(REX_LOAD_U32(kShownCharacter));
   if (menu && static_cast<int32_t>(REX_LOAD_U32(menu + 444)) == -1 &&
       (REX_LOAD_U32(menu + 448) & kButtonX) && CanChangeCostume(character)) {
-    const int next = eternalsonata::NextUnlockedCostume(character);
-    if (eternalsonata::WearCostume(character, next) >= 0) {
+    if (eternalsonata::WearNextCostume(character) >= 0) {
       PPCContext call = ctx;
       call.r3.u64 = static_cast<uint32_t>(character);
       sub_82232C10(call, base);

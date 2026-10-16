@@ -32,6 +32,10 @@ int WearCostume(int character, int costume);
 // other is unlocked.
 int NextUnlockedCostume(int character);
 
+// Puts on the first unlocked costume after the worn one that goes on,
+// wrapping; the index worn, or an error when none did.
+int WearNextCostume(int character);
+
 // The AppKeep image id of the worn costume's portrait of one
 // ETERNALSONATA_COSTUME_PORTRAIT_* kind, loading a mod's on first use; 0 for
 // the character's own.
