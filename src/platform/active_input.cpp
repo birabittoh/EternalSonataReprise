@@ -46,6 +46,7 @@ int64_t Ticks(D d) {
 
 std::atomic<int64_t> g_keys_used{0};
 std::atomic<int64_t> g_pad_used{0};
+std::atomic<int64_t> g_touch_used{0};
 std::atomic<rex::input::InputSystem*> g_input{nullptr};
 std::atomic<ActiveInputKind> g_pad_kind{ActiveInputKind::kUnknown};
 
@@ -157,6 +158,9 @@ class ActiveInputTrackerImpl final : public ActiveInputTracker,
   }
 
   void OnKeyDown(rex::ui::KeyEvent&) override { g_keys_used.store(Now(), std::memory_order_release); }
+  void OnTouchEvent(rex::ui::TouchEvent&) override {
+    g_touch_used.store(Now(), std::memory_order_release);
+  }
   void OnMouseDown(rex::ui::MouseEvent&) override {
     g_keys_used.store(Now(), std::memory_order_release);
   }
@@ -208,7 +212,18 @@ std::unique_ptr<ActiveInputTracker> CreateActiveInputTracker(rex::ui::Window* wi
 ActiveInputKind ActiveInput() {
   PollPads();
   const ActiveInputKind pad = g_pad_kind.load(std::memory_order_acquire);
+  const int64_t keys = g_keys_used.load(std::memory_order_acquire);
+  const int64_t touch = g_touch_used.load(std::memory_order_acquire);
+  // Touch controls are a virtual pad. Without a real one there is no pad kind to
+  // report, so the generic one stands in until the keyboard is used again.
+  if (touch > keys && touch > g_pad_used.load(std::memory_order_acquire)) {
+    return pad == ActiveInputKind::kUnknown ? ActiveInputKind::kOtherPad : pad;
+  }
+#if REX_PLATFORM_ANDROID
+  const bool keyboard = rex::cvar::GetFlagByName("mnk_mode") == "true" && keys > 0;
+#else
   const bool keyboard = rex::cvar::GetFlagByName("mnk_mode") == "true";
+#endif
   if (pad == ActiveInputKind::kUnknown) {
     return keyboard ? ActiveInputKind::kKeyboardMouse : ActiveInputKind::kUnknown;
   }
