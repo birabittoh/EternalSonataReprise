@@ -38,13 +38,8 @@
 #include "ui_language.h"
 
 // Cvars read below. Defined (and persisted) in settings.cpp. The rows' own
-// values go through the settings.cpp accessors rather than the cvars directly.
+// values go through the settings.cpp accessors or the cvar registry.
 REXCVAR_DECLARE(bool, menu_scan);
-// The two aiming rows have no settings.cpp accessor of their own: they are
-// plain bools with no derived state, so the row writes the cvar and asks for
-// the same save the accessors would have done.
-REXCVAR_DECLARE(bool, aim_invert_x);
-REXCVAR_DECLARE(bool, aim_invert_y);
 
 // ---------------------------------------------------------------------------
 // Native option rows in the Options screen
@@ -135,7 +130,7 @@ constexpr u32 kInsertOffset = 0x76Cu;
 // the same condition the page-1 splice point was chosen for.
 //
 // Page 2's own three rows sit at record y 25/75/125, and the hint line at 490,
-// so rows appended from 175 down have room for five before they would collide.
+// so rows appended from 175 down have room for six before they would collide.
 constexpr u32 kButtonsInsertOffset = 0x408u;
 constexpr u32 kTextRecord = 200u;          // type 200 = text label
 constexpr u32 kTextRecordBytes = 0x28u;
@@ -224,10 +219,11 @@ constexpr u32 kSliderXOffset = 0x04u;
 constexpr u32 kSliderYOffset = 0x08u;
 constexpr u32 kSliderNumXOffset = 0x18u;
 constexpr u32 kSliderNumYOffset = 0x1Cu;
-// sub_821F00F0 lays the number's box out for this many characters. The stock 3
-// is exactly "100", one short of "100%".
+// sub_821F00F0 lays the number's box out for this many characters, 1 to 10.
+// The stock 3 is exactly "100", one short of "100%".
 constexpr u32 kSliderNumWidthOffset = 0x28u;
 constexpr u32 kSliderNumWidth = 4u;
+constexpr u32 kSliderNumWidthMax = 10u;
 constexpr u32 kLayerRecord = 3000u;
 constexpr u32 kLayerRecordBytes = 0x08u;
 constexpr u32 kSliderLayer = 3u;  // what the stock pair opens with
@@ -235,14 +231,15 @@ constexpr u32 kSliderLayer = 3u;  // what the stock pair opens with
 constexpr int32_t kSliderRecordDY = -2;
 // Each kind appends its object id to a `-1`-terminated table on the screen, so
 // ours are the last entries of each, the same rule the highlight bars follow.
-// A screen refuses a fourth gauge, which is why slider rows are page 2 only:
-// page 1's volumes fill its table.
+// The gauge table has three slots, counted at +1540, and sub_821F1B48 refuses a
+// fourth gauge; past that ours go to a table of our own (see GaugeIds).
 //
 // The menu manager's heap caps the total across every screen at once; it is
 // grown for us, see kVolContHeapSize.
 constexpr u32 kScreenSliderIds = 1528u;
 constexpr u32 kScreenSliderNumIds = 644u;
 constexpr u32 kScreenSliderCount = 3u;
+constexpr u32 kScreenSliderCountByte = 1540u;
 constexpr u32 kScreenNumberMax = 48u;  // sub_821F00F0 refuses a 49th
 // The number is written by sub_821D3AC8(registry, object, value), which formats
 // it as decimal into +8 of a node on the chain at dword_82557568 (linked at
@@ -253,7 +250,7 @@ constexpr u32 kTextNodeBuffer = 8u;
 constexpr u32 kTextNodeWalkMax = 4096u;
 constexpr u32 kNumberRegistry = 0x82555690u;
 // The game writes an eleven-digit number and a sign into this same buffer.
-constexpr u32 kReadoutMaxChars = 8u;
+constexpr u32 kReadoutMaxChars = 12u;
 // Live gauge object: maximum, current value.
 constexpr u32 kSliderObjMaxOffset = 100u;
 constexpr u32 kSliderObjValueOffset = 104u;
@@ -381,14 +378,23 @@ constexpr u8 kStateOptionRows = 3;   // sub_82201620, page 1's row handler
 constexpr u8 kStateOptionSlider = 11;  // sub_82201FB0, page 1's slider handler
 constexpr u8 kStateButtons = 7;      // sub_82202CB0, page 2's handler
 
-// Every page from kPageMods on belongs to mods, and there are as many as their
-// rows need. Each is a rebuild of the button screen (see the page turn hooks at
-// the end of this file), so they share page 2's lists and state bytes.
-enum PageId { kPageOptions = 0, kPageButtons = 1, kPageMods = 2 };
-constexpr int kFixedPages = kPageMods;  // pages with lists of their own
-static_assert(kPageMods == ETERNALSONATA_PAGE_MODS, "page ids are the ABI's");
+// Every page from kPageGraphics on is a rebuild of the button screen (see the
+// page turn hooks at the end of this file), so they share page 2's lists and
+// state bytes. Graphics and Balance are ours; from kPageMods on they belong to
+// mods, and there are as many as their rows need.
+enum PageId {
+  kPageOptions = 0,
+  kPageButtons = 1,
+  kPageGraphics = 2,
+  kPageBalance = 3,
+  kPageMods = 4
+};
+constexpr int kFixedPages = kPageGraphics;  // pages with lists of their own
+static_assert(int{kPageMods} == int{ETERNALSONATA_PAGE_MODS}, "page ids are the ABI's");
+static_assert(int{kPageGraphics} == int{ETERNALSONATA_PAGE_GRAPHICS}, "page ids are the ABI's");
 
-bool IsModsPage(int page) { return page >= kPageMods; }
+// A page drawn over page 2's screen with its button rows hidden.
+bool IsExtraPage(int page) { return page >= kPageGraphics; }
 
 struct PageLayout {
   // Display list, one address per language (same order as LanguageIndex).
@@ -421,29 +427,30 @@ struct PageLayout {
 };
 
 constexpr PageLayout kPages[] = {
-    // Page 1: rows appended below Voce (record y 285, 335).
+    // Page 1: rows appended below Voce (record y 335, 385; menu_layouts.txt
+    // moves the stock rows down one pitch to fit Master Volume).
     {kOptionsListByLang, kOptionsListBytes, kInsertOffset, kIconRecordBytes, 2,
-     2, 480, 385, 5, 1},
+     2, 530, 435, 5, 1},
     // Page 2: rows appended below the three button rows (record y 25/75/125,
     // selectable items at 165/215/265).
     {kButtonsListByLang, kButtonsListBytes, kButtonsInsertOffset, 0, 1, 3, 265,
      175, 5, 0},
-    // Mods pages: page 2's screen with its button rows hidden, so rows start
+    // Pages 3 on: page 2's screen with its button rows hidden, so rows start
     // where those did and the group holds only ours. stock_item_yn is the item
     // one pitch above the first row.
     {kButtonsListByLang, kButtonsListBytes, kButtonsInsertOffset, 0, 1, 0, 115,
      25, 5, 0},
 };
 
-const PageLayout& Layout(int page) { return kPages[std::min(page, int{kPageMods})]; }
+const PageLayout& Layout(int page) { return kPages[std::min(page, int{kPageGraphics})]; }
 
-// A mods page starts its rows where page 2's button rows were, which leaves
+// An extra page starts its rows where page 2's button rows were, which leaves
 // room for one more above the hint line than the other pages have.
 constexpr u32 kModsPageMaxRows = ETERNALSONATA_MAX_MODS_PAGE_ROWS;
 static_assert(kModsPageMaxRows <= kSelectableSlots, "a group holds 10 items");
 
 u32 PageMaxRows(int page) {
-  if (IsModsPage(page)) {
+  if (IsExtraPage(page)) {
     return kModsPageMaxRows;
   }
   return std::min(kSelectableSlots - Layout(page).stock_rows, kMaxOptionRows);
@@ -540,8 +547,31 @@ bool ClassifyList(u32 list_addr, int* page, int* lang_idx) {
 }
 
 constexpr LocalizedLabel kLabelResolution = {"resolution"};
-constexpr LocalizedLabel kLabelFieldOfView = {"field_of_view"};
 constexpr LocalizedLabel kLabelFrameRate = {"frame_rate"};
+constexpr LocalizedLabel kLabelGamma = {"gamma"};
+constexpr LocalizedLabel kLabelAnisotropy = {"anisotropy"};
+constexpr LocalizedLabel kLabelMsaa = {"msaa"};
+constexpr LocalizedLabel kLabelFxaa = {"fxaa"};
+constexpr LocalizedLabel kLabelFullscreen = {"fullscreen"};
+constexpr LocalizedLabel kLabelButtonGlyphs = {"button_glyphs"};
+// Which release's formula prices a photo.
+constexpr LocalizedLabel kLabelPhotoPricing = {"photo_pricing"};
+constexpr LocalizedLabel kLabelValueAuto = {"value_auto"};
+constexpr LocalizedLabel kLabelJapaneseFont = {"japanese_font"};
+constexpr LocalizedLabel kLabelSavePortraits = {"save_portraits"};
+constexpr LocalizedLabel kLabelSkipIntro = {"skip_intro"};
+constexpr LocalizedLabel kLabelExp = {"exp"};
+constexpr LocalizedLabel kLabelBenchExp = {"bench_exp"};
+constexpr LocalizedLabel kLabelDownedExp = {"downed_exp"};
+constexpr LocalizedLabel kLabelGold = {"gold"};
+constexpr LocalizedLabel kLabelPhotoPrice = {"photo_price"};
+constexpr LocalizedLabel kLabelEnemyHp = {"enemy_hp"};
+constexpr LocalizedLabel kLabelEnemyDamage = {"enemy_damage"};
+constexpr LocalizedLabel kLabelAutoParry = {"auto_parry"};
+// The volume block's new first entry, drawn in the column Music sits in.
+constexpr LocalizedLabel kLabelMasterVolume = {"master_volume"};
+// A gauge readout for a setting that is switched off.
+constexpr LocalizedLabel kLabelValueOff = {"value_off"};
 // Long range aiming, one row per axis. Same length budget as kLabelText.
 constexpr LocalizedLabel kLabelAimInvertX = {"aim_invert_x"};
 constexpr LocalizedLabel kLabelAimInvertY = {"aim_invert_y"};
@@ -668,21 +698,21 @@ struct OptionRow {
   // Settled by eye against the real rows, like kBarShrinkFixup.
   int32_t bar_nudge_x = 0;
   int32_t bar_nudge_step_x = 0;
-  // Which page the row is drawn on. kPageOptions is the game-settings page,
-  // kPageButtons the graphics one, kPageMods and on the ones mods get. The
-  // built-in rows pick their page explicitly; a mod row goes to the first mods
-  // page with room.
+  // Which page the row is drawn on. The built-in rows pick their page
+  // explicitly; a mod row goes to the first mods page with room.
   int page = kPageOptions;
   // A slider row draws the game's own volume gauge instead of a list of values:
   // no `values`, no highlight bar, and get_index/set_index speak a step index.
-  // Page 2 only, see kScreenSliderIds.
   bool slider = false;
   // How many steps the gauge has, and what each one puts on it; without a
   // display hook the step index is drawn as is.
   int slider_steps = 0;
   std::function<int(int)> slider_display;
+  // The readout beside the gauge for a step, in place of the number and its
+  // percent sign.
+  std::function<std::string(int)> slider_text;
   // What the gauge reads as full, or zero to keep the 100 the cloned record
-  // carries. A row whose values run past 100 (the field of view reaches 200%)
+  // carries. A row whose values run past 100 (render resolution reaches 200%)
   // has to raise it, or both the bar and the readout clamp.
   int slider_max = 0;
   // Whether a step plays the value change cue.
@@ -792,8 +822,6 @@ int FrameRateGetIndex();
 void FrameRateSetIndex(u8* base, int idx);
 int RenderScaleGet();
 void RenderScaleSet(u8* base, int percent);
-int CameraFovGet();
-void CameraFovSet(u8* base, int index);
 int TextGetIndex();
 void TextSetIndex(u8* base, int idx);
 int OverworldModelGetIndex();
@@ -813,24 +841,6 @@ void OverworldModelSetIndex(u8* base, int idx);
 // boolean row localised for free, and identical to the stock row beside it.
 constexpr u32 kSidOn = 130u;
 constexpr u32 kSidOff = 131u;
-
-int AimInvertXGetIndex();
-void AimInvertXSetIndex(u8* base, int idx);
-int AimInvertYGetIndex();
-void AimInvertYSetIndex(u8* base, int idx);
-
-// Narrows one value's bar to fit that value alone, instead of the row-wide
-// width its longest sibling asks for. Only worth doing where the gap between
-// the two is wide enough to see: "4K" next to "1080p", "30 FPS" next to
-// "Unlocked". Every other value keeps the row width, which reads correctly.
-void FitBarToValue(OptionRow& row, const char* text) {
-  for (OptionValue& value : row.values) {
-    if (value.literal[0] == text) {
-      value.bar_width[0] = BarWidthForText(text);
-      return;
-    }
-  }
-}
 
 // Fills `row` in from a label table and a list of literal values, the shape
 // both built-in rows have. Mod rows go through the same path in
@@ -869,6 +879,80 @@ void MakeBooleanRow(OptionRow& row, const LocalizedLabel& label) {
   off.btx_id = kSidOff;
   row.values.push_back(std::move(on));
   row.values.push_back(std::move(off));
+}
+
+void SaveCvar(const char* cvar, const char* value) {
+  rex::cvar::SetFlagByName(cvar, value, /*persist=*/true);
+  eternalsonata::SaveUserSettings();
+  REXLOG_INFO("[options] {} -> {}", cvar, value);
+}
+
+// An ON/OFF row over a bool cvar. Index 0 is ON.
+void MakeBoolCvarRow(OptionRow& row, const LocalizedLabel& label, const char* cvar) {
+  MakeBooleanRow(row, label);
+  row.bar_nudge_x = kBooleanBarNudge;
+  row.get_index = [cvar] { return rex::cvar::GetFlagByName(cvar) == "true" ? 0 : 1; };
+  row.set_index = [cvar](u8*, int idx) { SaveCvar(cvar, idx == 0 ? "true" : "false"); };
+}
+
+// A row whose index picks one of a string cvar's allowed values. An unknown
+// value reads as the first.
+void BindChoiceCvar(OptionRow& row, const char* cvar, std::vector<const char*> ids) {
+  row.get_index = [cvar, ids] {
+    const std::string cur = rex::cvar::GetFlagByName(cvar);
+    for (size_t i = 0; i < ids.size(); ++i) {
+      if (cur == ids[i]) {
+        return static_cast<int>(i);
+      }
+    }
+    return 0;
+  };
+  row.set_index = [cvar, ids](u8*, int idx) {
+    if (idx >= 0 && idx < static_cast<int>(ids.size())) {
+      SaveCvar(cvar, ids[idx]);
+    }
+  };
+}
+
+// A gauge row whose fill is the step index and whose readout is `text`.
+void MakeSliderRow(OptionRow& row, const LocalizedLabel& label, int steps,
+                   std::function<std::string(int)> text) {
+  MakeLiteralRow(row, label, nullptr, 0);
+  row.slider = true;
+  row.slider_steps = steps;
+  row.slider_max = std::max(1, steps - 1);
+  row.slider_text = std::move(text);
+}
+
+// `label` in the language being drawn, English where it has no text.
+std::string DrawnLabel(const LocalizedLabel& label) {
+  const int lang = DrawLanguage();
+  return LabelText(label, HasText(label, lang) ? lang : 0);
+}
+
+void MakeMultiplierRow(OptionRow& row, const LocalizedLabel& label, const char* cvar) {
+  MakeSliderRow(row, label, eternalsonata::MultiplierOptionCount(cvar), [cvar](int idx) {
+    char text[16];
+    std::snprintf(text, sizeof(text), "%gx", eternalsonata::MultiplierOptionValue(cvar, idx));
+    return std::string(text);
+  });
+  row.get_index = [cvar] { return eternalsonata::MultiplierOptionIndex(cvar); };
+  row.set_index = [cvar](u8*, int idx) {
+    eternalsonata::SetMultiplierOption(cvar, idx);
+    REXLOG_INFO("[options] {} -> {}", cvar, eternalsonata::MultiplierOptionValue(cvar, idx));
+  };
+}
+
+// A gauge over a string cvar's allowed values, the first of which reads "Off".
+void MakeChoiceSliderRow(OptionRow& row, const LocalizedLabel& label, const char* cvar,
+                         std::vector<const char*> ids, std::vector<const char*> texts) {
+  MakeSliderRow(row, label, static_cast<int>(ids.size()), [texts](int idx) {
+    if (idx <= 0) {
+      return DrawnLabel(kLabelValueOff);
+    }
+    return std::string(idx < static_cast<int>(texts.size()) ? texts[idx] : "");
+  });
+  BindChoiceCvar(row, cvar, std::move(ids));
 }
 
 // Asks the Quit Game question on the next menu tick; see QuitConfirmTick.
@@ -915,111 +999,136 @@ void TranslateBuiltinLabel(OptionRow& row, const char* key) {
 // neither is safe to touch before the app has finished starting. Lazy
 // registration also fixes the ordering against mods for free - Rows() is first
 // reached from the Options screen build, long after every mod DLL has had its
-// OnModuleLaunched() call, so the built-ins are always rows 0 and 1 and mod
-// rows follow in load order.
+// OnModuleLaunched() call, so the built-ins always come first and mod rows
+// follow in load order.
 RowStore& Rows() {
   static RowStore rows = [] {
     RowStore initial;
-    initial.resize(8);
+    // Rows are drawn in registry order within a page.
+    auto add = [&](int page) -> OptionRow& {
+      OptionRow& row = initial.emplace_back();
+      row.page = page;
+      return row;
+    };
+    // Mod-published translations, applied once every row has its own label.
+    std::vector<std::pair<size_t, const char*>> translations;
+    auto translate = [&](const char* key) { translations.emplace_back(initial.size() - 1, key); };
 
-    // Page 2, the graphics page, in the order they are drawn.
-    //
-    // Render Resolution draws the same steps the overlay's slider does and
-    // applies live, so it carries no restart marker.
-    MakeLiteralRow(initial[0], kLabelResolution, nullptr, 0);
-    initial[0].slider = true;
-    initial[0].slider_sound = false;
-    initial[0].slider_steps = eternalsonata::RenderScaleOptionCount();
-    initial[0].slider_display = &eternalsonata::RenderScaleOptionPercent;
-    initial[0].slider_max = eternalsonata::RenderScaleOptionPercent(
-        eternalsonata::RenderScaleOptionCount() - 1);
-    initial[0].get_index = &RenderScaleGet;
-    initial[0].set_index = &RenderScaleSet;
-    initial[0].page = kPageButtons;
-    // Field of View, the page's second gauge. Its range runs past 100%, so the
-    // record carries its own maximum instead of the cloned 100. The second
-    // gauge only exists because the CampVolCont heap is grown for it (see the
-    // sub_82112240 hook).
-    MakeLiteralRow(initial[1], kLabelFieldOfView, nullptr, 0);
-    initial[1].slider = true;
-    initial[1].slider_sound = false;
-    initial[1].slider_steps = eternalsonata::CameraFovOptionCount();
-    initial[1].slider_display = &eternalsonata::CameraFovOptionPercent;
-    initial[1].slider_max = eternalsonata::CameraFovOptionPercent(
-        eternalsonata::CameraFovOptionCount() - 1);
-    initial[1].get_index = &CameraFovGet;
-    initial[1].set_index = &CameraFovSet;
-    initial[1].page = kPageButtons;
+    // Page 1, below the stock Subtitles and Voice rows.
+    OptionRow& text = add(kPageOptions);
+    MakeLiteralRow(text, kLabelText, nullptr, 0);
+    for (int i : eternalsonata::VisibleUserLanguages()) {
+      OptionValue value;
+      value.literal[0] = eternalsonata::UserLanguageCode(i);
+      text.values.push_back(std::move(value));
+    }
+    text.bar_nudge_x = kTextBarNudge;
+    text.bar_nudge_step_x = kTextBarNudgeStep;
+    text.get_index = &TextGetIndex;
+    text.set_index = &TextSetIndex;
+    translate("text_label");
+
+    // Page 2, below the three button rows.
+    MakeBoolCvarRow(add(kPageButtons), kLabelAimInvertX, "aim_invert_x");
+    translate("aim_invert_x_label");
+    MakeBoolCvarRow(add(kPageButtons), kLabelAimInvertY, "aim_invert_y");
+    translate("aim_invert_y_label");
+    MakeBoolCvarRow(add(kPageButtons), kLabelJapaneseFont, "force_japanese_font");
+    MakeBoolCvarRow(add(kPageButtons), kLabelSavePortraits, "save_row_portraits");
+    MakeBoolCvarRow(add(kPageButtons), kLabelSkipIntro, "skip_intro");
+    OptionRow& overworld = add(kPageButtons);
+    MakeLiteralRow(overworld, kLabelOverworldModel, nullptr, 0);
+    for (const LocalizedLabel* choice : {&kLabelOverworldDefault, &kLabelOverworldLeader}) {
+      overworld.values.push_back(LabelValue(*choice));
+    }
+    overworld.get_index = &OverworldModelGetIndex;
+    overworld.set_index = &OverworldModelSetIndex;
+    translate("overworld_model_label");
+
+    // Page 3, graphics. Render Resolution draws the same steps the overlay's
+    // slider does and applies live, so it carries no restart marker.
+    OptionRow& resolution = add(kPageGraphics);
+    MakeLiteralRow(resolution, kLabelResolution, nullptr, 0);
+    resolution.slider = true;
+    resolution.slider_steps = eternalsonata::RenderScaleOptionCount();
+    resolution.slider_display = &eternalsonata::RenderScaleOptionPercent;
+    resolution.slider_max =
+        eternalsonata::RenderScaleOptionPercent(eternalsonata::RenderScaleOptionCount() - 1);
+    resolution.get_index = &RenderScaleGet;
+    resolution.set_index = &RenderScaleSet;
+    translate("resolution_label");
+    OptionRow& gamma = add(kPageGraphics);
+    MakeSliderRow(gamma, kLabelGamma, eternalsonata::DisplayGammaOptionCount(), [](int idx) {
+      const char* label = eternalsonata::DisplayGammaOptionLabel(idx);
+      return std::string(label ? label : "");
+    });
+    gamma.get_index = &eternalsonata::DisplayGammaOptionIndex;
+    gamma.set_index = [](u8*, int idx) { eternalsonata::SetDisplayGammaOption(idx); };
+    MakeChoiceSliderRow(add(kPageGraphics), kLabelAnisotropy, "render_anisotropy",
+                        {"1", "2", "4", "8", "16"}, {"", "2x", "4x", "8x", "16x"});
+    MakeChoiceSliderRow(add(kPageGraphics), kLabelMsaa, "render_msaa", {"1", "2", "4", "8"},
+                        {"", "2x", "4x", "8x"});
+    MakeBoolCvarRow(add(kPageGraphics), kLabelFxaa, "render_fxaa");
     // Labels come from settings.cpp's preset list, so the row and the overlay's
     // slider offer the same states in the same order.
     std::vector<const char*> fps_values;
     for (int i = 0; i < eternalsonata::FrameRateOptionCount(); ++i) {
       fps_values.push_back(eternalsonata::FrameRateOptionLabel(i));
     }
-    MakeLiteralRow(initial[2], kLabelFrameRate, fps_values.data(),
-                   static_cast<int>(fps_values.size()));
-    initial[2].get_index = &FrameRateGetIndex;
-    initial[2].set_index = &FrameRateSetIndex;
-    initial[2].page = kPageButtons;
-    // Six characters against the eight of "Adaptive"/"Unlocked", which is what
-    // the row width is sized for.
-    FitBarToValue(initial[2], "30 FPS");
-    FitBarToValue(initial[2], "60 FPS");
-
-    // Page 1, the game page, below the stock Subtitles and Voice rows.
-    MakeLiteralRow(initial[3], kLabelText, nullptr, 0);
-    for (int i : eternalsonata::VisibleUserLanguages()) {
+    OptionRow& fps = add(kPageGraphics);
+    MakeLiteralRow(fps, kLabelFrameRate, fps_values.data(), static_cast<int>(fps_values.size()));
+    fps.get_index = &FrameRateGetIndex;
+    fps.set_index = &FrameRateSetIndex;
+    translate("framerate_label");
+    MakeBoolCvarRow(add(kPageGraphics), kLabelFullscreen, "fullscreen");
+    OptionRow& glyphs = add(kPageGraphics);
+    MakeLiteralRow(glyphs, kLabelButtonGlyphs, nullptr, 0);
+    OptionValue glyphs_off;
+    glyphs_off.btx_id = kSidOff;
+    glyphs.values.push_back(std::move(glyphs_off));
+    for (const char* name : {"Xbox 360", "PS3"}) {
       OptionValue value;
-      value.literal[0] = eternalsonata::UserLanguageCode(i);
-      initial[3].values.push_back(std::move(value));
+      value.literal[0] = name;
+      glyphs.values.push_back(std::move(value));
     }
-    initial[3].bar_nudge_x = kTextBarNudge;
-    initial[3].bar_nudge_step_x = kTextBarNudgeStep;
-    initial[3].get_index = &TextGetIndex;
-    initial[3].set_index = &TextSetIndex;
-    initial[3].page = kPageOptions;
-    MakeLiteralRow(initial[4], kLabelOverworldModel, nullptr, 0);
-    for (const LocalizedLabel* choice : {&kLabelOverworldDefault, &kLabelOverworldLeader}) {
-      initial[4].values.push_back(LabelValue(*choice));
+    BindChoiceCvar(glyphs, "override_button_glyphs", {"disabled", "xbox", "ps3"});
+    OptionRow& pricing = add(kPageGraphics);
+    MakeLiteralRow(pricing, kLabelPhotoPricing, nullptr, 0);
+    pricing.values.push_back(LabelValue(kLabelValueAuto));
+    for (const char* name : {"Xbox 360", "PS3"}) {
+      OptionValue value;
+      value.literal[0] = name;
+      pricing.values.push_back(std::move(value));
     }
-    initial[4].get_index = &OverworldModelGetIndex;
-    initial[4].set_index = &OverworldModelSetIndex;
-    initial[4].page = kPageOptions;
+    BindChoiceCvar(pricing, "photo_price_algorithm", {"auto", "360", "ps3"});
 
-    // Back on page 2, below Frame Rate: rows are drawn in registry order
-    // within a page, so appending here puts them at the bottom of it.
-    MakeBooleanRow(initial[5], kLabelAimInvertX);
-    initial[5].bar_nudge_x = kBooleanBarNudge;
-    initial[5].get_index = &AimInvertXGetIndex;
-    initial[5].set_index = &AimInvertXSetIndex;
-    initial[5].page = kPageButtons;
-    MakeBooleanRow(initial[6], kLabelAimInvertY);
-    initial[6].bar_nudge_x = kBooleanBarNudge;
-    initial[6].get_index = &AimInvertYGetIndex;
-    initial[6].set_index = &AimInvertYSetIndex;
-    initial[6].page = kPageButtons;
+    // Page 4, balance.
+    MakeMultiplierRow(add(kPageBalance), kLabelExp, "enemy_exp_multiplier");
+    MakeMultiplierRow(add(kPageBalance), kLabelBenchExp, "benched_exp_multiplier");
+    MakeMultiplierRow(add(kPageBalance), kLabelDownedExp, "incapacitated_exp_multiplier");
+    MakeMultiplierRow(add(kPageBalance), kLabelGold, "enemy_gold_multiplier");
+    MakeMultiplierRow(add(kPageBalance), kLabelPhotoPrice, "photo_price_multiplier");
+    MakeMultiplierRow(add(kPageBalance), kLabelEnemyHp, "enemy_hp_multiplier");
+    MakeMultiplierRow(add(kPageBalance), kLabelEnemyDamage, "enemy_damage_multiplier");
+    MakeBoolCvarRow(add(kPageBalance), kLabelAutoParry, "auto_parry");
     // Left/right picks what A does.
-    MakeLiteralRow(initial[7], kLabelExit, nullptr, 0);
+    OptionRow& exit = add(kPageBalance);
+    MakeLiteralRow(exit, kLabelExit, nullptr, 0);
     for (const LocalizedLabel* choice : {&kLabelQuitGame, &kLabelChangeVersion}) {
-      initial[7].values.push_back(LabelValue(*choice));
+      exit.values.push_back(LabelValue(*choice));
     }
-    initial[7].action = [](u8*) {
+    exit.action = [](u8*) {
       g_exit_choice == 0 ? RequestQuitConfirm() : RequestVersionConfirm();
     };
-    initial[7].get_index = [] { return g_exit_choice; };
-    initial[7].set_index = [](u8*, int idx) { g_exit_choice = idx; };
-    initial[7].page = kPageButtons;
+    exit.get_index = [] { return g_exit_choice; };
+    exit.set_index = [](u8*, int idx) { g_exit_choice = idx; };
 
-    // Mod-published translations for the labels above, in every language
-    // including the ones mods added. The Text row's own *values* stay as they
-    // are: they are two-letter language codes, which are not translated.
-    TranslateBuiltinLabel(initial[0], "resolution_label");
-    TranslateBuiltinLabel(initial[1], "fov_label");
-    TranslateBuiltinLabel(initial[2], "framerate_label");
-    TranslateBuiltinLabel(initial[3], "text_label");
-    TranslateBuiltinLabel(initial[4], "overworld_model_label");
-    TranslateBuiltinLabel(initial[5], "aim_invert_x_label");
-    TranslateBuiltinLabel(initial[6], "aim_invert_y_label");
+    // In every language including the ones mods added. The Text row's own
+    // *values* stay as they are: they are two-letter language codes, which are
+    // not translated.
+    for (const auto& [row, key] : translations) {
+      TranslateBuiltinLabel(initial[row], key);
+    }
     return initial;
   }();
   return rows;
@@ -1033,6 +1142,8 @@ std::vector<std::vector<u32>> g_value_addr;  // per-row literal value strings
 u32 g_strings_rows = 0;  // rows the two arrays above have been filled for
 u32 g_bar_vec = 0;  // shared guest scratch for the {x, y, z} move argument
 u32 g_bar_quad = 0;  // shared guest scratch for the 8 floats of a bar's quad
+u32 g_shift_vec = 0;  // a stock bar's lowered {x, y, z}, see LowerStockBar
+u32 g_pos_out = 0;    // where sub_8217BF28 writes an object's position
 // The restart marker, shared by every row: only one language is on screen at a
 // time, so one allocation serves all of them (the BTX hook hands the same
 // pointer back for any row's marker id).
@@ -1074,11 +1185,6 @@ struct PageState {
   // being slid around as if it were a highlight bar while the real bar sat on
   // the portrait's row.
   u32 list_objects = 0;
-  // The same boundary for the gauge and number tables, and for the same reason:
-  // the screen's handler keeps creating objects, numbers among them, after the
-  // list is done.
-  u32 list_gauges = 0;
-  u32 list_numbers = 0;
   // Y of the group's last stock selectable item, read live off the group node
   // each frame, or 0 before it has been seen. Compared against the layout's own
   // figure to place the bars; see BarY.
@@ -1703,6 +1809,42 @@ u32 CountIdArray(u8* base, u32 screen, u32 offset, u32 max) {
   return n;
 }
 
+// Gauges a screen made past the three its own table holds, see the
+// sub_821F1B48 hook. Freed by the sub_821ED900 hook when the screen pops.
+struct SideGauges {
+  u32 screen;
+  std::vector<u32> ids;
+};
+std::vector<SideGauges> g_side_gauges;
+// Whether one of our lists is being walked, and the screen its first diverted
+// gauge went to.
+bool g_walking_ours = false;
+u32 g_walk_screen = 0;
+
+std::vector<u32>* SideGaugesOf(u32 screen) {
+  for (SideGauges& s : g_side_gauges) {
+    if (s.screen == screen) {
+      return &s.ids;
+    }
+  }
+  return nullptr;
+}
+
+// Every gauge on `screen` in creation order: the screen's own table, then ours.
+std::vector<u32> GaugeIds(u8* base, u32 screen) {
+  std::vector<u32> ids;
+  const u32 n = CountIdArray(base, screen, kScreenSliderIds, kScreenSliderCount);
+  for (u32 i = 0; i < n; ++i) {
+    ids.push_back(REX_LOAD_U32(screen + kScreenSliderIds + 4 * i));
+  }
+  if (const auto* side = SideGaugesOf(screen)) {
+    ids.insert(ids.end(), side->begin(), side->end());
+  }
+  return ids;
+}
+
+void WriteGuestString(u8* base, u32 at, const char* s);
+
 // The text node sub_821D3AC8 would write into for `text_obj`, or 0.
 //
 // Walked the way sub_821D4708 walks it: any non-null node, no address test,
@@ -1720,26 +1862,13 @@ u32 TextNodeFor(u8* base, u32 text_obj) {
   return 0;
 }
 
-// The gauge object of `row` (page-local index), or 0.
-u32 SliderObject(u8* base, int page, u32 row) {
-  const PageState& st = Page(page);
-  if (row >= st.slider_id.size() || st.slider_id[row] == 0xFFFFFFFFu) {
-    return 0;
-  }
-  const u32 root = REX_LOAD_U32(g_ui_root);
-  if (!GuestPtr(root)) {
-    return 0;
-  }
-  const u32 obj = g_resolve_object(root, st.slider_id[row]);
-  return GuestPtr(obj) ? obj : 0;
-}
-
-// Extends the string sub_821D3AC8 just wrote, so the number reads "70%" rather
-// than "70", re-setting the flags that call sets. The digit test guards against
-// the second buffer it uses for one particular object.
-void AppendReadoutSuffix(u8* base, u32 text_obj, char suffix) {
+// Replaces the string sub_821D3AC8 just wrote, so the number can read "70%" or
+// "Off" rather than a bare number, re-setting the flags that call sets. The
+// digit test guards against the second buffer it uses for one particular
+// object.
+void SetReadoutText(u8* base, u32 text_obj, const std::string& text) {
   const u32 node = TextNodeFor(base, text_obj);
-  if (!node) {
+  if (!node || text.size() >= kReadoutMaxChars) {
     return;
   }
   const u32 buf = node + kTextNodeBuffer;
@@ -1747,15 +1876,7 @@ void AppendReadoutSuffix(u8* base, u32 text_obj, char suffix) {
   if (first < '0' || first > '9') {
     return;
   }
-  u32 len = 0;
-  while (len < kReadoutMaxChars && REX_LOAD_U8(buf + len)) {
-    ++len;
-  }
-  if (len >= kReadoutMaxChars) {
-    return;
-  }
-  REX_STORE_U8(buf + len, static_cast<u8>(suffix));
-  REX_STORE_U8(buf + len + 1, 0);
+  WriteGuestString(base, buf, text.c_str());
   REX_STORE_U8(node + 518, 0);
   REX_STORE_U8(node + 840, 0);
   REX_STORE_U8(node + 841, 0);
@@ -1764,36 +1885,58 @@ void AppendReadoutSuffix(u8* base, u32 text_obj, char suffix) {
   REX_STORE_U8(node + 925, 1);
 }
 
-// Draws `row`'s current step on its gauge and beside it, the way sub_82200FE8
-// seeds the volume ones: clamp to the gauge's maximum, store, redraw.
-void RefreshSlider(u8* base, int page, u32 row) {
-  const u32 obj = SliderObject(base, page, row);
-  if (!obj) {
+// Puts `value` on a gauge and its readout, the way sub_82200FE8 seeds the
+// volume ones: clamp to the gauge's maximum, store, redraw. An empty `text`
+// leaves the number as sub_821D3AC8 writes it.
+void RefreshGauge(u8* base, u32 gauge_id, u32 number_id, int value, const std::string& text) {
+  const u32 root = REX_LOAD_U32(g_ui_root);
+  if (gauge_id == 0xFFFFFFFFu || !GuestPtr(root)) {
     return;
   }
-  const PageState& st = Page(page);
-  const OptionRow& def = Rows()[st.rows[row]];
-  const int index = def.get_index();
-  const int value = def.slider_display ? def.slider_display(index) : index;
+  const u32 obj = g_resolve_object(root, gauge_id);
+  if (!GuestPtr(obj)) {
+    return;
+  }
   const int max = static_cast<int>(REX_LOAD_U32(obj + kSliderObjMaxOffset));
   const int shown = std::clamp(value, 0, max);
   REX_STORE_U32(obj + kSliderObjValueOffset, static_cast<u32>(shown));
   g_refresh_slider(obj);
-
-  const u32 root = REX_LOAD_U32(g_ui_root);
-  if (row >= st.slider_num_id.size() ||
-      st.slider_num_id[row] == 0xFFFFFFFFu || !GuestPtr(root)) {
+  if (number_id == 0xFFFFFFFFu) {
     return;
   }
   // A handle, not a pointer: what sub_821F6580 hands back for a number is the
   // text registry's own id, which is what sub_821D3AC8 expects. Checking it
   // with GuestPtr rejects every one of them.
-  const u32 text_obj = g_resolve_object(root, st.slider_num_id[row]);
+  const u32 text_obj = g_resolve_object(root, number_id);
   if (!text_obj || text_obj == 0xFFFFFFFFu) {
     return;
   }
   g_set_number(kNumberRegistry, text_obj, static_cast<u32>(shown));
-  AppendReadoutSuffix(base, text_obj, '%');
+  if (!text.empty()) {
+    SetReadoutText(base, text_obj, text);
+  }
+}
+
+// What `row`'s readout says at step `index`.
+std::string SliderReadout(const OptionRow& row, int index) {
+  if (row.slider_text) {
+    return row.slider_text(index);
+  }
+  const int value = row.slider_display ? row.slider_display(index) : index;
+  return std::to_string(value) + "%";
+}
+
+// Draws `row`'s current step on its gauge and beside it.
+void RefreshSlider(u8* base, int page, u32 row) {
+  const PageState& st = Page(page);
+  if (row >= st.slider_id.size() || row >= st.slider_num_id.size()) {
+    return;
+  }
+  const OptionRow& def = Rows()[st.rows[row]];
+  const int index = def.get_index();
+  const int value = def.slider_display ? def.slider_display(index) : index;
+  RefreshGauge(base, st.slider_id[row], st.slider_num_id[row], value,
+               SliderReadout(def, index));
 }
 
 // Parks every one of `page`'s bars off-screen instantly, once the cursor hook
@@ -1842,7 +1985,7 @@ void HideAllPageBars(u8* base, int page) {
 //      masked out of the pad for the duration of the call it must not see.
 constexpr u32 kVoiceRowIndex = 1;         // group sub-index, right after Subtitles
 constexpr u32 kVoiceBarSlot = 92;         // screen +92, element 4 of the id array
-constexpr int32_t kVoiceRecordY = 335;    // the row's own record y (Subtitles is 285)
+constexpr int32_t kVoiceRecordY = 385;    // the row's own record y (Subtitles is 335)
 constexpr u32 kVoiceByte = 0x8243FC06u;   // BYTE2(dword_8243FC04): 0 = Japanese
 constexpr int kVoiceStockValues = 2;
 // Synthetic BTX ids for the extra values, past the last id any row can claim so
@@ -2002,6 +2145,136 @@ int CurrentGroupRow(u8* base, u32 group_id) {
   return -1;
 }
 
+// ---------------------------------------------------------------------------
+// Master Volume, inside the game's own volume block
+// ---------------------------------------------------------------------------
+//
+// The block is one selectable group of three entries driven by sub_82201FB0,
+// which picks the gauge by the cursor's index in the group. Master Volume
+// becomes index 0: the group gets a fourth item below the stock three, added
+// each frame the way our rows are added to group 2, and the handler is shown
+// the index one lower while the cursor is on a stock entry.
+constexpr u32 kVolumeGroupId = 3;
+constexpr u8 kVolumeStockEntries = 3;
+// Options list offsets, past any language lead: the "Volume" heading, whose y
+// the Master entry shares, Music's label, whose column it shares, and the
+// short rule under Music.
+constexpr u32 kVolumeHeadingOffset = 0x308u;
+constexpr u32 kMusicLabelOffset = 0x330u;
+constexpr u32 kMusicRuleOffset = 0x358u;
+constexpr u32 kMasterVolumeSid = kVoiceSidBase - 1u;
+constexpr u32 kMasterNumberWidth = 3u;  // "100", like the stock readouts
+// sub_82201FB0's own pacing: dword_8243F374 counts frames a direction is held
+// on the active pad (index dword_824408EC into the 464 byte pad records), and
+// a step lands on the first frame and on every frame from the twelfth.
+constexpr u32 kVolumeHeldFrames = 0x8243F374u;
+constexpr u32 kActivePad = 0x824408ECu;
+constexpr u32 kPadStride = 464u;
+constexpr u32 kPadHeld = 424u;
+constexpr u32 kVolumeRepeatFrame = 12u;
+// sub_82202710 places a readout this far right of its gauge and this far up.
+constexpr float kNumberGaugeDX = 270.0f;
+constexpr float kNumberGaugeDY = -2.0f;
+
+u32 g_master_label_addr = 0;
+u32 g_master_gauge = 0xFFFFFFFFu;
+u32 g_master_number = 0xFFFFFFFFu;
+// A step changes the cvar at once and writes settings.toml when the direction
+// is let go, rather than once per frame while it is held.
+bool g_master_unsaved = false;
+
+u32 FindGroupNode(u8* base, u32 group_id) {
+  const u32 menu = REX_LOAD_U32(kMenuRoot);
+  if (!GuestPtr(menu)) {
+    return 0;
+  }
+  for (u32 i = REX_LOAD_U32(menu + 392); GuestPtr(i); i = REX_LOAD_U32(i + 48)) {
+    if (REX_LOAD_U32(i) == group_id) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+// Gives the volume group its fourth item, one pitch below the stock three.
+void ExtendVolumeGroup(u8* base) {
+  const u32 node = FindGroupNode(base, kVolumeGroupId);
+  if (!node || REX_LOAD_U8(node + 0x0C) != kVolumeStockEntries) {
+    return;
+  }
+  const u32 items = REX_LOAD_U32(node + 8);
+  if (!GuestPtr(items)) {
+    return;
+  }
+  const u32 first = REX_LOAD_U32(items);
+  const u32 last = REX_LOAD_U32(items + 4 * (kVolumeStockEntries - 1));
+  const u32 added = REX_LOAD_U32(items + 4 * kVolumeStockEntries);
+  if (!GuestPtr(first) || !GuestPtr(last) || !GuestPtr(added)) {
+    return;
+  }
+  REX_STORE_U32(added + 4, REX_LOAD_U32(first + 4));
+  REX_STORE_U32(added + 8, REX_LOAD_U32(last + 8) + kRowYStep);
+  REX_STORE_U8(node + 0x0C, kVolumeStockEntries + 1);
+  REX_STORE_U8(node + 0x0D, kVolumeStockEntries + 1);
+}
+
+void RefreshMasterVolume(u8* base) {
+  RefreshGauge(base, g_master_gauge, g_master_number, eternalsonata::MasterVolumePercent(), "");
+}
+
+// sub_8217BF28(out, registry, id) -> {x, y, z}: an object's position.
+REX_IMPORT(__imp__sub_8217BF28, g_object_position, u32(u32, u32, u32));
+// sub_821D35E8(x, y, registry, text object) moves a readout.
+REX_IMPORT(__imp__sub_821D35E8, g_place_text, u32(double, double, u32, u32));
+
+// sub_82202710 lines the stock gauges up after the widest of their labels and
+// moves each readout with its gauge. Master Volume follows Music's.
+void AlignMasterVolume(u8* base) {
+  const u32 screen = Page(kPageOptions).screen;
+  const u32 root = REX_LOAD_U32(g_ui_root);
+  if (!screen || !GuestPtr(root) || !g_bar_vec || !g_pos_out || g_master_gauge == 0xFFFFFFFFu) {
+    return;
+  }
+  const u32 music = g_object_position(g_pos_out, kTextRegistry, REX_LOAD_U32(screen + kScreenSliderIds));
+  const float x = std::bit_cast<float>(REX_LOAD_U32(music));
+  const u32 master = g_object_position(g_pos_out, kTextRegistry, g_master_gauge);
+  const float y = std::bit_cast<float>(REX_LOAD_U32(master + 4));
+  REX_STORE_U32(g_bar_vec, std::bit_cast<u32>(x));
+  REX_STORE_U32(g_bar_vec + 4, std::bit_cast<u32>(y));
+  REX_STORE_U32(g_bar_vec + 8, 0);
+  g_set_object_pos(kTextRegistry, g_master_gauge, g_bar_vec, 0, 0, 0xFFFFFFFFu);
+  const u32 text_obj = g_master_number != 0xFFFFFFFFu ? g_resolve_object(root, g_master_number) : 0;
+  if (text_obj && text_obj != 0xFFFFFFFFu) {
+    g_place_text(x + kNumberGaugeDX, y + kNumberGaugeDY, kNumberRegistry, text_obj);
+  }
+}
+
+// Steps Master Volume on the handler's own pacing, while the cursor is on it.
+void MasterVolumeInput(u8* base) {
+  const u32 pad = REX_LOAD_U32(kActivePad);
+  const u32 held = REX_LOAD_U32(kPad0 + kPadStride * pad + kPadHeld);
+  if (!(held & (kLeftMask | kRightMask))) {
+    if (g_master_unsaved) {
+      g_master_unsaved = false;
+      eternalsonata::SaveUserSettings();
+    }
+    return;
+  }
+  const u32 frames = REX_LOAD_U32(kVolumeHeldFrames);
+  if (frames != 1 && frames < kVolumeRepeatFrame) {
+    return;
+  }
+  const int step = (held & kRightMask) ? 1 : -1;
+  const int before = eternalsonata::MasterVolumePercent();
+  const int after = std::clamp(before + step, 0, 100);
+  if (after == before) {
+    return;
+  }
+  eternalsonata::SetMasterVolumePercent(after, /*save=*/false);
+  g_master_unsaved = true;
+  RefreshMasterVolume(base);
+}
+
 // Hides a press from the stock handler for the duration of one call, by
 // clearing the direction bits in every pad word it could be reading.
 //
@@ -2051,16 +2324,6 @@ void RenderScaleSet(u8* base, int index) {
               eternalsonata::RenderScalePercent());
 }
 
-// Same shape as the render scale row: the step index is the row's value, the
-// percentage behind it belongs to settings.h.
-int CameraFovGet() { return eternalsonata::CameraFovOptionIndex(); }
-
-void CameraFovSet(u8* base, int index) {
-  eternalsonata::SetCameraFovOption(index);
-  REXLOG_INFO("[options] camera fov -> {}%",
-              eternalsonata::CameraFovOptionPercent(index));
-}
-
 // Text language. Applies live; the screen itself switches on its next entry.
 // The row lists only the languages this release has text for, so its column is
 // a position in VisibleUserLanguages rather than a list index.
@@ -2093,23 +2356,6 @@ void OverworldModelSetIndex(u8* base, int idx) {
       idx == 0 ? eternalsonata::FieldPlayerModelOverride::kSelectionDefault
                : eternalsonata::FieldPlayerModelOverride::kSelectionFollowParty);
   REXLOG_INFO("[options] field_leader_model -> {}", idx == 0 ? "default" : "leader");
-}
-
-// Value 0 is ON, so the cvar and the index are inverses of each other.
-int AimInvertXGetIndex() { return REXCVAR_GET(aim_invert_x) ? 0 : 1; }
-
-void AimInvertXSetIndex(u8* base, int idx) {
-  REXCVAR_SET(aim_invert_x, idx == 0);
-  eternalsonata::SaveUserSettings();
-  REXLOG_INFO("[options] aim_invert_x -> {}", idx == 0);
-}
-
-int AimInvertYGetIndex() { return REXCVAR_GET(aim_invert_y) ? 0 : 1; }
-
-void AimInvertYSetIndex(u8* base, int idx) {
-  REXCVAR_SET(aim_invert_y, idx == 0);
-  eternalsonata::SaveUserSettings();
-  REXLOG_INFO("[options] aim_invert_y -> {}", idx == 0);
 }
 
 void WriteGuestString(u8* base, u32 at, const char* s) {
@@ -2158,7 +2404,7 @@ void WriteBarRecord(u8* base, u32 at, u32 src_list, u32 parent, int32_t x,
 // Cloning keeps every field we have not identified, the maximum of 100 among
 // them. Returns the bytes written.
 u32 WriteSliderRecords(u8* base, u32 at, u32 tpl_list, int32_t x, int32_t y,
-                       int max) {
+                       int max, u32 number_width) {
   REX_STORE_U32(at + 0x00, kLayerRecord);
   REX_STORE_U32(at + 0x04, kSliderLayer);
   at += kLayerRecordBytes;
@@ -2176,7 +2422,7 @@ u32 WriteSliderRecords(u8* base, u32 at, u32 tpl_list, int32_t x, int32_t y,
   REX_STORE_U32(at + kSliderYOffset, static_cast<u32>(y));
   REX_STORE_U32(at + kSliderNumXOffset, static_cast<u32>(x + num_dx));
   REX_STORE_U32(at + kSliderNumYOffset, static_cast<u32>(y + num_dy));
-  REX_STORE_U32(at + kSliderNumWidthOffset, kSliderNumWidth);
+  REX_STORE_U32(at + kSliderNumWidthOffset, number_width);
   if (max > 0) {
     REX_STORE_U32(at + kSliderMaxOffset, static_cast<u32>(max));
   }
@@ -2413,6 +2659,49 @@ bool EnsureRowStrings(u8* base, Mem* mem) {
   return true;
 }
 
+// How many characters `row`'s readout box is laid out for: its longest
+// readout, so a word is not clipped.
+u32 ReadoutWidth(const OptionRow& row) {
+  if (!row.slider_text) {
+    return kSliderNumWidth;
+  }
+  size_t longest = 0;
+  for (int i = 0; i < row.slider_steps; ++i) {
+    longest = std::max(longest, row.slider_text(i).size());
+  }
+  return std::clamp<u32>(static_cast<u32>(longest), kSliderNumWidth, kSliderNumWidthMax);
+}
+
+// Master Volume, a fourth entry at the top of the stock volume block: its label
+// in the column Music sits in, a gauge cloned from Music's, and the short rule
+// the block draws between its entries. menu_layouts.txt moved the stock
+// entries down one pitch to make room. Returns the bytes written.
+template <typename Mem>
+u32 WriteMasterVolumeRecords(u8* base, Mem* mem, u32 at, u32 tpl_list) {
+  const u32 start = at;
+  if (!g_master_label_addr) {
+    g_master_label_addr = mem->SystemHeapAlloc(64, 0x20);
+  }
+  if (!g_master_label_addr) {
+    return 0;
+  }
+  WriteGuestString(base, g_master_label_addr, DrawnLabel(kLabelMasterVolume).c_str());
+  const int32_t y = static_cast<int32_t>(REX_LOAD_U32(tpl_list + kVolumeHeadingOffset + 0x0C));
+  const int32_t music_y = static_cast<int32_t>(REX_LOAD_U32(tpl_list + kMusicLabelOffset + 0x0C));
+  WriteTextRecord(base, at, kMasterVolumeSid,
+                  static_cast<int32_t>(REX_LOAD_U32(tpl_list + kMusicLabelOffset + 0x08)), y);
+  at += kTextRecordBytes;
+  at += WriteSliderRecords(
+      base, at, tpl_list,
+      static_cast<int32_t>(REX_LOAD_U32(tpl_list + kSliderRecordOffset + kSliderXOffset)),
+      y + kSliderRecordDY, 0, kMasterNumberWidth);
+  std::memcpy(REX_RAW_ADDR(at), REX_RAW_ADDR(tpl_list + kMusicRuleOffset), kSepRecordBytes);
+  const int32_t rule_y = static_cast<int32_t>(REX_LOAD_U32(at + kSepYOffset));
+  REX_STORE_U32(at + kSepYOffset, static_cast<u32>(rule_y - (music_y - y)));
+  at += kSepRecordBytes;
+  return at - start;
+}
+
 // Builds `page`'s extended list: every row registered onto it gets a label + N
 // value text records at its own 50px-pitch row, then every row's bar record,
 // appended past the last stock object-creating record (see the ordering rule
@@ -2475,9 +2764,12 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
           ? static_cast<u32>(std::max(0, VoiceValueCount() - kVoiceStockValues))
           : 0;
   bytes += voice_extra * kTextRecordBytes;
-  // A mods page declares one selectable item per row in place of the stock
+  if (page == kPageOptions) {
+    bytes += kTextRecordBytes + 2 * kLayerRecordBytes + kSliderRecordBytes + kSepRecordBytes;
+  }
+  // An extra page declares one selectable item per row in place of the stock
   // three.
-  if (IsModsPage(page)) {
+  if (IsExtraPage(page)) {
     bytes += row_count * kSelectItemBytes;
   }
 
@@ -2510,6 +2802,12 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   }
   if (!g_bar_quad) {
     g_bar_quad = mem->SystemHeapAlloc(32, 0x20);
+  }
+  if (!g_shift_vec) {
+    g_shift_vec = mem->SystemHeapAlloc(16, 0x20);
+  }
+  if (!g_pos_out) {
+    g_pos_out = mem->SystemHeapAlloc(32, 0x20);
   }
   const u32 list = st.list;
 
@@ -2583,10 +2881,13 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   // cursor, which sat correctly at y=530). Both splice points sit right after
   // a text record, which is the state the real rows draw in.
   std::memcpy(REX_RAW_ADDR(list), REX_RAW_ADDR(src_list), insert_offset);
-  if (IsModsPage(page)) {
+  if (IsExtraPage(page)) {
     HideButtonRows(base, list, insert_offset);
   }
   u32 at = list + insert_offset;
+  if (page == kPageOptions) {
+    at += WriteMasterVolumeRecords(base, mem, at, tpl_list);
+  }
 
   // Mirror the Subtitles row's layout for every row: label at X=120 and
   // every value drawn side by side from the language's real value column,
@@ -2619,9 +2920,9 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     // the same column they do.
     if (row.slider) {
       at += WriteSliderRecords(base, at, tpl_list, st.value_base_x,
-                               y + kSliderRecordDY, row.slider_max);
+                               y + kSliderRecordDY, row.slider_max, ReadoutWidth(row));
     }
-    if (!IsModsPage(page)) {
+    if (!IsExtraPage(page)) {
       WriteSeparatorRecord(base, at, tpl_list, y - kRowYStep + sep_dy);
       at += kSepRecordBytes;
     } else if (i + 1 < row_count) {
@@ -2704,7 +3005,7 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
   }
   const u32 rest = insert_offset + pl.bar_skip_bytes;
   const u32 tail =
-      IsModsPage(page)
+      IsExtraPage(page)
           ? WriteModsSelection(base, at, src_list + rest, src_list + list_bytes,
                                row_count)
           : 0;
@@ -2737,6 +3038,44 @@ void PlacePageBars(u8* base, int page) {
       RefreshSlider(base, page, r);
     }
   }
+  if (page == kPageOptions) {
+    RefreshMasterVolume(base);
+  }
+}
+
+// Which gauges and readouts on `screen` belong to `page`'s slider rows (and on
+// page 1 to Master Volume, the first of ours). Run the moment the list has been
+// walked: ours are the last records to create either, so they are the tail of
+// each table, while anything the screen's handler creates afterwards would sit
+// past them. Counting from the front hands us page 2's own player numbers.
+void ResolveGauges(u8* base, int page, u32 screen) {
+  PageState& st = Page(page);
+  const RowStore& all = Rows();
+  const std::vector<u32> gauges = GaugeIds(base, screen);
+  const u32 numbers = CountIdArray(base, screen, kScreenSliderNumIds, kScreenNumberMax);
+  u32 ours = page == kPageOptions ? 1 : 0;
+  for (const u32 r : st.rows) {
+    ours += all[r].slider ? 1 : 0;
+  }
+  u32 g = gauges.size() >= ours ? static_cast<u32>(gauges.size()) - ours : 0;
+  u32 n = numbers >= ours ? numbers - ours : 0;
+  auto next = [&](u32& gauge, u32& number) {
+    gauge = g < gauges.size() ? gauges[g] : 0xFFFFFFFFu;
+    const u32 at = screen + kScreenSliderNumIds + 4 * n;
+    number = n < numbers ? REX_LOAD_U32(at) : 0xFFFFFFFFu;
+    ++g;
+    ++n;
+  };
+  if (page == kPageOptions) {
+    next(g_master_gauge, g_master_number);
+  }
+  for (u32 r = 0; r < st.rows.size() && r < st.slider_id.size(); ++r) {
+    if (all[st.rows[r]].slider) {
+      next(st.slider_id[r], st.slider_num_id[r]);
+    }
+  }
+  REXLOG_INFO("[options] page {}: {} gauges, {} readouts, {} ours", page + 1, gauges.size(),
+              numbers, ours);
 }
 
 // Finds each of our rows' highlight bars among the screen's objects and puts it
@@ -2807,55 +3146,6 @@ void ResolveBars(u8* base, int page) {
   REXLOG_INFO("[options] page {}: {} objects ({} from the list), {} bars: {}",
               page, n, st.list_objects, bars, ids_text);
 
-  // The gauges and their numbers, from the screen's own tables. Both are
-  // appended as the list is walked and ours are the last records to create
-  // either, so the tail of each table is ours. Counting from the front hands us
-  // page 2's own player numbers instead.
-  u32 sliders = 0;
-  for (u32 r = 0; r < rows; ++r) {
-    sliders += all[st.rows[r]].slider ? 1u : 0u;
-  }
-  if (sliders) {
-    // The counts taken the instant the list had been walked, not now: anything
-    // the handler created since sits past our entries. The live table is the
-    // fallback for a capture that failed outright.
-    const u32 live_gauges =
-        CountIdArray(base, screen, kScreenSliderIds, kScreenSliderCount);
-    const u32 live_numbers =
-        CountIdArray(base, screen, kScreenSliderNumIds, kScreenNumberMax);
-    const u32 gauges = (st.list_gauges && st.list_gauges <= live_gauges)
-                           ? st.list_gauges
-                           : live_gauges;
-    const u32 numbers = (st.list_numbers && st.list_numbers <= live_numbers)
-                            ? st.list_numbers
-                            : live_numbers;
-    u32 gauge_slot = gauges >= sliders ? gauges - sliders : 0;
-    u32 number_slot = numbers >= sliders ? numbers - sliders : 0;
-    REXLOG_INFO("[options] page {}: {} slider rows, from gauge slot {} of {} and "
-                "number slot {} of {}",
-                page, sliders, gauge_slot, gauges, number_slot, numbers);
-    for (u32 r = 0; r < rows && r < st.slider_id.size(); ++r) {
-      if (!all[st.rows[r]].slider) {
-        continue;
-      }
-      // The slot counters step on their own line: REX_LOAD_U32 expands its
-      // argument twice, so a ++ inside it runs twice and the next slider row
-      // reads past the end of the table.
-      if (gauge_slot < gauges) {
-        st.slider_id[r] = REX_LOAD_U32(screen + kScreenSliderIds + 4 * gauge_slot);
-        ++gauge_slot;
-      }
-      if (number_slot < numbers) {
-        st.slider_num_id[r] =
-            REX_LOAD_U32(screen + kScreenSliderNumIds + 4 * number_slot);
-        ++number_slot;
-      }
-      // Seeded here because the record decides the gauge's maximum, never its
-      // value, same as sub_82200FE8 does for the volumes.
-      RefreshSlider(base, page, r);
-    }
-  }
-
   // Placed the way the screen init places the stock ones: instantly. No settling
   // delay - sub_82178A88 is not an animation.
   PlacePageBars(base, page);
@@ -2864,7 +3154,7 @@ void ResolveBars(u8* base, int page) {
 
 // Defined further down, next to the group lookup it undoes; called from the
 // screen build hook above it.
-void ResetRowGroup(u8* base, int page);
+void ResetRowGroup(u8* base, u32 group_id);
 // Defined with the mods page hooks at the end of this file.
 void ParkButtonBars(u8* base);
 }  // namespace
@@ -2985,6 +3275,10 @@ REX_HOOK_RAW(sub_8223B780) {
   if (const u32 ps3 = eternalsonata::Ps3TextBlockFor(ctx.r3.u32)) {
     ctx.r3.u32 = ps3;
   }
+  if (sid == kMasterVolumeSid && g_master_label_addr) {
+    ctx.r3.u32 = g_master_label_addr;
+    return;
+  }
   // Checked before the row range: the voice ids sit above it, so a plain
   // `>= kRowSidBase` test would divide them into a row index past the end.
   if (sid >= kVoiceSidBase && sid - kVoiceSidBase < g_voice_addr.size() &&
@@ -3095,13 +3389,19 @@ REX_HOOK_RAW(sub_821F2F38) {
     g_build_page = -1;
   }
   if (ours) {
-    ResetRowGroup(base, page);
+    ResetRowGroup(base, Layout(page).group_id);
+    if (page == kPageOptions) {
+      ResetRowGroup(base, kVolumeGroupId);
+    }
     EnsurePageRows(base, page, lang_idx);
     if (Page(page).list) {
       ctx.r4.u32 = Page(page).list;
     }
   }
+  g_walking_ours = ours;
+  g_walk_screen = 0;
   __imp__sub_821F2F38(ctx, base);
+  g_walking_ours = false;
   scrapbook_menu::ScreenBuilt(base, built_root);
   // Which root was handed the screen, as one of the two known ones.
   u32 built_root_ptr = 0;
@@ -3145,10 +3445,9 @@ REX_HOOK_RAW(sub_821F2F38) {
   // own handler goes on to create afterwards (see PageState::list_objects).
   Page(page).list_objects =
       screen ? ScreenObjectIds(base, screen, nullptr, 256) : 0;
-  Page(page).list_gauges =
-      screen ? CountIdArray(base, screen, kScreenSliderIds, kScreenSliderCount) : 0;
-  Page(page).list_numbers =
-      screen ? CountIdArray(base, screen, kScreenSliderNumIds, kScreenNumberMax) : 0;
+  if (screen) {
+    ResolveGauges(base, page, screen);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3603,7 +3902,7 @@ u32 FindRowGroup(u8* base, u32 menu, int page, u32* arr, int32_t* stock_yn) {
   return 0;
 }
 
-// Puts `page`'s row group back into the state sub_821FFC48 created it in, right
+// Puts a row group back into the state sub_821FFC48 created it in, right
 // before the screen that fills it is built again.
 //
 // The group is a 48 entry block plus a pointer array into it, and the array is a
@@ -3622,15 +3921,14 @@ u32 FindRowGroup(u8* base, u32 menu, int page, u32* arr, int32_t* stock_yn) {
 // first, ours after). On a first visit it is a no-op.
 constexpr u32 kGroupBlockSlots = 48;  // sub_821FFC48: 768 bytes of 16
 
-void ResetRowGroup(u8* base, int page) {
+void ResetRowGroup(u8* base, u32 group_id) {
   const u32 menu = REX_LOAD_U32(kMenuObject);
   if (!GuestPtr(menu)) {
     return;
   }
-  const PageLayout& pl = Layout(page);
   for (u32 group = REX_LOAD_U32(menu + 392); GuestPtr(group);
        group = REX_LOAD_U32(group + 48)) {
-    if (REX_LOAD_U32(group) != pl.group_id) {
+    if (REX_LOAD_U32(group) != group_id) {
       continue;
     }
     const u32 blk = REX_LOAD_U32(group + 4);
@@ -3907,7 +4205,7 @@ void eternalsonata::AskInstallDlc(PPCContext& ctx, u8* base) {
 // number, so every allocation and free after this keeps running through the
 // game's own code.
 constexpr u32 kVolContHeapStockSize = 768u;
-constexpr u32 kVolContHeapSize = 2048u;
+constexpr u32 kVolContHeapSize = 4096u;
 
 // sub_8212DA18 gives both .fnt files one unnamed 5 MiB heap, and a font that
 // does not fit is silently left empty. Keep enough headroom for larger mod
@@ -3944,6 +4242,195 @@ REX_HOOK_RAW(sub_82112240) {
     }
   }
   __imp__sub_82112240(ctx, base);
+}
+
+// sub_821F1B48(root, x, y, max, ...) makes a gauge and records its id in the
+// top screen's three slot table, refusing a fourth. While one of our lists is
+// walked a full table is lent out empty for the call, and the new id goes to
+// our own table instead.
+REX_EXTERN(__imp__sub_821F1B48);
+
+REX_HOOK_RAW(sub_821F1B48) {
+  const u32 root = ctx.r3.u32;
+  const u32 screen =
+      GuestPtr(root) ? REX_LOAD_U32(root + 4 * (REX_LOAD_U8(root + 2833) + kScreenSlotBase)) : 0;
+  if (!g_walking_ours || !GuestPtr(screen) ||
+      REX_LOAD_U8(screen + kScreenSliderCountByte) < kScreenSliderCount) {
+    __imp__sub_821F1B48(ctx, base);
+    return;
+  }
+  // A screen object is freed and reused; whatever an earlier one left is stale.
+  if (g_walk_screen != screen) {
+    g_walk_screen = screen;
+    std::erase_if(g_side_gauges, [screen](const SideGauges& s) { return s.screen == screen; });
+    g_side_gauges.push_back({screen, {}});
+  }
+  u32 saved[kScreenSliderCount];
+  for (u32 i = 0; i < kScreenSliderCount; ++i) {
+    saved[i] = REX_LOAD_U32(screen + kScreenSliderIds + 4 * i);
+  }
+  const u8 count = REX_LOAD_U8(screen + kScreenSliderCountByte);
+  REX_STORE_U32(screen + kScreenSliderIds, 0xFFFFFFFFu);
+  REX_STORE_U8(screen + kScreenSliderCountByte, 0);
+  __imp__sub_821F1B48(ctx, base);
+  const u32 id = ctx.r3.u32;
+  for (u32 i = 0; i < kScreenSliderCount; ++i) {
+    REX_STORE_U32(screen + kScreenSliderIds + 4 * i, saved[i]);
+  }
+  REX_STORE_U8(screen + kScreenSliderCountByte, count);
+  if (id != 0xFFFFFFFFu) {
+    SideGaugesOf(screen)->push_back(id);
+  }
+}
+
+// sub_821ED900(root) pops the top screen, freeing every object its tables
+// list. Ours are freed first the same way its gauge loop frees one: detached
+// from the screen's parent, unregistered with its three sprites, destroyed, and
+// its slot in the root's element table cleared.
+REX_EXTERN(__imp__sub_821ED900);
+REX_EXTERN(__imp__sub_82178438);
+REX_EXTERN(__imp__sub_82176BD0);
+REX_EXTERN(__imp__sub_8220F428);
+REX_EXTERN(__imp__sub_82113FD0);
+
+namespace {
+
+constexpr u32 kRootElements = 1504u;     // 256 entries of 20 bytes
+constexpr u32 kRootElementCount = 1508u;
+constexpr u32 kRootElementSlots = 256u;
+constexpr u32 kRootParentBase = 379u;    // root + 4 * (depth + 379): the parent
+
+void CallGuest(PPCContext& ctx, u8* base, void (*fn)(PPCContext&, u8*), u32 r3, u32 r4 = 0,
+               u32 r5 = 0) {
+  const PPCContext saved = ctx;
+  ctx.r3.u64 = r3;
+  ctx.r4.u64 = r4;
+  ctx.r5.u64 = r5;
+  fn(ctx, base);
+  ctx = saved;
+}
+
+void FreeSideGauge(PPCContext& ctx, u8* base, u32 root, u32 id) {
+  const u32 list = REX_LOAD_U32(root + kRootElements);
+  if (!GuestPtr(list)) {
+    return;
+  }
+  for (u32 k = 0; k < kRootElementSlots; ++k) {
+    const u32 ent = list + 20 * k;
+    if (REX_LOAD_U32(ent + 8) != id) {
+      continue;
+    }
+    const u32 obj = REX_LOAD_U32(ent + 16);
+    const u32 depth = REX_LOAD_U8(root + 2833);
+    if (REX_LOAD_U8(ent + 4) && GuestPtr(obj)) {
+      CallGuest(ctx, base, __imp__sub_82178438, kTextRegistry,
+                REX_LOAD_U32(root + 4 * (depth + kRootParentBase)), REX_LOAD_U32(obj));
+    }
+    CallGuest(ctx, base, __imp__sub_82176BD0, kTextRegistry, id);
+    if (GuestPtr(obj)) {
+      if (REX_LOAD_U8(obj + 12)) {
+        for (const u32 off : {4u, 8u, 0u}) {
+          CallGuest(ctx, base, __imp__sub_82176BD0, kTextRegistry, REX_LOAD_U32(obj + off));
+        }
+        CallGuest(ctx, base, __imp__sub_8220F428, obj);
+      }
+      CallGuest(ctx, base, __imp__sub_82113FD0, obj);
+    }
+    REX_STORE_U32(ent + 16, 0);
+    REX_STORE_U8(ent + 12, 0);
+    REX_STORE_U32(ent, 0xFFFFFFFFu);
+    REX_STORE_U32(ent + 8, 0xFFFFFFFFu);
+    REX_STORE_U8(root + kRootElementCount, REX_LOAD_U8(root + kRootElementCount) - 1);
+    return;
+  }
+}
+
+}  // namespace
+
+REX_HOOK_RAW(sub_821ED900) {
+  const u32 root = ctx.r3.u32;
+  const u32 screen =
+      GuestPtr(root) ? REX_LOAD_U32(root + 4 * (REX_LOAD_U8(root + 2833) + kScreenSlotBase)) : 0;
+  if (screen) {
+    for (auto it = g_side_gauges.begin(); it != g_side_gauges.end(); ++it) {
+      if (it->screen != screen) {
+        continue;
+      }
+      const std::vector<u32> ids = std::move(it->ids);
+      g_side_gauges.erase(it);
+      for (const u32 id : ids) {
+        FreeSideGauge(ctx, base, root, id);
+      }
+      break;
+    }
+  }
+  __imp__sub_821ED900(ctx, base);
+}
+
+// sub_82201FB0: the volume block's handler, page 1's state 11. It picks the
+// gauge by the cursor's index, so it is shown the index one lower on a stock
+// entry, and on Master Volume one it ignores while it still runs the page turn
+// and cancel. Master Volume is stepped on the frame count it keeps.
+REX_EXTERN(__imp__sub_82201FB0);
+
+REX_HOOK_RAW(sub_82201FB0) {
+  const u32 node = FindGroupNode(base, kVolumeGroupId);
+  if (!node || REX_LOAD_U8(node + 0x0C) <= kVolumeStockEntries) {
+    __imp__sub_82201FB0(ctx, base);
+    return;
+  }
+  const u8 index = REX_LOAD_U8(node + 0x2C);
+  const u8 shown = index == 0 ? kVolumeStockEntries : static_cast<u8>(index - 1);
+  REX_STORE_U8(node + 0x2C, shown);
+  __imp__sub_82201FB0(ctx, base);
+  if (REX_LOAD_U8(node + 0x2C) == shown) {
+    REX_STORE_U8(node + 0x2C, index);
+  }
+  if (index == 0 && REX_LOAD_U32(REX_LOAD_U32(kMenuObject) + 396) == kVolumeGroupId) {
+    MasterVolumeInput(base);
+  }
+}
+
+// The stock Subtitles and Voice bars are placed by code at their old rows'
+// y, one pitch above where menu_layouts.txt moved them. Their two placements,
+// instant (sub_82178A88) and animated (sub_82179F78), are lowered while the
+// screen init or the row handler is running.
+constexpr u32 kSubtitlesBarSlot = 120;
+bool g_shift_stock_bars = false;
+
+struct ShiftStockBars {
+  ShiftStockBars() { g_shift_stock_bars = true; }
+  ~ShiftStockBars() { g_shift_stock_bars = false; }
+};
+
+// Points r5's {x, y, z} at a lowered copy when it places one of those bars.
+void LowerStockBar(PPCContext& ctx, u8* base) {
+  const u32 screen = Page(kPageOptions).screen;
+  if (!g_shift_stock_bars || !screen || !g_shift_vec) {
+    return;
+  }
+  const u32 id = ctx.r4.u32;
+  if (id != REX_LOAD_U32(screen + kSubtitlesBarSlot) && id != REX_LOAD_U32(screen + kVoiceBarSlot)) {
+    return;
+  }
+  const u32 vec = ctx.r5.u32;
+  REX_STORE_U32(g_shift_vec, REX_LOAD_U32(vec));
+  const float y = std::bit_cast<float>(REX_LOAD_U32(vec + 4)) + static_cast<float>(kRowYStep);
+  REX_STORE_U32(g_shift_vec + 4, std::bit_cast<u32>(y));
+  REX_STORE_U32(g_shift_vec + 8, REX_LOAD_U32(vec + 8));
+  ctx.r5.u64 = g_shift_vec;
+}
+
+REX_EXTERN(__imp__sub_82178A88);
+REX_HOOK_RAW(sub_82178A88) {
+  LowerStockBar(ctx, base);
+  __imp__sub_82178A88(ctx, base);
+}
+
+REX_EXTERN(__imp__sub_82179F78);
+REX_HOOK_RAW(sub_82179F78) {
+  LowerStockBar(ctx, base);
+  __imp__sub_82179F78(ctx, base);
 }
 
 // sub_821F62B8 is the per-frame cursor update for the menu. We piggyback on it
@@ -4012,6 +4499,9 @@ REX_HOOK_RAW(sub_821F62B8) {
   if (group) {
     st.stock_item_yn = stock_yn;
   }
+  if (page == kPageOptions) {
+    ExtendVolumeGroup(base);
+  }
 
   // Normally already done at build time (see the sub_821F2F38 hook), which is
   // what keeps the bars from being seen anywhere but on their row's value. This
@@ -4036,7 +4526,7 @@ REX_HOOK_RAW(sub_821F62B8) {
   }
   // sub_822028C8 places page 2's own bars while the screen is still coming up,
   // where parking them does not stick yet.
-  if (IsModsPage(page)) {
+  if (IsExtraPage(page)) {
     ParkButtonBars(base);
   }
   // The stock Voice bar, whenever an extra value is selected. Every frame, not
@@ -4300,6 +4790,7 @@ REX_HOOK_RAW(sub_82200298) {
 REX_EXTERN(__imp__sub_82201620);
 
 REX_HOOK_RAW(sub_82201620) {
+  ShiftStockBars shift;
   if (!VoiceRowExtended() ||
       CurrentGroupRow(base, kPages[kPageOptions].group_id) !=
           static_cast<int>(kVoiceRowIndex)) {
@@ -4392,6 +4883,16 @@ REX_HOOK_RAW(sub_82201620) {
 
 namespace {
 std::mutex g_registry_mutex;
+
+// The first mods page with room; there is always one, since a new page opens
+// whenever the last fills.
+int FirstModPageWithRoom() {
+  int page = kPageMods;
+  while (RowsOnPage(page).size() >= PageMaxRows(page)) {
+    ++page;
+  }
+  return page;
+}
 }  // namespace
 
 extern "C" REX_MOD_PLUGIN_EXPORT uint32_t EternalSonataOptionsAbiVersion(void) {
@@ -4419,13 +4920,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataRegisterOptionRow(
 
   std::lock_guard<std::mutex> lock(g_registry_mutex);
   RowStore& rows = Rows();
-  // The first mods page with room; there is always one, since a new page opens
-  // whenever the last fills.
-  int page = kPageMods;
-  while (RowsOnPage(page).size() >= PageMaxRows(page)) {
-    ++page;
-  }
-
+  const int page = FirstModPageWithRoom();
   rows.emplace_back();
   OptionRow& row = rows.back();
   // Slot 0 is the fallback every other language falls back to, so one label is
@@ -4594,7 +5089,12 @@ REX_HOOK_RAW(sub_82200FE8) {
     }
     ctx.r3.u32 = 1;
   }
-  __imp__sub_82200FE8(ctx, base);
+  {
+    ShiftStockBars shift;
+    __imp__sub_82200FE8(ctx, base);
+  }
+  AlignMasterVolume(base);
+  RefreshMasterVolume(base);
 }
 
 // ---------------------------------------------------------------------------
@@ -4636,7 +5136,7 @@ constexpr u32 kButtonBarCount = 3;
 int g_page_turn_to = -1;
 
 void ParkButtonBars(u8* base) {
-  if (!IsModsPage(g_buttons_page)) {
+  if (!IsExtraPage(g_buttons_page)) {
     return;
   }
   const u32 screen = Page(g_buttons_page).screen;
@@ -4668,16 +5168,16 @@ REX_HOOK_RAW(sub_82202CB0) {
   if (!cancelling && (pressed & kBtnRB) && page < LastPage()) {
     g_page_turn_to = page + 1;
     handed |= kBtnLB;
-  } else if (!cancelling && (pressed & kBtnLB) && IsModsPage(page)) {
+  } else if (!cancelling && (pressed & kBtnLB) && IsExtraPage(page)) {
     g_page_turn_to = page - 1;
   }
-  if (IsModsPage(page)) {
+  if (IsExtraPage(page)) {
     // Left/right would reassign the controller of whichever button row sits
     // under the cursor's index, and those rows are hidden here.
     handed &= ~(kLeftMask | kRightMask);
   }
   REX_STORE_U32(menu + kMenuPressed, handed);
-  if (IsModsPage(page)) {
+  if (IsExtraPage(page)) {
     MaskedDirections masked(base);
     __imp__sub_82202CB0(ctx, base);
   } else {
@@ -4693,7 +5193,7 @@ REX_HOOK_RAW(sub_82202CB0) {
 REX_EXTERN(__imp__sub_822028C8);
 
 REX_HOOK_RAW(sub_822028C8) {
-  if (!IsModsPage(g_build_page)) {
+  if (!IsExtraPage(g_build_page)) {
     __imp__sub_822028C8(ctx, base);
     return;
   }

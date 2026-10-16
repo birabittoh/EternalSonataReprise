@@ -990,8 +990,20 @@ about it matter to anything else drawn on these screens:
 * its id lands in a **second** id array at `screen+1528`, three slots, counted
   at `screen+1540`, not the `screen+0x4C` array everything else uses, so a
   gauge record can never renumber the highlight bars;
-* a screen that already holds three gauges refuses to create a fourth, which is
-  why a gauge row can only go on page 2. Page 1's volumes fill its table.
+* a screen that already holds three gauges refuses to create a fourth. While
+  one of our lists is walked, the `sub_821F1B48` hook lends it an empty table
+  for the call and keeps the id in a table of its own, which the
+  `sub_821ED900` (screen pop) hook frees the way the stock gauge loop does:
+  `sub_82178438` detach, `sub_82176BD0` on the id and the three sprites,
+  `sub_8220F428`, `sub_82113FD0`, then the root's 20 byte element slot is
+  cleared and `root+1508` decremented.
+
+`sub_82201FB0` picks the gauge by the cursor's index in group 3. Master Volume
+is a fourth item at index 0 (the stock entries moved down one pitch in
+`src/guest_data/menu_layouts.txt`), so the hook shows the handler the index one
+lower, or 3, which it ignores. `sub_82202710` (called once from the init)
+lines the stock gauges up after their widest label; the master one copies
+Music's x, and its readout goes 270 right and 2 up, as the stock ones do.
 
 On the object, `+100` is the maximum and `+104` the value; `sub_8220F938`
 redraws it. That is the whole widget: `sub_82200FE8` seeds the volumes by

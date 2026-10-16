@@ -30,21 +30,23 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_OPTIONS_ABI_VERSION 2u
+#define ETERNALSONATA_OPTIONS_ABI_VERSION 3u
 
-// Options is paged with LB/RB. Page 1 is the Options screen proper: the game's
-// own Subtitles and Voice rows plus this project's Text row. Page 2 is the
-// button-configuration screen, which the recompilation uses for graphics
-// settings (Resolution, Frame Rate) and Quit Game. Both are full, so mod rows
-// get pages of their own from page 3 on (ETERNALSONATA_PAGE_MODS + n): a row
-// registered by a mod goes to the first of them with room, and a new page opens
-// whenever the last one fills, so there is no limit on how many rows mods add.
-// Move a row with EternalSonataSetOptionRowPage. Mods pages need ABI version
-// 2; version 1 hosts put mod rows on page 2.
+// Options is paged with LB/RB. Page 1 is the Options screen proper (volumes,
+// subtitles, languages), page 2 the button-configuration screen with the
+// control rows below it, page 3 graphics and page 4 balance and Quit Game. All
+// four are full, so mod rows get pages of their own from page 5 on
+// (ETERNALSONATA_PAGE_MODS + n): a row registered by a mod goes to the first
+// of them with room, and a new page opens whenever the last one fills, so
+// there is no limit on how many rows mods add. Move a row with
+// EternalSonataSetOptionRowPage. Version 2 hosts start mods pages at page 3,
+// version 1 hosts put mod rows on page 2.
 enum {
   ETERNALSONATA_PAGE_GAME = 0,
-  ETERNALSONATA_PAGE_GRAPHICS = 1,
-  ETERNALSONATA_PAGE_MODS = 2
+  ETERNALSONATA_PAGE_CONTROLS = 1,
+  ETERNALSONATA_PAGE_GRAPHICS = 2,
+  ETERNALSONATA_PAGE_BALANCE = 3,
+  ETERNALSONATA_PAGE_MODS = 4
 };
 
 // Language slots. The first six match the Options display lists the game ships
@@ -107,8 +109,8 @@ typedef void (*EternalSonataOptionSetFn)(int index, void* user);
 // group's item array is pre-allocated with 10 slots, of which page 1's stock
 // Subtitles and Voice rows take 2 and page 2's three button rows take 3. That
 // leaves ETERNALSONATA_MAX_OPTION_ROWS rows on page 1 and one fewer on page 2,
-// built-in rows included. A mods page has no stock rows and holds
-// ETERNALSONATA_MAX_MODS_PAGE_ROWS, which is what fits above its hint line.
+// built-in rows included. Pages 3 on have no stock rows and hold
+// ETERNALSONATA_MAX_MODS_PAGE_ROWS, which is what fits above the hint line.
 // Registration only fails on bad arguments, since a full mods page just opens
 // the next one.
 #define ETERNALSONATA_MAX_OPTION_ROWS 8
