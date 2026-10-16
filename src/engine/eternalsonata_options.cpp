@@ -712,6 +712,8 @@ struct OptionRow {
   // The readout beside the gauge for a step, in place of the number and its
   // percent sign.
   std::function<std::string(int)> slider_text;
+  // Pixels to nudge the readout right of where the stock number sits.
+  int32_t readout_dx = 0;
   // What the gauge reads as full, or zero to keep the 100 the cloned record
   // carries. A row whose values run past 100 (render resolution reaches 200%)
   // has to raise it, or both the bar and the readout clamp.
@@ -953,6 +955,7 @@ void MakeChoiceSliderRow(OptionRow& row, const LocalizedLabel& label, const char
     }
     return std::string(idx < static_cast<int>(texts.size()) ? texts[idx] : "");
   });
+  row.readout_dx = 3;
   BindChoiceCvar(row, cvar, std::move(ids));
 }
 
@@ -1070,6 +1073,7 @@ RowStore& Rows() {
     MakeChoiceSliderRow(add(kPageGraphics), kLabelMsaa, "render_msaa", {"1", "2", "4", "8"},
                         {"", "2x", "4x", "8x"});
     MakeBoolCvarRow(add(kPageGraphics), kLabelFxaa, "render_fxaa");
+    MakeBoolCvarRow(add(kPageGraphics), kLabelFullscreen, "fullscreen");
     // Labels come from settings.cpp's preset list, so the row and the overlay's
     // slider offer the same states in the same order.
     std::vector<const char*> fps_values;
@@ -1081,12 +1085,9 @@ RowStore& Rows() {
     fps.get_index = &FrameRateGetIndex;
     fps.set_index = &FrameRateSetIndex;
     translate("framerate_label");
-    MakeBoolCvarRow(add(kPageGraphics), kLabelFullscreen, "fullscreen");
     OptionRow& glyphs = add(kPageGraphics);
     MakeLiteralRow(glyphs, kLabelButtonGlyphs, nullptr, 0);
-    OptionValue glyphs_off;
-    glyphs_off.btx_id = kSidOff;
-    glyphs.values.push_back(std::move(glyphs_off));
+    glyphs.values.push_back(LabelValue(kLabelValueAuto));
     for (const char* name : {"Xbox 360", "PS3"}) {
       OptionValue value;
       value.literal[0] = name;
@@ -2405,7 +2406,7 @@ void WriteBarRecord(u8* base, u32 at, u32 src_list, u32 parent, int32_t x,
 // Cloning keeps every field we have not identified, the maximum of 100 among
 // them. Returns the bytes written.
 u32 WriteSliderRecords(u8* base, u32 at, u32 tpl_list, int32_t x, int32_t y,
-                       int max, u32 number_width) {
+                       int max, u32 number_width, int32_t number_dx = 0) {
   REX_STORE_U32(at + 0x00, kLayerRecord);
   REX_STORE_U32(at + 0x04, kSliderLayer);
   at += kLayerRecordBytes;
@@ -2421,7 +2422,7 @@ u32 WriteSliderRecords(u8* base, u32 at, u32 tpl_list, int32_t x, int32_t y,
       static_cast<int32_t>(REX_LOAD_U32(at + kSliderYOffset));
   REX_STORE_U32(at + kSliderXOffset, static_cast<u32>(x));
   REX_STORE_U32(at + kSliderYOffset, static_cast<u32>(y));
-  REX_STORE_U32(at + kSliderNumXOffset, static_cast<u32>(x + num_dx));
+  REX_STORE_U32(at + kSliderNumXOffset, static_cast<u32>(x + num_dx + number_dx));
   REX_STORE_U32(at + kSliderNumYOffset, static_cast<u32>(y + num_dy));
   REX_STORE_U32(at + kSliderNumWidthOffset, number_width);
   if (max > 0) {
@@ -2921,7 +2922,8 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     // the same column they do.
     if (row.slider) {
       at += WriteSliderRecords(base, at, tpl_list, st.value_base_x,
-                               y + kSliderRecordDY, row.slider_max, ReadoutWidth(row));
+                               y + kSliderRecordDY, row.slider_max, ReadoutWidth(row),
+                               row.readout_dx);
     }
     if (!IsExtraPage(page)) {
       WriteSeparatorRecord(base, at, tpl_list, y - kRowYStep + sep_dy);
