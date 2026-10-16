@@ -787,8 +787,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         if (WesternTextAvailable()) {
           DrawCvarRow("force_japanese_font");
         }
-        DrawOverrideButtonGlyphsRow();
         DrawPromptDeviceRow();
+        DrawOverrideButtonGlyphsRow();
         DrawPhotoPriceAlgorithmRow();
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();
