@@ -45,6 +45,10 @@ hint_quit = "終了"
 hint_reorder = "並べ替え"
 hint_tabs = "タブ"
 hint_done = "完了"
+hint_tap = "タップ"
+hint_hold_drag = "長押ししてドラッグ"
+hint_swipe = "スワイプ"
+hint_scroll = "スクロール"
 dialog_needs_mouse = "「ファイルを選択」と「フォルダを選択」はシステムのウィンドウを開くため、マウスかキーボードが必要です。"
 
 [settings]

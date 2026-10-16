@@ -45,6 +45,10 @@ hint_quit = "Salir"
 hint_reorder = "Reordenar"
 hint_tabs = "Pestañas"
 hint_done = "Hecho"
+hint_tap = "Tocar"
+hint_hold_drag = "Mantener y arrastrar"
+hint_swipe = "Deslizar"
+hint_scroll = "Desplazar"
 dialog_needs_mouse = "Seleccionar archivo y Seleccionar carpeta abren una ventana del sistema que necesita ratón o teclado."
 
 [settings]

@@ -2,7 +2,7 @@
 
 // The start screen's Mods page: what the SDK mod manager overlay offers
 // (Installed with Available and Enabled panes, All for the catalog), drawn in
-// the main page's style and driven by keyboard, gamepad or mouse. It runs
+// the main page's style and driven by keyboard, gamepad, mouse or touch. It runs
 // before a Runtime exists, so mods are read straight from the mods folder.
 
 #include <atomic>
@@ -66,9 +66,34 @@ class ModsScreen {
     int index = 0;
     bool operator==(const Focus&) const = default;
   };
+  enum class ToolId { kAutoSort, kRefreshDisk, kOpenFolder, kUpdate, kRefreshCatalog };
   struct Tool {
+    ToolId id;
     std::string label;
     bool enabled = true;
+  };
+  // Which part of a row a finger landed on.
+  enum class Part { kBody, kTrash, kAction };
+  // One finger from press to release: a tap acts on release, a swipe scrolls
+  // the list it started in, a hold on an Enabled mod grabs it for dragging.
+  struct Gesture {
+    bool down = false;
+    bool has_target = false;
+    Focus target;
+    Part part = Part::kBody;
+    int list = -1;
+    ImVec2 start{0, 0};
+    float last_y = 0.0f;
+    float scroll_start = 0.0f;
+    float velocity = 0.0f;
+    Clock::time_point since;
+    bool dragging = false;
+    bool held = false;
+  };
+  struct ListGeometry {
+    float top = 0.0f;
+    float bottom = 0.0f;
+    float pitch = 1.0f;
   };
 
   void Reload();
@@ -99,9 +124,14 @@ class ModsScreen {
   void MoveEnabled(const std::string& id, int delta);
   void ActivateTool(int index);
   void Input();
+  void TouchBegin();
+  void TouchUpdate();
+  void TouchTarget(Focus self, Part part);
 
   // Drawing.
   bool Hit(ImVec2 min, ImVec2 max, Focus self, bool usable);
+  bool SideButton(ImVec2 min, ImVec2 max, Focus row, Part part, bool selected, const ImVec4& glow);
+  void DrawArrow(ImVec2 min, ImVec2 max, Focus row, bool right);
   void Plate(ImVec2 min, ImVec2 max, bool focused, bool picked, float a);
   void Text(ImVec2 min, ImVec2 max, const char* text, float size, float a, bool focused);
   void DrawTrash(ImVec2 min, ImVec2 max, Focus row, bool restore, bool selected);
@@ -155,7 +185,12 @@ class ModsScreen {
   bool remove_ = false;
   bool back_ = false;
   bool gamepad_ = false;
+  // The last pointer input was a finger, which has no hover.
+  bool touch_ = false;
+  Gesture gesture_;
   float scroll_[3] = {0, 0, 0};
+  float fling_[3] = {0, 0, 0};
+  ListGeometry geometry_[3];
   bool was_installing_ = false;
 
   rex::system::ModCatalog installer_;

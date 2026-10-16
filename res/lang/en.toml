@@ -47,6 +47,10 @@ hint_quit = "Quit"
 hint_reorder = "Reorder"
 hint_tabs = "Tabs"
 hint_done = "Done"
+hint_tap = "Tap"
+hint_hold_drag = "Hold and drag"
+hint_swipe = "Swipe"
+hint_scroll = "Scroll"
 dialog_needs_mouse = "Select File and Select Folder open a system window that needs a mouse or keyboard."
 
 [settings]

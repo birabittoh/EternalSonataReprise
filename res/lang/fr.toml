@@ -45,6 +45,10 @@ hint_quit = "Quitter"
 hint_reorder = "Réorganiser"
 hint_tabs = "Onglets"
 hint_done = "Terminé"
+hint_tap = "Toucher"
+hint_hold_drag = "Maintenir et glisser"
+hint_swipe = "Balayer"
+hint_scroll = "Défiler"
 dialog_needs_mouse = "Choisir un fichier et Choisir un dossier ouvrent une fenêtre système qui demande une souris ou un clavier."
 
 [settings]

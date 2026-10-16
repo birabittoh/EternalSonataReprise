@@ -13,6 +13,7 @@
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
+#include <rex/platform.h>
 #include <rex/platform/process.h>
 #include <rex/system/mod_version.h>
 #include <rex/ui/image_decode.h>
@@ -341,16 +342,20 @@ std::string ModsScreen::Incompatible(const rex::system::CatalogMod& mod) const {
 void ModsScreen::BuildTools() {
   tools_.clear();
   if (tab_ == 1) {
-    tools_.push_back({T("refresh", "Refresh"), CatalogStatus() != CatalogLoad::kLoading});
+    tools_.push_back({ToolId::kRefreshCatalog, T("refresh", "Refresh"),
+                      CatalogStatus() != CatalogLoad::kLoading});
     return;
   }
   const bool has = !current_.empty() &&
                    std::any_of(entries_.begin(), entries_.end(),
                                [&](const auto& e) { return e.id == current_; });
-  tools_.push_back({T("auto_sort", "Auto-sort"), true});
-  tools_.push_back({T("refresh_disk", "Refresh from disk"), true});
-  tools_.push_back({T("open_folder", "Open Mods Folder"), true});
-  tools_.push_back({T("update", "Update"), has && UpdateAvailable(current_)});
+  tools_.push_back({ToolId::kAutoSort, T("auto_sort", "Auto-sort"), true});
+  tools_.push_back({ToolId::kRefreshDisk, T("refresh_disk", "Refresh from disk"), true});
+#if !REX_PLATFORM_ANDROID
+  // Android has no file manager to hand the folder to.
+  tools_.push_back({ToolId::kOpenFolder, T("open_folder", "Open Mods Folder"), true});
+#endif
+  tools_.push_back({ToolId::kUpdate, T("update", "Update"), has && UpdateAvailable(current_)});
 }
 
 int ModsScreen::Count(Zone zone) const {
@@ -624,25 +629,26 @@ void ModsScreen::MoveEnabled(const std::string& id, int delta) {
 }
 
 void ModsScreen::ActivateTool(int index) {
-  if (tab_ == 1) {
-    StartCatalogFetch();
+  if (index < 0 || index >= int(tools_.size()))
     return;
-  }
-  switch (index) {
-    case 0:
+  switch (tools_[size_t(index)].id) {
+    case ToolId::kRefreshCatalog:
+      StartCatalogFetch();
+      return;
+    case ToolId::kAutoSort:
       entries_ = rex::system::ModState::AutoSort(entries_, manifests_);
       Persist();
       break;
-    case 1:
+    case ToolId::kRefreshDisk:
       Reload();
       break;
-    case 2: {
+    case ToolId::kOpenFolder: {
       std::error_code ignored;
       std::filesystem::create_directories(mods_root_, ignored);
       rex::platform::process::OpenFolder(mods_root_);
       break;
     }
-    case 3:
+    case ToolId::kUpdate:
       if (const auto* listed = Listed(current_))
         installer_.InstallAsync(*listed, mods_root_);
       break;
@@ -737,6 +743,115 @@ void ModsScreen::Input() {
   }
 }
 
+void ModsScreen::TouchBegin() {
+  const ImGuiIO& io = ImGui::GetIO();
+  if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    touch_ = io.MouseSource == ImGuiMouseSource_TouchScreen;
+  else if (moved_ && io.MouseSource != ImGuiMouseSource_TouchScreen)
+    touch_ = false;
+  for (int k = ImGuiKey_NamedKey_BEGIN; k <= ImGuiKey_GamepadRStickDown; ++k) {
+    if (ImGui::IsKeyPressed(ImGuiKey(k), false))
+      touch_ = false;
+  }
+  // The rows drawn this frame claim the new finger.
+  if (touch_ && ready_ && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    gesture_ = {};
+    gesture_.down = true;
+    gesture_.start = io.MousePos;
+    gesture_.last_y = io.MousePos.y;
+    gesture_.since = Clock::now();
+    std::fill(std::begin(fling_), std::end(fling_), 0.0f);
+  }
+}
+
+void ModsScreen::TouchTarget(Focus self, Part part) {
+  // The buttons beside a row win over the row under them.
+  if (!gesture_.down || (gesture_.has_target && part == Part::kBody))
+    return;
+  gesture_.has_target = true;
+  gesture_.target = self;
+  gesture_.part = part;
+}
+
+void ModsScreen::TouchUpdate() {
+  Gesture& g = gesture_;
+  if (!g.down)
+    return;
+  if (!ready_) {
+    if (g.held)
+      grabbed_.clear();
+    g = {};
+    return;
+  }
+  const ImGuiIO& io = ImGui::GetIO();
+  const bool row = g.has_target && g.part == Part::kBody &&
+                   (g.target.zone == Zone::kAvailable || g.target.zone == Zone::kEnabled ||
+                    g.target.zone == Zone::kCatalog);
+  if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+    const ImVec2 pos = io.MousePos;
+    const float dt = std::max(io.DeltaTime, 1e-4f);
+    const float dx = pos.x - g.start.x;
+    const float dy = pos.y - g.start.y;
+    const float slop = 12.0f * unit_;
+    if (!g.dragging && !g.held) {
+      if (dx * dx + dy * dy > slop * slop) {
+        g.dragging = true;
+      } else if (Clock::now() - g.since >= std::chrono::milliseconds(450)) {
+        // A hold previews the mod, and on Enabled picks it up.
+        g.held = true;
+        if (g.has_target && g.part == Part::kBody && row && Valid(g.target)) {
+          focus_ = g.target;
+          trash_ = false;
+          if (g.target.zone == Zone::kEnabled)
+            grabbed_ = IdAt(g.target);
+        }
+      }
+    }
+    if (g.dragging && g.list >= 0) {
+      scroll_[g.list] = g.scroll_start - dy;
+      g.velocity += ((g.last_y - pos.y) / dt - g.velocity) * 0.5f;
+    }
+    if (g.held && !grabbed_.empty()) {
+      // The mod follows the finger, and the list scrolls near its ends.
+      const ListGeometry& geo = geometry_[1];
+      const float edge = geo.pitch * 0.6f;
+      if (pos.y < geo.top + edge)
+        scroll_[1] -= 600.0f * unit_ * dt;
+      else if (pos.y > geo.bottom - edge)
+        scroll_[1] += 600.0f * unit_ * dt;
+      const int want = std::clamp(int(std::floor((pos.y - geo.top + scroll_[1]) / geo.pitch)), 0,
+                                  Count(Zone::kEnabled) - 1);
+      const std::string id = grabbed_;
+      for (int guard = 0; guard < Count(Zone::kEnabled); ++guard) {
+        const auto at = std::find_if(enabled_.begin(), enabled_.end(),
+                                     [&](size_t i) { return entries_[i].id == id; });
+        const int rank = int(at - enabled_.begin());
+        if (at == enabled_.end() || rank == want)
+          break;
+        MoveEnabled(id, rank < want ? 1 : -1);
+      }
+    }
+    g.last_y = pos.y;
+    return;
+  }
+
+  if (g.held && row) {
+    grabbed_.clear();
+  } else if (g.dragging) {
+    if (g.list >= 0)
+      fling_[g.list] = g.velocity;
+  } else if (g.has_target && Valid(g.target)) {
+    // A tap on a row only selects it; acting is left to the buttons beside it.
+    focus_ = g.target;
+    trash_ = false;
+    if (g.part == Part::kTrash)
+      remove_ = true;
+    else if (g.part == Part::kAction || !row)
+      press_ = true;
+  }
+  g = {};
+}
+
 bool ModsScreen::Hit(ImVec2 min, ImVec2 max, Focus self, bool usable) {
   ImGui::SetCursorScreenPos(min);
   ImGui::PushID(int(self.zone) * 10000 + self.index);
@@ -748,6 +863,11 @@ bool ModsScreen::Hit(ImVec2 min, ImVec2 max, Focus self, bool usable) {
   ImGui::PopID();
   if (!ready_ || !usable)
     return false;
+  if (touch_) {
+    if (left)
+      TouchTarget(self, Part::kBody);
+    return hovered;
+  }
   // Only a moving mouse selects, so a resting cursor does not undo the keys.
   if (hovered && moved_ && grabbed_.empty()) {
     if (!(focus_ == self))
@@ -788,7 +908,9 @@ void ModsScreen::List(Zone zone, int count, ImVec2 min, ImVec2 max, float row_he
   float& scroll = scroll_[slot];
 
   const ImVec2 mouse = ImGui::GetIO().MousePos;
-  if (ready_ && mouse.x >= min.x && mouse.x < max.x && mouse.y >= min.y && mouse.y < max.y)
+  const bool inside =
+      mouse.x >= min.x && mouse.x < max.x && mouse.y >= min.y && mouse.y < max.y;
+  if (ready_ && inside)
     scroll -= ImGui::GetIO().MouseWheel * 1.5f * (row_height + gap);
   if (focus_changed_ && focus_.zone == zone) {
     const float top = float(focus_.index) * (row_height + gap);
@@ -797,7 +919,25 @@ void ModsScreen::List(Zone zone, int count, ImVec2 min, ImVec2 max, float row_he
     else if (top + row_height > scroll + view)
       scroll = top + row_height - view;
   }
-  scroll = std::clamp(scroll, 0.0f, std::max(0.0f, content - view));
+  // A swipe that let go keeps the list coasting.
+  float& fling = fling_[slot];
+  if (fling != 0.0f) {
+    const float dt = ImGui::GetIO().DeltaTime;
+    scroll += fling * dt;
+    fling *= std::exp(-4.0f * dt);
+    if (std::fabs(fling) < 20.0f * unit_)
+      fling = 0.0f;
+  }
+  const float limit = std::max(0.0f, content - view);
+  if (scroll <= 0.0f || scroll >= limit)
+    fling = 0.0f;
+  scroll = std::clamp(scroll, 0.0f, limit);
+  geometry_[slot] = {min.y, max.y, row_height + gap};
+  if (ready_ && inside && gesture_.down && gesture_.list < 0 &&
+      ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    gesture_.list = slot;
+    gesture_.scroll_start = scroll;
+  }
 
   draw_->AddRectFilled(min, max, IM_COL32(0, 0, 0, int(60 * alpha_)), 6.0f * unit_);
   ImGui::PushClipRect(min, max, true);
@@ -817,28 +957,58 @@ void ModsScreen::List(Zone zone, int count, ImVec2 min, ImVec2 max, float row_he
   }
 }
 
-// Right of the focused mod; acts as Remove, or Restore when it is marked.
-void ModsScreen::DrawTrash(ImVec2 min, ImVec2 max, Focus row, bool restore, bool selected) {
+// A button beside a row: the trash can (Remove) or, on touch, the row's own action.
+bool ModsScreen::SideButton(ImVec2 min, ImVec2 max, Focus row, Part part, bool selected,
+                            const ImVec4& glow) {
   ImGui::SetCursorScreenPos(min);
-  ImGui::PushID(int(row.zone) * 10000 + row.index + 5000);
-  ImGui::InvisibleButton("##trash", ImVec2(max.x - min.x, max.y - min.y));
+  ImGui::PushID(int(row.zone) * 10000 + row.index);
+  ImGui::InvisibleButton(part == Part::kTrash ? "##trash" : "##action",
+                         ImVec2(max.x - min.x, max.y - min.y));
   const bool hot = ready_ && (ImGui::IsItemHovered() || selected);
   if (ready_ && ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-    focus_ = row;
-    remove_ = true;
+    if (touch_) {
+      TouchTarget(row, part);
+    } else {
+      focus_ = row;
+      (part == Part::kTrash ? remove_ : press_) = true;
+    }
   }
   ImGui::PopID();
-  const float u = unit_;
-  const float h = max.y - min.y;
-  const float rounding = 6.0f * u;
+  const float rounding = 6.0f * unit_;
   const float a = alpha_;
   draw_->AddRectFilled(min, max, IM_COL32(0, 0, 0, int((hot ? 150 : 100) * a)), rounding);
-  const ImVec4& glow = restore ? kGood : kQuitRed;
   if (hot)
     draw_->AddRectFilled(min, max, Col(glow, 0.3f * a), rounding);
   draw_->AddRect(min, max, hot ? Col(glow, a) : IM_COL32(255, 255, 255, int(60 * a)), rounding,
-                 0, std::max(1.0f, (hot ? 2.0f : 1.0f) * u));
-  const ImU32 ink = Col(kText, a * (hot ? 1.0f : 0.8f));
+                 0, std::max(1.0f, (hot ? 2.0f : 1.0f) * unit_));
+  return hot;
+}
+
+// Enables or disables the focused mod, pointing at the pane it goes to.
+void ModsScreen::DrawArrow(ImVec2 min, ImVec2 max, Focus row, bool right) {
+  const bool hot = SideButton(min, max, row, Part::kAction, false, kAccent);
+  const ImU32 ink = Col(kText, alpha_ * (hot ? 1.0f : 0.8f));
+  const float h = max.y - min.y;
+  const float cx = (min.x + max.x) * 0.5f;
+  const float cy = (min.y + max.y) * 0.5f;
+  const float dir = right ? 1.0f : -1.0f;
+  const float reach = h * 0.2f;
+  draw_->AddLine(ImVec2(cx - dir * reach, cy), ImVec2(cx + dir * reach * 0.4f, cy), ink,
+                 std::max(1.5f, 2.0f * unit_));
+  const ImVec2 tip(cx + dir * reach, cy);
+  ImVec2 top(cx + dir * reach * 0.2f, cy - h * 0.14f);
+  ImVec2 bottom(cx + dir * reach * 0.2f, cy + h * 0.14f);
+  if (!right)
+    std::swap(top, bottom);
+  draw_->AddTriangleFilled(tip, bottom, top, ink);
+}
+
+// Right of the focused mod; acts as Remove, or Restore when it is marked.
+void ModsScreen::DrawTrash(ImVec2 min, ImVec2 max, Focus row, bool restore, bool selected) {
+  const bool hot = SideButton(min, max, row, Part::kTrash, selected, restore ? kGood : kQuitRed);
+  const float u = unit_;
+  const float h = max.y - min.y;
+  const ImU32 ink = Col(kText, alpha_ * (hot ? 1.0f : 0.8f));
   const float thick = std::max(1.5f, 2.0f * u);
   const float cx = (min.x + max.x) * 0.5f;
   if (restore) {
@@ -889,6 +1059,11 @@ void ModsScreen::DrawModRow(Zone zone, int index, ImVec2 min, ImVec2 max) {
     const float side = max.y - min.y;
     DrawTrash(ImVec2(max.x - side, min.y), max, self, pending, trash_);
     max.x -= side + 8.0f * unit_;
+    // A tap only selects, so a finger needs its own way to move the mod across.
+    if (touch_ && !pending) {
+      DrawArrow(ImVec2(max.x - side, min.y), max, self, zone == Zone::kAvailable);
+      max.x -= side + 8.0f * unit_;
+    }
   }
   Hit(min, max, self, true);
 
@@ -953,16 +1128,9 @@ void ModsScreen::DrawCatalogRow(int index, ImVec2 min, ImVec2 max) {
   const rex::system::CatalogMod& mod = view_[size_t(index)];
   const Focus self{Zone::kCatalog, index};
   const bool focused = focus_ == self;
-  Hit(min, max, self, true);
-  Plate(min, max, focused, false, alpha_);
-
   const float u = unit_;
   const float pad = 12.0f * u;
   const float icon = kIconSize * u;
-  if (auto* texture = RemoteIcon(mod.icon_url)) {
-    const ImVec2 p(min.x + pad, std::floor(min.y + (max.y - min.y - icon) * 0.5f));
-    draw_->AddImage(reinterpret_cast<ImTextureID>(texture), p, ImVec2(p.x + icon, p.y + icon));
-  }
 
   const bool installed = manifests_.contains(mod.mod_id);
   const bool incompatible = !Incompatible(mod).empty();
@@ -975,6 +1143,18 @@ void ModsScreen::DrawCatalogRow(int index, ImVec2 min, ImVec2 max) {
   const float status_size = 19.0f * u;
   const float status_w = font_->CalcTextSizeA(status_size, FLT_MAX, 0.0f, status).x;
   const float status_x = max.x - pad - status_w;
+  // On touch the label is the install button, since tapping the row only selects it.
+  const bool button = touch_ && focused && actionable && ready_;
+  const ImVec2 button_min(status_x - 12.0f * u, min.y + 8.0f * u);
+  Hit(min, ImVec2(button ? button_min.x : max.x, max.y), self, true);
+  Plate(min, max, focused, false, alpha_);
+  if (button)
+    SideButton(button_min, ImVec2(max.x, max.y - 8.0f * u), self, Part::kAction, false, kGood);
+
+  if (auto* texture = RemoteIcon(mod.icon_url)) {
+    const ImVec2 p(min.x + pad, std::floor(min.y + (max.y - min.y - icon) * 0.5f));
+    draw_->AddImage(reinterpret_cast<ImTextureID>(texture), p, ImVec2(p.x + icon, p.y + icon));
+  }
   draw_->AddText(font_, status_size,
                  ImVec2(std::floor(status_x),
                         std::floor(min.y + (max.y - min.y - status_size) * 0.5f)),
@@ -1082,7 +1262,14 @@ void ModsScreen::DrawHints() {
   const char* tabs = gamepad_ ? "LB RB  " : "Q E  ";
   const bool on_mod = tab_ == 0 && (focus_.zone == Zone::kAvailable || focus_.zone == Zone::kEnabled);
   std::string text;
-  if (!grabbed_.empty()) {
+  if (touch_ && !gamepad_) {
+    text = std::string(TrOr("intro", "hint_tap", "Tap")) + "  " + Tr(IntroText::kHintSelect);
+    if (tab_ == 0)
+      text += std::string("      ") + TrOr("intro", "hint_hold_drag", "Hold and drag") + "  " +
+              TrOr("intro", "hint_reorder", "Reorder");
+    text += std::string("      ") + TrOr("intro", "hint_swipe", "Swipe") + "  " +
+            TrOr("intro", "hint_scroll", "Scroll");
+  } else if (!grabbed_.empty()) {
     text = std::string(confirm) + TrOr("intro", "hint_done", "Done") + "      " +
            (gamepad_ ? "D-pad  " : "Up Down  ") + TrOr("intro", "hint_reorder", "Reorder");
   } else {
@@ -1129,7 +1316,9 @@ bool ModsScreen::Draw(ImDrawList* draw, ImFont* font, ImVec2 size, float unit, f
 
   BuildLists();
   BuildTools();
+  TouchUpdate();
   Settle();
+  TouchBegin();
   Input();
   const bool press = std::exchange(press_, false);
   const bool remove = std::exchange(remove_, false);

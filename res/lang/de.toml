@@ -45,6 +45,10 @@ hint_quit = "Beenden"
 hint_reorder = "Neu anordnen"
 hint_tabs = "Reiter"
 hint_done = "Fertig"
+hint_tap = "Tippen"
+hint_hold_drag = "Halten und ziehen"
+hint_swipe = "Wischen"
+hint_scroll = "Blättern"
 dialog_needs_mouse = "Datei auswählen und Ordner auswählen öffnen ein Systemfenster, das Maus oder Tastatur braucht."
 
 [settings]
