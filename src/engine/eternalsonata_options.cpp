@@ -575,6 +575,18 @@ constexpr LocalizedLabel kLabelQuitPrompt = {
      "\xBFSalir del juego?\\nSe perder\xE1 todo el progreso no guardado.",
      "Uscire dal gioco?\\nI progressi non salvati andranno persi.",
      "ゲームを終了しますか？\\nセーブしていない進行状況は失われます。"}};
+// The Exit row's two values say everything, so its label is blank.
+constexpr LocalizedLabel kLabelExit = {{"", "", "", "", "", ""}};
+constexpr LocalizedLabel kLabelChangeVersion = {
+    {"Change Version", "Version wechseln", "Changer version", "Cambiar versi\xF3n",
+     "Cambia versione", "バージョン変更"}};
+constexpr LocalizedLabel kLabelVersionPrompt = {
+    {"Change version?\\nUnsaved progress will be lost.",
+     "Version wechseln?\\nNicht gespeicherter Fortschritt geht verloren.",
+     "Changer de version ?\\nToute progression non sauvegard\xE9" "e sera perdue.",
+     "\xBF" "Cambiar de versi\xF3n?\\nSe perder\xE1 todo el progreso no guardado.",
+     "Cambiare versione?\\nI progressi non salvati andranno persi.",
+     "バージョンを変更しますか？\\nセーブしていない進行状況は失われます。"}};
 // Asked before the Unlock Key package picker opens. The DLC name stays English.
 constexpr LocalizedLabel kLabelDlcPrompt = {
     {"The Piano Music Key DLC is not installed.\\nDo you want to browse for the package file?",
@@ -708,7 +720,8 @@ struct OptionRow {
   // carries. A row whose values run past 100 (the field of view reaches 200%)
   // has to raise it, or both the bar and the readout clamp.
   int slider_max = 0;
-  // An action row has no values and no bar; A runs this instead.
+  // A runs this instead of cycling values. Without values the row also has no
+  // bar; with values left/right still pick one and A acts on it.
   std::function<void(u8*)> action;
   // The cvar this row writes, when that cvar only takes effect on the next
   // launch (rex::cvar::Lifecycle::kRequiresRestart). Non-null means the row
@@ -886,6 +899,9 @@ void MakeBooleanRow(OptionRow& row, const LocalizedLabel& label) {
 
 // Asks the Quit Game question on the next menu tick; see QuitConfirmTick.
 void RequestQuitConfirm();
+void RequestVersionConfirm();
+// 0 Quit Game, 1 Change Version: the Exit row's current value.
+int g_exit_choice = 0;
 // The question's text while the borrowed dialog is being built, else 0.
 u32 QuitPromptOverride(PPCContext& ctx, u8* base, u32 blob, u32 sid);
 
@@ -1006,10 +1022,20 @@ RowStore& Rows() {
     initial[6].get_index = &AimInvertYGetIndex;
     initial[6].set_index = &AimInvertYSetIndex;
     initial[6].page = kPageButtons;
-    MakeLiteralRow(initial[7], kLabelQuitGame, nullptr, 0);
-    initial[7].action = [](u8*) { RequestQuitConfirm(); };
-    initial[7].get_index = [] { return 0; };
-    initial[7].set_index = [](u8*, int) {};
+    // Left/right picks what A does.
+    MakeLiteralRow(initial[7], kLabelExit, nullptr, 0);
+    for (const LocalizedLabel* choice : {&kLabelQuitGame, &kLabelChangeVersion}) {
+      OptionValue value;
+      for (int i = 0; i < kLanguageCount; ++i) {
+        value.literal[i] = LabelText(*choice, i);
+      }
+      initial[7].values.push_back(std::move(value));
+    }
+    initial[7].action = [](u8*) {
+      g_exit_choice == 0 ? RequestQuitConfirm() : RequestVersionConfirm();
+    };
+    initial[7].get_index = [] { return g_exit_choice; };
+    initial[7].set_index = [](u8*, int idx) { g_exit_choice = idx; };
     initial[7].page = kPageButtons;
 
     // Mod-published translations for the labels above, in every language
@@ -1022,7 +1048,6 @@ RowStore& Rows() {
     TranslateBuiltinLabel(initial[4], "overworld_model_label");
     TranslateBuiltinLabel(initial[5], "aim_invert_x_label");
     TranslateBuiltinLabel(initial[6], "aim_invert_y_label");
-    TranslateBuiltinLabel(initial[7], "quit_game_label");
     return initial;
   }();
   return rows;
@@ -3702,8 +3727,9 @@ constexpr int kQuitNodeGrace = 60;
 enum class QuitConfirm { kIdle, kRequested, kOpen };
 QuitConfirm g_quit_confirm = QuitConfirm::kIdle;
 // The same dialog also asks the DLC question; the root is whichever menu opened it.
-enum class ConfirmKind { kQuit, kDlc };
+enum class ConfirmKind { kQuit, kDlc, kVersion };
 ConfirmKind g_confirm_kind = ConfirmKind::kQuit;
+ConfirmKind g_requested_kind = ConfirmKind::kQuit;
 u32 g_confirm_root = kUiRootMenu;
 
 bool g_quit_prompt_building = false;
@@ -3711,11 +3737,15 @@ u32 g_quit_album = 0;
 u32 g_quit_prompt = 0;
 int g_quit_ticks = 0;
 
-void RequestQuitConfirm() {
+void RequestConfirm(ConfirmKind kind) {
   if (g_quit_confirm == QuitConfirm::kIdle) {
+    g_requested_kind = kind;
     g_quit_confirm = QuitConfirm::kRequested;
   }
 }
+
+void RequestQuitConfirm() { RequestConfirm(ConfirmKind::kQuit); }
+void RequestVersionConfirm() { RequestConfirm(ConfirmKind::kVersion); }
 
 // Our question followed by the stock string's own Yes/No tail, so the choices
 // stay in the game's words in every language.
@@ -3739,8 +3769,9 @@ u32 WriteQuitPrompt(u8* base, u32 stock) {
     tail = "\\n<l5><a1>Yes\\n<a2>No<Q1>";
   }
   const int lang = DrawLanguage();
-  const LocalizedLabel& label =
-      g_confirm_kind == ConfirmKind::kDlc ? kLabelDlcPrompt : kLabelQuitPrompt;
+  const LocalizedLabel& label = g_confirm_kind == ConfirmKind::kDlc       ? kLabelDlcPrompt
+                                : g_confirm_kind == ConfirmKind::kVersion ? kLabelVersionPrompt
+                                                                          : kLabelQuitPrompt;
   std::string text = LabelText(label, label.text[lang] ? lang : 0);
   text += tail;
   text.resize(std::min<size_t>(text.size(), kQuitPromptBytes - 1));
@@ -3822,7 +3853,7 @@ bool QuitConfirmTick(PPCContext& ctx, u8* base, int page) {
   if (g_quit_confirm == QuitConfirm::kRequested) {
     g_quit_confirm = QuitConfirm::kIdle;
     if (page >= 0 && GuestPtr(menu)) {
-      OpenQuitConfirm(ctx, base, menu, ConfirmKind::kQuit, g_ui_root);
+      OpenQuitConfirm(ctx, base, menu, g_requested_kind, g_ui_root);
     }
   }
   return ConfirmPoll(ctx, base, menu);
@@ -3859,7 +3890,10 @@ bool ConfirmPoll(PPCContext& ctx, u8* base, u32 menu) {
   if (GuestPtr(menu)) {
     REX_STORE_U32(menu + kMenuInputHold, kMenuInputResume);
   }
-  if (answer == 1) {
+  if (answer == 1 && g_confirm_kind == ConfirmKind::kVersion) {
+    REXLOG_INFO("[options] version change confirmed");
+    eternalsonata::RestartIntoStartScreen();
+  } else if (answer == 1) {
     REXLOG_INFO("[options] quit confirmed");
     eternalsonata::QuitNow();
   } else {
@@ -4185,8 +4219,11 @@ REX_HOOK_RAW(sub_821F62B8) {
       if (fresh & kBtnA) {
         PlayMenuSfx(base, pl.change_sfx);
         def.action(base);
+        return;
       }
-      return;
+      if (def.values.empty()) {
+        return;
+      }
     }
 
     // A slider row's steps stand in for its values, and it takes the repeat
@@ -4214,7 +4251,7 @@ REX_HOOK_RAW(sub_821F62B8) {
       if (cur < value_count - 1) {
         next = cur + 1;
       }
-    } else if (fresh & kBtnA) {
+    } else if (fresh & kBtnA && !def.action) {
       next = (cur + 1) % value_count;
     }
 
@@ -4222,7 +4259,7 @@ REX_HOOK_RAW(sub_821F62B8) {
       def.set_index(base, next);
       if (def.slider) {
         RefreshSlider(base, page, opt_row);
-      } else {
+      } else if (!def.action) {
         MoveOptionBar(base, page, opt_row, next, /*move=*/true);
       }
       PlayMenuSfx(base, pl.change_sfx);
@@ -4259,6 +4296,15 @@ REX_HOOK_RAW(sub_82200298) {
     const u32 row = REX_LOAD_U8(i + 0x2C);
     if (row < pl.stock_rows || row - pl.stock_rows >= st.rows.size() ||
         !Rows()[st.rows[row - pl.stock_rows]].action) {
+      return;
+    }
+    const OptionRow& def = Rows()[st.rows[row - pl.stock_rows]];
+    if (!def.values.empty()) {
+      // Values stay in their columns; the cursor sits before the chosen one.
+      const int idx = std::clamp(def.get_index(), 0, static_cast<int>(def.values.size()) - 1);
+      const float x = std::bit_cast<float>(REX_LOAD_U32(out_x)) +
+                      static_cast<float>(ValueColumnOffset(page, def.values, idx));
+      REX_STORE_U32(out_x, std::bit_cast<u32>(x));
       return;
     }
     // Keep the gap the stock cursor leaves before its value column.

@@ -119,6 +119,9 @@ bool AnyCvarPendingRestart();
 // not run yet.
 bool RestartNow();
 
+// RestartNow, but the relaunch opens the start screen to pick another game version.
+bool RestartIntoStartScreen();
+
 // Closes the game, marshalled like RestartNow. False before BindSettingsTargets.
 bool QuitNow();
 

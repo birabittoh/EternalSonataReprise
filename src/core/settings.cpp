@@ -1197,11 +1197,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       ImGui::SetTooltip("%s", T("start_screen_tip"));
     }
     if (ConfirmRestart("confirm_start_screen", open_confirm)) {
-      const auto flag = StartScreenFlagPath(user_settings_path_);
-      RequestStartScreenOnNextLaunch(flag, true);
-      if (!RestartNow()) {
-        RequestStartScreenOnNextLaunch(flag, false);
-      }
+      RestartIntoStartScreen();
     }
     ImGui::SameLine();
     bool open_quit = ImGui::Button(WithId(T("quit_game"), "quit_game"));
@@ -1930,6 +1926,16 @@ bool RestartNow() {
   rex::ui::Window* window = g_window;
   window->app_context().CallInUIThread([window] { window->RequestClose(); });
   return true;
+}
+
+bool RestartIntoStartScreen() {
+  const auto flag = StartScreenFlagPath(g_user_settings_path);
+  RequestStartScreenOnNextLaunch(flag, true);
+  if (RestartNow()) {
+    return true;
+  }
+  RequestStartScreenOnNextLaunch(flag, false);
+  return false;
 }
 
 bool QuitNow() {
