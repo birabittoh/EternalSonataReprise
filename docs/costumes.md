@@ -65,6 +65,15 @@ character's own (bone names have to match its skeleton), and the field leader
 hides the mesh named `weapon` and `tasuki_sw`, so a costume should keep the
 character's mesh names.
 
+`scripts/models.py` makes these files: `list` shows the models of an
+`AppKeep.bmd` (or a `.p3obj`) with their meshes and textures, `dump
+AppKeep.bmd:1 dir --png` splits one into chunk files plus PNGs of its
+textures, and `pack dir out.nobj` rebuilds it from the chunks, so an edited
+chunk replaces the original. A chunk may only change size in multiples of 4096,
+as an `NTX2`'s pixels are found by 4 KB alignment. `recolor_texture` rewrites
+the DXT endpoints in place, which needs no untiling and keeps every size;
+`polka_colors` in EternalSonataReprise-Mods uses it.
+
 ## 4. Adding costumes from a mod
 
 With no code, from `mods/<name>/assets.toml`:
