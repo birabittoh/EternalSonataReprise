@@ -302,6 +302,8 @@ constexpr std::array kBasicCvarNames = {
     "enemy_hp_multiplier",
     "enemy_damage_multiplier", "auto_parry", "ui_scale",
     "right_trigger_behavior", "special_hold_time",
+    "party_tactical_time_multiplier", "party_action_time_multiplier",
+    "enemy_action_time_multiplier",
     "save_row_portraits", "force_japanese_font", "skip_intro", "show_start_screen"};
 
 // Steps for the multiplier rows. HP stops short of zero, the
@@ -311,7 +313,12 @@ constexpr std::array kRewardMultiplierSteps = {0.0, 0.25, 0.5, 0.75, 1.0, 1.5,
 constexpr std::array kFastForwardSpeedSteps = {0.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0};
 constexpr std::array kExpShareSteps = {0.0, 0.25, 0.5, 0.75, 1.0};
 constexpr std::array kUiScaleSteps = {0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0};
-constexpr std::array kHpMultiplierSteps = {0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0};
+// The last step of each is the cvars' "no limit" value.
+constexpr std::array kTacticalTimeSteps = {0.0, 0.25, 0.5, 0.75, 1.0, 1.5,
+                                           2.0, 3.0,  4.0, 5.0,  10.0, 11.0};
+constexpr std::array kActionTimeSteps = {0.25, 0.5, 0.75, 1.0, 1.5, 2.0,
+                                         3.0,  4.0, 5.0,  10.0, 11.0};
+constexpr std::array kHpMultiplierSteps ={0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -817,6 +824,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawMultiplierRow("photo_price_multiplier", kRewardMultiplierSteps);
         DrawMultiplierRow("enemy_hp_multiplier", kHpMultiplierSteps);
         DrawMultiplierRow("enemy_damage_multiplier", kRewardMultiplierSteps);
+        DrawMultiplierRow("party_tactical_time_multiplier", kTacticalTimeSteps, false, true);
+        DrawMultiplierRow("party_action_time_multiplier", kActionTimeSteps, false, true);
+        DrawMultiplierRow("enemy_action_time_multiplier",
+                          std::span(kActionTimeSteps).first(kActionTimeSteps.size() - 1));
         DrawCvarRow("auto_parry");
         ImGui::EndTabItem();
       }
@@ -1083,7 +1094,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // label shows the cvar's real value, which a hand edited config may have
   // put between two steps.
   void DrawMultiplierRow(const char* name, std::span<const double> steps,
-                         bool zero_is_unlimited = false) {
+                         bool zero_is_unlimited = false, bool infinite_at_max = false) {
     const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
@@ -1093,8 +1104,11 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       if (std::abs(steps[i] - value) < std::abs(steps[idx] - value))
         idx = i;
     }
+    const bool infinite = infinite_at_max && idx == static_cast<int>(steps.size()) - 1;
     char text[16];
-    if (zero_is_unlimited && value == 0.0) {
+    if (infinite) {
+      text[0] = '\0';
+    } else if (zero_is_unlimited && value == 0.0) {
       std::snprintf(text, sizeof(text), "%s", T("unlimited"));
     } else {
       std::snprintf(text, sizeof(text), "%gx", value);
@@ -1113,7 +1127,27 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       rex::cvar::SetFlagByName(name, step, /*persist=*/true);
       SaveBasic();
     }
+    if (infinite) {
+      DrawInfinitySign();
+    }
     ImGui::PopID();
+  }
+
+  // A lemniscate over the last item, since the font has no infinity sign.
+  void DrawInfinitySign() {
+    const ImVec2 lo = ImGui::GetItemRectMin();
+    const ImVec2 hi = ImGui::GetItemRectMax();
+    const ImVec2 mid((lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f);
+    const float a = (hi.y - lo.y) * 0.62f;
+    ImVec2 pts[48];
+    for (int i = 0; i < 48; ++i) {
+      const float t = 6.2831853f * float(i) / 48.0f;
+      const float s = std::sin(t);
+      const float k = 1.0f / (1.0f + s * s);
+      pts[i] = ImVec2(mid.x + a * std::cos(t) * k, mid.y + a * 0.9f * s * std::cos(t) * k);
+    }
+    ImGui::GetWindowDrawList()->AddPolyline(pts, 48, ImGui::GetColorU32(ImGuiCol_Text),
+                                            ImDrawFlags_Closed, std::max(1.5f, a * 0.14f));
   }
 
   // Committed on release: applied live, the slider would rescale under the
@@ -1187,20 +1221,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       rex::cvar::SetFlagByName(name, text, /*persist=*/true);
     }
     if (infinite) {
-      // A lemniscate over the slider, since the font has no infinity sign.
-      const ImVec2 lo = ImGui::GetItemRectMin();
-      const ImVec2 hi = ImGui::GetItemRectMax();
-      const ImVec2 mid((lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f);
-      const float a = (hi.y - lo.y) * 0.62f;
-      ImVec2 pts[48];
-      for (int i = 0; i < 48; ++i) {
-        const float t = 6.2831853f * float(i) / 48.0f;
-        const float s = std::sin(t);
-        const float k = 1.0f / (1.0f + s * s);
-        pts[i] = ImVec2(mid.x + a * std::cos(t) * k, mid.y + a * 0.9f * s * std::cos(t) * k);
-      }
-      ImGui::GetWindowDrawList()->AddPolyline(pts, 48, ImGui::GetColorU32(ImGuiCol_Text),
-                                              ImDrawFlags_Closed, std::max(1.5f, a * 0.14f));
+      DrawInfinitySign();
     }
     if (touch_preview && ImGui::IsItemActive()) {
       eternalsonata::touch::TouchKeepVisible();
