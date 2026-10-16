@@ -685,6 +685,8 @@ struct OptionRow {
   // carries. A row whose values run past 100 (the field of view reaches 200%)
   // has to raise it, or both the bar and the readout clamp.
   int slider_max = 0;
+  // Whether a step plays the value change cue.
+  bool slider_sound = false;
   // A runs this instead of cycling values. Without values the row also has no
   // bar; with values left/right still pick one and A acts on it.
   std::function<void(u8*)> action;
@@ -926,6 +928,7 @@ RowStore& Rows() {
     // applies live, so it carries no restart marker.
     MakeLiteralRow(initial[0], kLabelResolution, nullptr, 0);
     initial[0].slider = true;
+    initial[0].slider_sound = false;
     initial[0].slider_steps = eternalsonata::RenderScaleOptionCount();
     initial[0].slider_display = &eternalsonata::RenderScaleOptionPercent;
     initial[0].slider_max = eternalsonata::RenderScaleOptionPercent(
@@ -939,6 +942,7 @@ RowStore& Rows() {
     // sub_82112240 hook).
     MakeLiteralRow(initial[1], kLabelFieldOfView, nullptr, 0);
     initial[1].slider = true;
+    initial[1].slider_sound = false;
     initial[1].slider_steps = eternalsonata::CameraFovOptionCount();
     initial[1].slider_display = &eternalsonata::CameraFovOptionPercent;
     initial[1].slider_max = eternalsonata::CameraFovOptionPercent(
@@ -4230,7 +4234,9 @@ REX_HOOK_RAW(sub_821F62B8) {
       } else if (!def.action) {
         MoveOptionBar(base, page, opt_row, next, /*move=*/true);
       }
-      PlayMenuSfx(base, pl.change_sfx);
+      if (!def.slider || def.slider_sound) {
+        PlayMenuSfx(base, pl.change_sfx);
+      }
     }
     return;
   }
