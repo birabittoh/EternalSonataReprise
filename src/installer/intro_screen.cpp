@@ -433,15 +433,25 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         }
       }
 
-      // Ready once faded in, and not while a native dialog is open.
-      const bool ready = body_in >= 1.0f && !busy_ && !working_;
-      // One key press moves focus once, not again in the picker.
-      const bool handled = DrawButtons(draw, font, size, unit,
-                                       std::max(y + 22.0f * unit, size.y * 0.66f), body_in, ready);
-      DrawLanguagePicker(draw, font, size, unit, body_in, ready && !handled);
-      DrawMusicToggle(draw, font, size, unit, body_in, on_music_, ready && !handled);
-      if (!working_)
+      if (ETERNALSONATA_VERSION[0] != '\0') {
+        const std::string version = std::string("v") + ETERNALSONATA_VERSION;
+        draw->AddText(font, 18.0f * unit, ImVec2(24.0f * unit, 24.0f * unit),
+                      IM_COL32(255, 255, 255, int(255 * body_in)), version.c_str());
+      }
+      if (working_) {
+        on_picker_ = picker_open_ = on_music_ = on_trash_ = false;
+        DrawLanguagePicker(draw, font, size, unit, body_in, false);
+        DrawMusicToggle(draw, font, size, unit, body_in, false, false);
+      } else {
+        // Ready once faded in, and not while a native dialog is open.
+        const bool ready = body_in >= 1.0f && !busy_;
+        // One key press moves focus once, not again in the picker.
+        const bool handled = DrawButtons(draw, font, size, unit,
+                                         std::max(y + 22.0f * unit, size.y * 0.66f), body_in, ready);
+        DrawLanguagePicker(draw, font, size, unit, body_in, ready && !handled);
+        DrawMusicToggle(draw, font, size, unit, body_in, on_music_, ready && !handled);
         DrawHints(draw, font, size, unit, body_in);
+      }
 
     }
 
@@ -858,12 +868,6 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const float bottom = size.y - 120.0f * unit;
     if (library)
       top = std::min(top, bottom - float(kColumnRows) * (h + gap) + gap);
-
-    if (ETERNALSONATA_VERSION[0] != '\0') {
-      const std::string version = std::string("v") + ETERNALSONATA_VERSION;
-      draw->AddText(font, 18.0f * unit, ImVec2(24.0f * unit, 24.0f * unit),
-                    IM_COL32(255, 255, 255, int(255 * alpha)), version.c_str());
-    }
 
     const float t = std::chrono::duration<float>(Clock::now() - *g_first_shown).count();
     for (int i = 0; i < count; ++i) {
