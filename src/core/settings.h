@@ -69,6 +69,19 @@ int DisplayGammaOptionIndex();
 void SetDisplayGammaOption(int index);
 float DisplayGamma();
 
+// audio_volume as the percentage the overlay's slider shows. The setter persists
+// unless told not to, for a caller that saves once a held direction is let go.
+int MasterVolumePercent();
+void SetMasterVolumePercent(int percent, bool save = true);
+
+// A balance multiplier cvar (enemy_exp_multiplier, ...) as the discrete steps
+// the overlay's slider moves through. Zero steps for any other cvar. The setter
+// persists.
+int MultiplierOptionCount(const char* cvar);
+double MultiplierOptionValue(const char* cvar, int index);
+int MultiplierOptionIndex(const char* cvar);
+void SetMultiplierOption(const char* cvar, int index);
+
 // Enumerates GPU plugins and (if built with Vulkan) Vulkan physical devices
 // once, caching the results for CreateSettingsDialog. Both enumerations load
 // GPU plugin DLLs / query the driver, so this is meant to run once at

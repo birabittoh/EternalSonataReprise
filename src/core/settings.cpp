@@ -1855,6 +1855,63 @@ void SetDisplayGammaOption(int index) {
   SaveUserSettings();
 }
 
+int MasterVolumePercent() {
+  return VolumePercentFromAmplitude(std::atof(rex::cvar::GetFlagByName("audio_volume").c_str()));
+}
+
+void SetMasterVolumePercent(int percent, bool save) {
+  rex::cvar::SetFlagByName("audio_volume",
+                           std::to_string(VolumeAmplitudeFromPercent(std::clamp(percent, 0, 100))),
+                           /*persist=*/true);
+  if (save)
+    SaveUserSettings();
+}
+
+namespace {
+std::span<const double> MultiplierSteps(const char* cvar) {
+  const std::string_view name = cvar ? cvar : "";
+  if (name == "benched_exp_multiplier" || name == "incapacitated_exp_multiplier")
+    return kExpShareSteps;
+  if (name == "enemy_hp_multiplier")
+    return kHpMultiplierSteps;
+  if (name == "enemy_exp_multiplier" || name == "enemy_gold_multiplier" ||
+      name == "photo_price_multiplier" || name == "enemy_damage_multiplier")
+    return kRewardMultiplierSteps;
+  return {};
+}
+}  // namespace
+
+int MultiplierOptionCount(const char* cvar) {
+  return static_cast<int>(MultiplierSteps(cvar).size());
+}
+
+double MultiplierOptionValue(const char* cvar, int index) {
+  const auto steps = MultiplierSteps(cvar);
+  return index >= 0 && index < static_cast<int>(steps.size()) ? steps[index] : 0.0;
+}
+
+// Nearest step, as the overlay's slider reads a hand edited value.
+int MultiplierOptionIndex(const char* cvar) {
+  const auto steps = MultiplierSteps(cvar);
+  const double value = std::atof(rex::cvar::GetFlagByName(cvar).c_str());
+  int best = 0;
+  for (int i = 1; i < static_cast<int>(steps.size()); ++i) {
+    if (std::abs(steps[i] - value) < std::abs(steps[best] - value))
+      best = i;
+  }
+  return best;
+}
+
+void SetMultiplierOption(const char* cvar, int index) {
+  const auto steps = MultiplierSteps(cvar);
+  if (index < 0 || index >= static_cast<int>(steps.size()))
+    return;
+  char text[16];
+  std::snprintf(text, sizeof(text), "%g", steps[index]);
+  rex::cvar::SetFlagByName(cvar, text, /*persist=*/true);
+  SaveUserSettings();
+}
+
 void ApplySettingDefaults() {
   for (const auto& d : kGameDefaults) {
     // SetDefaultValue also sets the value, which would undo a command line
