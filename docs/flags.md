@@ -144,4 +144,4 @@ The two camp menu flags are not bank flags: `Bel01.e` sets `+0x921` (the
 Scrapbook is unlocked) through native 5029, and native 5032 sets `+0x920`
 (costume changes are blocked). The host keeps both in its own save record.
 Mods reach them with `EternalSonataGet/SetScrapbookUnlocked` and
-`EternalSonataGet/SetCostumesBlocked` (flag API version 3).
+`EternalSonataGet/SetCostumesBlocked` (flag API version 2).

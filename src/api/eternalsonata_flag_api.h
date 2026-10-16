@@ -39,12 +39,8 @@
 extern "C" {
 #endif
 
-// Bumped whenever anything below changes meaning. Additive changes bump the
-// version; existing entry points keep their signature.
-// Version 2: the bank is the full 2048 bytes and the scenario counter is the
-// u32 after it; version 1 read the counter from the bank's last two bytes.
-// Version 3: the PS3 camp menu flags, Scrapbook unlocked and costumes blocked.
-#define ETERNALSONATA_FLAGS_ABI_VERSION 3u
+// Bumped whenever anything below changes meaning.
+#define ETERNALSONATA_FLAGS_ABI_VERSION 2u
 
 // Flags in the bank. Flag `n` is bit `n & 7` of byte `n >> 3`, counting from
 // the low bit: the order the game fills them in.
