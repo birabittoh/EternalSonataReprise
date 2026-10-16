@@ -762,7 +762,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem(WithId(T("tab_input"), "input"))) {
-        DrawCvarRow("input_backend");
+        DrawInputBackendRow();
         DrawCvarRow("aim_invert_x");
         DrawCvarRow("aim_invert_y");
         DrawCvarRow("touch_controls");
@@ -1029,6 +1029,46 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 #endif  // _WIN32
+
+  // input_backend with display names for its stored values (sdl, xinput).
+  void DrawInputBackendRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("input_backend");
+    if (!entry)
+      return;
+    const auto& opts = entry->constraints.allowed_values;
+    if (opts.empty()) {
+      DrawCvarRow("input_backend");
+      return;
+    }
+    auto label = [](const std::string& id) -> const char* {
+      if (id == "sdl")
+        return "SDL";
+      if (id == "xinput")
+        return "XInput";
+      return id.c_str();
+    };
+    const std::string current = entry->getter();
+    if (DrawRowLabel("input_backend", "input_backend")) {
+      if (const char* tip = Tip("input_backend", entry->description.empty()
+                                                     ? nullptr
+                                                     : entry->description.c_str())) {
+        ImGui::SetTooltip("%s", tip);
+      }
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("input_backend");
+    if (ImGui::BeginCombo("##v", label(current))) {
+      for (const auto& opt : opts) {
+        if (ImGui::Selectable(label(opt), opt == current)) {
+          rex::cvar::SetFlagByName("input_backend", opt, /*persist=*/true);
+          SaveBasic();
+        }
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::PopID();
+  }
 
   // Discrete steps, so the shipped balance is always exactly one notch. The
   // label shows the cvar's real value, which a hand edited config may have
