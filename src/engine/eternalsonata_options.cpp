@@ -34,6 +34,7 @@
 #include "ps3_item_tables.h"
 #include "scrapbook_menu.h"
 #include "settings.h"
+#include "ui_text.h"
 #include "ui_language.h"
 
 // Cvars read below. Defined (and persisted) in settings.cpp. The rows' own
@@ -462,19 +463,10 @@ static_assert(kMaxRowValues + 2 <= kRowSidStride,
               "a row's label, values and restart marker must fit inside one "
               "synthetic-id stride");
 
-// Row labels are authored text (there is no stock BTX analogue for
-// "Resolution"/"Frame Rate"/"Fullscreen"), so unlike the boolean values above
-// they cannot ride the game's own localisation for free - each language needs
-// its own literal. Index matches LanguageIndex() below: en, de, fr, es, it.
-// Japanese has none and draws the English one.
-//
-// Accents are written as raw CP1252/Latin-1 byte escapes rather than UTF-8
-// source characters: the stock EFIGS text in the game's own BTX blocks is
-// single-byte, and writing multi-byte UTF-8 into a single-byte text record
-// would render as two garbled glyphs instead of one accented one. Unlike the
-// boolean values, these have no stock string to cross-check against.
-// Two different counts, and conflating them reads past the end of the tables
-// above.
+// Row labels are authored text with no stock BTX analogue, so each language
+// carries its own, from the [options] table of res/lang.
+// Two different counts, and conflating them reads past the end of the slot
+// tables below.
 //
 // kGuestListCount is the game's: six display lists per page, one per shipped
 // language (kOptionsListByLang / kButtonsListByLang). It is fixed forever,
@@ -489,26 +481,38 @@ constexpr int kLanguageCount = ETERNALSONATA_LANG_COUNT;
 static_assert(kGuestListCount == ETERNALSONATA_LANG_BUILTIN_COUNT,
               "the built-in language slots are the game's own display lists");
 
-// Slot kJapanese is written in UTF-8 and encoded to Shift-JIS when a row is
-// built (JapaneseText); the western slots are the blocks' Latin-1 already.
+// A key into the [options] table of res/lang. The text is UTF-8 there and is
+// brought down to each slot's block encoding when a row is built.
 struct LocalizedLabel {
-  const char* text[kLanguageCount];
+  const char* key;
 };
 
 constexpr int kJapanese = ETERNALSONATA_LANG_JA;
 
-std::string JapaneseText(const char* utf8) {
-  std::string out, error;
-  if (!eternalsonata::assets::EncodeShiftJis(utf8, out, &error))
-    REXLOG_WARN("[options] cannot encode \"{}\": {}", utf8, error);
-  return out;
+// The res/lang code and BTX block of each built-in slot, in display list order.
+constexpr const char* kSlotCode[kGuestListCount] = {"en", "de", "fr", "es", "it", "ja"};
+constexpr const char* kSlotBlock[kGuestListCount] = {"USA ", "DEU ", "FRA ", "ESP ", "ITA ", "JPN "};
+
+const char* LabelUtf8(const LocalizedLabel& label, int lang) {
+  if (!label.key || lang < 0 || lang >= kGuestListCount) {
+    return nullptr;
+  }
+  return eternalsonata::TrIn(kSlotCode[lang], "options", label.key);
 }
 
+bool HasText(const LocalizedLabel& label, int lang) { return LabelUtf8(label, lang) != nullptr; }
+
 std::string LabelText(const LocalizedLabel& label, int lang) {
-  const char* text = label.text[lang];
-  if (!text)
+  const char* utf8 = LabelUtf8(label, lang);
+  if (!utf8) {
     return "";
-  return lang == kJapanese ? JapaneseText(text) : std::string(text);
+  }
+  std::string out, error;
+  if (!eternalsonata::assets::TranscodeToGameEncoding(utf8, kSlotBlock[lang], out, &error)) {
+    REXLOG_WARN("[options] cannot encode [options] {} for slot {}: {}", label.key, lang, error);
+    return "";
+  }
+  return out;
 }
 
 // Which language is active is derived from *which of the 6 known list
@@ -535,69 +539,32 @@ bool ClassifyList(u32 list_addr, int* page, int* lang_idx) {
   return false;
 }
 
-constexpr LocalizedLabel kLabelResolution = {
-    {"Resolution", "Aufl\xF6sung", "R\xE9solution", "Resoluci\xF3n", "Risoluzione",
-     "解像度"}};
-constexpr LocalizedLabel kLabelFieldOfView = {
-    {"Field of View", "Sichtfeld", "Champ de vue", "Campo visi\xF3n",
-     "Campo visivo", "視野角"}};
-constexpr LocalizedLabel kLabelFrameRate = {
-    {"Frame Rate", "Bildrate", "Fr\xE9quence", "Fotogramas", "Framerate",
-     "フレームレート"}};
+constexpr LocalizedLabel kLabelResolution = {"resolution"};
+constexpr LocalizedLabel kLabelFieldOfView = {"field_of_view"};
+constexpr LocalizedLabel kLabelFrameRate = {"frame_rate"};
 // Long range aiming, one row per axis. Same length budget as kLabelText.
-constexpr LocalizedLabel kLabelAimInvertX = {
-    {"Invert Aim X", "Ziel X invers", "Vis\xE9" "e X inv.", "Mira X inv.",
-     "Inverti mira X", "照準の左右反転"}};
-constexpr LocalizedLabel kLabelAimInvertY = {
-    {"Invert Aim Y", "Ziel Y invers", "Vis\xE9" "e Y inv.", "Mira Y inv.",
-     "Inverti mira Y", "照準の上下反転"}};
+constexpr LocalizedLabel kLabelAimInvertX = {"aim_invert_x"};
+constexpr LocalizedLabel kLabelAimInvertY = {"aim_invert_y"};
 // Kept short on purpose: a label shares its row with the value column at
-// x=440, so it has roughly 320px - about 13 characters - before the two would
-// touch. The stock labels ("Sottotitoli", "Aufl\xF6sung") sit inside the same
+// x=440, so it has roughly 320px, about 13 characters, before the two would
+// touch. The stock labels ("Sottotitoli", "Auflösung") sit inside the same
 // budget.
-constexpr LocalizedLabel kLabelText = {
-    {"Text", "Text", "Texte", "Texto", "Testo", "テキスト"}};
+constexpr LocalizedLabel kLabelText = {"text"};
 // Which model walks the overworld: the game's own (always Allegretto) or
-// whoever leads the active party. Same budget note as kLabelText - the English
-// form is the longest of the five and is right at the edge of the label
-// column, so if it ever visibly touches the value column this is the label to
-// shorten first.
-// Lets a controller player close the game without reaching for the window.
-constexpr LocalizedLabel kLabelQuitGame = {
-    {"Quit Game", "Spiel beenden", "Quitter", "Salir", "Esci dal gioco",
-     "ゲーム終了"}};
-// The question the Quit Game row asks first. "\\n" is the BTX line break; the
-// Yes/No choice is appended from the game's own confirm string.
-constexpr LocalizedLabel kLabelQuitPrompt = {
-    {"Quit the game?\\nAll unsaved progress will be lost.",
-     "Spiel beenden?\\nNicht gespeicherter Fortschritt geht verloren.",
-     "Quitter le jeu ?\\nToute progression non sauvegard\xE9" "e sera perdue.",
-     "\xBFSalir del juego?\\nSe perder\xE1 todo el progreso no guardado.",
-     "Uscire dal gioco?\\nI progressi non salvati andranno persi.",
-     "ゲームを終了しますか？\\nセーブしていない進行状況は失われます。"}};
+// whoever leads the active party. Same budget note as kLabelText.
+constexpr LocalizedLabel kLabelOverworldModel = {"overworld_model"};
+constexpr LocalizedLabel kLabelOverworldDefault = {"overworld_default"};
+constexpr LocalizedLabel kLabelOverworldLeader = {"overworld_leader"};
 // The Exit row's two values say everything, so its label is blank.
-constexpr LocalizedLabel kLabelExit = {{"", "", "", "", "", ""}};
-constexpr LocalizedLabel kLabelChangeVersion = {
-    {"Change Version", "Version wechseln", "Changer version", "Cambiar versi\xF3n",
-     "Cambia versione", "バージョン変更"}};
-constexpr LocalizedLabel kLabelVersionPrompt = {
-    {"Change version?\\nUnsaved progress will be lost.",
-     "Version wechseln?\\nNicht gespeicherter Fortschritt geht verloren.",
-     "Changer de version ?\\nToute progression non sauvegard\xE9" "e sera perdue.",
-     "\xBF" "Cambiar de versi\xF3n?\\nSe perder\xE1 todo el progreso no guardado.",
-     "Cambiare versione?\\nI progressi non salvati andranno persi.",
-     "バージョンを変更しますか？\\nセーブしていない進行状況は失われます。"}};
+constexpr LocalizedLabel kLabelExit = {nullptr};
+constexpr LocalizedLabel kLabelQuitGame = {"quit_game"};
+constexpr LocalizedLabel kLabelChangeVersion = {"change_version"};
+// The questions the Exit row asks first. "\n" is the BTX line break; the
+// Yes/No choice is appended from the game's own confirm string.
+constexpr LocalizedLabel kLabelQuitPrompt = {"quit_prompt"};
+constexpr LocalizedLabel kLabelVersionPrompt = {"version_prompt"};
 // Asked before the Unlock Key package picker opens. The DLC name stays English.
-constexpr LocalizedLabel kLabelDlcPrompt = {
-    {"The Piano Music Key DLC is not installed.\\nDo you want to browse for the package file?",
-     "Der Piano Music Key DLC ist nicht installiert.\\nM\xF6" "chtest du nach der Paketdatei suchen?",
-     "Le DLC Piano Music Key n'est pas install\xE9.\\nVoulez-vous chercher le fichier du paquet ?",
-     "El DLC Piano Music Key no est\xE1 instalado.\\n\xBFQuieres buscar el archivo del paquete?",
-     "Il DLC Piano Music Key non \xE8 installato.\\nVuoi cercare il file del pacchetto?",
-     "Piano Music KeyのDLCがインストールされていません。\\nパッケージファイルを探しますか？"}};
-constexpr LocalizedLabel kLabelOverworldModel = {
-    {"Overworld Model", "Weltmodell", "Mod\xE8le monde", "Modelo mapa",
-     "Modello mappa", "フィールドモデル"}};
+constexpr LocalizedLabel kLabelDlcPrompt = {"dlc_prompt"};
 
 // Drawn to the right of a row whose setting only takes effect on the next
 // launch and has actually been changed this session - the same state the F4
@@ -610,9 +577,7 @@ constexpr LocalizedLabel kLabelOverworldModel = {
 // squeezed into whatever is left between the end of the row's label and the
 // value column, and a longer word simply would not fit on the shorter rows
 // (see MarkerRecordX, which drops the marker rather than overlapping a value).
-constexpr LocalizedLabel kLabelRestartMarker = {
-    {"(restart)", "(neustart)", "(red\xE9m.)", "(reinic.)", "(riavvia)",
-     "(要再起動)"}};
+constexpr LocalizedLabel kLabelRestartMarker = {"restart_marker"};
 
 // The Text row is the one row whose highlight does not land on its value on
 // its own. Two corrections, both settled by eye (see OptionRow::bar_nudge_x):
@@ -839,8 +804,6 @@ void OverworldModelSetIndex(u8* base, int idx);
 // of them as "Leader" (an override *is* in force) rather than as "Default",
 // and only collapses the pin to follow-party if the player actually moves the
 // row.
-constexpr const char* kOverworldModelValues[2] = {"Default", "Leader"};
-constexpr const char* kOverworldModelValuesJa[2] = {"標準", "リーダー"};
 
 // The Battle Camera row's own value strings, read out of the Options list at
 // 0x8202F388: its two type-200 records at record y 25 carry text ids 130 and
@@ -871,6 +834,15 @@ void FitBarToValue(OptionRow& row, const char* text) {
 // both built-in rows have. Mod rows go through the same path in
 // RegisterOptionRow below, which is the point of the refactor: there is one
 // row implementation, and the built-ins are just its first two clients.
+// A value drawn from a label's text in every built-in slot.
+OptionValue LabelValue(const LocalizedLabel& label) {
+  OptionValue value;
+  for (int i = 0; i < kGuestListCount; ++i) {
+    value.literal[i] = LabelText(label, i);
+  }
+  return value;
+}
+
 void MakeLiteralRow(OptionRow& row, const LocalizedLabel& label,
                     const char* const* values, int value_count) {
   for (int i = 0; i < kLanguageCount; ++i) {
@@ -1002,10 +974,10 @@ RowStore& Rows() {
     initial[3].get_index = &TextGetIndex;
     initial[3].set_index = &TextSetIndex;
     initial[3].page = kPageOptions;
-    MakeLiteralRow(initial[4], kLabelOverworldModel, kOverworldModelValues,
-                   static_cast<int>(std::size(kOverworldModelValues)));
-    for (size_t i = 0; i < std::size(kOverworldModelValuesJa); ++i)
-      initial[4].values[i].literal[kJapanese] = JapaneseText(kOverworldModelValuesJa[i]);
+    MakeLiteralRow(initial[4], kLabelOverworldModel, nullptr, 0);
+    for (const LocalizedLabel* choice : {&kLabelOverworldDefault, &kLabelOverworldLeader}) {
+      initial[4].values.push_back(LabelValue(*choice));
+    }
     initial[4].get_index = &OverworldModelGetIndex;
     initial[4].set_index = &OverworldModelSetIndex;
     initial[4].page = kPageOptions;
@@ -1025,11 +997,7 @@ RowStore& Rows() {
     // Left/right picks what A does.
     MakeLiteralRow(initial[7], kLabelExit, nullptr, 0);
     for (const LocalizedLabel* choice : {&kLabelQuitGame, &kLabelChangeVersion}) {
-      OptionValue value;
-      for (int i = 0; i < kLanguageCount; ++i) {
-        value.literal[i] = LabelText(*choice, i);
-      }
-      initial[7].values.push_back(std::move(value));
+      initial[7].values.push_back(LabelValue(*choice));
     }
     initial[7].action = [](u8*) {
       g_exit_choice == 0 ? RequestQuitConfirm() : RequestVersionConfirm();
@@ -2120,7 +2088,7 @@ void OverworldModelSetIndex(u8* base, int idx) {
   eternalsonata::FieldPlayerModelOverride::SetSelection(
       idx == 0 ? eternalsonata::FieldPlayerModelOverride::kSelectionDefault
                : eternalsonata::FieldPlayerModelOverride::kSelectionFollowParty);
-  REXLOG_INFO("[options] field_leader_model -> {}", kOverworldModelValues[idx]);
+  REXLOG_INFO("[options] field_leader_model -> {}", idx == 0 ? "default" : "leader");
 }
 
 // Value 0 is ON, so the cvar and the index are inverses of each other.
@@ -2597,7 +2565,7 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
 
   // The restart marker sits next to the labels, so it follows their language.
   const std::string marker =
-      LabelText(kLabelRestartMarker, kLabelRestartMarker.text[label_lang] ? label_lang : 0);
+      LabelText(kLabelRestartMarker, HasText(kLabelRestartMarker, label_lang) ? label_lang : 0);
   if (!g_marker_addr) {
     g_marker_addr = mem->SystemHeapAlloc(64, 0x20);
   }
@@ -3772,7 +3740,7 @@ u32 WriteQuitPrompt(u8* base, u32 stock) {
   const LocalizedLabel& label = g_confirm_kind == ConfirmKind::kDlc       ? kLabelDlcPrompt
                                 : g_confirm_kind == ConfirmKind::kVersion ? kLabelVersionPrompt
                                                                           : kLabelQuitPrompt;
-  std::string text = LabelText(label, label.text[lang] ? lang : 0);
+  std::string text = LabelText(label, HasText(label, lang) ? lang : 0);
   text += tail;
   text.resize(std::min<size_t>(text.size(), kQuitPromptBytes - 1));
   WriteGuestString(base, g_quit_prompt, text.c_str());

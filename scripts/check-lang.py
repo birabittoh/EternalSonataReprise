@@ -69,6 +69,8 @@ for path in sources:
             for sec, key in en_flat:
                 if sec == "settings" and key.startswith(prefix):
                     used.add((sec, key))
+for m in re.finditer(r'LocalizedLabel k\w+ = \{"(\w+)"\}', (root / "src/engine/eternalsonata_options.cpp").read_text(encoding="utf8")):
+    used.add(("options", m.group(1)))
 # Keys composed at run time.
 used |= {("settings", "game_volume_tip")}
 # IntroText keys live in a table in ui_text.cpp.

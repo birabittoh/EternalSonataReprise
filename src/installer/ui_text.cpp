@@ -141,23 +141,28 @@ int Current() {
   return g_current;
 }
 
+const char* FindIn(int index, const char* section, const char* key) {
+  if (index < 0)
+    return nullptr;
+  const auto& language = Languages()[size_t(index)];
+  if (const auto section_it = language.overrides.find(section); section_it != language.overrides.end()) {
+    if (const auto text = section_it->second.find(key); text != section_it->second.end())
+      return text->second.c_str();
+  }
+  const toml::table* table = language.tables[section].as_table();
+  if (const auto* text = table ? (*table)[key].as_string() : nullptr)
+    return text->get().c_str();
+  return nullptr;
+}
+
 // The current language's text for `key`, else English's, else null.
 const char* Find(const char* section, const char* key) {
-  const auto& languages = Languages();
-  if (languages.empty())
+  if (Languages().empty())
     return nullptr;
   static const int english = Find("en");
   for (int index : {Current(), english}) {
-    if (index < 0)
-      continue;
-    const auto& overrides = languages[size_t(index)].overrides;
-    if (const auto section_it = overrides.find(section); section_it != overrides.end()) {
-      if (const auto text = section_it->second.find(key); text != section_it->second.end())
-        return text->second.c_str();
-    }
-    const toml::table* table = languages[size_t(index)].tables[section].as_table();
-    if (const auto* text = table ? (*table)[key].as_string() : nullptr)
-      return text->get().c_str();
+    if (const char* text = FindIn(index, section, key))
+      return text;
   }
   return nullptr;
 }
@@ -177,6 +182,15 @@ const char* Tr(const char* section, const char* key) {
 const char* TrOr(const char* section, const char* key, const char* fallback) {
   const char* text = Find(section, key);
   return text ? text : fallback;
+}
+
+const char* TrIn(const char* code, const char* section, const char* key) {
+  if (Languages().empty())
+    return nullptr;
+  static const int english = Find("en");
+  if (const char* text = FindIn(Find(code), section, key))
+    return text;
+  return FindIn(english, section, key);
 }
 
 const char* SdkUiText(const char* key) {
