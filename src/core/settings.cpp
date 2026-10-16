@@ -242,7 +242,11 @@ constexpr std::array kGameDefaults = {
     // paces in the host, independent of it; see eternalsonata_framerate.cpp.
     DefaultValue{"vsync", "true"},
     DefaultValue{"mnk_mode", "true"},
+#if defined(__ANDROID__)
+    DefaultValue{"gyro_aim", "false"},
+#else
     DefaultValue{"gyro_aim", "true"},
+#endif
     DefaultValue{"keybind_a", "LMB"},
     DefaultValue{"keybind_b", "RMB"},
     DefaultValue{"keybind_x", "MMB"},
