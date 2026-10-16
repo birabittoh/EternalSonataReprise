@@ -10,6 +10,22 @@ Static recompilation of **Eternal Sonata**.
 
 Join the community on [Discord](https://discord.gg/DJe2pXMH7S).
 
+## Keybinds:
+* **Ins**: Overlay menu
+* **F1**: Mod Manager
+* **F2**: Shader debugger
+* **F3**: FPS overlay
+* **F4**: Settings overlay
+* **F5**: Input overlay
+* **Shift**: Fast-Forward
+
+* **WASD**: Walk
+* **Left/Right Click**: Interact/Attack/Guard
+* **Middle Click**: Object
+* **Spacebar**: Special Ability
+* **Ctrl**: Alternative Special Ability (PS3)
+* **Alt**: Switch Camera
+
 ## Using a pre-built release
 
 Get the latest stable build from the [Releases](../../releases/latest) page.
