@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -33,19 +34,23 @@ uint64_t ReadMaxFreq(int cpu) {
   return khz;
 }
 
-// The cores within 10% of the fastest one, so a prime core and its slightly
-// slower siblings both count as big.
+// Every core faster than the slowest cluster. A prime core can clock well
+// ahead of its big siblings (Snapdragon 865: 2.84 against 2.42 GHz), so the
+// line is drawn just above the little cores.
 bool BigCoreSet(cpu_set_t* set) {
   const int count = int(sysconf(_SC_NPROCESSORS_CONF));
-  uint64_t fastest = 0;
-  for (int cpu = 0; cpu < count; ++cpu)
-    fastest = std::max(fastest, ReadMaxFreq(cpu));
-  if (fastest == 0)
+  uint64_t slowest = UINT64_MAX;
+  for (int cpu = 0; cpu < count; ++cpu) {
+    // An offline core has no cpufreq node and reads as 0.
+    if (const uint64_t khz = ReadMaxFreq(cpu))
+      slowest = std::min(slowest, khz);
+  }
+  if (slowest == UINT64_MAX)
     return false;
   CPU_ZERO(set);
   int big = 0;
   for (int cpu = 0; cpu < count; ++cpu) {
-    if (ReadMaxFreq(cpu) * 10 >= fastest * 9) {
+    if (ReadMaxFreq(cpu) > slowest) {
       CPU_SET(cpu, set);
       ++big;
     }
@@ -60,7 +65,13 @@ bool IsGuestThread(pid_t tid) {
   std::ifstream in(path);
   std::string name;
   std::getline(in, name);
-  return name.rfind("XThread", 0) == 0 || name.rfind("Main XThread", 0) == 0;
+  // The SDK's audio threads run the guest mixer callback and XMA decode, and
+  // on a little core they can fall behind the output device.
+  for (const char* prefix : {"XThread", "Main XThread", "Audio Worker", "XMA Decoder"}) {
+    if (name.rfind(prefix, 0) == 0)
+      return true;
+  }
+  return false;
 }
 
 }  // namespace
