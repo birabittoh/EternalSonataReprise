@@ -594,6 +594,7 @@ std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir,
   }
   std::sort(inputs.begin(), inputs.end());
   std::vector<std::ifstream> streams;
+  streams.reserve(inputs.size());  // the readers below keep pointers into this vector
   std::vector<ImageFile> files;
   for (const fs::path& input : inputs) {
     streams.emplace_back(input, std::ios::binary);
