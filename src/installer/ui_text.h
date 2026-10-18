@@ -50,6 +50,10 @@ enum class IntroText {
   kHintBack,
   kHintQuit,
   kDialogNeedsMouse,
+  kOutdated,
+  kOutdatedQuestion,
+  kSkip,
+  kExtractAgain,
   kCount,
 };
 

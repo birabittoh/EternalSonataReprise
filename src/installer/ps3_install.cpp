@@ -29,6 +29,10 @@ constexpr const char* kShipped = "ps3-shipped.txt";
 // Bumped with every conversion change.
 constexpr const char* kStamp = "ps3-convert.stamp";
 constexpr const char* kStampVersion = "1";
+// Written when a conversion starts on freshly unpacked files. A tree converted
+// before the current revision lacks it and has to be unpacked again.
+constexpr const char* kFresh = "ps3-fresh.stamp";
+constexpr const char* kFreshVersion = "1";
 // Present while a conversion runs: the tree needs another.
 constexpr const char* kBusy = "ps3-converting.stamp";
 // The outputs written over their shipped file, as "size crc32 path" lines.
@@ -278,6 +282,8 @@ class TocBuilder {
 std::string Run(const fs::path& root, const ExtractProgress& progress) {
   std::error_code ec;
   const auto shipped = ShippedFiles(root);
+  if (!fs::exists(root / kConverted, ec) && !fs::exists(root / kStamp, ec))
+    WriteFile(root / kFresh, Bytes(kFreshVersion, kFreshVersion + std::strlen(kFreshVersion)));
   if (!fs::exists(root / kConverted, ec)) {
     // An older build deleted inputs before converting them.
     if (fs::exists(root / kBusy, ec))
@@ -526,6 +532,12 @@ bool IsPs3Converted(const fs::path& dir) {
   // Built by the old Python converter into a directory of its own: converting
   // it again would convert converted files.
   return fs::is_regular_file(dir / "index.vmtoc", ec) && !fs::exists(dir / kShipped, ec);
+}
+
+bool IsPs3Outdated(const fs::path& dir) {
+  Bytes mark;
+  return IsPs3Directory(dir) &&
+         !(ReadFile(dir / kFresh, mark) && std::string(mark.begin(), mark.end()) == kFreshVersion);
 }
 
 std::string ConvertPs3(const fs::path& dir, const ExtractProgress& progress) {

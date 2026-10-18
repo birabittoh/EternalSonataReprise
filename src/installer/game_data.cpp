@@ -366,12 +366,25 @@ void Finish(const std::shared_ptr<Flow>& flow, bool ready) {
 
 void Ask(std::shared_ptr<Flow> flow);
 
+// Outdated copies of the picked release, which Extract deletes before it unpacks.
+std::vector<fs::path> ReplacedVersions(const Flow& flow) {
+  std::vector<fs::path> replaced;
+  for (const GameVersion& version : flow.versions) {
+    if (version.outdated && !version.linked && !version.temporary && !version.id.empty() &&
+        version.id == flow.picked_info.id && IsDeletable(version.dir))
+      replaced.push_back(version.dir);
+  }
+  return replaced;
+}
+
 // Turns Extract off while the drive the files go to cannot hold them.
 void CheckSpace(Flow& flow) {
   if (!flow.required_bytes)
     return;
   std::error_code ec;
-  const uint64_t available = fs::space(g_root, ec).available;
+  uint64_t available = fs::space(g_root, ec).available;
+  for (const fs::path& old : ReplacedVersions(flow))
+    available += TreeSize(old);
   if (ec || flow.required_bytes <= available)
     return;
   std::string message = Tr(IntroText::kNotEnoughSpace, FormatSize(flow.required_bytes));
@@ -496,7 +509,8 @@ void OnInstalled(std::shared_ptr<Flow> flow, std::string error, fs::path dir) {
   flow->prompt.error = std::move(error);
   if (!flow->prompt.error.empty()) {
     REXLOG_ERROR("{}: {}", flow->picked, flow->prompt.error);
-    // Extract again after fixing what went wrong.
+    // Extract again after fixing what went wrong. An outdated copy may be gone.
+    Rescan(*flow, {});
     flow->prompt.can_extract = true;
     CheckSpace(*flow);
     Ask(flow);
@@ -528,12 +542,28 @@ void Extract(std::shared_ptr<Flow> flow) {
     return;
   flow->prompt.can_extract = false;
   const std::string picked = flow->picked;
-  const fs::path target = flow->picked_info.id.empty()
-                              ? FreeVersionDir(g_root, {})
-                              : g_root / flow->picked_info.id;
+  const std::vector<fs::path> replaced = ReplacedVersions(*flow);
+  // The folder an outdated copy held is free again once it is deleted.
+  std::error_code ec;
+  const fs::path wanted = g_root / flow->picked_info.id;
+  const bool wanted_free =
+      !fs::exists(wanted, ec) ||
+      std::any_of(replaced.begin(), replaced.end(), [&](const fs::path& old) { return SameDir(old, wanted); });
+  const fs::path target =
+      flow->picked_info.id.empty() || !wanted_free ? FreeVersionDir(g_root, flow->picked_info.id)
+                                                   : wanted;
   StartJob(
       std::move(flow),
-      [picked, target](const InstallHooks& hooks, fs::path& dir) {
+      [picked, target, replaced](const InstallHooks& hooks, fs::path& dir) {
+        // Before unpacking, so the old and new files never share the disk.
+        for (const fs::path& old : replaced) {
+          if (hooks.progress)
+            hooks.progress("Deleting game files...", -1.0f, {});
+          DeleteJob job;
+          DeleteTree(old, job);
+          if (!job.error.empty())
+            return job.error;
+        }
         std::error_code ec;
         fs::create_directories(target.parent_path(), ec);
         return Install(picked, target, hooks, dir);
@@ -571,7 +601,7 @@ void OnPicked(std::shared_ptr<Flow> flow, std::string picked) {
   flow->required_bytes = extracted.empty() ? info.required_bytes : 0;
   if (info.error.empty() && extracted.empty()) {
     for (const GameVersion& version : flow->versions) {
-      if (!version.linked && !version.temporary && version.id == info.id) {
+      if (!version.linked && !version.temporary && !version.outdated && version.id == info.id) {
         flow->prompt.error = Tr(IntroText::kAlreadyInstalled, info.release);
         break;
       }
@@ -657,18 +687,33 @@ void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice, int version) {
   if (version >= 0 && version < int(flow->versions.size()))
     flow->selected = version;
   flow->prompt.error.clear();
+  const bool skipped = !flow->prompt.outdated.empty();
+  flow->prompt.outdated.clear();
   switch (choice) {
     case GameDataChoice::kQuit:
       Finish(flow, false);
       return;
     case GameDataChoice::kStart:
       if (const GameVersion* selected = Selected(*flow)) {
+        if (selected->outdated && !skipped) {
+          flow->prompt.outdated = Tr(IntroText::kOutdatedQuestion, VersionLabel(*selected));
+          Ask(flow);
+          return;
+        }
         if (selected->needs_phases)
           RunPhases(flow, true);
         else
           Begin(flow);
         return;
       }
+      Ask(flow);
+      return;
+    case GameDataChoice::kExtractAgain:
+      flow->prompt.adding = true;
+      flow->prompt.can_extract = false;
+      flow->prompt.release.clear();
+      flow->prompt.languages = 0;
+      flow->picked.clear();
       Ask(flow);
       return;
     case GameDataChoice::kAddVersion:
@@ -720,8 +765,9 @@ void FillVersionRows(Flow& flow) {
     row.label = VersionLabel(version);
     if (version.linked || version.temporary)
       row.note = Tr(IntroText::kLinked, version.dir.string());
-    if (version.needs_phases)
-      row.note = Tr(IntroText::kNeedsUpdate) + (row.note.empty() ? "" : "   " + row.note);
+    if (version.needs_phases || version.outdated)
+      row.note = Tr(version.needs_phases ? IntroText::kNeedsUpdate : IntroText::kOutdated) +
+                 (row.note.empty() ? "" : "   " + row.note);
     row.languages = version.languages;
     row.linked = version.linked;
     row.can_delete = !version.linked && !version.temporary && IsDeletable(version.dir);
@@ -769,7 +815,7 @@ bool UsePreparedGameData(const GameDataOptions& options) {
     return false;
   const GameVersion& version = g_versions[size_t(g_selected)];
   REXLOG_INFO("Game version {} at {}", version.key, version.dir.string());
-  if (g_asked || version.needs_phases)
+  if (g_asked || version.needs_phases || version.outdated)
     return false;
   g_selected_dir = version.dir;
   return true;
@@ -792,6 +838,12 @@ void AskForGameData(const GameDataOptions& options, rex::ui::WindowedAppContext&
   if (flow->selected < 0 && !flow->versions.empty())
     flow->selected = 0;
   const GameVersion* saved = g_selected >= 0 ? Selected(*flow) : nullptr;
+  // Asked on every launch until the game is unpacked again; Skip starts it.
+  if (saved && saved->outdated && !g_asked) {
+    flow->prompt.outdated = Tr(IntroText::kOutdatedQuestion, VersionLabel(*saved));
+    Ask(flow);
+    return;
+  }
   if (!saved || !saved->needs_phases) {
     Ask(flow);
     return;

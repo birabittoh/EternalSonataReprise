@@ -29,6 +29,8 @@ struct GameVersion {
   bool temporary = false;
   // Conversion or patching still has work on it.
   bool needs_phases = false;
+  // Unpacked by an older conversion: only unpacking the game again fixes it.
+  bool outdated = false;
 };
 
 // Where SaveSelectedVersion and the links are written.

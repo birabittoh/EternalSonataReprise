@@ -38,6 +38,10 @@ bool IsGameDirectory(const std::filesystem::path& dir);
 bool NeedsConversion(const std::filesystem::path& dir);
 bool NeedsPatching(const std::filesystem::path& dir);
 
+// Whether `dir` was unpacked by an older conversion, which only unpacking the
+// game again fixes.
+bool IsOutdated(const std::filesystem::path& dir);
+
 // The game directory `picked` (a path or an Android content URI) is, or holds
 // the picked file, when it needs no extraction; else empty.
 std::filesystem::path ExtractedSource(const std::string& picked);

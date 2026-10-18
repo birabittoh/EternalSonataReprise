@@ -29,6 +29,7 @@ enum class GameDataChoice {
   kConfirmDelete,
   kCancel,
   kAddVersion,
+  kExtractAgain,
 };
 
 // The library holds this many versions.
@@ -70,6 +71,9 @@ struct GameDataPrompt {
   // Files, or Forget for a linked version.
   std::string confirm;
   bool confirm_forget = false;
+  // Asking whether to extract the selected version again, shown with Skip and
+  // Extract Again.
+  std::string outdated;
 };
 
 struct GameDataOptions {

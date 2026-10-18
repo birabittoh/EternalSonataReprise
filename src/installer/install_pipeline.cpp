@@ -202,6 +202,10 @@ bool NeedsPatching(const fs::path& dir) {
   return !IsReleasePatched(dir);
 }
 
+bool IsOutdated(const fs::path& dir) {
+  return IsPs3Outdated(dir);
+}
+
 fs::path ExtractedSource(const std::string& picked) {
   if (IsContentUri(picked))
     return {};

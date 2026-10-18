@@ -28,6 +28,10 @@ Ps3Region ReadPs3Region(const std::filesystem::path& dir);
 // Whether `dir` was converted by this build.
 bool IsPs3Converted(const std::filesystem::path& dir);
 
+// Whether `dir` is a PS3 tree that was not unpacked by the current conversion
+// revision, so its files are out of date and only a fresh unpack fixes them.
+bool IsPs3Outdated(const std::filesystem::path& dir);
+
 // Converts `dir` in place. Returns why it failed, for the player, or empty.
 std::string ConvertPs3(const std::filesystem::path& dir, const ExtractProgress& progress);
 

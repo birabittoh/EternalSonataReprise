@@ -209,6 +209,7 @@ void Describe(GameVersion& version, bool write) {
       WriteVersionInfo(version.dir, info.id, info.release, info.languages);
   }
   version.needs_phases = NeedsConversion(version.dir) || NeedsPatching(version.dir);
+  version.outdated = IsOutdated(version.dir);
 }
 
 size_t OrderOf(const GameVersion& version) {
