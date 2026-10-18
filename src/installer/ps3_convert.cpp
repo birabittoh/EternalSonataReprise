@@ -184,6 +184,114 @@ Bytes Unpitch(const Bytes& pixels, uint32_t width, uint32_t height, uint32_t mip
   return out;
 }
 
+// The PS3 ships tangent space normal maps as DXT5 with x in alpha and y in
+// green, biased by 0.5. The 360 ships them as V8U8 and its shaders read signed
+// values, so a biased texel reads as a heavily tilted normal.
+struct Texel {
+  int r, g, b, a;
+};
+
+int Expand565(int c, int bits) {
+  return bits == 6 ? (c << 2 | c >> 4) : (c << 3 | c >> 2);
+}
+
+void DecodeBc3Block(const uint8_t* p, Texel (&out)[16]) {
+  int alpha[8] = {p[0], p[1]};
+  for (int i = 1; i < 7; ++i) {
+    if (alpha[0] > alpha[1])
+      alpha[1 + i] = ((7 - i) * alpha[0] + i * alpha[1]) / 7;
+    else
+      alpha[1 + i] = i <= 4 ? ((5 - i) * alpha[0] + i * alpha[1]) / 5 : (i == 5 ? 0 : 255);
+  }
+  uint64_t abits = 0;
+  for (int i = 0; i < 6; ++i)
+    abits |= uint64_t(p[2 + i]) << (8 * i);
+  int ends[2][3];
+  for (int e = 0; e < 2; ++e) {
+    const int c = p[8 + 2 * e] | p[9 + 2 * e] << 8;
+    ends[e][0] = Expand565(c >> 11 & 31, 5);
+    ends[e][1] = Expand565(c >> 5 & 63, 6);
+    ends[e][2] = Expand565(c & 31, 5);
+  }
+  int colour[4][3];
+  for (int k = 0; k < 3; ++k) {
+    colour[0][k] = ends[0][k];
+    colour[1][k] = ends[1][k];
+    colour[2][k] = (2 * ends[0][k] + ends[1][k]) / 3;
+    colour[3][k] = (ends[0][k] + 2 * ends[1][k]) / 3;
+  }
+  const uint32_t cbits = p[12] | p[13] << 8 | p[14] << 16 | uint32_t(p[15]) << 24;
+  for (int i = 0; i < 16; ++i) {
+    const int* c = colour[cbits >> (2 * i) & 3];
+    out[i] = {c[0], c[1], c[2], alpha[abits >> (3 * i) & 7]};
+  }
+}
+
+// Greyscale colour with alpha and green both centred on mid grey.
+bool IsPs3NormalMap(const Bytes& dxt, uint32_t width, uint32_t height) {
+  const size_t blocks = size_t((width + 3) / 4) * ((height + 3) / 4);
+  if (blocks == 0 || blocks * 16 > dxt.size())
+    return false;
+  double grey = 0, alpha = 0, green = 0;
+  Texel t[16];
+  for (size_t b = 0; b < blocks; ++b) {
+    DecodeBc3Block(dxt.data() + b * 16, t);
+    for (const Texel& x : t) {
+      grey += std::abs(x.r - x.g) + std::abs(x.b - x.g);
+      alpha += x.a;
+      green += x.g;
+    }
+  }
+  const double n = double(blocks) * 16;
+  alpha /= n;
+  green /= n;
+  return grey / (2 * n) < 4 && alpha >= 104 && alpha <= 152 && green >= 104 && green <= 152;
+}
+
+uint8_t Signed8(int biased) {
+  return uint8_t(int8_t(std::lround((biased / 255.0 * 2 - 1) * 127)));
+}
+
+// Every level of a tight DXT5 chain as V8U8, x then y.
+std::optional<Bytes> Dxt5ToV8u8(const Bytes& dxt, uint32_t width, uint32_t height, uint32_t mips) {
+  Bytes out;
+  size_t at = 0;
+  Texel t[16];
+  for (uint32_t level = 0; level < std::max(1u, mips); ++level) {
+    const uint32_t w = std::max(1u, width >> level), h = std::max(1u, height >> level);
+    const size_t cols = (w + 3) / 4, rows = (h + 3) / 4;
+    if (at + cols * rows * 16 > dxt.size())
+      return std::nullopt;
+    const size_t base = out.size();
+    out.resize(base + size_t(w) * h * 2);
+    for (size_t by = 0; by < rows; ++by) {
+      for (size_t bx = 0; bx < cols; ++bx) {
+        DecodeBc3Block(dxt.data() + at + (by * cols + bx) * 16, t);
+        for (int i = 0; i < 16; ++i) {
+          const size_t x = bx * 4 + i % 4, y = by * 4 + i / 4;
+          if (x >= w || y >= h)
+            continue;
+          out[base + (y * w + x) * 2] = Signed8(t[i].a);
+          out[base + (y * w + x) * 2 + 1] = Signed8(t[i].g);
+        }
+      }
+    }
+    at += cols * rows * 16;
+  }
+  return out;
+}
+
+// The header the 360's V8U8 textures carry: the bump (DUDV) pixel format.
+Bytes V8u8DdsHeader(uint32_t width, uint32_t height, uint32_t mips) {
+  Bytes out = DdsHeader(width, height, mips, nullptr, width * height * 2);
+  // Pixel format at +76: size, flags, fourcc, bit count, then four masks.
+  const uint32_t pixel_format[] = {32, 0x80000, 0, 16, 0xFF, 0xFF00, 0, 0};
+  for (size_t i = 0; i < 8; ++i)
+    for (int b = 0; b < 4; ++b)
+      out[76 + 4 * i + b] = uint8_t(pixel_format[i] >> (8 * b));
+  return out;
+}
+
 std::optional<Bytes> ConvertNtx3(const Bytes& d, size_t o, Report& report) {
   const uint32_t count = Rd32(d, o + 8), off = Rd32(d, o + 16), tsz = Rd32(d, o + 20);
   const uint8_t fmt = At(d, o + 24), mips = At(d, o + 25), dim = At(d, o + 26),
@@ -205,8 +313,17 @@ std::optional<Bytes> ConvertNtx3(const Bytes& d, size_t o, Report& report) {
     if (linear)
       pixels = Unpitch(pixels, width, height, mips, pitch, 4, block);
     const size_t top = size_t(std::max(1u, (width + 3) / 4)) * std::max(1u, (height + 3) / 4) * block;
-    out = DdsHeader(width, height, mips, fourcc, uint32_t(top));
-    Append(out, pixels);
+    std::optional<Bytes> normals;
+    if (base == 0x88 && IsPs3NormalMap(pixels, width, height))
+      normals = Dxt5ToV8u8(pixels, width, height, mips);
+    if (normals) {
+      out = V8u8DdsHeader(width, height, mips);
+      Append(out, *normals);
+      ++report.counts["NTX3 normal maps"];
+    } else {
+      out = DdsHeader(width, height, mips, fourcc, uint32_t(top));
+      Append(out, pixels);
+    }
   } else if (base == kGtfA8R8G8B8) {
     if (linear)
       pixels = Unpitch(pixels, width, height, mips, pitch, 1, 4);
