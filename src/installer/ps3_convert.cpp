@@ -769,6 +769,27 @@ void EmitNobj(Rebuild& rb, const Bytes& d, size_t o, size_t size, Report& report
   Wr32(rb.out, start + 4, rb.out.size() - start);
 }
 
+// An effect's size, which a few PS3 effects leave 0 (tcd02's portal). Their
+// last section is the 0x40 byte COMT, so the size ends there.
+size_t MefcSize(const Bytes& d, size_t o) {
+  const size_t size = Rd32(d, o + 4);
+  if (size)
+    return size;
+  const size_t at = o + Rd16(d, o + 12);
+  const size_t entry_size = At(d, at + 2), count = At(d, at + 3);
+  size_t last = 0;
+  bool comt = false;
+  for (size_t i = 0; i < count; ++i) {
+    const size_t e = at + 4 + entry_size * i;
+    const size_t v = Rd32(d, e + 8);
+    if (v >= last) {
+      last = v;
+      comt = HasTag(d, e, "COMT");
+    }
+  }
+  return comt ? last + 0x40 : 0;
+}
+
 // Directory entry positions of an effect, or none. Header u16 +0x0C points at
 // "CK", entry size, count; each entry is a tag, a type and a u32 offset from
 // the effect start to its section.
@@ -776,10 +797,11 @@ std::optional<std::vector<size_t>> MefcEntries(const Bytes& d, size_t o, size_t 
   if (!HasTag(d, o, "Mefc") || o + 10 > d.size() || d[o + 8] != 'X' || d[o + 9] != 'B' ||
       o + 0x30 > end)
     return std::nullopt;
-  const size_t size = Rd32(d, o + 4);
   const size_t at = o + Rd16(d, o + 12);
-  if (o + size > end || at + 2 > d.size() || d[at] != 'C' || d[at + 1] != 'K' ||
-      At(d, at + 2) < 12)
+  if (at + 4 > d.size() || d[at] != 'C' || d[at + 1] != 'K' || At(d, at + 2) < 12)
+    return std::nullopt;
+  const size_t size = MefcSize(d, o);
+  if (o + size > end)
     return std::nullopt;
   const size_t entry_size = At(d, at + 2), count = At(d, at + 3);
   std::vector<size_t> entries;
@@ -935,7 +957,7 @@ class Region {
       }
       if (tag == "Mefc") {
         if (const auto entries = MefcEntries(d_, o, end)) {
-          const size_t size = Rd32(d_, o + 4);
+          const size_t size = MefcSize(d_, o);
           Flush(copied, o);
           EmitMefc(o, size, *entries);
           o = copied = o + size;
