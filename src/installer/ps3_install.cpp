@@ -22,15 +22,12 @@ namespace fs = std::filesystem;
 using ps3::Bytes;
 
 constexpr const char* kProbe = "pcalg_v1.p3obj";
-constexpr const char* kOriginal = ".orig";
 // The unpacked PS3 files, listed on the first run: what the conversion added
 // must not be taken for PS3 data.
 constexpr const char* kShipped = "ps3-shipped.txt";
-// Bumped with every conversion change.
-constexpr const char* kStamp = "ps3-convert.stamp";
-constexpr const char* kStampVersion = "1";
-// Written when a conversion starts on freshly unpacked files. A tree converted
-// before the current revision lacks it and has to be unpacked again.
+// Written when a conversion starts on freshly unpacked files, and bumped with
+// every conversion change. A tree converted before the current revision lacks
+// it and has to be unpacked again.
 constexpr const char* kFresh = "ps3-fresh.stamp";
 constexpr const char* kFreshVersion = "1";
 // Present while a conversion runs: the tree needs another.
@@ -42,7 +39,7 @@ constexpr const char* kConverted = "ps3-converted.txt";
 // The disc's title id, in a name Walk skips so no conversion touches it.
 constexpr const char* kTitleId = "ps3-title-id.stamp";
 constexpr std::array kNotData = {".i64", ".idb", ".id0", ".id1", ".id2",
-                                 ".nam", ".til", ".bak", ".orig", ".stamp",
+                                 ".nam", ".til", ".bak", ".stamp",
                                  "reprise-version.toml"};
 
 std::string Lower(std::string s) {
@@ -76,8 +73,7 @@ fs::path WithSuffix(fs::path path, const char* suffix) {
 }
 
 // Written aside and renamed over, so the old file stays whole until the new
-// one is. Renaming also unlinks what an older converter hard linked in from a
-// 360 copy.
+// one is.
 void ReplaceFile(const fs::path& path, const Bytes& data) {
   std::error_code ec;
   fs::create_directories(path.parent_path(), ec);
@@ -203,26 +199,6 @@ class ConvertedList {
   std::unordered_map<std::string, std::string> keys_;
 };
 
-// An older build left no kConverted: whatever lies under a shipped name it
-// converts in place is its output.
-void ListConvertedTree(const fs::path& root, const std::map<std::string, std::string>& shipped,
-                       const ExtractProgress& progress) {
-  std::error_code ec;
-  Bytes text;
-  size_t done = 0;
-  for (const auto& [low, rel] : shipped) {
-    if (progress)
-      progress("Checking game files...", float(done++) / float(shipped.size()), rel);
-    Bytes d;
-    if (!ps3::RenamedOutputs(rel).empty() || fs::exists(WithSuffix(root / rel, kOriginal), ec) ||
-        !ReadFile(root / rel, d))
-      continue;
-    const std::string line = FileKey(d) + ' ' + low + '\n';
-    ps3::Append(text, line.data(), line.size());
-  }
-  ReplaceFile(root / kConverted, text);
-}
-
 // index.vmtoc: 48 byte records sorted by
 // name, binary searched by sub_8210D080.
 class TocBuilder {
@@ -282,16 +258,11 @@ class TocBuilder {
 std::string Run(const fs::path& root, const ExtractProgress& progress) {
   std::error_code ec;
   const auto shipped = ShippedFiles(root);
-  if (!fs::exists(root / kConverted, ec) && !fs::exists(root / kStamp, ec))
-    WriteFile(root / kFresh, Bytes(kFreshVersion, kFreshVersion + std::strlen(kFreshVersion)));
   if (!fs::exists(root / kConverted, ec)) {
-    // An older build deleted inputs before converting them.
+    WriteFile(root / kFresh, Bytes(kFreshVersion, kFreshVersion + std::strlen(kFreshVersion)));
     if (fs::exists(root / kBusy, ec))
       return "An earlier conversion was interrupted. Unpack the game files again.";
-    if (fs::exists(root / kStamp, ec))
-      ListConvertedTree(root, shipped, progress);
-    else
-      ReplaceFile(root / kConverted, {});
+    ReplaceFile(root / kConverted, {});
   }
   WriteFile(root / kBusy, {});
   ConvertedList converted(root / kConverted);
@@ -348,17 +319,14 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
     if (progress)
       progress("Converting game files...", float(done++) / float(shipped.size()), rel);
     const fs::path path = root / rel;
-    // An older converter kept the shipped bytes in a .orig.
-    const fs::path original = WithSuffix(path, kOriginal);
     const auto renamed = ps3::RenamedOutputs(rel);
     Bytes d;
-    const bool from_original = ReadFile(original, d);
-    if (!from_original && !ReadFile(path, d)) {
+    if (!ReadFile(path, d)) {
       if (!keep_renamed(renamed))
         report.Warn(rel + ": neither the PS3 file nor its conversion is there");
       continue;
     }
-    if (!from_original && renamed.empty() && converted.Matches(low, d)) {
+    if (renamed.empty() && converted.Matches(low, d)) {
       ++report.counts["already converted"];
       if (low == ps3::kBattleKeep) {
         if (Bytes aligned = ps3::AlignBattleKeep(d); aligned != d) {
@@ -398,10 +366,8 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
     // The input goes only once its output is safely written.
     if (!replaced)
       fs::remove(path, ec);
-    fs::remove(original, ec);
   }
   ReplaceFile(root / "index.vmtoc", toc.bytes());
-  ReplaceFile(root / kStamp, Bytes(kStampVersion, kStampVersion + std::strlen(kStampVersion)));
   fs::remove(root / kBusy, ec);
 
   for (const auto& [what, count] : report.counts)
@@ -526,12 +492,7 @@ Ps3Region ReadPs3Region(const fs::path& dir) {
 
 bool IsPs3Converted(const fs::path& dir) {
   std::error_code ec;
-  Bytes stamp;
-  if (ReadFile(dir / kStamp, stamp))
-    return std::string(stamp.begin(), stamp.end()) == kStampVersion && !fs::exists(dir / kBusy, ec);
-  // Built by the old Python converter into a directory of its own: converting
-  // it again would convert converted files.
-  return fs::is_regular_file(dir / "index.vmtoc", ec) && !fs::exists(dir / kShipped, ec);
+  return fs::exists(dir / kConverted, ec) && !fs::exists(dir / kBusy, ec);
 }
 
 bool IsPs3Outdated(const fs::path& dir) {
