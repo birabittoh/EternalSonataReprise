@@ -1403,15 +1403,17 @@ void Answer(GameDataChoice choice, int version) {
 }
 
 void PresentFrame() {
-  g_frame_queued = false;
-  if (!g_dialog)
-    return;
-  PlumePresentOverlayOnly();
-  // Taken after the frame, so answering can destroy the dialog safely.
   if (g_dialog) {
-    if (const auto choice = g_dialog->TakeChoice())
-      Answer(choice->first, choice->second);
+    PlumePresentOverlayOnly();
+    // Taken after the frame, so answering can destroy the dialog safely.
+    if (g_dialog) {
+      if (const auto choice = g_dialog->TakeChoice())
+        Answer(choice->first, choice->second);
+    }
   }
+  // Cleared last: queued while this runs, the next frame keeps the UI thread
+  // from ever returning to SDL's event pump, which freezes Wayland input.
+  g_frame_queued = false;
 }
 
 void StartTicker() {
