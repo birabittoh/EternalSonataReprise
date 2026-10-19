@@ -111,7 +111,7 @@ git clone --recursive https://github.com/birabittoh/EternalSonataReprise
 cd EternalSonataReprise
 ```
 
-If you already cloned without `--recursive`, fetch the `plume` submodule with:
+If you already cloned without `--recursive`, fetch the submodules with:
 
 ```bash
 git submodule update --init --recursive
@@ -167,3 +167,6 @@ Things that make me not like your code are:
 
 The host-side source in `src/`, build scripts, and CI config are available
 under the MIT License.
+
+`xma2enc/` (the XMA2 encoder used by the PS3 audio conversion) is a separate
+submodule under the LGPL 2.1 or later, see [xma2enc/COPYING.LGPLv2.1](https://github.com/birabittoh/xma2enc/blob/main/COPYING.LGPLv2.1).

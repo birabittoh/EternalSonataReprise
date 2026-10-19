@@ -27,10 +27,6 @@ struct Report {
 // container and its bytes.
 using AudioConverter = std::function<Bytes(size_t index, const Bytes& bank)>;
 
-using Token = std::array<uint8_t, 8>;
-// Receives a sidecar WAV for pcm/<token as hex>.wav.
-using PcmWriter = std::function<void(const Token& token, const Bytes& wav)>;
-
 struct Output {
   std::string path;
   Bytes data;
@@ -53,18 +49,11 @@ bool IsCsl(const Bytes& d, size_t o, size_t end);
 std::vector<size_t> CslBanks(const Bytes& d, size_t o);
 
 // Audio (ps3_audio.cpp).
-Token MakeToken(const std::string& key);
-std::string TokenHex(const Token& token);
-Bytes ConvertCsf(const std::string& rel, const Bytes& ps3, const PcmWriter& write_pcm,
-                 Report& report);
+Bytes ConvertCsf(const std::string& rel, const Bytes& ps3, Report& report);
 // Music: the files to add for one .cps.
-std::vector<Output> ConvertCps(const std::string& rel, const Bytes& d, const PcmWriter& write_pcm,
-                               Report& report);
+std::vector<Output> ConvertCps(const std::string& rel, const Bytes& d, Report& report);
 // The names ConvertCps may give a track: its .cxs, then its .wav.
 std::vector<std::string> CpsOutputs(const std::string& rel);
-// A converted .cxs as this converter writes it, from its own header; nothing
-// for any other file. The track's sidecar keeps its name.
-std::optional<Bytes> RebuildCxs(const std::string& rel, const Bytes& cxs);
 
 // What a conversion of `rel` may be written as when it is not `rel` itself.
 std::vector<std::string> RenamedOutputs(const std::string& rel);

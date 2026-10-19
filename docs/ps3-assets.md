@@ -746,15 +746,13 @@ from the next 0x1000.
 
 ## 5. Audio
 
-No XMA encoder exists, so every clip and new track ships as a sidecar,
-`pcm/<16 hex digits>.wav` in the game directory. The converter writes a 16
-byte tag (`RXPcmSub` plus those eight bytes) at the start of the clip's
-payload, and the host (`ScanGamePcm`) substitutes the sidecar when the XMA
-decoder meets it, the same way mod audio works. Sidecars keep the PS3
-encoding: WAV format 0x0270 (ATRAC3, decoded through the SDK's FFmpeg) or
-the private 0x5053 (PS-ADPCM), decoded by `LoadPcmWav` when the clip first
-plays, with an optional `smpl` loop in samples. About 1 GB on disk, where PCM
-would take about 3.5 GB.
+The converter decodes the PS3's ATRAC3 (clips) and PS-ADPCM (music) and
+encodes real XMA2 with the `xma2enc` submodule, so the guest's own XMA decoder
+plays the result and nothing is substituted at run time. Clips are mono at 96
+kbps, music is stereo at 192 kbps. `xma2enc` writes one long 512 sample block
+per frame and 2048 byte packets; `docs/format.md` in the module has the
+bitstream notes. Both output formats are checked against the 360's own files
+with `scripts/verify_xma2.py`.
 
 ### Sound banks (`.csf`)
 
@@ -778,8 +776,7 @@ payloads to 0x1000 and the header to 0x1000.
 
 The PS3 appended its new clips: `pc001` keeps all of the 360's 173 in place and
 adds 29. Each clip becomes a 360 `TIM` with the PS3 clip's parameters and
-`LIP `, and one 0x800 byte tagged packet of payload described as the clip's
-length. The `BOOK`s differ in a few sequencer timing bytes and the PS3's are
+`LIP `, and an XMA2 payload. The `BOOK`s differ in a few sequencer timing bytes and the PS3's are
 kept.
 
 ### Banks inside `.e` files
@@ -806,24 +803,20 @@ and the game plays no sound again until it restarts.
 
 `CPS ` header: u32 header size (0x20), channels, data size, rate, loop start
 and end in bytes, and a kind: 3 is PS-ADPCM with channels interleaved per 16
-byte frame, 0 is big endian PCM. Every track both releases share has the same
-sample count, so only names differ. PS3 scripts ask for `MP139.cps`, and
+byte frame, 0 is big endian PCM. Most tracks both releases share have the same
+sample count; a few are different masters (MP109 is 2.7 s shorter on the PS3, MP103's loop start differs). PS3 scripts ask for `MP139.cps`, and
 `sub_820F80F8` builds `sound\cxs\<name>` from whatever the script says. PS3
 mode turns `.cps` into `.cxs` where the stream starts (`sub_82142070`,
 `sub_82142360`, path in `r4`).
 
-The 66 PS-ADPCM tracks become a `.cxs` written from scratch plus an ADPCM
-sidecar. Every 360 `.cxs` has the same header, all u32 big endian: `"CXS "`,
+The 66 PS-ADPCM tracks become a stereo XMA2 `.cxs`, one stream for both channels. Every 360 `.cxs` has the same header, all u32 big endian: `"CXS "`,
 header size 0x800, rate, channels, samples, loop start and end in samples
 (end rounded up to 512, both 0 when the track does not loop), payload size in
 0x10000 byte blocks rounded up, payload offset 0x1000, payload size, then
 0x800 twice. From 0x800, one u32 per block: the samples played by its end,
 in whole XMA frames; the last is the sample count rounded up to 512, plus
 one frame. The guest does not start a track whose table is empty, nor a
-looping one whose loop end is not below the last entry. The guest streams the
-payload while the track plays, so it gets a quarter byte per sample and
-channel (the 360's XMA takes 0.11 to 0.28), zero but for the tag in its first
-packet. The 20 kind 0 tracks (`MP180..199`, the 5.1 versions among them) are
+looping one whose loop end is not below the last entry. The 20 kind 0 tracks (`MP180..199`, the 5.1 versions among them) are
 PCM already and become plain big endian `.wav`, which scripts ask for by
 that name, as the 360 ships them.
 

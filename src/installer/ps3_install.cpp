@@ -3,9 +3,13 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <future>
+#include <thread>
 #include <map>
 #include <unordered_map>
 #include <vector>
@@ -53,11 +57,13 @@ bool EndsWith(std::string_view s, std::string_view suffix) {
 }
 
 bool ReadFile(const fs::path& path, Bytes& out) {
-  std::ifstream in(path, std::ios::binary);
+  std::ifstream in(path, std::ios::binary | std::ios::ate);
   if (!in)
     return false;
-  out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-  return !in.bad();
+  out.resize(size_t(in.tellg()));
+  in.seekg(0);
+  in.read(reinterpret_cast<char*>(out.data()), std::streamsize(out.size()));
+  return bool(in) || out.empty();
 }
 
 void WriteFile(const fs::path& path, const Bytes& bytes) {
@@ -140,19 +146,32 @@ std::map<std::string, std::string> ShippedFiles(const fs::path& root) {
 }
 
 uint32_t Crc32(const Bytes& d) {
+  // Slicing by eight; this runs over every shipped file.
   static const auto table = [] {
-    std::array<uint32_t, 256> t{};
+    std::array<std::array<uint32_t, 256>, 8> t{};
     for (uint32_t i = 0; i < 256; ++i) {
       uint32_t c = i;
       for (int k = 0; k < 8; ++k)
         c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-      t[i] = c;
+      t[0][i] = c;
     }
+    for (uint32_t i = 0; i < 256; ++i)
+      for (int k = 1; k < 8; ++k)
+        t[k][i] = t[0][t[k - 1][i] & 0xFF] ^ (t[k - 1][i] >> 8);
     return t;
   }();
   uint32_t c = 0xFFFFFFFFu;
-  for (uint8_t b : d)
-    c = table[(c ^ b) & 0xFF] ^ (c >> 8);
+  size_t i = 0;
+  for (; i + 8 <= d.size(); i += 8) {
+    uint32_t lo, hi;
+    std::memcpy(&lo, &d[i], 4);
+    std::memcpy(&hi, &d[i + 4], 4);
+    lo ^= c;
+    c = table[7][lo & 0xFF] ^ table[6][lo >> 8 & 0xFF] ^ table[5][lo >> 16 & 0xFF] ^ table[4][lo >> 24] ^
+        table[3][hi & 0xFF] ^ table[2][hi >> 8 & 0xFF] ^ table[1][hi >> 16 & 0xFF] ^ table[0][hi >> 24];
+  }
+  for (; i < d.size(); ++i)
+    c = table[0][(c ^ d[i]) & 0xFF] ^ (c >> 8);
   return ~c;
 }
 
@@ -264,6 +283,7 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
       return "An earlier conversion was interrupted. Unpack the game files again.";
     ReplaceFile(root / kConverted, {});
   }
+  const auto started = std::chrono::steady_clock::now();
   WriteFile(root / kBusy, {});
   ConvertedList converted(root / kConverted);
 
@@ -271,9 +291,6 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
   if (Bytes old; ReadFile(root / "index.vmtoc", old))
     toc.KeepExisting(root, old);
   ps3::Report report;
-  auto write_pcm = [&](const ps3::Token& tok, const Bytes& wav) {
-    ReplaceFile(root / "pcm" / (ps3::TokenHex(tok) + ".wav"), wav);
-  };
   auto keep = [&](const std::string& rel, size_t size) {
     if (!toc.SetStored(rel, uint32_t(size)))
       report.Warn(rel + ": path too long for an index.vmtoc record");
@@ -294,8 +311,7 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
     keep(rel, data.size());
     return over_shipped;
   };
-  // An input an earlier run converted under another name. A .cxs is rebuilt,
-  // since its header holds all the converter needs.
+  // An input an earlier run converted under another name.
   auto keep_renamed = [&](const std::vector<std::string>& outputs) {
     for (const std::string& out : outputs) {
       const std::string rel = spell(out);
@@ -303,30 +319,129 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
       if (!ReadFile(root / rel, d))
         continue;
       ++report.counts["already converted"];
-      if (const auto cxs = ps3::RebuildCxs(rel, d); cxs && *cxs != d) {
-        ++report.counts["music tracks rebuilt"];
-        emit(rel, *cxs);
-      } else {
-        keep(rel, d.size());
-      }
+      keep(rel, d.size());
       return true;
     }
     return false;
   };
 
+  struct Converted {
+    ps3::Report report;
+    std::vector<ps3::Output> outputs;
+    bool as_is = false;
+    size_t size = 0;
+  };
+  std::atomic<int64_t> worker_ms{0};
+  auto convert = [&worker_ms](const std::string& rel, const std::string& low, const Bytes& d) {
+    const auto began = std::chrono::steady_clock::now();
+    struct Timed {
+      std::atomic<int64_t>& total;
+      const std::string& rel;
+      std::chrono::steady_clock::time_point began;
+      ~Timed() {
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - began).count();
+        total += ms;
+        if (ms > 10000)
+          REXLOG_INFO("PS3 conversion: {} took {:.1f} s", rel, ms / 1000.0);
+      }
+    } timed{worker_ms, rel, began};
+    Converted job;
+    job.size = d.size();
+    ps3::Report& rep = job.report;
+    if (EndsWith(low, ".csf")) {
+      job.outputs.push_back({rel, ps3::ConvertCsf(rel, d, rep)});
+    } else if (EndsWith(low, ".cps")) {
+      job.outputs = ps3::ConvertCps(rel, d, rep);
+    } else {
+      const ps3::AudioConverter audio = [&](size_t index, const Bytes& bank) {
+        return ps3::ConvertCsf(rel + "#" + std::to_string(index), bank, rep);
+      };
+      auto result = ps3::ConvertFile(rel, d, rep, &audio);
+      if (!result) {
+        const std::string name = low.substr(low.find_last_of('/') + 1);
+        const size_t dot = name.find_last_of('.');
+        ++rep.counts["served as is " + (dot == std::string::npos || dot == 0 ? name : name.substr(dot))];
+        job.as_is = true;
+        return job;
+      }
+      ++rep.counts["converted"];
+      if (low == ps3::kBattleKeep)
+        result->data = ps3::AppendEmptyBattleKeep(result->data, rep);
+      job.outputs.push_back(std::move(*result));
+    }
+    return job;
+  };
+  // Encoding dominates, so files convert on worker threads a few entries
+  // ahead of the one being written. Only this thread touches the output tree.
+  const std::vector<std::pair<std::string, std::string>> order(shipped.begin(), shipped.end());
+  const size_t window = std::max<size_t>(2, std::thread::hardware_concurrency()) * 2;
+  std::map<size_t, std::future<Converted>> ahead;
+  size_t launched = 0;
+  int64_t wait_ms = 0;
+  // Files read ahead that need no conversion keep their bytes for the loop.
+  struct Peek {
+    Bytes d;
+    bool ok = false;
+  };
+  std::map<size_t, Peek> peeked;
+  auto prefetch = [&](size_t index) {
+    for (; launched < order.size() && launched < index + window; ++launched) {
+      const auto& [olow, orel] = order[launched];
+      Peek peek;
+      peek.ok = ReadFile(root / orel, peek.d);
+      if (peek.ok && (!ps3::RenamedOutputs(orel).empty() || !converted.Matches(olow, peek.d))) {
+        ahead[launched] = std::async(std::launch::async,
+                                     [&convert, orel = orel, olow = olow, d = std::move(peek.d)] {
+                                       return convert(orel, olow, d);
+                                     });
+      } else {
+        peeked[launched] = std::move(peek);
+      }
+    }
+  };
+  auto take = [&](size_t index, const std::string& rel, const std::string& low, Bytes d) {
+    if (const auto it = ahead.find(index); it != ahead.end()) {
+      const auto waiting = std::chrono::steady_clock::now();
+      Converted job = it->second.get();
+      wait_ms += std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - waiting).count();
+      ahead.erase(it);
+      return job;
+    }
+    return convert(rel, low, d);
+  };
+
   size_t done = 0;
   for (const auto& [low, rel] : shipped) {
+    const size_t position = done++;
     if (progress)
-      progress("Converting game files...", float(done++) / float(shipped.size()), rel);
+      progress("Converting game files...", float(position) / float(shipped.size()), rel);
     const fs::path path = root / rel;
     const auto renamed = ps3::RenamedOutputs(rel);
+    prefetch(position);
     Bytes d;
-    if (!ReadFile(path, d)) {
-      if (!keep_renamed(renamed))
-        report.Warn(rel + ": neither the PS3 file nor its conversion is there");
-      continue;
+    const bool converting = ahead.count(position) != 0;
+    if (!converting) {
+      const auto it = peeked.find(position);
+      if (it == peeked.end()) {
+        if (!ReadFile(path, d)) {
+          if (!keep_renamed(renamed))
+            report.Warn(rel + ": neither the PS3 file nor its conversion is there");
+          continue;
+        }
+      } else {
+        const bool ok = it->second.ok;
+        d = std::move(it->second.d);
+        peeked.erase(it);
+        if (!ok) {
+          if (!keep_renamed(renamed))
+            report.Warn(rel + ": neither the PS3 file nor its conversion is there");
+          continue;
+        }
+      }
     }
-    if (renamed.empty() && converted.Matches(low, d)) {
+    if (!converting && renamed.empty() && converted.Matches(low, d)) {
       ++report.counts["already converted"];
       if (low == ps3::kBattleKeep) {
         if (Bytes aligned = ps3::AlignBattleKeep(d); aligned != d) {
@@ -338,28 +453,16 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
       keep(rel, d.size());
       continue;
     }
-    std::vector<ps3::Output> outputs;
-    if (EndsWith(low, ".csf")) {
-      outputs.push_back({rel, ps3::ConvertCsf(rel, d, write_pcm, report)});
-    } else if (EndsWith(low, ".cps")) {
-      outputs = ps3::ConvertCps(rel, d, write_pcm, report);
-    } else {
-      const ps3::AudioConverter audio = [&](size_t index, const Bytes& bank) {
-        return ps3::ConvertCsf(rel + "#" + std::to_string(index), bank, write_pcm, report);
-      };
-      auto result = ps3::ConvertFile(rel, d, report, &audio);
-      if (!result) {
-        const std::string name = low.substr(low.find_last_of('/') + 1);
-        const size_t dot = name.find_last_of('.');
-        ++report.counts["served as is " + (dot == std::string::npos || dot == 0 ? name : name.substr(dot))];
-        keep(rel, d.size());
-        continue;
-      }
-      ++report.counts["converted"];
-      if (low == ps3::kBattleKeep)
-        result->data = ps3::AppendEmptyBattleKeep(result->data, report);
-      outputs.push_back(std::move(*result));
+    Converted job = take(position, rel, low, std::move(d));
+    for (const auto& [what, count] : job.report.counts)
+      report.counts[what] += count;
+    for (std::string& w : job.report.warnings)
+      report.warnings.push_back(std::move(w));
+    if (job.as_is) {
+      keep(rel, job.size);
+      continue;
     }
+    std::vector<ps3::Output>& outputs = job.outputs;
     bool replaced = false;
     for (const ps3::Output& out : outputs)
       replaced |= emit(out.path, out.data);
@@ -370,6 +473,11 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
   ReplaceFile(root / "index.vmtoc", toc.bytes());
   fs::remove(root / kBusy, ec);
 
+  REXLOG_INFO("PS3 conversion: workers {:.0f} s, main thread waited {:.0f} s",
+              worker_ms / 1000.0, wait_ms / 1000.0);
+  REXLOG_INFO("PS3 conversion: {:.1f} s on {} threads",
+              std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count(),
+              window / 2);
   for (const auto& [what, count] : report.counts)
     REXLOG_INFO("PS3 conversion: {:8}  {}", count, what);
   for (const std::string& warning : report.warnings)

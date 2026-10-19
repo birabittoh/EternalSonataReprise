@@ -547,7 +547,8 @@ endif()
 
 rexglue_setup_target(eternalsonata)
 
-target_link_libraries(eternalsonata PRIVATE plume)
+add_subdirectory(xma2enc EXCLUDE_FROM_ALL)
+target_link_libraries(eternalsonata PRIVATE plume xma2enc)
 
 # libadrenotools loads a user supplied Vulkan driver (Turnip) in place of the
 # stock one, which on many Adreno phones stops short of what Plume needs. Its

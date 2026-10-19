@@ -1,15 +1,16 @@
 // PS3 audio conversion.
 //
-// PS3 sound banks hold mono ATRAC3 clips (192 byte frames) where the 360's
-// hold XMA2, and no XMA encoder exists. Every clip gets a stub payload that
-// starts with an RXPcmSub tag, and its frames go to pcm/<token>.wav, which the
-// host decodes and substitutes when the XMA decoder meets the tag. Music
-// tracks in PS-ADPCM get a .cxs that tags every packet with its position.
+// PS3 sound banks hold mono ATRAC3 clips (192 byte frames) and music in
+// PS-ADPCM where the 360 holds XMA2. Both are decoded and encoded as XMA2
+// (xma2enc), so the guest's own decoder plays them.
 
 #include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <stdexcept>
+
+#include <rex/audio/atrac3.h>
+#include <xma2enc/xma2enc.h>
 
 #include "ps3_bytes.h"
 #include "ps3_convert.h"
@@ -17,10 +18,13 @@
 namespace eternalsonata::ps3 {
 namespace {
 
-constexpr char kTag[] = "RXPcmSub";
-constexpr size_t kPacket = 0x800;
+constexpr size_t kPacket = xma2enc::kPacketSize;
 constexpr uint32_t kAtrac3Frame = 192;
 constexpr uint32_t kAtrac3Samples = 1024;
+
+// The 360's own clips run at about 128 kbps mono; the ATRAC3 source is 66.
+constexpr uint32_t kClipBitrate = 96000;
+constexpr uint32_t kMusicBitrate = 192000;
 
 constexpr int kAdpcmCoef[5][2] = {{0, 0}, {60, 0}, {115, -52}, {98, -55}, {122, -60}};
 
@@ -38,61 +42,15 @@ void PadAlign(Bytes& d, size_t a) {
 
 using Loop = std::pair<uint32_t, uint32_t>;
 
-// Little endian WAV around encoded frames; loop is (start, end) in samples,
-// end exclusive.
-Bytes SidecarWav(const Bytes& fmt, const Bytes& data, const Loop* loop, uint32_t rate) {
-  Bytes body;
-  Append(body, "fmt ", 4);
-  PutLe32(body, uint32_t(fmt.size()));
-  Append(body, fmt);
-  if (loop) {
-    Bytes smpl;
-    for (uint32_t v : {0u, 0u, 1000000000u / rate, 60u, 0u, 0u, 0u, 1u, 0u})
-      PutLe32(smpl, v);
-    for (uint32_t v : {0u, 0u, loop->first, loop->second - 1, 0u, 0u})
-      PutLe32(smpl, v);
-    Append(body, "smpl", 4);
-    PutLe32(body, uint32_t(smpl.size()));
-    Append(body, smpl);
-  }
-  Append(body, "data", 4);
-  PutLe32(body, uint32_t(data.size()));
-  Append(body, data);
-  Bytes out;
-  Append(out, "RIFF", 4);
-  PutLe32(out, uint32_t(4 + body.size()));
-  Append(out, "WAVE", 4);
-  Append(out, body);
+xma2enc::Result EncodeXma(const std::vector<int16_t>& pcm, uint32_t channels, uint32_t rate,
+                          uint32_t block_size, uint32_t bitrate) {
+  xma2enc::Options options;
+  options.bitrate = bitrate * channels;
+  options.block_size = block_size;
+  xma2enc::Result out;
+  if (!xma2enc::Encode(pcm.data(), pcm.size() / channels, channels, rate, options, &out))
+    throw std::runtime_error("XMA2 encoding failed");
   return out;
-}
-
-Bytes Atrac3Wav(const Bytes& frames, uint32_t rate, const Loop* loop) {
-  Bytes ext;
-  PutLe16(ext, 1);
-  PutLe32(ext, 0);
-  for (uint32_t v : {0u, 0u, 1u, 0u})
-    PutLe16(ext, v);
-  Bytes fmt;
-  PutLe16(fmt, kWaveAtrac3);
-  PutLe16(fmt, 1);
-  PutLe32(fmt, rate);
-  PutLe32(fmt, kAtrac3Frame * rate / kAtrac3Samples);
-  PutLe16(fmt, kAtrac3Frame);
-  PutLe16(fmt, 0);
-  PutLe16(fmt, uint32_t(ext.size()));
-  Append(fmt, ext);
-  return SidecarWav(fmt, frames, loop, rate);
-}
-
-Bytes PsxAdpcmWav(const Bytes& data, uint32_t channels, uint32_t rate, const Loop* loop) {
-  Bytes fmt;
-  PutLe16(fmt, kWavePsxAdpcm);
-  PutLe16(fmt, channels);
-  PutLe32(fmt, rate);
-  PutLe32(fmt, rate * channels * 16 / 28);
-  PutLe16(fmt, 16 * channels);
-  PutLe16(fmt, 4);
-  return SidecarWav(fmt, data, loop, rate);
 }
 
 // The 360's own sound/cxs/*.wav layout: RIFF with big endian fields and samples.
@@ -116,13 +74,6 @@ Bytes GuestWav(const Bytes& pcm_be, uint32_t channels, uint32_t rate) {
   Put32(out, 4 + body.size());
   Append(out, "WAVE", 4);
   Append(out, body);
-  return out;
-}
-
-Bytes TaggedPacket(const Token& tok) {
-  Bytes out(kTag, kTag + 8);
-  out.insert(out.end(), tok.begin(), tok.end());
-  out.resize(kPacket);
   return out;
 }
 
@@ -184,9 +135,9 @@ Csf ParseCsf(const Bytes& d) {
   return csf;
 }
 
-// A 360 TIM for a substituted clip: the PS3 clip's parameters, LIP and rate,
-// with one XMA block of stub payload described as frames long.
-Bytes NewTim(const Tim& ps3, uint32_t offset, uint32_t size, uint32_t frames, bool loops) {
+// A 360 TIM for a converted clip: the PS3 clip's parameters, LIP and rate
+// around the encoded stream, with its XMA2 header and seek table.
+Bytes NewTim(const Tim& ps3, uint32_t offset, const xma2enc::Result& xma, const Loop* loop) {
   const Bytes& raw = ps3.raw;
   size_t params_end = raw.size();
   bool any = false;
@@ -200,61 +151,36 @@ Bytes NewTim(const Tim& ps3, uint32_t offset, uint32_t size, uint32_t frames, bo
   // The low half of the first parameter word is 6 on every PS3 clip, 0 on the 360.
   Splice(params, 2, 4, Bytes{0, 0});
   const Bytes lip = ps3.lip_len ? Slice(raw, ps3.lip_off, size_t(ps3.lip_off) + ps3.lip_len) : Bytes();
-  Bytes xma;
-  for (uint32_t v : {loops ? 0x030100FFu : 0x03010000u, 0u, loops ? frames : 0u, ps3.rate, size,
-                     frames, frames, 1u, 0x01000001u})
-    Put32(xma, v);
+  const uint32_t encoded = xma.frames * xma2enc::kFrameSamples;
+  Bytes header;
+  for (uint32_t v : {loop ? 0x030100FFu : 0x03010000u, loop ? loop->first : 0u,
+                     loop ? loop->second : 0u, ps3.rate, xma.block_size, encoded, xma.samples,
+                     xma.block_count, 0x01000001u})
+    Put32(header, v);
   Bytes seek;
-  Put32(seek, frames);
+  for (uint32_t v : xma.seek_table)
+    Put32(seek, v);
   const size_t lip_off = lip.empty() ? 0 : 0x38 + params.size();
   const size_t xma_off = Align(0x38 + params.size() + lip.size(), 4);
   Bytes out;
   Append(out, "TIM \0\0\0\0", 8);
-  for (uint64_t v : {uint64_t(ps3.Kind()), uint64_t(ps3.rate), uint64_t(offset), uint64_t(size),
-                     uint64_t(0), uint64_t(0), uint64_t(lip_off), uint64_t(lip.size()),
-                     uint64_t(xma_off), uint64_t(xma.size()), uint64_t(xma_off + xma.size()),
-                     uint64_t(seek.size())})
+  for (uint64_t v : {uint64_t(ps3.Kind()), uint64_t(ps3.rate), uint64_t(offset),
+                     uint64_t(xma.packets.size()), uint64_t(0), uint64_t(0), uint64_t(lip_off),
+                     uint64_t(lip.size()), uint64_t(xma_off), uint64_t(header.size()),
+                     uint64_t(xma_off + header.size()), uint64_t(seek.size())})
     Put32(out, v);
   Append(out, params);
   Append(out, lip);
   out.resize(xma_off);
-  Append(out, xma);
+  Append(out, header);
   Append(out, seek);
   Wr32(out, 4, out.size());
   return out;
 }
 
-std::string Lower(std::string s) {
-  std::transform(s.begin(), s.end(), s.begin(),
-                 [](unsigned char c) { return char(std::tolower(c)); });
-  return s;
-}
-
 }  // namespace
 
-// 8 byte FNV-1a of a stable key; the sidecar's file name and the tag's tail.
-Token MakeToken(const std::string& key) {
-  uint64_t h = 0xCBF29CE484222325ull;
-  for (unsigned char c : key)
-    h = (h ^ c) * 0x100000001B3ull;
-  Token token;
-  for (int i = 0; i < 8; ++i)
-    token[i] = uint8_t(h >> (8 * i));
-  return token;
-}
-
-std::string TokenHex(const Token& token) {
-  static const char kDigits[] = "0123456789abcdef";
-  std::string out;
-  for (uint8_t b : token) {
-    out += kDigits[b >> 4];
-    out += kDigits[b & 15];
-  }
-  return out;
-}
-
-Bytes ConvertCsf(const std::string& rel, const Bytes& ps3, const PcmWriter& write_pcm,
-                 Report& report) {
+Bytes ConvertCsf(const std::string& rel, const Bytes& ps3, Report& report) {
   const Csf csf = ParseCsf(ps3);
   const Bytes dropped = Slice(ps3, csf.pre.size() + Rd32(csf.pghd, 4), csf.head);
   if (std::any_of(dropped.begin(), dropped.end(), [](uint8_t b) { return b != 0; }))
@@ -280,18 +206,28 @@ Bytes ConvertCsf(const std::string& rel, const Bytes& ps3, const PcmWriter& writ
       if (tim.size % kAtrac3Frame || frames.empty() || frames[0] != 0xA2)
         report.Warn(rel + ": clip " + std::to_string(ordinal) + " is not mono 192 byte ATRAC3");
       const uint32_t n = tim.Samples();
+      std::vector<int16_t> pcm;
+      if (!rex::audio::DecodeAtrac3(frames.data(), frames.size(), tim.rate, 1, kAtrac3Frame, pcm) ||
+          pcm.empty()) {
+        report.Warn(rel + ": clip " + std::to_string(ordinal) + " does not decode, left silent");
+        pcm.assign(std::max<uint32_t>(n, 1), 0);
+      }
       const bool loops = tim.flags == 1;
       Loop loop;
       if (loops) {
+        // The XMA encoder takes loop points on 128 sample steps, from sample 384.
         const uint32_t start = tim.loop_start / kAtrac3Frame * kAtrac3Samples;
         const uint32_t end_frames = tim.loop_end / kAtrac3Frame * kAtrac3Samples;
         const uint32_t end = std::min(n, end_frames ? end_frames : n);
-        loop = start < end ? Loop(start, end) : Loop(0u, n);
+        loop = Loop(start < end ? std::max<uint32_t>(384, start / 128 * 128) : 384,
+                    uint32_t(Align(end, 128)));
       }
-      const Token tok = MakeToken(Lower(rel) + "#" + std::to_string(ordinal));
-      write_pcm(tok, Atrac3Wav(frames, tim.rate, loops ? &loop : nullptr));
-      Append(payload, TaggedPacket(tok));
-      Append(blob, NewTim(tim, uint32_t(offset), kPacket, n, loops));
+      const uint32_t block = tim.flags == 0x100 ? 0x1000 : 0x4000;
+      const xma2enc::Result xma = EncodeXma(pcm, 1, tim.rate, block, kClipBitrate);
+      if (loops)
+        loop.second = std::min<uint32_t>(loop.second, xma.frames * xma2enc::kFrameSamples);
+      Append(payload, xma.packets);
+      Append(blob, NewTim(tim, uint32_t(offset), xma, loops ? &loop : nullptr));
       ++report.counts["audio clips"];
       ++ordinal;
     }
@@ -312,53 +248,22 @@ Bytes ConvertCsf(const std::string& rel, const Bytes& ps3, const PcmWriter& writ
   return header;
 }
 
-// A resumed track starts mid block, and the guest finds its frame by walking
-// packet headers and frame lengths (sub_822B6478), so every packet has both:
-// equal frames of 512 samples, the first holding the tag at byte 6 and the
-// packet's first sample at byte 22.
-Bytes CxsPacket(const Token& tok, uint32_t frame_count, uint32_t first_sample) {
-  Bytes out(kPacket);
-  Wr32(out, 0, uint64_t(frame_count) << 26 | 1 << 8);
-  const uint32_t bits = uint32_t(kPacket - 4) * 8 / frame_count;
-  for (uint32_t f = 0; f < frame_count; ++f) {
-    const uint32_t at = 32 + f * bits;
-    for (uint32_t b = 0; b < 15; ++b)
-      if (bits >> (14 - b) & 1)
-        out[(at + b) / 8] |= uint8_t(0x80 >> ((at + b) % 8));
-  }
-  std::copy(kTag, kTag + 8, out.begin() + 6);
-  std::copy(tok.begin(), tok.end(), out.begin() + 14);
-  Wr32(out, 22, first_sample);
-  return out;
-}
-
-// A .cxs header as every 360 track has it, and a payload about as long as
-// the 360's XMA tracks take (0.11 to 0.28 bytes per sample and channel),
-// since the guest streams it while the track plays.
-Bytes NewCxs(const Token& tok, uint32_t channels, uint32_t rate, uint32_t frames,
-             const Loop* loop) {
-  const uint32_t per_packet = std::max(16 / channels, 1u) * 512;
-  const uint32_t per_block = per_packet * (kCxsBlock / kPacket);
-  // One frame past the end, as on the 360.
-  const uint32_t end = uint32_t(Align(frames, 512)) + 512;
-  const size_t packets = (end + per_packet - 1) / per_packet;
-  const size_t size = packets * kPacket;
-  const size_t blocks = (size + kCxsBlock - 1) / kCxsBlock;
+// A .cxs as every 360 track has it: the header, one u32 per block with the
+// samples played by its end, then the XMA2 packets.
+Bytes NewCxs(const xma2enc::Result& xma, uint32_t rate, uint32_t samples, const Loop* loop) {
   Bytes out;
   Append(out, "CXS ", 4);
-  for (uint64_t v : {uint64_t(kCxsHeader), uint64_t(rate), uint64_t(channels), uint64_t(frames),
-                     uint64_t(loop ? loop->first : 0), uint64_t(loop ? Align(loop->second, 512) : 0),
-                     uint64_t(blocks), uint64_t(kCxsPayload), uint64_t(size), uint64_t(kPacket),
+  for (uint64_t v : {uint64_t(kCxsHeader), uint64_t(rate), uint64_t(xma.channels),
+                     uint64_t(samples), uint64_t(loop ? loop->first : 0),
+                     uint64_t(loop ? Align(loop->second, 512) : 0), uint64_t(xma.block_count),
+                     uint64_t(kCxsPayload), uint64_t(xma.packets.size()), uint64_t(kPacket),
                      uint64_t(kPacket)})
     Put32(out, v);
   out.resize(kCxsHeader);
-  // The samples played by the end of each block. The guest does not start a
-  // track whose loop end falls outside the table.
-  for (size_t i = 0; i < blocks; ++i)
-    Put32(out, std::min<size_t>((i + 1) * per_block, end));
+  for (uint32_t v : xma.seek_table)
+    Put32(out, v);
   out.resize(kCxsPayload);
-  for (size_t p = 0; p < packets; ++p)
-    Append(out, CxsPacket(tok, per_packet / 512, uint32_t(p * per_packet)));
+  Append(out, xma.packets);
   return out;
 }
 
@@ -371,8 +276,7 @@ std::vector<std::string> CpsOutputs(const std::string& rel) {
   return {"sound/cxs/" + stem + ".cxs", "sound/cxs/" + stem + ".wav"};
 }
 
-std::vector<Output> ConvertCps(const std::string& rel, const Bytes& d, const PcmWriter& write_pcm,
-                               Report& report) {
+std::vector<Output> ConvertCps(const std::string& rel, const Bytes& d, Report& report) {
   const uint32_t header = Rd32(d, 4), channels = Rd32(d, 8), size = Rd32(d, 12),
                  rate = Rd32(d, 16), loop_start = Rd32(d, 20), loop_end = Rd32(d, 24),
                  kind = Rd32(d, 28);
@@ -384,24 +288,15 @@ std::vector<Output> ConvertCps(const std::string& rel, const Bytes& d, const Pcm
     return {{outputs[1], GuestWav(data, channels, rate)}};
   }
   const std::string& target = outputs[0];
-  const uint32_t frames = uint32_t(data.size() / (16 * size_t(channels)) * 28);
-  const Loop loop{loop_start / (16 * channels) * 28, frames};
-  const Token tok = MakeToken(Lower(target));
-  write_pcm(tok, PsxAdpcmWav(data, channels, rate, loop_end ? &loop : nullptr));
-  ++report.counts["music tracks as PS-ADPCM"];
-  return {{target, NewCxs(tok, channels, rate, frames, loop_end ? &loop : nullptr)}};
-}
-
-std::optional<Bytes> RebuildCxs(const std::string& rel, const Bytes& cxs) {
-  if (!Lower(rel).ends_with(".cxs") || cxs.size() < kCxsPayload ||
-      std::memcmp(cxs.data(), "CXS ", 4) != 0 || Rd32(cxs, 4) != kCxsHeader)
-    return std::nullopt;
-  const uint32_t rate = Rd32(cxs, 8), channels = Rd32(cxs, 12), frames = Rd32(cxs, 16);
-  if (!channels)
-    return std::nullopt;
-  // The loop always runs to the end of the track.
-  const Loop loop{Rd32(cxs, 20), frames};
-  return NewCxs(MakeToken(Lower(rel)), channels, rate, frames, Rd32(cxs, 24) ? &loop : nullptr);
+  if (channels < 1 || channels > 2)
+    throw std::runtime_error(rel + ": " + std::to_string(channels) + " channel ADPCM music");
+  const std::vector<int16_t> pcm = DecodePsxAdpcm(data.data(), data.size(), channels);
+  const uint32_t frames = uint32_t(pcm.size() / channels);
+  // The XMA encoder takes loop points on 128 sample steps.
+  const Loop loop{loop_start / (16 * channels) * 28 / 128 * 128, frames};
+  const xma2enc::Result xma = EncodeXma(pcm, channels, rate, kCxsBlock, kMusicBitrate);
+  ++report.counts["music tracks"];
+  return {{target, NewCxs(xma, rate, frames, loop_end ? &loop : nullptr)}};
 }
 
 std::vector<int16_t> DecodePsxAdpcm(const uint8_t* data, size_t size, uint32_t channels) {

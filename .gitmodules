@@ -7,3 +7,6 @@
 [submodule "libadrenotools"]
 	path = libadrenotools
 	url = https://github.com/bylaws/libadrenotools.git
+[submodule "xma2enc"]
+	path = xma2enc
+	url = https://github.com/birabittoh/xma2enc.git
