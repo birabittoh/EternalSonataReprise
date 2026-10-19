@@ -17,6 +17,8 @@
 #include <utility>
 #include <vector>
 
+#include <SDL3/SDL_gamepad.h>
+#include <SDL3/SDL_init.h>
 #include <imgui.h>
 
 #include <rex/cvar.h>
@@ -335,7 +337,52 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   int scroll_owner_ = -1;
   Clock::time_point scroll_since_;
 
+  // The SDK's gamepad bridge only exists once the runtime is up, which is
+  // after this screen, so read the pad here and hand it to ImGui as keys.
+  void PollGamepad(ImGuiIO& io) {
+    if (!pad_init_) {
+      pad_init_ = true;
+      SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+    }
+    SDL_UpdateGamepads();
+    if (pad_ && !SDL_GamepadConnected(pad_)) {
+      SDL_CloseGamepad(pad_);
+      pad_ = nullptr;
+    }
+    if (!pad_) {
+      int count = 0;
+      SDL_JoystickID* ids = SDL_GetGamepads(&count);
+      if (ids && count > 0)
+        pad_ = SDL_OpenGamepad(ids[0]);
+      SDL_free(ids);
+      if (!pad_)
+        return;
+    }
+    // Without it ImGui zeroes every gamepad key each frame.
+    io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+    auto axis = [&](SDL_GamepadAxis a) { return SDL_GetGamepadAxis(pad_, a) / 32767.0f; };
+    const float lx = axis(SDL_GAMEPAD_AXIS_LEFTX);
+    const float ly = axis(SDL_GAMEPAD_AXIS_LEFTY);
+    auto down = [&](SDL_GamepadButton b) { return SDL_GetGamepadButton(pad_, b); };
+    io.AddKeyEvent(ImGuiKey_GamepadDpadLeft, down(SDL_GAMEPAD_BUTTON_DPAD_LEFT) || lx < -0.5f);
+    io.AddKeyEvent(ImGuiKey_GamepadDpadRight, down(SDL_GAMEPAD_BUTTON_DPAD_RIGHT) || lx > 0.5f);
+    io.AddKeyEvent(ImGuiKey_GamepadDpadUp, down(SDL_GAMEPAD_BUTTON_DPAD_UP) || ly < -0.5f);
+    io.AddKeyEvent(ImGuiKey_GamepadDpadDown, down(SDL_GAMEPAD_BUTTON_DPAD_DOWN) || ly > 0.5f);
+    io.AddKeyEvent(ImGuiKey_GamepadFaceDown, down(SDL_GAMEPAD_BUTTON_SOUTH));
+    io.AddKeyEvent(ImGuiKey_GamepadFaceRight, down(SDL_GAMEPAD_BUTTON_EAST));
+    io.AddKeyEvent(ImGuiKey_GamepadFaceLeft, down(SDL_GAMEPAD_BUTTON_WEST));
+    io.AddKeyEvent(ImGuiKey_GamepadFaceUp, down(SDL_GAMEPAD_BUTTON_NORTH));
+    io.AddKeyEvent(ImGuiKey_GamepadL1, down(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER));
+    io.AddKeyEvent(ImGuiKey_GamepadR1, down(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER));
+    io.AddKeyEvent(ImGuiKey_GamepadStart, down(SDL_GAMEPAD_BUTTON_START));
+    io.AddKeyEvent(ImGuiKey_GamepadBack, down(SDL_GAMEPAD_BUTTON_BACK));
+  }
+
+  bool pad_init_ = false;
+  SDL_Gamepad* pad_ = nullptr;
+
   void OnDraw(ImGuiIO& io) override {
+    PollGamepad(io);
     Load(g_background, "background");
     Load(g_logo, "logo");
 
