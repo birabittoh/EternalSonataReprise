@@ -339,6 +339,8 @@ std::optional<Bytes> ConvertNtx3(const Bytes& d, size_t o, Report& report) {
     return std::nullopt;
   }
   ++report.counts["NTX3->NTEX"];
+  // V8U8 mip tails are 2 bytes; the guest walks chunks on 4 byte boundaries.
+  out.resize(out.size() + PadTo(int64_t(out.size()), 4));
   return Chunk("NTEX", out);
 }
 
