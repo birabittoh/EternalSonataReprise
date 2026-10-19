@@ -51,10 +51,18 @@ The arrays no longer live at those addresses at run time.
 `src/engine/party_arrays.cpp` keeps twelve wide copies of the seven per
 character arrays (position, slotbytes, charflags, both stat arrays, charwords
 and the template table), and `config/party.toml` turns on the SDK's
-`[address_remap]` for every function: each guest load or store landing in a
-retail array, or up to two entries past its end, goes through
-`EternalSonataPartyRemap`. Host code reaches the arrays through
+`[address_remap]` for the functions in its `functions` list: each guest load or
+store in one of them landing in a retail array, or up to two entries past its
+end, goes through `EternalSonataPartyRemap`. Host code reaches the arrays through
 `PartyArrayAddress`.
+
+Every entry lives in the new block, so a function that touches an array but is
+missing from the list reads the stale retail copy. Wrapping all functions
+instead costs a range test on every guest access. Refresh the list with
+`scripts/party_remap_functions.py` (needs a `generated/` built with
+`all_functions = true`), then build with `all_functions = true` and the list:
+functions missing from it log `touches a party array but is not in
+config/party.toml`. Add them and set `all_functions = false` again.
 
 Entries 10 and 11 of one array sit at the retail address of the next
 (`position[10]` is `slotbytes[0]`, `stats_live[10]` is `stats_base[0]`), so
