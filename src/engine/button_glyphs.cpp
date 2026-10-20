@@ -267,7 +267,10 @@ std::map<uint32_t, std::vector<uint8_t>> g_sheet_originals;
 
 // Rewrites the NTEX chunk at `chunk`: the shipped pixels with each edit's box
 // replaced by its glyph's art, or the shipped pixels when no edit has art.
-void WriteSheet(uint32_t chunk, const std::vector<Edit>& edits, const char* const* names) {
+// `alts` are other layouts for textures whose buttons sit elsewhere; the first one
+// with a button under every box wins when the shipped pixels have none under `primary`.
+void WriteSheet(uint32_t chunk, const std::vector<Edit>& primary, const char* const* names,
+                std::initializer_list<const std::vector<Edit>*> alts = {}) {
   uint8_t* data = Guest(chunk);
   if (std::memcmp(data, "NTEX", 4) != 0)
     return;
@@ -289,7 +292,7 @@ void WriteSheet(uint32_t chunk, const std::vector<Edit>& edits, const char* cons
                    .first;
   }
   bool any = false;
-  for (const auto& edit : edits)
+  for (const auto& edit : primary)
     any |= names[edit.glyph] != nullptr;
   if (!any) {
     std::memcpy(data + ref.pix_offset, original->second.data(), original->second.size());
@@ -298,6 +301,24 @@ void WriteSheet(uint32_t chunk, const std::vector<Edit>& edits, const char* cons
 
   const uint32_t width = ref.width;
   auto pixels = DecodeDxt5(original->second.data(), width, ref.height);
+  const auto opaque_under = [&](const std::vector<Edit>& list) {
+    for (const auto& e : list) {
+      const size_t at = (size_t((e.y0 + e.y1) / 2) * width + (e.x0 + e.x1) / 2) * 4;
+      if (pixels[at + 3] < 128)
+        return false;
+    }
+    return true;
+  };
+  const std::vector<Edit>* chosen = &primary;
+  if (!opaque_under(primary)) {
+    for (const auto* alt : alts) {
+      if (opaque_under(*alt)) {
+        chosen = alt;
+        break;
+      }
+    }
+  }
+  const std::vector<Edit>& edits = *chosen;
   for (const auto& edit : edits) {
     const char* name = names[edit.glyph];
     const auto* art = name ? FindArt(name) : nullptr;
@@ -372,6 +393,20 @@ const std::vector<Edit>& SkipEdits() {
   return edits;
 }
 
+// The Japanese skip prompts have their own artwork: buttons above the text on the
+// PS3 release, below it on the 360.
+const std::vector<Edit>& SkipEditsJapanesePs3() {
+  static const std::vector<Edit> edits = {{32, 20, 80, 67, 44, 44, 0, false},
+                                          {249, 20, 297, 67, 44, 44, 1, false}};
+  return edits;
+}
+
+const std::vector<Edit>& SkipEditsJapanese360() {
+  static const std::vector<Edit> edits = {{32, 80, 80, 127, 44, 44, 0, false},
+                                          {249, 80, 297, 127, 44, 44, 1, false}};
+  return edits;
+}
+
 constexpr uint32_t kBattleSheetSlot = 39;
 constexpr uint32_t kSkipPromptSlot = 352;
 
@@ -431,7 +466,7 @@ void Apply() {
   Write(kDpadSlot, dpad);
   Write(kLoadDpadSlot, dpad);
   for (const uint32_t chunk : SkipPromptChunks())
-    WriteSheet(chunk, SkipEdits(), names);
+    WriteSheet(chunk, SkipEdits(), names, {&SkipEditsJapanesePs3(), &SkipEditsJapanese360()});
 }
 
 }  // namespace
