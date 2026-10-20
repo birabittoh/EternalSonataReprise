@@ -6,14 +6,18 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <mutex>
 #include <numeric>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -413,6 +417,11 @@ struct MirroredTexture {
   uint32_t replaced_width = 0;
   uint32_t replaced_height = 0;
   uint32_t dumps = 0;
+
+  // The texture holds level 0 alone while the mip worker builds its generated
+  // chain under this job id. See QueueMipChain.
+  bool single_level = false;
+  uint64_t mip_job = 0;
 
   // Guest write notification state. See the watch section below.
   std::atomic<bool> watch_armed{false};
@@ -1366,6 +1375,121 @@ void EndUpload(std::unique_ptr<RenderBuffer> staging, uint64_t bytes) {
     TextureUploadFlush();
 }
 
+// A generated chain: level 0 as uploaded, and what it takes to build the rest.
+// Plain data, so the build can run on the mip worker.
+struct MipChainSource {
+  std::vector<uint8_t> texels;
+  uint32_t width = 0, height = 0;
+  uint32_t upload_row_bytes = 0, upload_row_texels = 0;
+  uint32_t width_blocks = 0, height_blocks = 0;
+  uint32_t format = 0, block_bytes = 0, levels = 0;
+  // Level 0 is already B8G8R8A8 (no BC support), so the levels stay that way.
+  bool decoded = false;
+};
+
+struct GeneratedLevel {
+  uint32_t width, height, row_texels;
+  uint64_t offset;
+  std::vector<uint8_t> data;
+};
+
+std::vector<GeneratedLevel> BuildGeneratedLevels(MipChainSource source) {
+  // Level 0 as a tight B8G8R8A8 image, the start of the box filter.
+  std::vector<uint8_t> image(size_t(source.width) * source.height * 4);
+  std::vector<uint8_t> decoded;
+  const std::vector<uint8_t>* rows = &source.texels;
+  uint32_t rows_bytes = source.upload_row_bytes;
+  if (!source.decoded) {
+    rows_bytes = source.width_blocks * 16;
+    DecodeBlockRows(source.texels, source.upload_row_bytes, source.width_blocks,
+                    source.height_blocks, BlockExpandForFormat(source.format), rows_bytes, decoded);
+    rows = &decoded;
+  }
+  for (uint32_t y = 0; y < source.height; ++y)
+    std::memcpy(image.data() + size_t(y) * source.width * 4,
+                rows->data() + size_t(y) * rows_bytes, size_t(source.width) * 4);
+
+  std::vector<GeneratedLevel> levels;
+  levels.push_back({source.width, source.height, source.upload_row_texels, 0,
+                    std::move(source.texels)});
+  uint64_t staging_size = levels[0].data.size();
+  uint32_t width = source.width, height = source.height;
+  std::vector<uint8_t> smaller;
+  for (uint32_t mip = 1; mip < source.levels; ++mip) {
+    DownsampleBGRA(image, width, height, smaller);
+    image.swap(smaller);
+    width >>= 1;
+    height >>= 1;
+    GeneratedLevel level{width, height, 0, AlignUp(uint32_t(staging_size), 512), {}};
+    if (source.decoded) {
+      const uint32_t row_bytes = AlignUp(width * 4, kUploadRowAlignment);
+      level.row_texels = row_bytes / 4;
+      level.data.assign(size_t(row_bytes) * height, 0);
+      for (uint32_t y = 0; y < height; ++y)
+        std::memcpy(level.data.data() + size_t(y) * row_bytes,
+                    image.data() + size_t(y) * width * 4, size_t(width) * 4);
+    } else {
+      const uint32_t row_bytes = AlignUp(width / 4 * source.block_bytes, kUploadRowAlignment);
+      level.row_texels = row_bytes / source.block_bytes * 4;
+      EncodeBlocks(image, width, height, BlockExpandForFormat(source.format), row_bytes,
+                   level.data);
+    }
+    staging_size = level.offset + level.data.size();
+    levels.push_back(std::move(level));
+  }
+  return levels;
+}
+
+// Copy `levels` into `existing`, or into a new texture returned in `created`.
+bool UploadLevels(const std::vector<GeneratedLevel>& levels, uint32_t width, uint32_t height,
+                  RenderFormat format, RenderTexture* existing,
+                  std::unique_ptr<RenderTexture>& created, uint64_t& bytes) {
+  RenderDevice* device = PlumeDevice();
+  RenderCommandQueue* queue = PlumeQueue();
+  if (device == nullptr || queue == nullptr || levels.empty())
+    return false;
+  if (existing == nullptr) {
+    created = device->createTexture(
+        RenderTextureDesc::Texture2D(width, height, uint32_t(levels.size()), format));
+    if (!created)
+      return false;
+    existing = created.get();
+  }
+  const uint64_t staging_size = levels.back().offset + levels.back().data.size();
+  auto staging = device->createBuffer(RenderBufferDesc::UploadBuffer(staging_size));
+  auto* mapped = staging ? static_cast<uint8_t*>(staging->map()) : nullptr;
+  if (mapped == nullptr)
+    return false;
+  for (const GeneratedLevel& level : levels)
+    std::memcpy(mapped + level.offset, level.data.data(), level.data.size());
+  staging->unmap();
+  RenderCommandList* upload = UploadCommands(queue);
+  if (upload == nullptr)
+    return false;
+  upload->barriers(RenderBarrierStage::COPY,
+                   RenderTextureBarrier(existing, RenderTextureLayout::COPY_DEST));
+  for (uint32_t mip = 0; mip < levels.size(); ++mip) {
+    const GeneratedLevel& level = levels[mip];
+    upload->copyTextureRegion(
+        RenderTextureCopyLocation::Subresource(existing, mip),
+        RenderTextureCopyLocation::PlacedFootprint(staging.get(), format, level.width,
+                                                   level.height, 1, level.row_texels,
+                                                   level.offset));
+  }
+  upload->barriers(RenderBarrierStage::GRAPHICS,
+                   RenderTextureBarrier(existing, RenderTextureLayout::SHADER_READ));
+  EndUpload(std::move(staging), staging_size);
+  bytes = staging_size;
+  return true;
+}
+
+// Set by FillTexture around a first fill. A texture that wants a generated chain
+// then uploads level 0 alone and leaves the chain here for the mip worker, so a
+// scene that loads a hundred character textures at once (a battle start) does
+// not run the box filter for all of them in one frame.
+MipChainSource* g_defer_mip_chain = nullptr;
+bool g_deferred_mip_chain = false;
+
 // Decode and upload. `existing` is null on a cache miss, in which case a texture
 // is created; on a refresh it is the texture already in the cache and the texels
 // are copied over it in place. Reusing the object is what makes a refresh safe:
@@ -1576,92 +1700,37 @@ std::unique_ptr<RenderTexture> DecodeAndUpload(uint8_t* memory_base, const Textu
   }
 
   if (const uint32_t generated = GeneratedMipLevelCount(fetch); generated > 1) {
-    // Level 0 as a tight B8G8R8A8 image, the start of the box filter.
-    std::vector<uint8_t> image(size_t(fetch.width) * fetch.height * 4);
-    std::vector<uint8_t> decoded;
-    const std::vector<uint8_t>* rows = &texels;
-    uint32_t rows_bytes = upload_row_bytes;
-    if (!IsBlockExpand(info.expand)) {
-      rows_bytes = width_blocks * 16;
-      DecodeBlockRows(texels, upload_row_bytes, width_blocks, height_blocks,
-                      BlockExpandForFormat(fetch.format), rows_bytes, decoded);
-      rows = &decoded;
-    }
-    for (uint32_t y = 0; y < fetch.height; ++y)
-      std::memcpy(image.data() + size_t(y) * fetch.width * 4,
-                  rows->data() + size_t(y) * rows_bytes, size_t(fetch.width) * 4);
-
-    struct Level { uint32_t width, height, row_texels; uint64_t offset; std::vector<uint8_t> data; };
-    std::vector<Level> levels;
-    levels.push_back({fetch.width, fetch.height, upload_row_texels, 0, std::move(texels)});
-    uint64_t staging_size = levels[0].data.size();
-    uint32_t width = fetch.width, height = fetch.height;
-    std::vector<uint8_t> smaller;
-    for (uint32_t mip = 1; mip < generated; ++mip) {
-      DownsampleBGRA(image, width, height, smaller);
-      image.swap(smaller);
-      width >>= 1;
-      height >>= 1;
-      Level level{width, height, 0, AlignUp(uint32_t(staging_size), 512), {}};
-      if (IsBlockExpand(info.expand)) {
-        const uint32_t row_bytes = AlignUp(width * 4, kUploadRowAlignment);
-        level.row_texels = row_bytes / 4;
-        level.data.assign(size_t(row_bytes) * height, 0);
-        for (uint32_t y = 0; y < height; ++y)
-          std::memcpy(level.data.data() + size_t(y) * row_bytes,
-                      image.data() + size_t(y) * width * 4, size_t(width) * 4);
-      } else {
-        const uint32_t row_bytes = AlignUp(width / 4 * info.block_bytes, kUploadRowAlignment);
-        level.row_texels = row_bytes / info.block_bytes * 4;
-        EncodeBlocks(image, width, height, BlockExpandForFormat(fetch.format), row_bytes,
-                     level.data);
-      }
-      staging_size = level.offset + level.data.size();
-      levels.push_back(std::move(level));
-    }
-
-    std::unique_ptr<RenderTexture> created;
-    if (existing == nullptr) {
-      created = device->createTexture(
-          RenderTextureDesc::Texture2D(fetch.width, fetch.height, generated, info.host));
-      if (!created) {
+    MipChainSource source;
+    source.width = fetch.width;
+    source.height = fetch.height;
+    source.upload_row_bytes = upload_row_bytes;
+    source.upload_row_texels = upload_row_texels;
+    source.width_blocks = width_blocks;
+    source.height_blocks = height_blocks;
+    source.format = fetch.format;
+    source.block_bytes = info.block_bytes;
+    source.levels = generated;
+    source.decoded = IsBlockExpand(info.expand);
+    if (g_defer_mip_chain != nullptr && existing == nullptr) {
+      // Level 0 alone below; the chain follows from the mip worker.
+      source.texels = texels;
+      *g_defer_mip_chain = std::move(source);
+      g_deferred_mip_chain = true;
+    } else {
+      source.texels = std::move(texels);
+      std::unique_ptr<RenderTexture> created;
+      uint64_t bytes = 0;
+      if (!UploadLevels(BuildGeneratedLevels(std::move(source)), fetch.width, fetch.height,
+                        info.host, existing, created, bytes)) {
         CountRefusal(g_refused_upload);
         return nullptr;
       }
-      existing = created.get();
+      if (bytes_out != nullptr)
+        *bytes_out = bytes;
+      ++g_decoded;
+      ++g_generated_mip_textures;
+      return created;
     }
-    auto staging = device->createBuffer(RenderBufferDesc::UploadBuffer(staging_size));
-    auto* mapped = staging ? static_cast<uint8_t*>(staging->map()) : nullptr;
-    if (mapped == nullptr) {
-      CountRefusal(g_refused_upload);
-      return nullptr;
-    }
-    for (const Level& level : levels)
-      std::memcpy(mapped + level.offset, level.data.data(), level.data.size());
-    staging->unmap();
-    RenderCommandList* upload = UploadCommands(queue);
-    if (upload == nullptr) {
-      CountRefusal(g_refused_upload);
-      return nullptr;
-    }
-    upload->barriers(RenderBarrierStage::COPY,
-                     RenderTextureBarrier(existing, RenderTextureLayout::COPY_DEST));
-    for (uint32_t mip = 0; mip < levels.size(); ++mip) {
-      const Level& level = levels[mip];
-      upload->copyTextureRegion(
-          RenderTextureCopyLocation::Subresource(existing, mip),
-          RenderTextureCopyLocation::PlacedFootprint(staging.get(), info.host, level.width,
-                                                     level.height, 1, level.row_texels,
-                                                     level.offset));
-    }
-    upload->barriers(RenderBarrierStage::GRAPHICS,
-                     RenderTextureBarrier(existing, RenderTextureLayout::SHADER_READ));
-    EndUpload(std::move(staging), staging_size);
-    if (bytes_out != nullptr)
-      *bytes_out = staging_size;
-    ++g_decoded;
-    ++g_generated_mip_textures;
-    return created;
   }
 
   std::unique_ptr<RenderTexture> created;
@@ -2065,11 +2134,136 @@ void ReplaceEntryTexture(MirroredTexture* entry, std::unique_ptr<RenderTexture> 
   g_texture_bytes += bytes;
 }
 
+// The mip worker: builds generated chains for textures uploaded with level 0
+// alone, and hands them back to the guest thread, which swaps in the full
+// texture. Entries are only ever touched on the guest thread; a job carries its
+// entry's address purely as a key into g_mip_pending.
+struct MipJob {
+  uint64_t id = 0;
+  uint32_t width = 0, height = 0;
+  RenderFormat format = RenderFormat::UNKNOWN;
+  MipChainSource source;
+  std::vector<GeneratedLevel> levels;
+};
+
+std::mutex g_mip_mutex;
+std::condition_variable g_mip_wake;
+std::deque<MipJob> g_mip_queue;
+std::vector<MipJob> g_mip_done;
+std::thread g_mip_thread;
+bool g_mip_stop = false;
+
+// Guest thread only.
+uint64_t g_mip_next_id = 1;
+std::unordered_map<uint64_t, MirroredTexture*> g_mip_pending;
+
+// Swapping a finished chain in costs a texture, a staging buffer and the copy.
+constexpr double kMipApplyBudgetMs = 2.0;
+
+void MipWorker() {
+  for (;;) {
+    MipJob job;
+    {
+      std::unique_lock<std::mutex> lock(g_mip_mutex);
+      g_mip_wake.wait(lock, [] { return g_mip_stop || !g_mip_queue.empty(); });
+      if (g_mip_stop)
+        return;
+      job = std::move(g_mip_queue.front());
+      g_mip_queue.pop_front();
+    }
+    job.levels = BuildGeneratedLevels(std::move(job.source));
+    std::lock_guard<std::mutex> lock(g_mip_mutex);
+    g_mip_done.push_back(std::move(job));
+  }
+}
+
+void QueueMipChain(MirroredTexture* entry, const TextureFetch& fetch, const FormatInfo& info,
+                   MipChainSource source) {
+  if (!g_mip_thread.joinable())
+    g_mip_thread = std::thread(MipWorker);
+  MipJob job;
+  job.id = g_mip_next_id++;
+  job.width = fetch.width;
+  job.height = fetch.height;
+  job.format = info.host;
+  job.source = std::move(source);
+  entry->single_level = true;
+  entry->mip_job = job.id;
+  g_mip_pending[job.id] = entry;
+  {
+    std::lock_guard<std::mutex> lock(g_mip_mutex);
+    g_mip_queue.push_back(std::move(job));
+  }
+  g_mip_wake.notify_one();
+}
+
+void ForgetMipChain(MirroredTexture* entry) {
+  if (entry->mip_job != 0)
+    g_mip_pending.erase(entry->mip_job);
+  entry->mip_job = 0;
+}
+
+// Swap finished chains in, within a small per frame budget. A job whose entry
+// was refreshed or evicted since is dropped.
+void ApplyMipChains() {
+  std::vector<MipJob> done;
+  {
+    std::lock_guard<std::mutex> lock(g_mip_mutex);
+    if (g_mip_done.empty())
+      return;
+    done.swap(g_mip_done);
+  }
+  const auto start = std::chrono::steady_clock::now();
+  size_t used = 0;
+  for (; used < done.size(); ++used) {
+    if (used != 0 && std::chrono::duration<double, std::milli>(
+                         std::chrono::steady_clock::now() - start)
+                             .count() >= kMipApplyBudgetMs)
+      break;
+    MipJob& job = done[used];
+    const auto found = g_mip_pending.find(job.id);
+    if (found == g_mip_pending.end())
+      continue;
+    MirroredTexture* entry = found->second;
+    g_mip_pending.erase(found);
+    entry->mip_job = 0;
+    HitchTimer hitch(g_hitch.upload_ns, g_hitch.uploads);
+    std::unique_ptr<RenderTexture> created;
+    uint64_t bytes = 0;
+    if (!UploadLevels(job.levels, job.width, job.height, job.format, nullptr, created, bytes))
+      continue;
+    ReplaceEntryTexture(entry, std::move(created), bytes);
+    entry->single_level = false;
+    ++g_generated_mip_textures;
+  }
+  if (used < done.size()) {
+    std::lock_guard<std::mutex> lock(g_mip_mutex);
+    g_mip_done.insert(g_mip_done.end(), std::make_move_iterator(done.begin() + used),
+                      std::make_move_iterator(done.end()));
+  }
+}
+
+void StopMipWorker() {
+  {
+    std::lock_guard<std::mutex> lock(g_mip_mutex);
+    g_mip_stop = true;
+    g_mip_queue.clear();
+  }
+  g_mip_wake.notify_one();
+  if (g_mip_thread.joinable())
+    g_mip_thread.join();
+  g_mip_done.clear();
+  g_mip_pending.clear();
+  g_mip_stop = false;
+}
+
 // Bring `entry`'s host texture up to what guest memory holds now: a mod's image
 // when one matches level 0's hash, else the decode. False when neither could
 // be produced and the entry has nothing to show.
 bool FillTexture(MirroredTexture* entry, uint8_t* memory_base, const TextureFetch& fetch,
                  const FormatInfo& info) {
+  // Whatever this fills supersedes a chain still being built for the old bytes.
+  ForgetMipChain(entry);
   TextureReplacement* replacement =
       ReplaceableFormat(fetch.format) ? ActiveReplacement() : nullptr;
   uint64_t hash = 0;
@@ -2099,6 +2293,7 @@ bool FillTexture(MirroredTexture* entry, uint8_t* memory_base, const TextureFetc
       if (created)
         ReplaceEntryTexture(entry, std::move(created), bytes);
       entry->replaced = true;
+      entry->single_level = false;
       entry->replaced_width = image->width;
       entry->replaced_height = image->height;
       entry->replacement_hash = hash;
@@ -2110,13 +2305,22 @@ bool FillTexture(MirroredTexture* entry, uint8_t* memory_base, const TextureFetc
     }
   }
 
-  // The decode can only refresh in place a texture it made itself.
-  RenderTexture* existing = entry->replaced ? nullptr : entry->texture.get();
+  // The decode can only refresh in place a texture it made itself, and with
+  // every level it is going to write.
+  RenderTexture* existing =
+      entry->replaced || entry->single_level ? nullptr : entry->texture.get();
   uint64_t bytes = 0;
+  MipChainSource deferred;
+  g_defer_mip_chain = entry->texture ? nullptr : &deferred;
+  g_deferred_mip_chain = false;
   auto created = DecodeAndUpload(memory_base, fetch, info, existing, &bytes);
+  g_defer_mip_chain = nullptr;
   if (created) {
     ReplaceEntryTexture(entry, std::move(created), bytes);
     entry->replaced = false;
+    entry->single_level = false;
+    if (g_deferred_mip_chain)
+      QueueMipChain(entry, fetch, info, std::move(deferred));
   } else if (existing == nullptr) {
     return false;
   }
@@ -2382,6 +2586,7 @@ static void EvictTexture(size_t index) {
   // First: these hold a raw pointer to the entry and are reached from a guest
   // thread taking a write fault, not from here.
   DropTextureWatches(entry.get());
+  ForgetMipChain(entry.get());
   if (entry->texture) {
     // The draw path caches descriptor sets on raw texture pointers, and a later
     // allocation landing on this one's address would compare equal.
@@ -2450,6 +2655,7 @@ void TextureMirrorBeginFrame() {
   // Before the frame's first bind, so nothing evicted here is a texture a draw
   // in this frame has already been handed.
   EvictStaleTextures();
+  ApplyMipChains();
   g_texture_generated_mips.store(NativeRenderGeneratedMips(), std::memory_order_relaxed);
 }
 
@@ -2465,6 +2671,7 @@ void ShutdownTextureMirror() {
     std::lock_guard<std::mutex> lock(g_watch_mutex);
     g_watches.clear();
   }
+  StopMipWorker();
   g_texture_index.clear();
   g_textures.clear();
   g_replacement.reset();
