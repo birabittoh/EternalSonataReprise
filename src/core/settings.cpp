@@ -804,19 +804,34 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
           DrawCvarRow("force_japanese_font");
         }
         DrawPromptDeviceRow();
-        DrawOverrideButtonGlyphsRow();
-        DrawPlatformChoiceRow("photo_price_algorithm");
-        DrawPlatformChoiceRow("progression_curves");
-        DrawRightTriggerRow();
-        if (EternalSonataGetEffectiveRightTriggerBehavior() ==
-            ETERNALSONATA_BATTLE_RIGHT_TRIGGER_CAMERA) {
-          DrawSensitivityRow("special_hold_time", 0.1f, 5.0f);
-        }
-        DrawPlatformChoiceRow("ranged_special_buffer");
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();
         DrawCvarRow("show_start_screen");
         DrawStartScreenRow();
+        ImGui::EndTabItem();
+      }
+      if (ImGui::BeginTabItem(WithId(T("tab_platform"), "platform"))) {
+        DrawOverrideButtonGlyphsRow();
+        DrawPlatformChoiceRow("photo_price_algorithm");
+        DrawPlatformChoiceRow("progression_curves");
+        DrawPlatformChoiceRow("ranged_special_buffer");
+        DrawRightTriggerRow();
+        if (EternalSonataGetEffectiveRightTriggerBehavior() ==
+            ETERNALSONATA_BATTLE_RIGHT_TRIGGER_CAMERA) {
+          DrawSensitivityRow("special_hold_time", 0.1f, 5.0f, false, false, 0.1f);
+        }
+        ImGui::Separator();
+        if (ImGui::Button(WithId(T("all_auto"), "all_auto"))) {
+          SetAllPlatform("auto", "disabled", "auto");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(WithId(T("all_xbox"), "all_xbox"))) {
+          SetAllPlatform("360", "xbox", "camera");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(WithId(T("all_ps3"), "all_ps3"))) {
+          SetAllPlatform("ps3", "ps3", "special");
+        }
         ImGui::EndTabItem();
       }
       if (ImGui::BeginTabItem(WithId(T("tab_balance"), "balance"))) {
@@ -1196,7 +1211,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   // The generic Double widget is a bare input box; a slider reads better, and
   // the file is written once the drag ends rather than on every frame of it.
   void DrawSensitivityRow(const char* name, float min = 0.1f, float max = 5.0f,
-                          bool touch_preview = false, bool infinite_at_max = false) {
+                          bool touch_preview = false, bool infinite_at_max = false, float step = 0.0f) {
     const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
@@ -1212,12 +1227,18 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     if (infinite_at_max) {
       value = std::round(value);
     }
+    if (step > 0.0f) {
+      value = std::round(value / step) * step;
+    }
     const bool infinite = infinite_at_max && value >= max;
     if (ImGui::SliderFloat("##v", &value, min, max,
-                           infinite ? "" : (infinite_at_max ? "%.0f" : "%.2f"),
+                           infinite ? "" : (infinite_at_max ? "%.0f" : (step > 0.0f ? "%.1f" : "%.2f")),
                            ImGuiSliderFlags_AlwaysClamp)) {
       if (infinite_at_max) {
         value = std::round(value);
+      }
+      if (step > 0.0f) {
+        value = std::round(value / step) * step;
       }
       char text[16];
       std::snprintf(text, sizeof(text), "%.2f", value);
@@ -1554,17 +1575,27 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
-  // A cvar choosing between the 360's and the PS3's behaviour. Platform names
-  // stay untranslated, so only Auto has a key.
-  void DrawPlatformChoiceRow(const char* name) {
+  void SetAllPlatform(const char* choice, const char* glyphs, const char* trigger) {
+    for (const char* name :
+         {"photo_price_algorithm", "progression_curves", "ranged_special_buffer"}) {
+      rex::cvar::SetFlagByName(name, choice, /*persist=*/true);
+    }
+    rex::cvar::SetFlagByName("override_button_glyphs", glyphs, /*persist=*/true);
+    rex::cvar::SetFlagByName("right_trigger_behavior", trigger, /*persist=*/true);
+    SaveBasic();
+  }
+
+  struct RadioOption {
+    const char* id;
+    const char* label;
+  };
+
+  // A string cvar picked from a few options, laid out side by side. Platform
+  // names stay untranslated.
+  void DrawRadioRow(const char* name, std::span<const RadioOption> options) {
     const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
-    struct Option {
-      const char* id;
-      const char* label;
-    };
-    const std::array<Option, 3> options = {{{"auto", T("auto")}, {"360", "Xbox 360"}, {"ps3", "PS3"}}};
     const std::string current = entry->getter();
     int cur_idx = 0;
     for (int i = 0; i < static_cast<int>(options.size()); ++i) {
@@ -1575,60 +1606,32 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     if (DrawRowLabel(name, name)) {
       ImGui::SetTooltip("%s", Tip(name));
     }
-    ImGui::SameLine(Px(180.0f));
-    ImGui::SetNextItemWidth(Px(160.0f));
     ImGui::PushID(name);
-    if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
-      for (int i = 0; i < static_cast<int>(options.size()); ++i) {
-        const bool selected = i == cur_idx;
-        if (ImGui::Selectable(options[i].label, selected)) {
-          rex::cvar::SetFlagByName(name, options[i].id, /*persist=*/true);
-          SaveBasic();
-        }
-        if (selected)
-          ImGui::SetItemDefaultFocus();
+    for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+      ImGui::SameLine(i == 0 ? Px(180.0f) : 0.0f);
+      if (ImGui::RadioButton(options[i].label, cur_idx == i)) {
+        rex::cvar::SetFlagByName(name, options[i].id, /*persist=*/true);
+        SaveBasic();
       }
-      ImGui::EndCombo();
     }
     ImGui::PopID();
   }
 
-  void DrawOverrideButtonGlyphsRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("override_button_glyphs");
-    if (!entry)
-      return;
-    struct Option {
-      const char* id;
-      const char* label;
-    };
-    const std::array<Option, 3> options = {
-        {{"disabled", T("glyphs_disabled")}, {"xbox", "Xbox 360"}, {"ps3", "PS3"}}};
-    const std::string current = entry->getter();
-    int cur_idx = 0;
-    for (int i = 0; i < static_cast<int>(options.size()); ++i) {
-      if (current == options[i].id)
-        cur_idx = i;
-    }
+  void DrawPlatformChoiceRow(const char* name) {
+    const RadioOption options[] = {{"auto", T("auto")}, {"360", "Xbox 360"}, {"ps3", "PS3"}};
+    DrawRadioRow(name, options);
+  }
 
-    if (DrawRowLabel("override_button_glyphs", "override_button_glyphs")) {
-      ImGui::SetTooltip("%s", Tip("override_button_glyphs"));
-    }
-    ImGui::SameLine(Px(180.0f));
-    ImGui::SetNextItemWidth(Px(160.0f));
-    ImGui::PushID("override_button_glyphs");
-    if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
-      for (int i = 0; i < static_cast<int>(options.size()); ++i) {
-        const bool selected = i == cur_idx;
-        if (ImGui::Selectable(options[i].label, selected)) {
-          rex::cvar::SetFlagByName("override_button_glyphs", options[i].id, /*persist=*/true);
-          SaveBasic();
-        }
-        if (selected)
-          ImGui::SetItemDefaultFocus();
-      }
-      ImGui::EndCombo();
-    }
-    ImGui::PopID();
+  void DrawOverrideButtonGlyphsRow() {
+    const RadioOption options[] = {
+        {"disabled", T("glyphs_disabled")}, {"xbox", "Xbox 360"}, {"ps3", "PS3"}};
+    DrawRadioRow("override_button_glyphs", options);
+  }
+
+  void DrawRightTriggerRow() {
+    const RadioOption options[] = {
+        {"auto", T("auto")}, {"camera", T("rt_camera")}, {"special", T("rt_special")}};
+    DrawRadioRow("right_trigger_behavior", options);
   }
 
   void DrawPromptDeviceRow() {
@@ -1660,45 +1663,6 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         const bool selected = i == cur_idx;
         if (ImGui::Selectable(options[i].label, selected)) {
           rex::cvar::SetFlagByName("prompt_device", options[i].id, /*persist=*/true);
-          SaveBasic();
-        }
-        if (selected)
-          ImGui::SetItemDefaultFocus();
-      }
-      ImGui::EndCombo();
-    }
-    ImGui::PopID();
-  }
-
-  void DrawRightTriggerRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("right_trigger_behavior");
-    if (!entry)
-      return;
-    struct Option {
-      const char* id;
-      const char* label;
-    };
-    const std::array<Option, 3> options = {{{"auto", T("auto")},
-                                            {"camera", T("rt_camera")},
-                                            {"special", T("rt_special")}}};
-    const std::string current = entry->getter();
-    int cur_idx = 0;
-    for (int i = 0; i < static_cast<int>(options.size()); ++i) {
-      if (current == options[i].id)
-        cur_idx = i;
-    }
-
-    if (DrawRowLabel("right_trigger_behavior", "right_trigger_behavior")) {
-      ImGui::SetTooltip("%s", Tip("right_trigger_behavior"));
-    }
-    ImGui::SameLine(Px(180.0f));
-    ImGui::SetNextItemWidth(Px(160.0f));
-    ImGui::PushID("right_trigger_behavior");
-    if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
-      for (int i = 0; i < static_cast<int>(options.size()); ++i) {
-        const bool selected = i == cur_idx;
-        if (ImGui::Selectable(options[i].label, selected)) {
-          rex::cvar::SetFlagByName("right_trigger_behavior", options[i].id, /*persist=*/true);
           SaveBasic();
         }
         if (selected)
