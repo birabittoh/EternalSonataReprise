@@ -382,14 +382,15 @@ constexpr u8 kStateButtons = 7;      // sub_82202CB0, page 2's handler
 
 // Every page from kPageGraphics on is a rebuild of the button screen (see the
 // page turn hooks at the end of this file), so they share page 2's lists and
-// state bytes. Graphics and Balance are ours; from kPageMods on they belong to
+// state bytes. Graphics, Balance and Platform are ours; from kPageMods on they belong to
 // mods, and there are as many as their rows need.
 enum PageId {
   kPageOptions = 0,
   kPageButtons = 1,
   kPageGraphics = 2,
   kPageBalance = 3,
-  kPageMods = 4
+  kPagePlatform = 4,
+  kPageMods = 5
 };
 constexpr int kFixedPages = kPageGraphics;  // pages with lists of their own
 static_assert(int{kPageMods} == int{ETERNALSONATA_PAGE_MODS}, "page ids are the ABI's");
@@ -555,9 +556,16 @@ constexpr LocalizedLabel kLabelAnisotropy = {"anisotropy"};
 constexpr LocalizedLabel kLabelMsaa = {"msaa"};
 constexpr LocalizedLabel kLabelFxaa = {"fxaa"};
 constexpr LocalizedLabel kLabelFullscreen = {"fullscreen"};
+constexpr LocalizedLabel kLabelGeneratedMips = {"generated_mips"};
+constexpr LocalizedLabel kLabelVsync = {"vsync"};
 constexpr LocalizedLabel kLabelButtonGlyphs = {"button_glyphs"};
 // Which release's formula prices a photo.
 constexpr LocalizedLabel kLabelPhotoPricing = {"photo_pricing"};
+constexpr LocalizedLabel kLabelProgressionCurves = {"progression_curves"};
+constexpr LocalizedLabel kLabelRangedSpecial = {"ranged_special"};
+constexpr LocalizedLabel kLabelRightTrigger = {"right_trigger"};
+constexpr LocalizedLabel kLabelRtCamera = {"rt_camera"};
+constexpr LocalizedLabel kLabelRtSpecial = {"rt_special"};
 constexpr LocalizedLabel kLabelValueAuto = {"value_auto"};
 constexpr LocalizedLabel kLabelJapaneseFont = {"japanese_font"};
 constexpr LocalizedLabel kLabelSavePortraits = {"save_portraits"};
@@ -1086,24 +1094,33 @@ RowStore& Rows() {
     fps.get_index = &FrameRateGetIndex;
     fps.set_index = &FrameRateSetIndex;
     translate("framerate_label");
-    OptionRow& glyphs = add(kPageGraphics);
-    MakeLiteralRow(glyphs, kLabelButtonGlyphs, nullptr, 0);
-    glyphs.values.push_back(LabelValue(kLabelValueAuto));
-    for (const char* name : {"Xbox 360", "PS3"}) {
-      OptionValue value;
-      value.literal[0] = name;
-      glyphs.values.push_back(std::move(value));
-    }
-    BindChoiceCvar(glyphs, "override_button_glyphs", {"disabled", "xbox", "ps3"});
-    OptionRow& pricing = add(kPageGraphics);
-    MakeLiteralRow(pricing, kLabelPhotoPricing, nullptr, 0);
-    pricing.values.push_back(LabelValue(kLabelValueAuto));
-    for (const char* name : {"Xbox 360", "PS3"}) {
-      OptionValue value;
-      value.literal[0] = name;
-      pricing.values.push_back(std::move(value));
-    }
-    BindChoiceCvar(pricing, "photo_price_algorithm", {"auto", "360", "ps3"});
+    MakeBoolCvarRow(add(kPageGraphics), kLabelGeneratedMips, "render_generated_mips");
+    MakeBoolCvarRow(add(kPageGraphics), kLabelVsync, "vsync");
+
+    // Page 5, platform: which release's behaviour each system follows.
+    // Auto, Xbox 360 and PS3 over a string cvar whose ids are `ids`.
+    auto platform_row = [&](const LocalizedLabel& label, const char* cvar,
+                            std::vector<const char*> ids) {
+      OptionRow& row = add(kPagePlatform);
+      MakeLiteralRow(row, label, nullptr, 0);
+      row.values.push_back(LabelValue(kLabelValueAuto));
+      for (const char* name : {"Xbox 360", "PS3"}) {
+        OptionValue value;
+        value.literal[0] = name;
+        row.values.push_back(std::move(value));
+      }
+      BindChoiceCvar(row, cvar, std::move(ids));
+    };
+    platform_row(kLabelButtonGlyphs, "override_button_glyphs", {"disabled", "xbox", "ps3"});
+    platform_row(kLabelPhotoPricing, "photo_price_algorithm", {"auto", "360", "ps3"});
+    platform_row(kLabelProgressionCurves, "progression_curves", {"auto", "360", "ps3"});
+    platform_row(kLabelRangedSpecial, "ranged_special_buffer", {"auto", "360", "ps3"});
+    OptionRow& trigger = add(kPagePlatform);
+    MakeLiteralRow(trigger, kLabelRightTrigger, nullptr, 0);
+    trigger.values.push_back(LabelValue(kLabelValueAuto));
+    trigger.values.push_back(LabelValue(kLabelRtCamera));
+    trigger.values.push_back(LabelValue(kLabelRtSpecial));
+    BindChoiceCvar(trigger, "right_trigger_behavior", {"auto", "camera", "special"});
 
     // Page 4, balance.
     MakeMultiplierRow(add(kPageBalance), kLabelExp, "enemy_exp_multiplier");
@@ -1115,7 +1132,7 @@ RowStore& Rows() {
     MakeMultiplierRow(add(kPageBalance), kLabelEnemyDamage, "enemy_damage_multiplier");
     MakeBoolCvarRow(add(kPageBalance), kLabelAutoParry, "auto_parry");
     // Left/right picks what A does.
-    OptionRow& exit = add(kPageBalance);
+    OptionRow& exit = add(kPagePlatform);
     MakeLiteralRow(exit, kLabelExit, nullptr, 0);
     for (const LocalizedLabel* choice : {&kLabelQuitGame, &kLabelChangeVersion}) {
       exit.values.push_back(LabelValue(*choice));

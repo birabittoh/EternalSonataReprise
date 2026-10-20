@@ -30,23 +30,24 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_OPTIONS_ABI_VERSION 3u
+#define ETERNALSONATA_OPTIONS_ABI_VERSION 4u
 
 // Options is paged with LB/RB. Page 1 is the Options screen proper (volumes,
 // subtitles, languages), page 2 the button-configuration screen with the
-// control rows below it, page 3 graphics and page 4 balance and Quit Game. All
-// four are full, so mod rows get pages of their own from page 5 on
-// (ETERNALSONATA_PAGE_MODS + n): a row registered by a mod goes to the first
-// of them with room, and a new page opens whenever the last one fills, so
-// there is no limit on how many rows mods add. Move a row with
-// EternalSonataSetOptionRowPage. Version 2 hosts start mods pages at page 3,
-// version 1 hosts put mod rows on page 2.
+// control rows below it, page 3 graphics, page 4 balance and
+// page 5 platform and Quit Game. All five are full, so mod rows get pages of their own from
+// page 6 on (ETERNALSONATA_PAGE_MODS + n): a row registered by a mod goes to
+// the first of them with room, and a new page opens whenever the last one
+// fills, so there is no limit on how many rows mods add. Move a row with
+// EternalSonataSetOptionRowPage. Version 3 hosts start mods pages at page 5,
+// version 2 hosts at page 3, version 1 hosts put mod rows on page 2.
 enum {
   ETERNALSONATA_PAGE_GAME = 0,
   ETERNALSONATA_PAGE_CONTROLS = 1,
   ETERNALSONATA_PAGE_GRAPHICS = 2,
   ETERNALSONATA_PAGE_BALANCE = 3,
-  ETERNALSONATA_PAGE_MODS = 4
+  ETERNALSONATA_PAGE_PLATFORM = 4,
+  ETERNALSONATA_PAGE_MODS = 5
 };
 
 // Language slots. The first six match the Options display lists the game ships

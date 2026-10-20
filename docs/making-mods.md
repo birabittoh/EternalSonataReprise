@@ -1107,14 +1107,14 @@ up both from the main menu and from the in-game status screen.
 Options is paged with LB/RB. Page 1 (`ETERNALSONATA_PAGE_GAME`) is the Options
 screen proper, where the game's own Subtitles and Voice rows live alongside
 this project's Text row; page 2 (`ETERNALSONATA_PAGE_GRAPHICS`) is the
-button-configuration screen, which the project uses for graphics settings and
-Quit Game. Every page from page 3 (`ETERNALSONATA_PAGE_MODS`) on belongs to
-mods, and there are as many as their rows need: RB from page 2 reaches them
-while they have rows.
+button-configuration screen, which the project uses for graphics settings,
+balance, platform choices and Quit Game. Every page from page 6
+(`ETERNALSONATA_PAGE_MODS`) on belongs to mods, and there are as many as their
+rows need: RB from page 5 reaches them while they have rows.
 
 **A mod row lands on the first mods page with room** (on page 2 with an ABI
 version 1 host); a new page opens whenever the last one fills, so there is no
-limit on rows. The first two pages are full of the project's own rows.
+limit on rows. The first five pages are full of the project's own rows.
 `EternalSonataSetOptionRowPage` moves a row to another page if there is room.
 
 The entry points are exported from the host executable, not from the SDK, so
