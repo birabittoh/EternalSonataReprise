@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -21,6 +22,7 @@
 #include <span>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <rex/filesystem/devices/host_path_device.h>
@@ -1811,90 +1813,109 @@ bool BuildCache(rex::Runtime* runtime, const std::filesystem::path& dir, bool sh
   size_t total = 0;
   for (const auto& entry : state().containers)
     total += !IsXexContainer(entry.first);
-  // A large text mod takes over a minute here, on the UI thread, before the
-  // game has drawn anything. Shown on the start screen once the build proves
-  // slow, so a small mod does not flash it, and only at boot: pumping events
-  // from here would steal them from the running game.
-  const auto start = std::chrono::steady_clock::now();
-  bool shown = false;
-  struct HideOnExit {
-    bool& shown;
-    ~HideOnExit() {
-      if (shown)
-        HideIntroScreen();
-    }
-  } hide_on_exit{shown};
-  auto report = [&](size_t done, const std::string& what) {
-    ReportIntroProgress("Applying mods...", float(done) / float(total),
-                        std::to_string(done * 100 / total) + "%   " + std::to_string(done) +
-                            " / " + std::to_string(total) + "   " + what);
-  };
+  // A large text mod takes over a minute here, before the game has drawn
+  // anything. The work runs on a worker while this thread keeps the start
+  // screen drawing, shown once the build proves slow so a small mod does not
+  // flash it, and only at boot: pumping events from here would steal them from
+  // the running game.
+  std::atomic<size_t> visited{0};
+  std::mutex current_mutex;
+  std::string current;
+  std::atomic<bool> finished{false};
 
   size_t built = 0;
-  size_t visited = 0;
-  for (auto& [guest_path, container] : state().containers) {
-    // The executable's blobs are patched in guest memory at launch, not served
-    // from the cache directory: there is no file here to write and no TOC
-    // record to keep in sync with one.
-    if (IsXexContainer(guest_path))
-      continue;
-    if (show_progress &&
-        (shown || std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(250))) {
-      if (!shown)
-        shown = ShowIntroWork();
-      if (shown)
-        report(visited, guest_path);
-    }
-    ++visited;
-    // Last chance for a lazy provider to register patches for this container.
-    for (auto& entry : state().providers)
-      entry.second.first(guest_path.c_str(), entry.second.second);
-    if (auto* registry = runtime->mod_registry()) {
-      rex::system::ModRegistry::EventPayload payload;
-      payload.bytes = {reinterpret_cast<const uint8_t*>(guest_path.data()), guest_path.size()};
-      registry->Publish(ETERNALSONATA_ASSET_EVENT_LOADING, payload);
-    }
+  auto work = [&] {
+    for (auto& [guest_path, container] : state().containers) {
+      // The executable's blobs are patched in guest memory at launch, not served
+      // from the cache directory: there is no file here to write and no TOC
+      // record to keep in sync with one.
+      if (IsXexContainer(guest_path))
+        continue;
+      {
+        std::lock_guard lock(current_mutex);
+        current = guest_path;
+      }
+      ++visited;
+      // Last chance for a lazy provider to register patches for this container.
+      for (auto& entry : state().providers)
+        entry.second.first(guest_path.c_str(), entry.second.second);
+      if (auto* registry = runtime->mod_registry()) {
+        rex::system::ModRegistry::EventPayload payload;
+        payload.bytes = {reinterpret_cast<const uint8_t*>(guest_path.data()), guest_path.size()};
+        registry->Publish(ETERNALSONATA_ASSET_EVENT_LOADING, payload);
+      }
 
-    auto patched = BuildContainer(runtime, toc, guest_path, container);
-    if (!patched || patched->patches_applied == 0)
-      continue;
-    if (!WriteWholeFile(dir / std::filesystem::path(guest_path), patched->bytes)) {
-      REXLOG_ERROR("assets: could not write the patched {}", guest_path);
-      continue;
-    }
-    // The record and the bytes are one unit: this is the only writer of the
-    // served TOC, and it only ever runs on what BuildContainer returned. A
-    // synthesized bank has no record to rewrite, so it gets one appended -
-    // AddStored is the only way a new served path comes into existence, which
-    // is what keeps the vmtoc invariant true by construction.
-    if (!container.donor_path.empty()) {
-      if (!toc.AddStored(guest_path, uint32_t(patched->bytes.size()))) {
-        // Only reachable on a path too long for the 32-byte field, which the
-        // suffix check at registration is supposed to have made impossible.
-        REXLOG_ERROR("assets: {} does not fit an index.vmtoc record, so it cannot be served",
-                     guest_path);
+      auto patched = BuildContainer(runtime, toc, guest_path, container);
+      if (!patched || patched->patches_applied == 0)
+        continue;
+      if (!WriteWholeFile(dir / std::filesystem::path(guest_path), patched->bytes)) {
+        REXLOG_ERROR("assets: could not write the patched {}", guest_path);
         continue;
       }
-    } else if (!toc.SetStored(guest_path, uint32_t(patched->bytes.size()))) {
-      REXLOG_WARN(
-          "assets: {} has no TOC record; it will load raw, sized by "
-          "the file itself",
-          guest_path);
+      // The record and the bytes are one unit: this is the only writer of the
+      // served TOC, and it only ever runs on what BuildContainer returned. A
+      // synthesized bank has no record to rewrite, so it gets one appended -
+      // AddStored is the only way a new served path comes into existence, which
+      // is what keeps the vmtoc invariant true by construction.
+      if (!container.donor_path.empty()) {
+        if (!toc.AddStored(guest_path, uint32_t(patched->bytes.size()))) {
+          // Only reachable on a path too long for the 32-byte field, which the
+          // suffix check at registration is supposed to have made impossible.
+          REXLOG_ERROR("assets: {} does not fit an index.vmtoc record, so it cannot be served",
+                       guest_path);
+          continue;
+        }
+      } else if (!toc.SetStored(guest_path, uint32_t(patched->bytes.size()))) {
+        REXLOG_WARN(
+            "assets: {} has no TOC record; it will load raw, sized by "
+            "the file itself",
+            guest_path);
+      }
+      ++built;
+      REXLOG_INFO("assets: patched {} ({} patches, {} bytes)", guest_path, patched->patches_applied,
+                  patched->bytes.size());
+      if (auto* registry = runtime->mod_registry()) {
+        rex::system::ModRegistry::EventPayload payload;
+        payload.u64 = patched->patches_applied;
+        payload.f64 = double(patched->bytes.size());
+        payload.bytes = {reinterpret_cast<const uint8_t*>(guest_path.data()), guest_path.size()};
+        registry->Publish(ETERNALSONATA_ASSET_EVENT_PATCHED, payload);
+      }
     }
-    ++built;
-    REXLOG_INFO("assets: patched {} ({} patches, {} bytes)", guest_path, patched->patches_applied,
-                patched->bytes.size());
-    if (auto* registry = runtime->mod_registry()) {
-      rex::system::ModRegistry::EventPayload payload;
-      payload.u64 = patched->patches_applied;
-      payload.f64 = double(patched->bytes.size());
-      payload.bytes = {reinterpret_cast<const uint8_t*>(guest_path.data()), guest_path.size()};
-      registry->Publish(ETERNALSONATA_ASSET_EVENT_PATCHED, payload);
-    }
-  }
 
-  if (shown)
-    report(total, "");
+  };
+
+  if (show_progress) {
+    const auto start = std::chrono::steady_clock::now();
+    bool shown = false;
+    std::thread worker([&] {
+      work();
+      finished = true;
+    });
+    while (!finished) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(8));
+      if (!shown && std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(250))
+        shown = ShowIntroWork();
+      if (shown) {
+        std::string what;
+        {
+          std::lock_guard lock(current_mutex);
+          what = current;
+        }
+        const size_t done = visited > 0 ? visited - 1 : 0;
+        if (!total)
+          continue;
+        ReportIntroProgress("Applying mods...", float(done) / float(total),
+                            std::to_string(done * 100 / total) + "%   " + std::to_string(done) +
+                                " / " + std::to_string(total) + "   " + what);
+      }
+    }
+    worker.join();
+    if (shown)
+      HideIntroScreen();
+  } else {
+    work();
+  }
   if (!built) {
     std::filesystem::remove_all(dir, ec);
     return false;
