@@ -667,6 +667,12 @@ address = 0x821F9660
 name = "PartyEndU32"
 registers = ["r10"]
 after_instruction = true
+# sub_821F9128: single target heal, past ten members the ten member children
+[[midasm_hook]]
+address = 0x821F9254
+name = "PartyLayoutTen"
+registers = ["cr6", "r5"]
+after_instruction = true
 # sub_822148C8: field item target, position search
 [[midasm_hook]]
 address = 0x822149BC
