@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -137,6 +138,9 @@ bool RestartIntoStartScreen();
 
 // Closes the game, marshalled like RestartNow. False before BindSettingsTargets.
 bool QuitNow();
+
+// Queues work on the window's UI thread. False before BindSettingsTargets.
+bool CallInWindowThread(std::function<void()> work);
 
 // Applies the frame-rate cap end to end: updates the frame_rate cvar
 // ("30"/"60"/"adaptive"/"unlocked") and persists. The value itself is applied

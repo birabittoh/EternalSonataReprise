@@ -2116,6 +2116,13 @@ bool QuitNow() {
   return true;
 }
 
+bool CallInWindowThread(std::function<void()> work) {
+  if (!g_window) {
+    return false;
+  }
+  return g_window->app_context().CallInUIThread(std::move(work));
+}
+
 void SaveUserSettings() {
   if (g_user_settings_path.empty()) {
     return;

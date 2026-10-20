@@ -34,6 +34,7 @@
 #include <rex/system/xcontent.h>
 
 #include "eternalsonata_hooks_internal.h"
+#include "settings.h"
 #include "generated/eternalsonata_init.h"
 
 namespace {
@@ -64,21 +65,25 @@ struct PickRequest {
 
 void SDLCALL OnPicked(void* userdata, const char* const* files, int) {
   std::unique_ptr<PickRequest> request(static_cast<PickRequest*>(userdata));
+  if (!files) {
+    REXLOG_WARN("DLC: the file dialog failed: {}", SDL_GetError());
+  }
   request->picked.set_value(files && files[0] ? files[0] : "");
 }
 
-void SDLCALL ShowPicker(void* userdata) {
-  SDL_ShowOpenFileDialog(OnPicked, userdata, nullptr, nullptr, 0, nullptr, false);
-}
-
 // Blocks the calling guest thread until the player answers; empty if cancelled.
+// Goes through the SDK's UI loop: SDL_RunOnMainThread here would reach this
+// executable's own SDL copy, whose callback queue nothing ever pumps.
 std::string PickPackage() {
   auto* request = new PickRequest;
   auto picked = request->picked.get_future();
-  if (!SDL_RunOnMainThread(ShowPicker, request, false)) {
+  if (!eternalsonata::CallInWindowThread([request] {
+        SDL_ShowOpenFileDialog(OnPicked, request, nullptr, nullptr, 0, nullptr, false);
+      })) {
     delete request;
     return {};
   }
+  REXLOG_INFO("DLC: waiting for the package picker");
   return picked.get();
 }
 
@@ -154,6 +159,8 @@ REX_HOOK_RAW(sub_82209A18) {
   if (NeedsPackage()) {
     // The state stays 2 while the dialog is up; it is left from the menu tick.
     eternalsonata::AskInstallDlc(ctx, base);
+    // The menu tick adds the return value to its substate.
+    ctx.r3.u64 = 0;
     return;
   }
   __imp__sub_82209A18(ctx, base);
