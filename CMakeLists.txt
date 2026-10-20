@@ -403,6 +403,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/aim_input.cpp
     src/engine/special_attack_input.cpp
     src/engine/battle_timers.cpp
+    src/engine/battle_load_wait.cpp
     src/engine/eternalsonata_voice.cpp
     src/engine/eternalsonata_options.cpp
     src/engine/eternalsonata_presence.cpp
