@@ -7,7 +7,7 @@
 // numbering).
 // The art for the release the player is not running is rendered into res/generated, and
 // so does the keyboard and mouse set, which covers A, B, X, Y, LB and RB (the mouse
-// wheel), Start and the D-pad. The other slots keep the pad art there.
+// wheel), LT and RT (Alt and Ctrl), Start and the D-pad. The other slots keep the pad art there.
 //
 // The battle HUD's button sheet (BattleKeep slot 39) and the cutscene skip
 // prompt (AppKeep slot 352, one texture per language) draw the same buttons
@@ -69,13 +69,13 @@ constexpr const char* kPlayStationGlyphs[] = {
 // PlayStation prompts get the PlayStation colours.
 constexpr const char* kPcGlyphs[] = {
     "button_pc_360_left_click", "button_pc_360_right_click", "button_pc_360_middle_click",
-    "button_pc_360_space",      "button_pc_360_lb",          nullptr,
-    "button_pc_360_rb",         nullptr,                     "button_pc_esc",
+    "button_pc_360_space",      "button_pc_360_lb",          "button_pc_360_lt",
+    "button_pc_360_rb",         "button_pc_360_rt",                     "button_pc_esc",
     nullptr};
 constexpr const char* kPcPlayStationGlyphs[] = {
     "button_pc_ps3_left_click", "button_pc_ps3_right_click", "button_pc_ps3_middle_click",
-    "button_pc_ps3_space",      "button_pc_ps3_lb",          nullptr,
-    "button_pc_ps3_rb",         nullptr,                     "button_pc_esc",
+    "button_pc_ps3_space",      "button_pc_ps3_lb",          "button_pc_ps3_lt",
+    "button_pc_ps3_rb",         "button_pc_ps3_rt",                     "button_pc_esc",
     nullptr};
 
 const eternalsonata::ResImage* FindArt(const char* name) {

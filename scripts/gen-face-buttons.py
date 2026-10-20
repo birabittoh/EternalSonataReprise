@@ -572,6 +572,18 @@ def shoulder(label, right, trigger, ps):
         img = wheel_symbol(img, text_x * n, text_y * n, w, w * 0.78, label[6:],
                            (255, 255, 255), (0, 0, 0), (0, 0, 0))
     else:
+        if len(label) > 2:
+            # Centre on the plate at the lettering's row and shrink until it fits.
+            row = mask.crop((0, int(text_y * n), n, int(text_y * n) + 1)).getbbox()
+            span = row[2] - row[0]
+            text_x = (row[0] + row[2]) / 2 / n
+            text_h *= 0.85
+            draw = ImageDraw.Draw(img)
+            while text_h > 0.1:
+                box = draw.textbbox((0, 0), label, font=bold_font(int(text_h * n)))
+                if box[2] - box[0] + 0.3 * text_h * n <= 0.86 * span:
+                    break
+                text_h *= 0.95
         label_text(img, label, text_x * n, text_y * n, text_h * n)
     return img
 
@@ -652,8 +664,11 @@ def main():
             shoulder(label, right, trigger, kind == "ps").resize((SIZE, SIZE), Image.LANCZOS).save(
                 os.path.join(OUT, f"button_{kind}_{name}.png"))
     for kind, ps in (("360", False), ("ps3", True)):
-        for name, label, right in (("lb", "wheel_up", False), ("rb", "wheel_down", True)):
-            shoulder(label, right, False, ps).resize((SIZE, SIZE), Image.LANCZOS).save(
+        for name, label, right, trigger in (("lb", "wheel_up", False, False),
+                                            ("rb", "wheel_down", True, False),
+                                            ("lt", "ALT", False, True),
+                                            ("rt", "CTRL", True, True)):
+            shoulder(label, right, trigger, ps).resize((SIZE, SIZE), Image.LANCZOS).save(
                 os.path.join(OUT, f"button_pc_{kind}_{name}.png"))
     for direction in ("up", "down"):
         battle_wheel(direction).save(os.path.join(OUT, f"button_pc_battle_wheel_{direction}.png"))
