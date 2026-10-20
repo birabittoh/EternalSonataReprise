@@ -16,6 +16,7 @@
 
 #include "eternalsonata_asset_container.h"
 #include "japanese_title.h"
+#include "ui_text.h"
 
 namespace eternalsonata {
 namespace {
@@ -185,7 +186,7 @@ struct BattleKeep {
 // Rebuilt in PAL's slot order, entries keeping their alignment: effects and
 // banks on 4 KiB, the rest on 32 bytes. Nothing when it is PAL's already.
 std::optional<BattleKeep> BuildBattleKeep(const std::vector<uint8_t>& d, std::string& error) {
-  error = "BattleKeep.bop is not the USA, JP or PAL layout.";
+  error = TrErr("err_battlekeep_layout");
   if (d.size() < 16 || std::memcmp(d.data(), "BOP ", 4) != 0)
     return std::nullopt;
   const size_t dir = Be32(d, 12);
@@ -287,17 +288,17 @@ std::string PatchPs3Title(const fs::path& dir) {
   assets::Toc toc;
   std::vector<uint8_t> title;
   if (!toc.Load(toc_path) || !ReadFile(Resolve(dir, "title.bmd"), title))
-    return "The converted game files are incomplete: title.bmd could not be read.";
+    return TrErr("err_title_unreadable");
   const std::vector<uint8_t> japanese = BuildJapaneseTitle(title);
   if (!japanese.empty()) {
     if (!WriteFile(Resolve(dir, kJapaneseTitle), japanese))
-      return "Could not write title_jpn.bmd.";
+      return TrErr("err_write", "title_jpn.bmd");
     const uint32_t size = uint32_t(japanese.size());
     if (!(toc.Find(kJapaneseTitle) ? toc.SetStored(kJapaneseTitle, size)
                                    : toc.AddStored(kJapaneseTitle, size)))
-      return "title_jpn.bmd does not fit an index.vmtoc record.";
+      return TrErr("err_toc_record", "title_jpn.bmd");
     if (!WriteFile(toc_path, toc.bytes()))
-      return "Could not write index.vmtoc.";
+      return TrErr("err_write", "index.vmtoc");
   } else {
     REXLOG_WARN("This PS3 copy's title.bmd is not the PAL layout; no Japanese title screen");
   }
@@ -327,11 +328,11 @@ std::string PatchRelease(const fs::path& dir, const ExtractProgress& progress) {
   if (!fs::is_regular_file(shipped_toc_path, ec)) {
     fs::copy_file(toc_path, shipped_toc_path, ec);
     if (ec)
-      return "The game folder is not writable (" + ec.message() + ").";
+      return TrErr("err_not_writable", ec.message());
   }
   assets::Toc shipped, toc;
   if (!shipped.Load(shipped_toc_path) || !toc.Load(shipped_toc_path))
-    return "index.vmtoc could not be read.";
+    return TrErr("err_toc_unreadable");
 
   std::vector<std::pair<std::string, std::vector<uint8_t>>> outputs;
   auto report = [&](const std::string& what) {
@@ -343,7 +344,7 @@ std::string PatchRelease(const fs::path& dir, const ExtractProgress& progress) {
   if (!shipped.Find("campdata/camp_grp1.bmd") && LoadShipped(dir, shipped, "appkeep.bmd", keep)) {
     std::vector<uint8_t> group;
     if (!BuildCampGroup(keep, group))
-      return "AppKeep.bmd is not the USA or JP layout.";
+      return TrErr("err_appkeep_layout");
     for (int n = 0; n < 6; ++n)
       outputs.emplace_back("campdata/camp_grp" + std::to_string(n) + ".bmd", group);
   }
@@ -351,7 +352,7 @@ std::string PatchRelease(const fs::path& dir, const ExtractProgress& progress) {
   report("btldata/battlekeep.bop");
   std::vector<uint8_t> battle_keep;
   if (!LoadShipped(dir, shipped, "btldata/battlekeep.bop", battle_keep))
-    return "The game files are incomplete: BattleKeep.bop could not be read.";
+    return TrErr("err_battlekeep_unreadable");
   std::string error;
   if (auto rebuilt = BuildBattleKeep(battle_keep, error)) {
     outputs.emplace_back("btldata/battlekeep.bop", std::move(rebuilt->keep));
@@ -378,7 +379,7 @@ std::string PatchRelease(const fs::path& dir, const ExtractProgress& progress) {
     fs::remove(file, ec);
     fs::rename(original, file, ec);
     if (ec)
-      return "Could not restore the original " + path + " (" + ec.message() + ").";
+      return TrErr("err_restore", path, ec.message());
   }
 
   for (const auto& [path, bytes] : outputs) {
@@ -389,16 +390,16 @@ std::string PatchRelease(const fs::path& dir, const ExtractProgress& progress) {
     if (shipped_file && !fs::exists(original, ec)) {
       fs::rename(file, original, ec);
       if (ec)
-        return "Could not keep the original " + path + " (" + ec.message() + ").";
+        return TrErr("err_keep", path, ec.message());
     }
     if (!WriteFile(file, bytes))
-      return "Could not write " + path + ".";
+      return TrErr("err_write", path);
     const uint32_t size = uint32_t(bytes.size());
     if (!(shipped_file ? toc.SetStored(path, size) : toc.AddStored(path, size)))
-      return path + " does not fit an index.vmtoc record.";
+      return TrErr("err_toc_record", path);
   }
   if (!WriteFile(toc_path, toc.bytes()))
-    return "Could not write index.vmtoc.";
+    return TrErr("err_write", "index.vmtoc");
   const std::string stamp = Fingerprint();
   WriteFile(dir / kStamp, std::span(reinterpret_cast<const uint8_t*>(stamp.data()), stamp.size()));
   REXLOG_INFO("Patched {}: {} files written", dir.string(), outputs.size());

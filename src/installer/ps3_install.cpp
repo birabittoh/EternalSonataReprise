@@ -14,6 +14,7 @@
 
 #include "ps3_bytes.h"
 #include "ps3_convert.h"
+#include "ui_text.h"
 
 namespace eternalsonata {
 namespace {
@@ -64,7 +65,7 @@ void WriteFile(const fs::path& path, const Bytes& bytes) {
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
   if (!out)
-    throw std::runtime_error("Could not write " + path.string() + ".");
+    throw std::runtime_error(TrErr("err_write", path.string()));
 }
 
 fs::path WithSuffix(fs::path path, const char* suffix) {
@@ -191,7 +192,7 @@ class ConvertedList {
     std::ofstream out(path_, std::ios::binary | std::ios::app);
     out << key << ' ' << low << '\n';
     if (!out)
-      throw std::runtime_error("Could not write " + path_.string() + ".");
+      throw std::runtime_error(TrErr("err_write", path_.string()));
   }
 
  private:
@@ -261,7 +262,7 @@ std::string Run(const fs::path& root, const ExtractProgress& progress) {
   if (!fs::exists(root / kConverted, ec)) {
     WriteFile(root / kFresh, Bytes(kFreshVersion, kFreshVersion + std::strlen(kFreshVersion)));
     if (fs::exists(root / kBusy, ec))
-      return "An earlier conversion was interrupted. Unpack the game files again.";
+      return TrErr("err_interrupted");
     ReplaceFile(root / kConverted, {});
   }
   WriteFile(root / kBusy, {});
@@ -404,7 +405,7 @@ std::string UnpackPs3Files(const std::vector<ImageFile>& inputs, const std::stri
                            const fs::path& out_dir, const ExtractProgress& progress) {
   std::error_code ec;
   if (inputs.empty())
-    return "No PS3 archives (*.files) found.";
+    return TrErr("err_no_archives");
   std::vector<const ImageFile*> sorted;
   for (const ImageFile& f : inputs)
     sorted.push_back(&f);
@@ -416,7 +417,7 @@ std::string UnpackPs3Files(const std::vector<ImageFile>& inputs, const std::stri
   fs::remove_all(partial, ec);
   fs::create_directories(partial, ec);
   if (ec)
-    return "Could not create " + partial.string() + ": " + ec.message();
+    return TrErr("err_create", partial.string(), ec.message());
 
   std::vector<char> buffer(size_t(1) << 22);
   for (size_t a = 0; a < sorted.size(); ++a) {
@@ -460,7 +461,7 @@ std::string UnpackPs3Files(const std::vector<ImageFile>& inputs, const std::stri
         const size_t n = size_t(std::min<uint64_t>(left, buffer.size()));
         if (!in.read(at, buffer.data(), n) || !out.write(buffer.data(), std::streamsize(n))) {
           fs::remove_all(partial, ec);
-          return "Unpacking " + e.name + " failed. The disc may be damaged, or the disk full.";
+          return TrErr("err_unpack_failed", e.name);
         }
         at += n;
         left -= n;
@@ -470,10 +471,10 @@ std::string UnpackPs3Files(const std::vector<ImageFile>& inputs, const std::stri
   if (!title_id.empty())
     WriteFile(partial / kTitleId, Bytes(title_id.begin(), title_id.end()));
   if (fs::exists(out_dir, ec) && !MoveAside(out_dir))
-    return "Could not move the existing " + out_dir.string() + " out of the way.";
+    return TrErr("err_move_aside", out_dir.string());
   fs::rename(partial, out_dir, ec);
   if (ec)
-    return "Could not rename the unpacked files: " + ec.message();
+    return TrErr("err_rename_unpacked", ec.message());
   REXLOG_INFO("Unpacked {} PS3 archives into {}", sorted.size(), out_dir.string());
   return {};
 }
@@ -512,7 +513,7 @@ std::string ConvertPs3(const fs::path& dir, const ExtractProgress& progress) {
   try {
     return Run(dir, progress);
   } catch (const std::exception& e) {
-    return std::string("Converting the PS3 files failed: ") + e.what();
+    return TrErr("err_convert_failed", e.what());
   }
 }
 
@@ -580,7 +581,7 @@ std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir,
     streams.emplace_back(input, std::ios::binary);
     std::ifstream* in = &streams.back();
     if (!*in)
-      return "Could not open " + input.string() + ".";
+      return TrErr("err_open", input.string());
     files.push_back({input.filename().string(), fs::file_size(input, ec),
                      [in](uint64_t off, void* dst, uint64_t len) {
                        in->clear();

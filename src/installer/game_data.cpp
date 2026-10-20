@@ -436,7 +436,7 @@ void StartJob(std::shared_ptr<Flow> flow, JobWork work, JobDone then) {
     try {
       error = work(MakeHooks(), dir);
     } catch (const std::exception& e) {
-      error = std::string("Preparing the game files failed: ") + e.what();
+      error = TrErr("err_prepare_failed", e.what());
     }
     g_extracting = false;
     then(std::move(flow), std::move(error), std::move(dir));
@@ -464,7 +464,7 @@ void StartJob(std::shared_ptr<Flow> flow, JobWork work, JobDone then) {
     try {
       job->error = work(hooks, job->dir);
     } catch (const std::exception& e) {
-      job->error = std::string("Preparing the game files failed: ") + e.what();
+      job->error = TrErr("err_prepare_failed", e.what());
     }
     flow->context->CallInUIThreadDeferred([flow, job, then] {
       job->worker.join();

@@ -1,5 +1,6 @@
 #include "install_pipeline.h"
 
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "ps3_install.h"
 #include "release_id.h"
 #include "release_patch.h"
+#include "ui_text.h"
 
 namespace eternalsonata {
 namespace {
@@ -53,8 +55,8 @@ std::string CheckFolder(const fs::path& dir) {
     return {};
   std::error_code ec;
   if (fs::exists(dir / "PS3_GAME", ec) || fs::exists(dir / "PARAM.SFO", ec))
-    return "This PS3 disc folder has no USRDIR/archives.";
-  return "This folder does not hold the extracted game files (no index.vmtoc).";
+    return TrErr("err_folder_no_archives");
+  return TrErr("err_not_extracted");
 }
 
 // A file picked inside an extracted folder, or a PS3 dump's EBOOT.BIN, means
@@ -98,7 +100,7 @@ SourceInfo FromHash(const std::vector<uint8_t>& file, const std::string& unknown
   SourceInfo info{release->name, {}, release->languages};
   info.id = release->id;
   if (!release->supported)
-    info.error = info.release + " is not supported yet.";
+    info.error = TrErr("err_unsupported", info.release);
   return info;
 }
 
@@ -142,8 +144,8 @@ SourceInfo IdentifyPs3Folder(const fs::path& archives) {
   // An unknown EBOOT.BIN: named from the disc's title id when it has one.
   SourceInfo info = FromTitleId(ReadTitleId(ChildNamed(usrdir.parent_path(), "PARAM.SFO")));
   if (info.release.empty())
-    return {{}, "This PS3 disc folder is not a known dump of Eternal Sonata."};
-  info.error = info.release + " is not a known dump, or not supported yet.";
+    return {{}, TrErr("err_ps3_folder_unknown")};
+  info.error = TrErr("err_unknown_or_unsupported", info.release);
   return info;
 }
 
@@ -231,7 +233,10 @@ SourceInfo IdentifySource(const std::string& picked) {
     std::vector<uint8_t> eboot;
     if (std::string error = ReadIsoImageFile(picked, kPs3Eboot, eboot); !error.empty())
       return {{}, error};
-    SourceInfo info = FromHash(eboot, "This PS3 disc image is not a known dump of Eternal Sonata.");
+    // A readable EBOOT.BIN starts with the SELF magic; an encrypted ISO yields noise.
+    if (eboot.size() < 4 || std::memcmp(eboot.data(), "SCE\0", 4) != 0)
+      return {{}, Tr(IntroText::kEncryptedIso)};
+    SourceInfo info = FromHash(eboot, TrErr("err_ps3_iso_unknown"));
     info.required_bytes =
         MeasureIsoFolder(picked, "PS3_GAME/USRDIR/archives") * kConvertedPercent / 100 + kPatchSlack;
     return info;
@@ -239,7 +244,7 @@ SourceInfo IdentifySource(const std::string& picked) {
   std::vector<uint8_t> xex;
   if (std::string error = ReadDiscImageFile(picked, "default.xex", xex); !error.empty())
     return {{}, error};
-  SourceInfo info = FromHash(xex, "This Eternal Sonata disc image is not a known dump.");
+  SourceInfo info = FromHash(xex, TrErr("err_xbox_iso_unknown"));
   info.required_bytes = MeasureDiscImage(picked) + kPatchSlack;
   return info;
 }
@@ -272,7 +277,7 @@ std::string Install(const std::string& picked, const fs::path& assets, const Ins
   } else {
     error = ExtractDiscImage(picked, assets, kTableOfContents, hooks.progress);
     if (error.empty() && !IsGameDirectory(assets))
-      error = "The extracted files are incomplete.";
+      error = TrErr("err_incomplete");
   }
   if (!error.empty())
     return error;

@@ -37,6 +37,7 @@ constexpr std::array<const char*, size_t(IntroText::kCount)> kKeys = {
     "already_installed", "linked",     "needs_update",     "choose_version",
     "hint_select",   "hint_back",     "hint_quit",        "dialog_needs_mouse",
     "outdated",      "outdated_question", "skip",          "extract_again",
+    "encrypted_iso",
 };
 constexpr std::array<const char*, kInstallPhaseCount> kPhaseKeys = {
     "phase_extract", "phase_convert", "phase_patch"};
@@ -202,6 +203,18 @@ std::string Tr(const char* section, const char* key, std::string_view arg) {
   std::string text = Tr(section, key);
   if (const size_t at = text.find("{}"); at != std::string::npos)
     text.replace(at, 2, arg);
+  return text;
+}
+
+std::string TrErr(const char* key, std::string_view a, std::string_view b) {
+  std::string text = Lookup(key);
+  size_t at = 0;
+  for (std::string_view arg : {a, b}) {
+    if (at = text.find("{}", at); at == std::string::npos)
+      break;
+    text.replace(at, 2, arg);
+    at += arg.size();
+  }
   return text;
 }
 

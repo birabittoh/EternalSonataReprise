@@ -54,6 +54,7 @@ enum class IntroText {
   kOutdatedQuestion,
   kSkip,
   kExtractAgain,
+  kEncryptedIso,
   kCount,
 };
 
@@ -72,6 +73,9 @@ const char* TrIn(const char* code, const char* section, const char* key);
 const char* SdkUiText(const char* key);
 
 std::string Tr(const char* section, const char* key, std::string_view arg);
+
+// An installer error from the `intro` table; each {} takes the next argument in turn.
+std::string TrErr(const char* key, std::string_view a = {}, std::string_view b = {});
 
 const char* Tr(IntroText id);
 

@@ -16,6 +16,7 @@
 
 #include "icon.generated.h"
 #include "progress_theme.h"
+#include "ui_text.h"
 
 // Ported from the SDK's GameDataSelector (src/system/game_data_selector.cpp).
 
@@ -497,10 +498,10 @@ std::string ExtractDiscImage(const std::string& image, const fs::path& out_dir,
                              std::string_view required_entry, const ExtractProgress& progress_callback) {
   FileReader reader(image);
   if (!reader.ok())
-    return "The file could not be read.";
+    return TrErr("err_read");
   const auto info = FindXdvdfs(reader);
   if (!info)
-    return "This is not an Xbox 360 disc image.";
+    return TrErr("err_not_xbox");
 
   Walk measured;
   measured.measure_only = true;
@@ -508,7 +509,7 @@ std::string ExtractDiscImage(const std::string& image, const fs::path& out_dir,
   const bool ours = std::any_of(measured.root_names.begin(), measured.root_names.end(),
                                 [&](const std::string& n) { return SameFileName(n, required_entry); });
   if (!ours)
-    return "This disc image is not Eternal Sonata.";
+    return TrErr("err_not_es");
   REXLOG_INFO("Disc image holds {} files, {}", measured.files, FormatBytes(measured.bytes));
 
   fs::path partial = out_dir;
@@ -517,7 +518,7 @@ std::string ExtractDiscImage(const std::string& image, const fs::path& out_dir,
   fs::remove_all(partial, ec);
   fs::create_directories(partial, ec);
   if (ec)
-    return "Could not create " + partial.string() + ": " + ec.message();
+    return TrErr("err_create", partial.string(), ec.message());
 
   Walk walk;
   {
@@ -527,13 +528,13 @@ std::string ExtractDiscImage(const std::string& image, const fs::path& out_dir,
   }
   if (!walk.complete) {
     fs::remove_all(partial, ec);
-    return "Extraction failed. The disc image may be damaged, or the disk full.";
+    return TrErr("err_extract_failed");
   }
   if (fs::exists(out_dir, ec) && !MoveAside(out_dir))
-    return "Could not move the existing " + out_dir.string() + " out of the way.";
+    return TrErr("err_move_aside", out_dir.string());
   fs::rename(partial, out_dir, ec);
   if (ec)
-    return "Could not rename the extracted files: " + ec.message();
+    return TrErr("err_rename_extracted", ec.message());
   REXLOG_INFO("Extracted {} files into {}", walk.files, out_dir.string());
   return {};
 }
@@ -542,16 +543,16 @@ std::string ReadDiscImageFile(const std::string& image, std::string_view name,
                               std::vector<uint8_t>& out) {
   FileReader reader(image);
   if (!reader.ok())
-    return "The file could not be read.";
+    return TrErr("err_read");
   const auto info = FindXdvdfs(reader);
   if (!info)
-    return "This is not an Xbox 360 disc image.";
+    return TrErr("err_not_xbox");
   const auto file = FindRootFile(reader, *info, name);
   if (!file)
-    return "This disc image is not Eternal Sonata.";
+    return TrErr("err_not_es");
   out.resize(file->second);
   if (!reader.Read(file->first, out.data(), out.size()))
-    return "The disc image is truncated.";
+    return TrErr("err_truncated");
   return {};
 }
 
@@ -590,14 +591,14 @@ std::string ReadIsoImageFile(const std::string& image, std::string_view path,
                              std::vector<uint8_t>& out) {
   FileReader reader(image);
   if (!reader.ok())
-    return "The file could not be read.";
+    return TrErr("err_read");
   const auto file = IsIso9660(reader) ? FindIsoPath(reader, path) : std::nullopt;
   if (!file || file->directory)
-    return "This disc image is not Eternal Sonata.";
+    return TrErr("err_not_es");
   out.resize(file->length);
   if (!file->more.empty() ||
       !reader.Read(file->offset, out.data(), out.size()))
-    return "The disc image is truncated.";
+    return TrErr("err_truncated");
   return {};
 }
 
@@ -605,10 +606,10 @@ std::string WithIsoFiles(const std::string& image, std::string_view folder, std:
                          const std::function<std::string(const std::vector<ImageFile>&)>& use) {
   FileReader reader(image);
   if (!reader.ok())
-    return "The file could not be read.";
+    return TrErr("err_read");
   const auto dir = IsIso9660(reader) ? FindIsoPath(reader, folder) : std::nullopt;
   if (!dir || !dir->directory)
-    return "This disc image is not Eternal Sonata.";
+    return TrErr("err_not_es");
   std::vector<IsoEntry> entries;
   std::vector<ImageFile> files;
   for (IsoEntry& e : ReadIsoDirectory(reader, uint32_t(dir->offset / kSectorSize), uint32_t(dir->length))) {
@@ -649,10 +650,10 @@ std::string ExtractIsoFolder(const std::string& image, std::string_view folder,
                              const fs::path& out_dir, const ExtractProgress& progress_callback) {
   FileReader reader(image);
   if (!reader.ok())
-    return "The file could not be read.";
+    return TrErr("err_read");
   const auto dir = IsIso9660(reader) ? FindIsoPath(reader, folder) : std::nullopt;
   if (!dir || !dir->directory)
-    return "This disc image is not Eternal Sonata.";
+    return TrErr("err_not_es");
   Walk measured;
   CountIso(reader, *dir, measured, 0);
   REXLOG_INFO("Disc image holds {} files, {}", measured.files, FormatBytes(measured.bytes));
@@ -667,7 +668,7 @@ std::string ExtractIsoFolder(const std::string& image, std::string_view folder,
   }
   if (!walk.complete) {
     fs::remove_all(out_dir, ec);
-    return "Extraction failed. The disc image may be damaged, or the disk full.";
+    return TrErr("err_extract_failed");
   }
   return {};
 }

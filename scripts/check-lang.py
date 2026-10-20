@@ -47,6 +47,8 @@ for path in sources:
     text = path.read_text(encoding="utf8", errors="replace")
     for sec, key in pat_tr.findall(text):
         used.add((sec, key))
+    for key in re.findall(r'\bTrErr\(\s*"(\w+)"', text):
+        used.add(("intro", key))
     if path.name == "settings.cpp":
         for m in re.finditer(r'\bT\(\s*"(\w+)"\s*\)', text):
             used.add(("settings", m.group(1)))
