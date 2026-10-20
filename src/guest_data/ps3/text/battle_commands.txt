@@ -1,0 +1,36 @@
+0x82316300
+[JPN]
+0	攻撃
+1	防御
+2	反撃
+3	Empty
+[USA]
+0	Attack
+1	Guard
+2	Counterattack
+3	Empty
+[GBR]
+0	Attack
+1	Guard
+2	Counterattack
+3	Empty
+[FRA]
+0	Attaque
+1	Parade
+2	Contre-attaque
+3	Vide
+[ITA]
+0	Attacca
+1	Difendi
+2	Contrattacca
+3	Vuoto
+[DEU]
+0	Angriff
+1	Blocken
+2	Gegenangriff
+3	Leer
+[ESP]
+0	Atacar
+1	Defender
+2	Contraatacar
+3	Vacío

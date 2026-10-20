@@ -1,0 +1,92 @@
+0x823857D0
+[JPN]
+0	アレグレット
+1	ポルカ
+2	ビート
+3	ショパン
+4	ビオラ
+5	サルサ
+6	ジルバ
+7	ファルセット
+8	クラベス
+9	マーチ
+10	クレッシェンド
+11	セレナーデ
+[USA]
+0	Allegretto
+1	Polka
+2	Beat
+3	Frederic
+4	Viola
+5	Salsa
+6	Jazz
+7	Falsetto
+8	Claves
+9	March
+10	Crescendo
+11	Serenade
+[GBR]
+0	Allegretto
+1	Polka
+2	Beat
+3	Chopin
+4	Viola
+5	Salsa
+6	Jazz
+7	Falsetto
+8	Claves
+9	March
+10	Crescendo
+11	Serenade
+[FRA]
+0	Allegretto
+1	Polka
+2	Piccolo
+3	Frédéric
+4	Harpe
+5	Salsa
+6	Jazz
+7	Mazurka
+8	Claves
+9	Marcia
+10	Crescendo
+11	Sérénade
+[ITA]
+0	Allegretto
+1	Polka
+2	Beat
+3	Frederic
+4	Viola
+5	Salsa
+6	Jazz
+7	Mazurka
+8	Claves
+9	Marcia
+10	Crescendo
+11	Serenata
+[DEU]
+0	Allegretto
+1	Polka
+2	Beat
+3	Frédéric
+4	Viola
+5	Salsa
+6	Jazz
+7	Mazurka
+8	Claves
+9	Gavotte
+10	Crescendo
+11	Serenade
+[ESP]
+0	Allegretto
+1	Polka
+2	Beat
+3	Frederic
+4	Arpa
+5	Salsa
+6	Jazz
+7	Mazurka
+8	Claves
+9	Marcha
+10	Crescendo
+11	Serenata

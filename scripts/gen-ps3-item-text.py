@@ -17,7 +17,8 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 TEXT_DIR = os.path.join(ROOT, "src", "guest_data", "ps3", "text")
 OUT = os.path.join(ROOT, "src", "engine", "ps3_item_text.generated.inc")
 FILES = ["items", "item_descriptions", "party_skills", "party_skill_help", "enemy_names",
-         "enemy_skills", "save_locations", "battle_level_help"]
+         "enemy_skills", "save_locations", "battle_level_help",
+         "shop_checkout_lines", "shop_sort_orders", "score_titles", "characters", "battle_commands"]
 SCRAPBOOK = "scrapbook"
 
 
