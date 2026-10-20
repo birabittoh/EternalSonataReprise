@@ -466,6 +466,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/costume_system.cpp
     src/engine/character_roster.cpp
     src/engine/party_arrays.cpp
+    src/engine/progression_curves.cpp
     src/engine/party_positions.cpp
     src/engine/party_bounds.cpp
     src/engine/party_camp_menu.cpp

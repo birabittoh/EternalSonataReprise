@@ -16,6 +16,7 @@
 #include "party_arrays.h"
 #include "character_roster.h"
 #include "ps3_appkeep.h"
+#include "progression_curves.h"
 #include "ps3_item_tables.h"
 #include "shop_stock.h"
 #include "target.h"
@@ -541,6 +542,7 @@ uint32_t EternalSonataPartyRemap(uint32_t ea, const char* function, bool listed,
 // extra entries is what a save without a record loads with.
 REX_EXTERN(__imp__sub_821E7138);
 REX_HOOK_RAW(sub_821E7138) {
+  eternalsonata::ApplyProgressionCurves();
   __imp__sub_821E7138(ctx, base);
   eternalsonata::CaptureNewGame();
 }

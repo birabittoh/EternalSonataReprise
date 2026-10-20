@@ -299,6 +299,7 @@ constexpr std::array kBasicCvarNames = {
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
+    "progression_curves",
     "enemy_hp_multiplier",
     "enemy_damage_multiplier", "auto_parry", "ui_scale",
     "right_trigger_behavior", "special_hold_time", "ranged_special_buffer",
@@ -805,6 +806,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawPromptDeviceRow();
         DrawOverrideButtonGlyphsRow();
         DrawPlatformChoiceRow("photo_price_algorithm");
+        DrawPlatformChoiceRow("progression_curves");
         DrawRightTriggerRow();
         if (EternalSonataGetEffectiveRightTriggerBehavior() ==
             ETERNALSONATA_BATTLE_RIGHT_TRIGGER_CAMERA) {
