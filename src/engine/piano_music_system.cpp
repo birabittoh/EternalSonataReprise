@@ -352,6 +352,7 @@ REX_HOOK_RAW(sub_82229FC0) {
 // found.
 REX_EXTERN(__imp__sub_8222B260);
 REX_HOOK_RAW(sub_8222B260) {
+  ctx.r3.u64 = eternalsonata::PianoMusicKeyMask(ctx.r3.u32);
   const u32 added = ctx.r3.u32;
   __imp__sub_8222B260(ctx, base);
   if (added) {

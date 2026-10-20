@@ -194,6 +194,19 @@ uint32_t Ps3PianoMusicList(uint32_t list) {
   return copy;
 }
 
+uint32_t PianoMusicKeyMask(uint32_t retail_mask) {
+  if (PianoMusicCount() != kPs3Count)
+    return retail_mask;
+  // Rows from Little Dog Waltz on move down one. The key only ever answers
+  // with all seven, and the PS3 piece has no file in it, so it rides along.
+  constexpr uint32_t kAll = (1u << kRetailCount) - 1;
+  constexpr uint32_t kBefore = (1u << 4) - 1;
+  uint32_t mask = (retail_mask & kBefore) | ((retail_mask & ~kBefore & kAll) << 1);
+  if ((retail_mask & kAll) == kAll)
+    mask |= 1u << 4;
+  return mask;
+}
+
 }  // namespace eternalsonata
 
 using eternalsonata::PianoMusicCount;

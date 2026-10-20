@@ -18,4 +18,8 @@ uint32_t PianoMusicFlagTable();
 // The edited copy of a Piano Music screen list, or 0 to keep `list`.
 uint32_t Ps3PianoMusicList(uint32_t list);
 
+// The Piano Music Key's row mask, which counts the 360's seven rows, in the
+// menu's own row order.
+uint32_t PianoMusicKeyMask(uint32_t retail_mask);
+
 }  // namespace eternalsonata
