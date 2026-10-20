@@ -121,6 +121,8 @@ class EternalsonataApp : public rex::ReXApp {
     eternalsonata::PlumeSetOverlayDrawer(imgui_drawer());
     eternalsonata::PlumeSetPipelineCachePath(user_data_root() / "cache" / "pipelines.bin");
     eternalsonata::InitNativeRenderer(window());
+    // Applies ui_scale to the F-key overlays, the start screen's included.
+    ui_scale_applier_ = eternalsonata::CreateUiScaleApplier(imgui_drawer());
     eternalsonata::BindIntroScreen(imgui_drawer(), &app_context());
     eternalsonata::BindWindowTarget(window(), user_settings_path());
 
@@ -547,9 +549,6 @@ class EternalsonataApp : public rex::ReXApp {
     // registers it for input; it draws nothing, and samples nothing, until F3
     // turns it on. See src/guest_profiler.h.
     guest_profiler_overlay_ = eternalsonata::CreateGuestProfilerOverlay(imgui_drawer());
-
-    // Applies the ui_scale cvar to every overlay, so it lives as long as they do.
-    ui_scale_applier_ = eternalsonata::CreateUiScaleApplier(imgui_drawer());
 
     // Constructed unconditionally, same reasoning as the profiler overlay
     // above: the constructor is what registers the back/gamepad-Back binds.
