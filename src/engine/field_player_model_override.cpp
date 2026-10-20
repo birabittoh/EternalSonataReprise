@@ -634,3 +634,24 @@ REX_HOOK_RAW(sub_820FCF80) {
   }
   HideWeaponMeshes(REX_LOAD_U32(map_manager + kFieldObjectPtrOffset), character);
 }
+
+// Beat and Viola have a 0.30 collision radius, too small for the interaction
+// range of some NPCs (Forte City shopkeepers); Salsa's 0.33 is enough.
+constexpr float kMinLeaderRadius = 0.33f;
+
+REX_EXTERN(__imp__sub_820F1290);
+
+REX_HOOK_RAW(sub_820F1290) {
+  const uint32_t object = ctx.r3.u32;
+  __imp__sub_820F1290(ctx, base);
+  if (REX_LOAD_U16(object + 8) == kObjectKindPC && g_applied_character > 0) {
+    const uint32_t bits = REX_LOAD_U32(object + 68);
+    float radius;
+    std::memcpy(&radius, &bits, sizeof(radius));
+    if (radius < kMinLeaderRadius) {
+      uint32_t out;
+      std::memcpy(&out, &kMinLeaderRadius, sizeof(out));
+      REX_STORE_U32(object + 68, out);
+    }
+  }
+}
