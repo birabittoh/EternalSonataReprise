@@ -1388,12 +1388,31 @@ bool LoadPcmWav(const std::filesystem::path& path, AudioPatch& patch, std::strin
   }
   // The PS3 converter's sidecars keep the clips encoded (ps3_audio.cpp).
   if (pcm && patch.channels && patch.sample_rate && format == ps3::kWaveAtrac3) {
-    if (!rex::audio::DecodeAtrac3(pcm, pcm_size, patch.sample_rate, uint16_t(patch.channels),
-                                  block_align, patch.samples) ||
+    // A whole clip loop wraps into a decoder with no history, which fades the
+    // first frame in. Decode the last frame first and drop its output.
+    const size_t blocks = block_align ? pcm_size / block_align : 0;
+    const bool whole_loop = !patch.inherit_loop_points && patch.loop_start == 0 && blocks > 1 &&
+                            patch.loop_end >= blocks * 1024u;
+    std::vector<uint8_t> primed;
+    const uint8_t* source = pcm;
+    size_t source_size = pcm_size;
+    if (whole_loop) {
+      primed.assign(pcm + (blocks - 1) * block_align, pcm + blocks * block_align);
+      primed.insert(primed.end(), pcm, pcm + blocks * block_align);
+      source = primed.data();
+      source_size = primed.size();
+    }
+    if (!rex::audio::DecodeAtrac3(source, source_size, patch.sample_rate,
+                                  uint16_t(patch.channels), block_align, patch.samples) ||
         patch.samples.empty()) {
       *error = "holds ATRAC3 that does not decode";
       patch.samples.clear();
       return false;
+    }
+    if (whole_loop) {
+      const size_t skip = size_t(1024u) * patch.channels;
+      if (patch.samples.size() > skip)
+        patch.samples.erase(patch.samples.begin(), patch.samples.begin() + skip);
     }
     patch.frame_count = uint32_t(patch.samples.size() / patch.channels);
     return true;
