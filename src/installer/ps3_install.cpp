@@ -29,7 +29,7 @@ constexpr const char* kShipped = "ps3-shipped.txt";
 // every conversion change. A tree converted before the current revision lacks
 // it and has to be unpacked again.
 constexpr const char* kFresh = "ps3-fresh.stamp";
-constexpr const char* kFreshVersion = "1";
+constexpr const char* kFreshVersion = "2";
 // Present while a conversion runs: the tree needs another.
 constexpr const char* kBusy = "ps3-converting.stamp";
 // The outputs written over their shipped file, as "size crc32 path" lines.
