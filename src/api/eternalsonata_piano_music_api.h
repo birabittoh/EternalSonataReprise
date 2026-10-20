@@ -1,8 +1,8 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
-// Public C ABI for the Piano Music menu: the seven Chopin piano pieces the
-// game lists there, whether each one is unlocked, and a way to lock or unlock
-// any of them.
+// Public C ABI for the Piano Music menu: the Chopin piano pieces the game
+// lists there (seven on the 360, eight in PS3 mode), whether each one is
+// unlocked, and a way to lock or unlock any of them.
 //
 // A mod does NOT link against this project. Copy this header into the mod and
 // resolve the entry points at runtime out of the host executable, the same way
@@ -24,7 +24,7 @@
 //     ETERNALSONATA_PIANO_MUSIC_EVENT_UNLOCKED "eternalsonata.pianomusic.unlocked"
 //     ETERNALSONATA_PIANO_MUSIC_EVENT_LOCKED   "eternalsonata.pianomusic.locked"
 //
-// In both the payload's `u64` is the piece index (0..6, the same value
+// In both the payload's `u64` is the piece index (the same value
 // EternalSonataPianoMusic::index carries) and `f64` is the piece's flag id, so
 // a subscriber can go straight to EternalSonataGetPianoMusic. `bytes` is empty.
 //
@@ -54,16 +54,19 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_PIANO_MUSIC_ABI_VERSION 1u
+// Version 2: the count is live, eight in PS3 mode.
+#define ETERNALSONATA_PIANO_MUSIC_ABI_VERSION 2u
 
 // Event names on the mod registry bus. See the note at the top.
 #define ETERNALSONATA_PIANO_MUSIC_EVENT_UNLOCKED "eternalsonata.pianomusic.unlocked"
 #define ETERNALSONATA_PIANO_MUSIC_EVENT_LOCKED "eternalsonata.pianomusic.locked"
 
-// The menu lists exactly seven pieces and the game offers no way to grow it:
-// the id table it walks is seven entries wide and the screen's own row layout
-// is built from the same walk.
+// The 360 menu lists seven pieces. PS3 mode lists the PS3's eight, Little Dog
+// Waltz fifth, so every later piece's index is one higher there; the flag id
+// is the identity that holds in both. Size buffers with MAX_COUNT and walk
+// EternalSonataGetPianoMusicCount() entries.
 #define ETERNALSONATA_PIANO_MUSIC_COUNT 7
+#define ETERNALSONATA_PIANO_MUSIC_MAX_COUNT 8
 
 // Results. Everything >= 0 is success.
 enum {
@@ -80,12 +83,12 @@ enum {
 // and its Chopin history pages are not strings here: they live in the packed
 // UI text blob and are reached by numeric id, so the ids are exposed instead.
 typedef struct EternalSonataPianoMusic {
-  // Position in the menu, 0..6, and the stable identity: the list never
-  // reorders. 0 is Raindrops and 6 is Heroic.
+  // Position in the menu. 0 is Raindrops and the last is Heroic.
   int32_t index;
 
-  // The piece's slot in the game's 100-entry collectible flag array, 80..86.
-  // It doubles as the number in the piece's own sound\cxs\MP1<n>.wav.
+  // The piece's slot in the game's 100-entry collectible flag array, 80..86,
+  // and 88 for Little Dog Waltz. It doubles as the number in the piece's own
+  // sound\cxs\MP1<n>.wav.
   int32_t flag_id;
 
   // Whether the menu draws the piece's title rather than "???".
@@ -119,18 +122,18 @@ typedef uint32_t (*EternalSonataPianoMusicAbiVersionFn)(void);
 // finished coming up.
 typedef int (*EternalSonataIsPianoMusicAvailableFn)(void);
 
-// Always ETERNALSONATA_PIANO_MUSIC_COUNT. Present so a mod can size a buffer
-// without hard-coding the constant it was built against.
+// How many pieces the menu lists: ETERNALSONATA_PIANO_MUSIC_COUNT on the 360,
+// ETERNALSONATA_PIANO_MUSIC_MAX_COUNT in PS3 mode.
 typedef int (*EternalSonataGetPianoMusicCountFn)(void);
 
-// How many pieces are unlocked right now, 0..7, or a negative error.
+// How many pieces are unlocked right now, or a negative error.
 typedef int (*EternalSonataGetUnlockedPianoMusicCountFn)(void);
 
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
 
-// Fills `out` with the piece at `index` (0..6). Returns
+// Fills `out` with the piece at `index`, below the count. Returns
 // ETERNALSONATA_PIANO_MUSIC_OK or a negative error.
 typedef int (*EternalSonataGetPianoMusicFn)(int index, EternalSonataPianoMusic* out);
 

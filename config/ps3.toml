@@ -71,3 +71,79 @@ address = 0x821E948C
 name = "EternalSonataPs3MagicOrder"
 registers = ["r6"]
 after_instruction = true
+
+# The PS3's eighth Piano Music piece (ps3_piano_music.cpp): the readers of the
+# flag id table take an eight entry copy.
+[[midasm_hook]]
+address = 0x8222A1E4
+name = "EternalSonataPianoFlagTable"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222AD1C
+name = "EternalSonataPianoFlagTable"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222AD38
+name = "EternalSonataPianoFlagTable"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222B390
+name = "EternalSonataPianoFlagTable"
+registers = ["r20"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222B4C0
+name = "EternalSonataPianoFlagTable"
+registers = ["r21"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222B4A0
+name = "EternalSonataPianoFlagTableEnd"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222B550
+name = "EternalSonataPianoFlagTableEnd"
+registers = ["r11"]
+after_instruction = true
+
+# sub_8222A650's two seven row loops.
+[[midasm_hook]]
+address = 0x8222A6E4
+name = "EternalSonataPianoTitleWidthLoop"
+registers = ["r30"]
+jump_address_on_true = 0x8222A6A0
+
+[[midasm_hook]]
+address = 0x8222A87C
+name = "EternalSonataPianoRowLoop"
+registers = ["r27", "r30"]
+jump_address_on_true = 0x8222A758
+
+# sub_8222B570's title art.
+[[midasm_hook]]
+address = 0x8222B614
+name = "EternalSonataPianoArtTable"
+registers = ["r29"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222B61C
+name = "EternalSonataPianoArtStride"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8222B82C
+name = "EternalSonataPianoStripRow"
+registers = ["r11"]
+after_instruction = true

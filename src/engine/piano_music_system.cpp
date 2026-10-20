@@ -1,5 +1,5 @@
-// eternalsonata - Piano Music: reading and changing which of the seven Chopin
-// piano pieces the menu has unlocked, and the mod-facing API.
+// eternalsonata - Piano Music: reading and changing which of the Chopin piano
+// pieces the menu has unlocked, and the mod-facing API.
 //
 // Everything here was derived from the retail xex. The short version:
 //
@@ -9,7 +9,8 @@
 //     and the script VM sets a single entry through sub_820E8030.
 //
 //   * dword_82016134 is the seven-entry table of flag ids the Piano Music
-//     screen walks: 80, 81, ... 86, one per piece in menu order. The same
+//     screen walks: 80, 81, ... 86, one per piece in menu order. PS3 mode
+//     walks an eight-entry copy instead (ps3_piano_music.cpp). The same
 //     number names the piece's music, sound\cxs\MP1<n>.wav, which is why
 //     sub_821FBBD0 can take a filename and light the matching flag.
 //
@@ -59,6 +60,7 @@
 
 #include "eternalsonata_piano_music_api.h"
 #include "piano_music_system.h"
+#include "ps3_piano_music.h"
 
 namespace eternalsonata {
 namespace {
@@ -72,17 +74,15 @@ namespace {
 constexpr uint32_t kFlagsAddr = 0x8255EE70u;
 constexpr uint32_t kFlagsCount = 100u;
 
-// u32[7], the flag id per piece in menu order. Read rather than hard-coded so
+// The flag id table is PianoMusicFlagTable(), read rather than hard-coded so
 // this file keeps agreeing with the table the screen actually walks.
-constexpr uint32_t kFlagIdTableAddr = 0x82016134u;
 
-// u8[7], how many history pages each piece has.
+// u8 per piece, how many history pages each has.
 constexpr uint32_t kStoryPagesAddr = 0x82029D30u;
 
 // The session-only "available anyway" bitmask, bit i per piece.
 constexpr uint32_t kSessionMaskAddr = 0x8243F35Cu;
 
-constexpr int kCount = ETERNALSONATA_PIANO_MUSIC_COUNT;
 
 // Text id of the "???" the menu draws in place of a locked piece's title.
 constexpr int32_t kLockedTitleTextId = 9;
@@ -98,7 +98,7 @@ rex::Runtime* g_runtime = nullptr;
 // before the first tick and after a load, which is what makes a restored save
 // adopt silently instead of republishing everything it holds.
 bool g_have_snapshot = false;
-std::array<bool, kCount> g_snapshot{};
+std::array<bool, ETERNALSONATA_PIANO_MUSIC_MAX_COUNT> g_snapshot{};
 
 // Host mirror of the session-only mask. See the note at the top: the guest
 // dword is shared scratch, so it is only trustworthy while the piano screen
@@ -169,16 +169,18 @@ void WriteGuestByte(uint32_t address, uint8_t value) {
 
 bool Bound() { return g_runtime != nullptr; }
 
+int Count() { return PianoMusicCount(); }
+
 bool ListReadable() {
   return Bound() && Readable(kFlagsAddr, kFlagsCount) &&
-         Readable(kFlagIdTableAddr, 4u * kCount) && Readable(kSessionMaskAddr, 4u);
+         Readable(PianoMusicFlagTable(), 4u * Count()) && Readable(kSessionMaskAddr, 4u);
 }
 
 // Flag id of the piece at `index`, or -1 if the table holds something outside
 // the flag array (which would mean this file and the game have drifted apart).
 int FlagId(int index) {
   const auto id = static_cast<int32_t>(
-      ReadGuest<uint32_t>(kFlagIdTableAddr + static_cast<uint32_t>(index) * 4u));
+      ReadGuest<uint32_t>(PianoMusicFlagTable() + static_cast<uint32_t>(index) * 4u));
   return (id < 0 || id >= static_cast<int32_t>(kFlagsCount)) ? -1 : id;
 }
 
@@ -208,7 +210,7 @@ void ReadPiece(int index, EternalSonataPianoMusic* out) {
   out->locked_title_text_id = kLockedTitleTextId;
   out->first_story_text_id = 10 * (index + 1);
   out->story_page_count =
-      Readable(kStoryPagesAddr, kCount)
+      Readable(kStoryPagesAddr, Count())
           ? static_cast<int32_t>(ReadGuestByte(kStoryPagesAddr + static_cast<uint32_t>(index)))
           : 0;
 }
@@ -281,13 +283,13 @@ void Tick() {
       return;
     }
 
-    std::array<bool, kCount> state{};
-    for (int i = 0; i < kCount; ++i) {
+    std::array<bool, ETERNALSONATA_PIANO_MUSIC_MAX_COUNT> state{};
+    for (int i = 0; i < Count(); ++i) {
       state[static_cast<size_t>(i)] = Unlocked(i);
     }
 
     if (g_have_snapshot) {
-      for (int i = 0; i < kCount; ++i) {
+      for (int i = 0; i < Count(); ++i) {
         const auto slot = static_cast<size_t>(i);
         if (state[slot] == g_snapshot[slot]) {
           continue;
@@ -374,7 +376,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsPianoMusicAvailable(void) {
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPianoMusicCount(void) {
-  return ETERNALSONATA_PIANO_MUSIC_COUNT;
+  return eternalsonata::PianoMusicCount();
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetUnlockedPianoMusicCount(void) {
@@ -384,7 +386,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetUnlockedPianoMusicCount(voi
     return ETERNALSONATA_PIANO_MUSIC_ERR_UNAVAILABLE;
   }
   int count = 0;
-  for (int i = 0; i < kCount; ++i) {
+  for (int i = 0; i < Count(); ++i) {
     if (Unlocked(i)) {
       ++count;
     }
@@ -398,7 +400,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetPianoMusic(
   if (!out) {
     return ETERNALSONATA_PIANO_MUSIC_ERR_INVALID_ARGUMENT;
   }
-  if (index < 0 || index >= ETERNALSONATA_PIANO_MUSIC_COUNT) {
+  if (index < 0 || index >= PianoMusicCount()) {
     return ETERNALSONATA_PIANO_MUSIC_ERR_NO_SUCH_PIECE;
   }
   std::lock_guard<std::mutex> lock(g_mutex);
@@ -420,9 +422,9 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetAllPianoMusic(
     return ETERNALSONATA_PIANO_MUSIC_ERR_UNAVAILABLE;
   }
   if (max == 0) {
-    return kCount;
+    return Count();
   }
-  const int written = std::min(max, kCount);
+  const int written = std::min(max, Count());
   for (int i = 0; i < written; ++i) {
     ReadPiece(i, &out[i]);
   }
@@ -431,7 +433,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetAllPianoMusic(
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsPianoMusicUnlocked(int index) {
   using namespace eternalsonata;
-  if (index < 0 || index >= ETERNALSONATA_PIANO_MUSIC_COUNT) {
+  if (index < 0 || index >= PianoMusicCount()) {
     return ETERNALSONATA_PIANO_MUSIC_ERR_NO_SUCH_PIECE;
   }
   std::lock_guard<std::mutex> lock(g_mutex);
@@ -444,7 +446,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsPianoMusicUnlocked(int index
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetPianoMusicUnlocked(int index,
                                                                         int unlocked) {
   using namespace eternalsonata;
-  if (index < 0 || index >= ETERNALSONATA_PIANO_MUSIC_COUNT) {
+  if (index < 0 || index >= PianoMusicCount()) {
     return ETERNALSONATA_PIANO_MUSIC_ERR_NO_SUCH_PIECE;
   }
   std::lock_guard<std::mutex> lock(g_mutex);
@@ -462,7 +464,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetAllPianoMusicUnlocked(int u
     return ETERNALSONATA_PIANO_MUSIC_ERR_UNAVAILABLE;
   }
   int changed = 0;
-  for (int i = 0; i < kCount; ++i) {
+  for (int i = 0; i < Count(); ++i) {
     if (SetUnlockedLocked(i, unlocked != 0)) {
       ++changed;
     }

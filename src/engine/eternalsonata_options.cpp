@@ -32,6 +32,7 @@
 #include "party_status_menu.h"
 #include "party_system.h"
 #include "ps3_item_tables.h"
+#include "ps3_piano_music.h"
 #include "scrapbook_menu.h"
 #include "settings.h"
 #include "ui_text.h"
@@ -3376,6 +3377,9 @@ REX_HOOK_RAW(sub_821F2F38) {
     ctx.r4.u32 = swapped;
   }
   if (const u32 swapped = party_shop_menu::MaybeSwapShopList(base, ctx.r4.u32)) {
+    ctx.r4.u32 = swapped;
+  }
+  if (const u32 swapped = eternalsonata::Ps3PianoMusicList(ctx.r4.u32)) {
     ctx.r4.u32 = swapped;
   }
 

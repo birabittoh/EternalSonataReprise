@@ -80,3 +80,30 @@ base}` at +0x14. The English block's entry 0 is the first piece's title.
 the page count from `0x82029D30[index]`, and starts
 `sound\cxs\MP1<n>.wav`, adding 10 to `n` for one audio configuration.
 `sub_8222B8D8` is the page turn.
+
+## PS3 mode: eight pieces
+
+The PS3 inserts Little Dog Waltz as the fifth piece. Its EBOOT keeps the
+piano tables together at `0x46A980`: the title art (`{image, x, row}`, eight
+per language), the number strip's row per piece (`+0x300` for Japanese,
+`+0x320` otherwise), the flag ids (`+0x340`: 80, 81, 82, 83, 88, 84, 85, 86)
+and the page counts (`+0x360`: 8, 5, 5, 6, 6, 7, 7, 9). Little Dog Waltz is
+flag 88, so `MP188.wav` lights it through `sub_821FBBD0` like any other
+piece, and the save already carries it. Its history pages are ids 50..55 of
+the PS3 text block, which PS3 mode serves in place of `0x8203DD60`.
+
+`src/engine/ps3_piano_music.cpp` grows the 360 menu to match, in PS3 mode
+only:
+
+* The flag id table cannot grow in place (`0x82016150` is other data), so
+  every `lis`/`addi` that loads it takes a guest copy, and `sub_8222B348`'s
+  walk ends one entry later.
+* The page counts take their eighth byte from padding at `0x82029D37`.
+* The screen list (one per language, `0x82031068` for English) gets eight
+  row frames and cursor stops at the PS3's 68px pitch, which fit the same
+  543px box. `sub_8222A650` runs both of its loops once more and steps its
+  cursor rows by 68. The eighth row's text takes layer id `0x1B0` and its
+  frame panel 9, neither used by anything else on the screen.
+* `sub_8222B570` reads the PS3's title art table, indexed `8 * language +
+  piece`, and the strip row from the PS3's remap. The PS3 atlas also moves
+  some of the first seven titles, so the whole table is the PS3's.

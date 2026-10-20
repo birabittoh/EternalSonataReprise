@@ -10,7 +10,8 @@ Text: each BTX blob in .rdata/.data is a UTF-8 file in src/guest_data/text/
 named after what it holds. The first line is its guest address; then one
 block per language, `[USA]`, holding `id<TAB>text` lines. Japanese is
 cp932 in the guest, the other six languages cp1252. `\\n` is a literal
-backslash sequence the game interprets, not a line break.
+backslash sequence the game interprets, not a line break; a real control
+character, which only the PS3 text has, is `\\xNN`.
 
 The text is edited here (the console wording is gone), so a blob may differ
 from the retail one string by string, but it keeps its languages and ids and
@@ -188,12 +189,21 @@ def encode_btx(langs):
     return bytes(out)
 
 
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+CONTROL_ESCAPE = re.compile(r"\\x([0-9a-f]{2})")
+
+
 def write_text(path, address, langs):
+    """Control characters become `\\xNN`; every other backslash is the
+    game's own markup and stays as it is."""
     lines = [f"0x{address:08X}"]
     for lang, strings in langs.items():
         lines.append(f"[{lang}]")
         for i, s in enumerate(strings):
-            lines.append(f"{i}\t{s.decode(codec(lang))}")
+            text = s.decode(codec(lang))
+            if CONTROL_ESCAPE.search(text):
+                raise ValueError(f"{path}: [{lang}] {i} holds a literal \\x escape")
+            lines.append(f"{i}\t" + CONTROL.sub(lambda m: f"\\x{ord(m[0]):02x}", text))
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -215,6 +225,7 @@ def read_text(path):
         sid, _, text = line.partition("\t")
         if int(sid) != len(current):
             raise ValueError(f"{path}:{n}: expected id {len(current)}")
+        text = CONTROL_ESCAPE.sub(lambda m: chr(int(m[1], 16)), text)
         current.append(text.encode(codec(lang)))
     return address, langs
 
