@@ -54,6 +54,7 @@ BLOCKS = [
     (0x711FE8, 0x82332D90, "enemy_names"),
     (0x6F3370, 0x82316500, "enemy_skills"),
     (0x771228, 0x822F43F8, "save_locations"),
+    (0x440780, 0x82038978, "battle_level_help"),
 ]
 PS3_EQUIP_BITS = {22: 13, 23: 14}
 
