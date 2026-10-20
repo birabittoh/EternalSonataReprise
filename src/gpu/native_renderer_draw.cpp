@@ -2838,10 +2838,23 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     uint32_t swizzle = 0x688u;
     TextureFetch fetch;
     if ((draw_texture_mask & (1u << stage)) != 0 &&
-        GetBoundTextureFetch(call.memory_base, stage, fetch, nullptr) && fetch.format == 49) {
-      // BC5 exposes RG on the host, while Xenos replicates its last component
-      // before applying the fetch swizzle.
-      swizzle = fetch.swizzle | 0x80000000u;
+        GetBoundTextureFetch(call.memory_base, stage, fetch, nullptr)) {
+      if (fetch.format == 49) {
+        // BC5 exposes RG on the host, while Xenos replicates its last component
+        // before applying the fetch swizzle.
+        swizzle = fetch.swizzle | 0x80000000u;
+      } else if (fetch.format == 6) {
+        // The host view is BGRA, so the guest's ZYXW (A8R8G8B8) is identity
+        // here. X8R8G8B8 asks for a constant 1 alpha: the scene copies are that
+        // format, and effect sprites leave holes in the alpha they would expose.
+        swizzle = 0;
+        for (uint32_t channel = 0; channel < 4; ++channel) {
+          uint32_t selector = (fetch.swizzle >> (channel * 3)) & 7u;
+          if (selector < 3)
+            selector = 2 - selector;
+          swizzle |= selector << (channel * 3);
+        }
+      }
     }
     draw_state[16 + stage] = swizzle;
   }
