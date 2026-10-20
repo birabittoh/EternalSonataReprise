@@ -422,8 +422,15 @@ std::string UnpackPs3Files(const std::vector<ImageFile>& inputs, const std::stri
   for (size_t a = 0; a < sorted.size(); ++a) {
     const ImageFile& in = *sorted[a];
     char head[16];
-    if (!in.read(0, head, 16) || std::memcmp(head, "FILE", 4) != 0)
-      return in.name + " is not a PS3 archive.";
+    if (!in.read(0, head, 16))
+      return in.name + " could not be read (" + std::to_string(in.size) + " bytes).";
+    if (std::memcmp(head, "FILE", 4) != 0) {
+      char seen[16];
+      std::snprintf(seen, sizeof(seen), "%02X%02X%02X%02X", uint8_t(head[0]), uint8_t(head[1]),
+                    uint8_t(head[2]), uint8_t(head[3]));
+      return in.name + " is not a PS3 archive (starts with " + seen + ", " +
+             std::to_string(in.size) + " bytes).";
+    }
     const Bytes h(head, head + 16);
     const uint32_t count = ps3::Rd32(h, 8);
     struct Entry {
@@ -572,6 +579,8 @@ std::string UnpackPs3(const fs::path& archives, const fs::path& out_dir,
   for (const fs::path& input : inputs) {
     streams.emplace_back(input, std::ios::binary);
     std::ifstream* in = &streams.back();
+    if (!*in)
+      return "Could not open " + input.string() + ".";
     files.push_back({input.filename().string(), fs::file_size(input, ec),
                      [in](uint64_t off, void* dst, uint64_t len) {
                        in->clear();
