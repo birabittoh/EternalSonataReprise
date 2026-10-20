@@ -301,7 +301,7 @@ constexpr std::array kBasicCvarNames = {
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
     "enemy_hp_multiplier",
     "enemy_damage_multiplier", "auto_parry", "ui_scale",
-    "right_trigger_behavior", "special_hold_time",
+    "right_trigger_behavior", "special_hold_time", "ranged_special_buffer",
     "party_tactical_time_multiplier", "party_action_time_multiplier",
     "enemy_action_time_multiplier",
     "save_row_portraits", "force_japanese_font", "skip_intro", "show_start_screen"};
@@ -804,12 +804,13 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         }
         DrawPromptDeviceRow();
         DrawOverrideButtonGlyphsRow();
-        DrawPhotoPriceAlgorithmRow();
+        DrawPlatformChoiceRow("photo_price_algorithm");
         DrawRightTriggerRow();
         if (EternalSonataGetEffectiveRightTriggerBehavior() ==
             ETERNALSONATA_BATTLE_RIGHT_TRIGGER_CAMERA) {
           DrawSensitivityRow("special_hold_time", 0.1f, 5.0f);
         }
+        DrawPlatformChoiceRow("ranged_special_buffer");
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();
         DrawCvarRow("show_start_screen");
@@ -1551,9 +1552,10 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
-  // Platform names stay untranslated, so only Auto has a key.
-  void DrawPhotoPriceAlgorithmRow() {
-    const auto* entry = rex::cvar::GetFlagInfo("photo_price_algorithm");
+  // A cvar choosing between the 360's and the PS3's behaviour. Platform names
+  // stay untranslated, so only Auto has a key.
+  void DrawPlatformChoiceRow(const char* name) {
+    const auto* entry = rex::cvar::GetFlagInfo(name);
     if (!entry)
       return;
     struct Option {
@@ -1568,17 +1570,17 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         cur_idx = i;
     }
 
-    if (DrawRowLabel("photo_price_algorithm", "photo_price_algorithm")) {
-      ImGui::SetTooltip("%s", Tip("photo_price_algorithm"));
+    if (DrawRowLabel(name, name)) {
+      ImGui::SetTooltip("%s", Tip(name));
     }
     ImGui::SameLine(Px(180.0f));
     ImGui::SetNextItemWidth(Px(160.0f));
-    ImGui::PushID("photo_price_algorithm");
+    ImGui::PushID(name);
     if (ImGui::BeginCombo("##v", options[cur_idx].label)) {
       for (int i = 0; i < static_cast<int>(options.size()); ++i) {
         const bool selected = i == cur_idx;
         if (ImGui::Selectable(options[i].label, selected)) {
-          rex::cvar::SetFlagByName("photo_price_algorithm", options[i].id, /*persist=*/true);
+          rex::cvar::SetFlagByName(name, options[i].id, /*persist=*/true);
           SaveBasic();
         }
         if (selected)

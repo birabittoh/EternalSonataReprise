@@ -40,6 +40,13 @@ REXCVAR_DEFINE_DOUBLE(special_hold_time, 0.5, "Eternal Sonata",
     .range(0.1, 5.0)
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
+REXCVAR_DEFINE_STRING(ranged_special_buffer, "auto", "Eternal Sonata",
+                      "Whether Y during a ranged attack queues the special attack: 360 "
+                      "(dropped), ps3 (queued, even once the turn timer is out) or auto "
+                      "(follows the game data)")
+    .allowed({"auto", "360", "ps3"})
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
 namespace {
 
 constexpr u32 kPadRecords = 0x824BB418u;
@@ -55,7 +62,12 @@ constexpr u32 kPadRightTrigger = 0x1C8u;  // float
 constexpr u32 kRightTriggerBit = 0x2000000u;
 
 constexpr u32 kObjectOwner = 32u;
+constexpr u32 kObjectState = 4u;
+constexpr u32 kObjectAction = 80u;
 constexpr u32 kObjectTimer = 116u;  // float
+constexpr u32 kInputState = 8u;
+constexpr u32 kRangedAttackState = 62u;
+constexpr u32 kActionSpecial = 4u;
 constexpr u32 kOwnerPad = 81697u;   // byte
 constexpr u32 kOwnerSide = 0x13FB4u;
 constexpr u32 kOwnerSpecials = 0x13EA4u;  // u16 light 1, dark 1, light 2, dark 2
@@ -66,6 +78,9 @@ bool g_right_trigger[kPadCount] = {};
 
 // Per battle object: Y fired this hold, so the rest of the hold is ignored.
 std::unordered_map<u32, bool> g_fired;
+
+// Per battle object: a special is queued during the ranged attack.
+std::unordered_map<u32, bool> g_queued;
 
 int Behavior() {
   const std::string& value = REXCVAR_GET(right_trigger_behavior);
@@ -81,6 +96,11 @@ bool AltSpecial() {
   if (behavior == ETERNALSONATA_BATTLE_RIGHT_TRIGGER_AUTO)
     return eternalsonata::IsPs3Target();
   return behavior == ETERNALSONATA_BATTLE_RIGHT_TRIGGER_ALT_SPECIAL;
+}
+
+bool BufferRangedSpecial() {
+  const std::string& value = REXCVAR_GET(ranged_special_buffer);
+  return value == "ps3" || (value == "auto" && eternalsonata::IsPs3Target());
 }
 
 float Threshold() {
@@ -142,6 +162,7 @@ REX_HOOK_RAW(sub_82128310) {
 
   if (!eternalsonata::GetRoomPresence().IsBattleActive()) {
     g_fired.clear();
+    g_queued.clear();
     return;
   }
   if (!AltSpecial())
@@ -159,10 +180,55 @@ REX_HOOK_RAW(sub_821C4E30) { PickSpecial(ctx, base, true); }
 // timer, then withholds it, which fires the special as a release would.
 REX_EXTERN(__imp__sub_821C5900);
 
+namespace {
+
+// The 360 ignores Y in states 57..67; the PS3 (sub_1C3CF0) takes it in 58 and
+// 62 too, so a special can be queued during a ranged attack (the
+// ranged_special_buffer setting). State 8 takes the
+// same path without touching the state checks inside, and a state the call
+// sets itself is kept.
+void HandleSpecialInput(PPCContext& ctx, u8* base) {
+  const u32 object = ctx.r3.u32;
+  const u32 state = REX_LOAD_U32(object + kObjectState);
+  const bool reroute =
+      BufferRangedSpecial() && (state == 58u || state == kRangedAttackState);
+  if (reroute)
+    REX_STORE_U32(object + kObjectState, kInputState);
+  __imp__sub_821C5900(ctx, base);
+  if (reroute && REX_LOAD_U32(object + kObjectState) == kInputState)
+    REX_STORE_U32(object + kObjectState, state);
+  g_queued[object] = reroute && state == kRangedAttackState &&
+                     REX_LOAD_U32(object + kObjectAction) == kActionSpecial;
+}
+
+}  // namespace
+
+// The ranged attack. The special consumer (sub_821C7470) drops a queued special
+// in state 62, and once the turn timer is out the state 4 the attack ends in
+// closes the turn. The PS3 (sub_13FAF0) checks for a queued special as the
+// attack ends instead; this starts it the way the consumer does after a melee
+// attack.
+REX_EXTERN(__imp__sub_82192F68);
+
+REX_HOOK_RAW(sub_82192F68) {
+  constexpr u32 kRangedStep = 0x58u;
+  constexpr u32 kLastRangedStep = 10u;
+  constexpr u32 kSpecialState = 66u;
+  const u32 object = ctx.r3.u32;
+  const bool ending = REX_LOAD_U32(object + kObjectState) == kRangedAttackState &&
+                      REX_LOAD_U32(object + kRangedStep) == kLastRangedStep;
+  __imp__sub_82192F68(ctx, base);
+  if (ending && REX_LOAD_U32(object + kObjectState) == 4u && g_queued[object]) {
+    g_queued[object] = false;
+    REX_STORE_U32(object + kObjectState, kSpecialState);
+    REX_STORE_U32(object + kObjectAction, 0u);
+  }
+}
+
 REX_HOOK_RAW(sub_821C5900) {
   const u32 object = ctx.r3.u32;
   if (!AltSpecial()) {
-    __imp__sub_821C5900(ctx, base);
+    HandleSpecialInput(ctx, base);
     return;
   }
   bool& fired = g_fired[object];
@@ -179,7 +245,7 @@ REX_HOOK_RAW(sub_821C5900) {
     ctx.r4.u64 = 0;
     fired = true;
   }
-  __imp__sub_821C5900(ctx, base);
+  HandleSpecialInput(ctx, base);
 }
 
 // ---------------------------------------------------------------------------
