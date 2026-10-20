@@ -4,8 +4,8 @@
 // record layouts, filled for twelve characters: Crescendo's and Serenade's
 // gear (items 402..431), their magic (119..132), and a rebalance of many
 // shared records. PS3 mode writes its records over the 360's in place, so
-// every reader sees them. The magic display order and the four item and magic
-// text blocks have room for ten characters only, so their readers are pointed
+// every reader sees them. The magic display order and the item, magic and
+// enemy and location text blocks lack the PS3 entries, so their readers are pointed
 // at guest copies instead. So are the item icon readers, for the icons the
 // PS3 inserts where the 360's icon table runs into the camp portraits.
 

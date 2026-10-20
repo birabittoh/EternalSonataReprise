@@ -16,7 +16,8 @@ from guest_data import encode_btx, read_text  # noqa: E402
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 TEXT_DIR = os.path.join(ROOT, "src", "guest_data", "ps3", "text")
 OUT = os.path.join(ROOT, "src", "engine", "ps3_item_text.generated.inc")
-FILES = ["items", "item_descriptions", "party_skills", "party_skill_help"]
+FILES = ["items", "item_descriptions", "party_skills", "party_skill_help", "enemy_names",
+         "enemy_skills", "save_locations"]
 SCRAPBOOK = "scrapbook"
 
 
