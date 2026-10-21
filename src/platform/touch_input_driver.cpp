@@ -297,10 +297,13 @@ void TouchInputDriver::RefreshLayout() {
   const float width = float(attached_window_->GetActualPhysicalWidth());
   const float height = float(attached_window_->GetActualPhysicalHeight());
   const double scale = REXCVAR_GET(touch_scale);
-  if (width == surface_width_ && height == surface_height_ && scale == layout_scale_) {
+  std::string ui_mode_button = rex::cvar::GetFlagByName("ui_mode_button");
+  if (width == surface_width_ && height == surface_height_ && scale == layout_scale_ &&
+      ui_mode_button == layout_ui_mode_button_) {
     return;
   }
   layout_scale_ = scale;
+  layout_ui_mode_button_ = std::move(ui_mode_button);
   surface_width_ = width;
   surface_height_ = height;
   layout_ = (width > 0.0f && height > 0.0f) ? layout_provider_(width, height) : TouchLayout();

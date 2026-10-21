@@ -266,6 +266,7 @@ constexpr std::array kGameDefaults = {
     DefaultValue{"keybind_dpad_down", ""},
     DefaultValue{"keybind_dpad_left", ""},
     DefaultValue{"keybind_dpad_right", ""},
+    DefaultValue{"ui_mode_button", "Back"},
     DefaultValue{"fullscreen", "false"},
     DefaultValue{"audio_mute", "false"},
     DefaultValue{"audio_volume", "1"},
@@ -295,7 +296,7 @@ constexpr std::array kBasicCvarNames = {
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
     "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "render_msaa", "render_fxaa", "render_anisotropy", "render_generated_mips", "aim_invert_x", "aim_invert_y",
-    "touch_controls", "touch_scale", "touch_opacity", "touch_hide_delay", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "override_button_glyphs", "prompt_device",
+    "touch_controls", "touch_scale", "touch_opacity", "touch_hide_delay", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "ui_mode_button", "override_button_glyphs", "prompt_device",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
@@ -785,6 +786,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         }
         DrawCvarRow("fast_forward_button");
         DrawMultiplierRow("fast_forward_max_speed", kFastForwardSpeedSteps, true);
+        DrawUiModeButtonRow();
         ImGui::Separator();
         DrawCvarRow("gyro_aim");
         if (rex::cvar::GetFlagByName("gyro_aim") == "true") {
@@ -1019,6 +1021,40 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PushID(name);
     if (rex::ui::DrawCvarWidget(*entry, Px(160.0f), /*persist=*/true)) {
       SaveBasic();
+    }
+    ImGui::PopID();
+  }
+
+  // ui_mode_button picked from a few safe choices; a hand edited combination
+  // still shows up as its own entry.
+  void DrawUiModeButtonRow() {
+    const auto* entry = rex::cvar::GetFlagInfo("ui_mode_button");
+    if (!entry)
+      return;
+    auto label = [](std::string id) {
+      for (size_t at = id.find('+'); at != std::string::npos; at = id.find('+', at + 3))
+        id.replace(at, 1, " + ");
+      return id;
+    };
+    std::vector<std::string> opts = {"Guide", "Back", "Back+Start", "LThumb+RThumb"};
+    const std::string current = entry->getter();
+    if (std::find(opts.begin(), opts.end(), current) == opts.end())
+      opts.push_back(current);
+    if (DrawRowLabel("ui_mode_button", "ui_mode_button")) {
+      if (const char* tip = Tip("ui_mode_button", entry->description.c_str()))
+        ImGui::SetTooltip("%s", tip);
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID("ui_mode_button");
+    if (ImGui::BeginCombo("##v", label(current).c_str())) {
+      for (const auto& opt : opts) {
+        if (ImGui::Selectable(label(opt).c_str(), opt == current)) {
+          rex::cvar::SetFlagByName("ui_mode_button", opt, /*persist=*/true);
+          SaveBasic();
+        }
+      }
+      ImGui::EndCombo();
     }
     ImGui::PopID();
   }

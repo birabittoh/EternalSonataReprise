@@ -5,24 +5,44 @@
 // The driver owns the machinery (hit-testing, multi-touch, the resulting
 // X_INPUT_STATE) and the overlay the drawing; this is the layout. It only lays
 // out the inputs the game actually asks for, which is why there is no D-pad, no
-// right stick, no Back and no stick press here even though the driver can
-// express all of them (see touch_input_driver.h).
+// right stick and no stick press here even though the driver can express all
+// of them (see touch_input_driver.h).
 
 #pragma once
 
 #include "touch_input_driver.h"
 
 #include <algorithm>
+#include <cctype>
+#include <string>
 #include <utility>
 
 #include <rex/cvar.h>
+#include <rex/ui/keybinds.h>
 
 #include "button_glyphs.h"
-#include "target.h"
 
 REXCVAR_DECLARE(double, touch_scale);
 
 namespace eternalsonata {
+
+// The buttons behind the SDK's ui_mode_button, which opens the overlays.
+inline uint16_t UiModeButtons() {
+  const uint16_t mask = rex::ui::ParseGamepadButton(rex::cvar::GetFlagByName("ui_mode_button"));
+  return mask ? mask : rex::input::X_INPUT_GAMEPAD_GUIDE;
+}
+
+// ui_mode_button's name as the startup hint shows it.
+inline std::string UiModeButtonName() {
+  std::string label = rex::cvar::GetFlagByName("ui_mode_button");
+  if (rex::ui::ParseGamepadButton(label) == 0) {
+    label = "Guide";
+  }
+  for (char& c : label) {
+    c = char(std::toupper(static_cast<unsigned char>(c)));
+  }
+  return label;
+}
 
 // Builds the pad for a surface of the given size.
 //
@@ -56,7 +76,6 @@ inline touch::TouchLayout BuildTouchLayout(float width, float height) {
   const float inset = u * 0.06f;
 
   // The art follows the override_button_glyphs setting; the pad itself stays positional.
-  const bool ps3 = IsPs3Target();
   if (button_glyphs::UsePlayStationArt()) {
     layout.face_style = TouchFaceStyle::kPlayStation;
   }
@@ -91,12 +110,12 @@ inline touch::TouchLayout BuildTouchLayout(float width, float height) {
                                      TouchTrigger::kRight));
   layout.controls.push_back(MakePill(width - margin - pill_rx - step, pill_y, pill_rx, pill_ry,
                                      "RB", X_INPUT_GAMEPAD_RIGHT_SHOULDER));
-  // Start and Guide sit side by side, the pair centred on the row rather than
-  // either one of them.
+  // Start and the overlay toggle sit side by side, the pair centred on the row
+  // rather than either one of them.
   const float menu_rx = u * 0.10f * scale;
   const float menu_offset = menu_rx + u * 0.01f;
   layout.controls.push_back(MakePill(width * 0.5f - menu_offset, pill_y, menu_rx, pill_ry,
-                                     ps3 ? "MENU" : "GUIDE", X_INPUT_GAMEPAD_GUIDE));
+                                     "", UiModeButtons()));
   layout.controls.push_back(MakePill(width * 0.5f + menu_offset, pill_y, menu_rx, pill_ry, "START",
                                      X_INPUT_GAMEPAD_START));
 

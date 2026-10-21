@@ -269,6 +269,7 @@ class TouchInputDriver final : public InputDriver, public rex::ui::WindowInputLi
   float surface_width_ = 0.0f;
   float surface_height_ = 0.0f;
   double layout_scale_ = 0.0;
+  std::string layout_ui_mode_button_;  // the toggle pill's button
 
   FingerTargetMap finger_targets_;
 

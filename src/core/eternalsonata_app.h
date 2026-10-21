@@ -326,15 +326,11 @@ class EternalsonataApp : public rex::ReXApp {
     // guest runs, and the strings are only read once it does.
     eternalsonata::ApplyXexTextPatches(runtime());
 
-    // One-shot toast shown top-left as the game starts. Android has no
-    // keyboard, so it names the touch overlay's Guide button instead.
+    // One-shot toast shown top-left as the game starts.
     if (imgui_drawer()) {
       startup_hint_ = std::make_unique<rex::ui::HintToastDialog>(imgui_drawer());
-#if REX_PLATFORM_ANDROID
-      startup_hint_->Show(eternalsonata::Tr("settings", "startup_hint_android"));
-#else
-      startup_hint_->Show(eternalsonata::Tr("settings", "startup_hint"));
-#endif
+      startup_hint_->Show(
+          eternalsonata::Tr("settings", "startup_hint", eternalsonata::UiModeButtonName()));
     }
   }
 
