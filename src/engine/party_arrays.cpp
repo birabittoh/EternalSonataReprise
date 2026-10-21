@@ -208,6 +208,29 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
       (hit.extension == static_cast<int>(PartyArray::kStatsLive) ||
        hit.extension == static_cast<int>(PartyArray::kTemplate)))
     return hit.extension;
+  // sub_821E7898's clamps first run for a vacant 11 or 12 at new game, whose
+  // live entries are base[0..1]: learning there wrote 1 into the first two
+  // characters' base max HP. r4 is always live stats, r10 base stats.
+  if (hit.extension == static_cast<int>(PartyArray::kStatsLive)) {
+    switch (pc) {
+      case 0x821E7C6Cu:
+      case 0x821E7C80u:
+      case 0x821E7C90u:
+      case 0x821E7CA0u:
+      case 0x821E7CB0u:
+      case 0x821E7D48u:
+      case 0x821E7D5Cu:
+        return hit.extension;
+    }
+  }
+  if (hit.extension == static_cast<int>(PartyArray::kStatsBase)) {
+    switch (pc) {
+      case 0x821E7900u:
+      case 0x821E7D44u:
+      case 0x821E7D60u:
+        return hit.extension;
+    }
+  }
   // The camp swap redraws level and EXP from base stats and HP from live
   // stats; for 11 and 12 those land on charwords and on Allegretto's base.
   if (hit.extension == static_cast<int>(PartyArray::kStatsBase)) {
