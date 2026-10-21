@@ -18,3 +18,10 @@ registers = ["f0", "r31"]
 address = 0x820D3BC4
 name = "EffectBakedTime2D"
 registers = ["f0", "r30"]
+
+# Scene node move-to-point: arrive within a stock 30 fps step, or walkers held
+# short of their mark never finish and the event script waiting on them hangs.
+[[midasm_hook]]
+address = 0x82181C9C
+name = "FieldMoveArrival"
+registers = ["f31", "f0"]

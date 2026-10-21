@@ -842,6 +842,24 @@ extern "C++" void EffectBakedTime2D(PPCRegister& f0, PPCRegister& r30) {
   SnapBakedTime(f0, r30.u32);
 }
 
+// sub_82181AF0, the scene node's move-to-point tick, at 0x82181C9C: f31 =
+// this frame's step, f0 = distance left. It arrives only when one step covers
+// the distance, so a walker held short of its mark by collision never finishes
+// once steps are shorter than stock 30 fps ones, and scripts waiting on it
+// (uns22's stair event) hang. Arrive within a 30 fps step, as stock does.
+extern "C++" void FieldMoveArrival(PPCRegister& f31, PPCRegister& f0) {
+  constexpr double kStockStepUnits = 10.0;
+  auto* memory = rex::Runtime::instance()->memory();
+  const u8 byte = *memory->TranslateVirtual<const u8*>(0x82465F90);
+  if (byte == 0) {
+    return;
+  }
+  const double units = g_wall_active ? g_wall_units : double(300 / byte);
+  if (units < kStockStepUnits && f0.f64 <= f31.f64 * kStockStepUnits / units) {
+    f0.f64 = f31.f64;
+  }
+}
+
 namespace {
 
 // Script native 1059 (sub_820EA758): schedules a wait of `duration` units as
