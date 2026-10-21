@@ -404,13 +404,17 @@ uint32_t Resolve(uint32_t ea, uint32_t pc, const Hit& hit) {
   }
   if (owner == hit.retail)
     return by_address();
-  if (owner == hit.extension) {
+  // Not hit.extension: stats_base[10..11] also covers charwords' extension,
+  // where Classify names charwords, and +20 of stats_base[10] is the UI root.
+  const uint32_t owner_offset = ea - kArrays[owner].retail;
+  if (owner_offset >= kRetailCharacterCount * kArrays[owner].stride &&
+      owner_offset < kPartyCharacterCount * kArrays[owner].stride) {
     if (!(state & kReported)) {
       SetBits(*slot, kReported);
       REXLOG_INFO("party arrays: {:08X} reaches {}[{}]", pc, kArrays[owner].name,
-                  hit.extension_offset / kArrays[owner].stride);
+                  owner_offset / kArrays[owner].stride);
     }
-    return Relocated(owner, hit.extension_offset, ea);
+    return Relocated(owner, owner_offset, ea);
   }
   if (hit.retail >= 0) {
     SetBits(*slot, kMulti);
