@@ -49,6 +49,8 @@
 #include <system_error>
 #include <vector>
 
+#include <SDL3/SDL.h>
+
 #include <rex/filesystem.h>
 #include <rex/hook.h>
 #include <rex/memory/utils.h>
@@ -450,6 +452,69 @@ std::filesystem::path SaveContainerDirectory(int slot) {
   return root / name;
 }
 
+// ---------------------------------------------------------------------------
+// Container thumbnail
+//
+// The game hands XamContentSetThumbnail a canned PNG out of AppKeep.bmd, so every
+// container shows the same half transparent title strip. The save's real picture
+// is the second block the job writes: a linear 320 wide image of 4 byte pixels,
+// alpha first.
+
+constexpr uint32_t kThumbWidth = 320;
+constexpr uint32_t kThumbMaxHeight = 512;
+
+struct SaveThumbnail {
+  uint32_t height = 0;
+  std::vector<uint8_t> rgba;
+};
+
+// `request` is the guest struct sub_8223DC58 receives: [1] job kind (3 is a
+// load), [4] the canned thumbnail, [7]/[8] the block list of {pointer, size, ..}.
+SaveThumbnail CaptureSaveThumbnail(uint32_t request) {
+  SaveThumbnail out;
+  auto* memory = Mem();
+  if (!memory || !request || ReadGuestU32(request + 4) == 3 || !ReadGuestU32(request + 16) ||
+      ReadGuestU32(request + 32) < 2) {
+    return out;
+  }
+  const uint32_t blocks = ReadGuestU32(request + 28);
+  const uint32_t pointer = ReadGuestU32(blocks + 16);
+  const uint32_t size = ReadGuestU32(blocks + 20);
+  const uint32_t height = size / (kThumbWidth * 4);
+  if (!pointer || !height || height > kThumbMaxHeight || size != height * kThumbWidth * 4) {
+    return out;
+  }
+  const auto* src = memory->TranslateVirtual<const uint8_t*>(pointer);
+  if (!src) {
+    return out;
+  }
+  out.height = height;
+  out.rgba.resize(size);
+  for (uint32_t i = 0; i < kThumbWidth * height; ++i) {
+    out.rgba[i * 4 + 0] = src[i * 4 + 1];
+    out.rgba[i * 4 + 1] = src[i * 4 + 2];
+    out.rgba[i * 4 + 2] = src[i * 4 + 3];
+    out.rgba[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+void WriteSaveThumbnail(int slot, SaveThumbnail& thumbnail) {
+  const std::filesystem::path dir = SaveContainerDirectory(slot);
+  if (dir.empty() || thumbnail.rgba.empty()) {
+    return;
+  }
+  SDL_Surface* surface = SDL_CreateSurfaceFrom(static_cast<int>(kThumbWidth),
+                                               static_cast<int>(thumbnail.height),
+                                               SDL_PIXELFORMAT_RGBA32, thumbnail.rgba.data(),
+                                               static_cast<int>(kThumbWidth * 4));
+  if (!surface) {
+    return;
+  }
+  SDL_SavePNG(surface, rex::path_to_utf8(dir / "__thumbnail.png").c_str());
+  SDL_DestroySurface(surface);
+}
+
 }  // namespace eternalsonata
 
 // ---------------------------------------------------------------------------
@@ -498,9 +563,25 @@ REX_HOOK_RAW(sub_82236678) {
 // is actually outstanding.
 REX_EXTERN(__imp__sub_8223DC58);
 REX_HOOK_RAW(sub_8223DC58) {
+  // The job's buffers may be freed once it returns, so copy the picture first.
+  bool saving = false;
+  int slot = -1;
+  {
+    std::lock_guard<std::mutex> lock(eternalsonata::g_mutex);
+    saving = eternalsonata::g_save_running;
+    slot = eternalsonata::g_save_slot;
+  }
+  eternalsonata::SaveThumbnail thumbnail;
+  if (saving) {
+    thumbnail = eternalsonata::CaptureSaveThumbnail(ctx.r3.u32);
+  }
+
   __imp__sub_8223DC58(ctx, base);
 
   const bool succeeded = (ctx.r3.u32 & 0xFF) != 0;
+  if (succeeded) {
+    eternalsonata::WriteSaveThumbnail(slot, thumbnail);
+  }
   eternalsonata::OnSaveFinished(
       succeeded, succeeded ? 0.0 : static_cast<double>(ETERNALSONATA_SAVE_FAIL_WRITE));
 }
