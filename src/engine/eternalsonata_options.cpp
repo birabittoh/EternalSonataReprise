@@ -2397,12 +2397,17 @@ void WriteGuestString(u8* base, u32 at, const char* s) {
   }
 }
 
-void WriteTextRecord(u8* base, u32 at, u32 id, int32_t x, int32_t y) {
+// The stock rows' text box width. Text wider than its box wraps onto a second
+// line the row has no room to show.
+constexpr int32_t kTextBoxWidth = 300;
+
+void WriteTextRecord(u8* base, u32 at, u32 id, int32_t x, int32_t y,
+                     int32_t width = kTextBoxWidth) {
   REX_STORE_U32(at + 0x00, kTextRecord);
   REX_STORE_U32(at + 0x04, id);
   REX_STORE_U32(at + 0x08, static_cast<u32>(x));
   REX_STORE_U32(at + 0x0C, static_cast<u32>(y));
-  REX_STORE_U32(at + 0x10, 300);  // width, as on every other row
+  REX_STORE_U32(at + 0x10, static_cast<u32>(width));
   REX_STORE_U32(at + 0x14, 48);   // height
   REX_STORE_U32(at + 0x18, 0);
   REX_STORE_U32(at + 0x1C, kTextRecordBytes);
@@ -2928,7 +2933,10 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     const OptionRow& row = all[st.rows[i]];
     const u32 sid = kRowSidBase + kRowSidStride * st.rows[i];
     const int32_t y = RowRecordY(page, i);
-    WriteTextRecord(base, at, sid, kRowXLabel, y);
+    // A label may use everything up to the value column, not just the stock
+    // box, which wraps the longer translations.
+    WriteTextRecord(base, at, sid, kRowXLabel, y,
+                    std::max(kTextBoxWidth, st.value_base_x - kRowXLabel - kValueGapMin));
     at += kTextRecordBytes;
     if (g_marker_addr && RowPendingRestart(row)) {
       const int32_t mx = MarkerRecordX(page, row_label(st.rows[i]), marker);
