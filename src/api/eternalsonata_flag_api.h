@@ -40,7 +40,7 @@ extern "C" {
 #endif
 
 // Bumped whenever anything below changes meaning.
-#define ETERNALSONATA_FLAGS_ABI_VERSION 2u
+#define ETERNALSONATA_FLAGS_ABI_VERSION 3u
 
 // Flags in the bank. Flag `n` is bit `n & 7` of byte `n >> 3`, counting from
 // the low bit: the order the game fills them in.
@@ -57,8 +57,24 @@ enum {
   // Outside 0..ETERNALSONATA_FLAG_COUNT-1, or a byte range outside the bank.
   ETERNALSONATA_FLAG_ERR_INVALID_INDEX = -2,
   // Not a value the field accepts.
-  ETERNALSONATA_FLAG_ERR_INVALID_VALUE = -3
+  ETERNALSONATA_FLAG_ERR_INVALID_VALUE = -3,
+  // Version 3. The save slot is empty or its file is not a game save.
+  ETERNALSONATA_FLAG_ERR_NO_SAVE = -4
 };
+
+// Save point location ids, the string a save slot shows under the chapter.
+// Every save point passes its own; these two are special.
+#define ETERNALSONATA_SAVE_LOCATION_DEBUG_SAVE 0
+// The save the ending offers. Loading one asks whether to start Encore.
+#define ETERNALSONATA_SAVE_LOCATION_GAME_CLEAR 1
+
+// The Encore counter saturates here.
+#define ETERNALSONATA_ENCORE_COUNT_MAX 255
+
+// Bits of EternalSonataGetEncoreState. A slot with either bit set wears the
+// reward icon in the load menu.
+#define ETERNALSONATA_ENCORE_STATE_GAME_CLEAR 1  // loading it offers Encore
+#define ETERNALSONATA_ENCORE_STATE_ENCORE 2      // an Encore playthrough
 
 // Published on the mod registry bus when a flag changes, whoever changed it:
 // a script, a mod, or a new game clearing the bank. Payload u64 is the flag
@@ -83,6 +99,15 @@ enum {
 // The same for the costumes blocked state.
 #define ETERNALSONATA_FLAG_EVENT_COSTUMES_BLOCKED_CHANGED \
   "eternalsonata.flags.costumesblocked.changed"
+
+// Published when the Encore counter changes. Payload f64 is its new value.
+#define ETERNALSONATA_FLAG_EVENT_ENCORE_COUNT_CHANGED \
+  "eternalsonata.flags.encorecount.changed"
+
+// Published when the save location changes, which a save point does every
+// time the party steps on it. Payload f64 is the new location id.
+#define ETERNALSONATA_FLAG_EVENT_SAVE_LOCATION_CHANGED \
+  "eternalsonata.flags.savelocation.changed"
 
 // A loaded save replaces the whole bank. That is adopted silently rather than
 // reported, so none of the events fire for it.
@@ -123,7 +148,7 @@ typedef int (*EternalSonataResetFlagsFn)(void);
 typedef int (*EternalSonataGetScenarioCounterFn)(void);
 typedef int (*EternalSonataSetScenarioCounterFn)(int value);
 
-// Version 3. Whether the camp menu shows the Scrapbook, PS3 data only: the
+// Version 2. Whether the camp menu shows the Scrapbook, PS3 data only: the
 // camp menu flag Bel01.e sets through native 5029, kept outside the bank and
 // saved with the game. The strip reads it when the camp menu opens. Get
 // answers 0 or 1, set takes 0 or 1; both answer
@@ -131,11 +156,41 @@ typedef int (*EternalSonataSetScenarioCounterFn)(int value);
 typedef int (*EternalSonataGetScrapbookUnlockedFn)(void);
 typedef int (*EternalSonataSetScrapbookUnlockedFn)(int value);
 
-// Version 3. Whether the story has costume changes off, PS3 data only: the
+// Version 2. Whether the story has costume changes off, PS3 data only: the
 // camp menu flag scripts set through native 5032, kept and answered like the
 // Scrapbook's above. Nothing in the host acts on it yet.
 typedef int (*EternalSonataGetCostumesBlockedFn)(void);
 typedef int (*EternalSonataSetCostumesBlockedFn)(int value);
+
+// Version 3. New game plus (docs/flags.md §8), on both targets.
+//
+// The Encore counter is how many times this playthrough's lineage started
+// Encore: 0 on a first run, one more each time a Game Clear save is loaded
+// and Encore accepted. While it is nonzero enemies have 1.3 times their
+// stats and deal 1.5 times the damage, and the Party Level menu lets the
+// player pick any level reached so far.
+// Set takes 0..ETERNALSONATA_ENCORE_COUNT_MAX. Both return the value or a
+// negative error.
+typedef int (*EternalSonataGetEncoreCountFn)(void);
+typedef int (*EternalSonataSetEncoreCountFn)(int value);
+
+// The location id the next save records. Save points set it as the party
+// reaches them and the ending sets ETERNALSONATA_SAVE_LOCATION_GAME_CLEAR, so
+// to turn a save into a Game Clear one, set it while the save menu is open.
+// A save made away from a save point records
+// ETERNALSONATA_SAVE_LOCATION_DEBUG_SAVE whatever this holds. Set takes
+// 0..INT32_MAX. Both return the value or a negative error.
+typedef int (*EternalSonataGetSaveLocationFn)(void);
+typedef int (*EternalSonataSetSaveLocationFn)(int value);
+
+// ETERNALSONATA_ENCORE_STATE_* bits for the game in memory, or a negative
+// error.
+typedef int (*EternalSonataGetEncoreStateFn)(void);
+
+// The same bits for the save in `slot` (0..9, the menu's number minus one),
+// read from the file on disk exactly as the load menu does. Returns
+// ETERNALSONATA_FLAG_ERR_NO_SAVE for an empty slot.
+typedef int (*EternalSonataGetSaveSlotEncoreStateFn)(int slot);
 
 #ifdef __cplusplus
 }  // extern "C"

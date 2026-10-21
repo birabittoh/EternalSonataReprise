@@ -30,6 +30,13 @@
 //     bank is symbol 548 at the same offset (ps3_natives.cpp), so both
 //     targets share these addresses.
 //
+//   * New game plus is two more fields of the block. Symbol 545 is the save
+//     point location; Tnt01.e sets it to 1 ("Game Clear") for the ending's
+//     save, and sub_822406B8 asks to start Encore when a loaded save holds 1.
+//     Symbol 538 counts Encores: sub_82240D40 zeroes the block and keeps it,
+//     plus one. The load menu (sub_82243C68) gives a slot the reward icon
+//     when its header shows either.
+//
 // Threading. The exported entry points are plain guest-memory loads and
 // stores and are safe from any thread. The events are published from the mod
 // registry's frame tick.
@@ -39,6 +46,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -49,8 +57,10 @@
 #include <rex/system/mod_registry.h>
 
 #include "eternalsonata_flag_api.h"
+#include "eternalsonata_save_api.h"
 #include "flag_system.h"
 #include "ps3_natives.h"
+#include "save_system.h"
 #include "target.h"
 
 namespace eternalsonata {
@@ -69,6 +79,33 @@ constexpr uint32_t kScenarioBytes = 4;
 static_assert(kScenarioAddr == 0x8243CB69u);
 
 constexpr int kFlagCount = ETERNALSONATA_FLAG_COUNT;
+
+// Symbol 538: the Encore counter, a byte.
+constexpr uint32_t kEncoreCountAddr = 0x8243C346u;
+// Symbol 545: the save point location, a u32. sub_82241190 records 0 instead
+// unless symbol 544, "at a save point" (save_system.cpp), is set.
+constexpr uint32_t kSaveLocationAddr = 0x8243C364u;
+
+// savedata.txt opens with a 16 byte "SAV" header, then sub_82241190's 24 byte
+// slot header: the location's low byte at +9, the Encore counter as a u32 at
+// +20. Those are the copies the load menu reads.
+constexpr char kSaveFileName[] = "savedata.txt";
+constexpr size_t kSaveFileMagicBytes = 4;
+constexpr size_t kSlotHeaderOffset = 16;
+constexpr size_t kSlotHeaderLocation = kSlotHeaderOffset + 9;
+constexpr size_t kSlotHeaderEncore = kSlotHeaderOffset + 20;
+constexpr int kSlotCount = ETERNALSONATA_SAVE_SLOT_COUNT;
+
+int EncoreState(uint32_t location, uint32_t encore_count) {
+  int state = 0;
+  if (location == ETERNALSONATA_SAVE_LOCATION_GAME_CLEAR) {
+    state |= ETERNALSONATA_ENCORE_STATE_GAME_CLEAR;
+  }
+  if (encore_count) {
+    state |= ETERNALSONATA_ENCORE_STATE_ENCORE;
+  }
+  return state;
+}
 
 // A new game, a title-screen reset and a loaded save all rewrite the whole
 // bank. Reporting that one flag at a time would be thousands of events for
@@ -91,6 +128,8 @@ std::vector<uint8_t> g_snapshot;
 int g_scenario_snapshot = 0;
 bool g_scrapbook_snapshot = false;
 bool g_costumes_blocked_snapshot = false;
+int g_encore_count_snapshot = 0;
+int g_save_location_snapshot = 0;
 
 rex::memory::Memory* Mem() { return g_runtime ? g_runtime->memory() : nullptr; }
 
@@ -99,15 +138,33 @@ bool BankReadable() {
   if (!memory) {
     return false;
   }
-  auto* heap = memory->LookupHeap(kFlagsAddr);
-  return heap && heap->QueryRangeAccess(kFlagsAddr, kScenarioAddr + kScenarioBytes - 1u) !=
-                     rex::memory::PageAccess::kNoAccess;
+  auto* heap = memory->LookupHeap(kEncoreCountAddr);
+  return heap &&
+         heap->QueryRangeAccess(kEncoreCountAddr, kScenarioAddr + kScenarioBytes - 1u) !=
+             rex::memory::PageAccess::kNoAccess;
 }
 
-// Caller holds g_mutex and has checked BankReadable().
-uint8_t* BankHost() {
+// Caller holds g_mutex and has checked BankReadable(), which covers every
+// address this file uses.
+uint8_t* GuestHost(uint32_t address) {
   auto* memory = Mem();
-  return memory ? memory->TranslateVirtual<uint8_t*>(kFlagsAddr) : nullptr;
+  return memory ? memory->TranslateVirtual<uint8_t*>(address) : nullptr;
+}
+
+uint8_t* BankHost() { return GuestHost(kFlagsAddr); }
+
+uint32_t ReadSaveLocation() {
+  const uint8_t* host = GuestHost(kSaveLocationAddr);
+  return host ? rex::memory::load_and_swap<uint32_t>(host) : 0;
+}
+
+uint32_t ReadEncoreCount() {
+  const uint8_t* host = GuestHost(kEncoreCountAddr);
+  return host ? *host : 0;
+}
+
+int ClampToInt(uint32_t value) {
+  return static_cast<int>(std::min<uint32_t>(value, INT32_MAX));
 }
 
 bool ValidIndex(int index) { return index >= 0 && index < kFlagCount; }
@@ -157,6 +214,10 @@ void Tick() {
   const bool scrapbook = IsPs3Target() && Ps3ScrapbookUnlocked();
   bool costumes_blocked_changed = false;
   const bool costumes_blocked = IsPs3Target() && Ps3CostumesBlocked();
+  bool encore_count_changed = false;
+  int encore_count = 0;
+  bool save_location_changed = false;
+  int save_location = 0;
 
   {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -172,6 +233,8 @@ void Tick() {
     }
 
     scenario = ReadScenario(bank);
+    encore_count = static_cast<int>(ReadEncoreCount());
+    save_location = ClampToInt(ReadSaveLocation());
 
     if (g_have_snapshot) {
       for (uint32_t byte = 0; byte < kFlagBytes; ++byte) {
@@ -193,12 +256,16 @@ void Tick() {
       scenario_changed = scenario != g_scenario_snapshot;
       scrapbook_changed = scrapbook != g_scrapbook_snapshot;
       costumes_blocked_changed = costumes_blocked != g_costumes_blocked_snapshot;
+      encore_count_changed = encore_count != g_encore_count_snapshot;
+      save_location_changed = save_location != g_save_location_snapshot;
     }
 
     g_snapshot.assign(bank, bank + kFlagBytes);
     g_scenario_snapshot = scenario;
     g_scrapbook_snapshot = scrapbook;
     g_costumes_blocked_snapshot = costumes_blocked;
+    g_encore_count_snapshot = encore_count;
+    g_save_location_snapshot = save_location;
     g_have_snapshot = true;
   }
 
@@ -221,6 +288,14 @@ void Tick() {
   if (costumes_blocked_changed) {
     Publish(ETERNALSONATA_FLAG_EVENT_COSTUMES_BLOCKED_CHANGED, 0,
             costumes_blocked ? 1.0 : 0.0);
+  }
+  if (encore_count_changed) {
+    Publish(ETERNALSONATA_FLAG_EVENT_ENCORE_COUNT_CHANGED, 0,
+            static_cast<double>(encore_count));
+  }
+  if (save_location_changed) {
+    Publish(ETERNALSONATA_FLAG_EVENT_SAVE_LOCATION_CHANGED, 0,
+            static_cast<double>(save_location));
   }
 }
 
@@ -411,4 +486,86 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetCostumesBlocked(int value) 
   }
   SetPs3CostumesBlocked(value != 0);
   return ETERNALSONATA_FLAG_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetEncoreCount(void) {
+  using namespace eternalsonata;
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!BankReadable()) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  return static_cast<int>(ReadEncoreCount());
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetEncoreCount(int value) {
+  using namespace eternalsonata;
+  if (value < 0 || value > ETERNALSONATA_ENCORE_COUNT_MAX) {
+    return ETERNALSONATA_FLAG_ERR_INVALID_VALUE;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!BankReadable()) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  uint8_t* host = GuestHost(kEncoreCountAddr);
+  if (!host) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  *host = static_cast<uint8_t>(value);
+  return value;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetSaveLocation(void) {
+  using namespace eternalsonata;
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!BankReadable()) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  return ClampToInt(ReadSaveLocation());
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetSaveLocation(int value) {
+  using namespace eternalsonata;
+  if (value < 0) {
+    return ETERNALSONATA_FLAG_ERR_INVALID_VALUE;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!BankReadable()) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  uint8_t* host = GuestHost(kSaveLocationAddr);
+  if (!host) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  rex::memory::store_and_swap<uint32_t>(host, static_cast<uint32_t>(value));
+  return value;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetEncoreState(void) {
+  using namespace eternalsonata;
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!BankReadable()) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  return EncoreState(ReadSaveLocation(), ReadEncoreCount());
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetSaveSlotEncoreState(int slot) {
+  using namespace eternalsonata;
+  if (slot < 0 || slot >= kSlotCount) {
+    return ETERNALSONATA_FLAG_ERR_INVALID_INDEX;
+  }
+  const std::filesystem::path dir = SaveContainerDirectory(slot);
+  if (dir.empty()) {
+    return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
+  }
+  std::ifstream file(dir / kSaveFileName, std::ios::binary);
+  uint8_t header[kSlotHeaderEncore + 4] = {};
+  if (!file.read(reinterpret_cast<char*>(header), sizeof(header)) ||
+      std::memcmp(header, "SAV", kSaveFileMagicBytes) != 0) {
+    return ETERNALSONATA_FLAG_ERR_NO_SAVE;
+  }
+  const uint8_t* encore = header + kSlotHeaderEncore;
+  const uint32_t encore_count = (uint32_t(encore[0]) << 24) | (uint32_t(encore[1]) << 16) |
+                                (uint32_t(encore[2]) << 8) | uint32_t(encore[3]);
+  return EncoreState(header[kSlotHeaderLocation], encore_count);
 }

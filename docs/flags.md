@@ -145,3 +145,47 @@ Scrapbook is unlocked) through native 5029, and native 5032 sets `+0x920`
 (costume changes are blocked). The host keeps both in its own save record.
 Mods reach them with `EternalSonataGet/SetScrapbookUnlocked` and
 `EternalSonataGet/SetCostumesBlocked` (flag API version 2).
+
+## 8. Encore (new game plus)
+
+Encore is two fields of the same block, outside the bank:
+
+| Address | Block offset | Symbol (360 / PS3) | What |
+|---|---|---|---|
+| `0x8243C346` | `+0x116` | 538 / 538 | Encore counter, u8, saturates at 255 |
+| `0x8243C360` | `+0x130` | 544 / 545 | at a save point, u8 |
+| `0x8243C364` | `+0x134` | 545 / 546 | save location, u32 |
+
+The save location is the id of the place name a slot shows under the chapter
+(the `BTX` table at `0x822F43F8`: 0 "Debug Save", 1 "Game Clear", 2 "Path to
+Tenuto South Section" and so on). `lib.e` (`0x3BED`) writes a save point's id
+with the at save point byte; `sub_82241190` records 0 when that byte is
+clear. After the ending, `Tnt01.e` (`0x1F50`) sets both to 1, opens the save
+menu, then puts the location back to 0. That is the Game Clear save.
+
+Loading a save (`sub_822406B8`) restores the block and goes to state 35
+instead of 32 when the location is 1: the "start Encore?" prompt, text 33 to
+35 of the menu's `BTX`. Accepting it reaches state 36 in `sub_82240D40`, which
+zeroes the whole block exactly like a new game, then writes back the old
+counter plus one. Declining it plays on from the Game Clear save itself.
+
+The counter is what Encore does:
+
+* `sub_821A36B8` scales each enemy's stats by 1.3.
+* `sub_821AFF40` multiplies damage dealt by an enemy by 1.5.
+* `sub_82228410` / `sub_822289C8`: the Party Level menu lets the player pick
+  any level reached so far.
+* Scripts read symbol 538 in 148 maps.
+
+`sub_82241190` also copies both fields into the save's 24 byte slot header,
+the location's low byte at `+9` and the counter as a u32 at `+20` (file
+offsets 25 and 36, after the 16 byte `SAV` header). The load menu reads only
+that copy: `sub_82243C68` gives a slot the reward icon when its counter is
+nonzero or its location is 1. So the Game Clear save and every save of an
+Encore run carry it, and only the first asks to start Encore.
+
+The flag API (version 3) has `EternalSonataGet/SetEncoreCount`,
+`EternalSonataGet/SetSaveLocation`, `EternalSonataGetEncoreState` for the
+game in memory and `EternalSonataGetSaveSlotEncoreState` for a slot on disk.
+A save point overwrites the location the moment the party reaches it, so to
+make a Game Clear save, set the location while the save menu is open.
