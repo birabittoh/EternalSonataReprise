@@ -21,4 +21,11 @@ void BindFlagSystem(rex::Runtime* runtime);
 // here; a guest routine can only be hooked once.
 void NotifyFlagsSaveLoaded();
 
+// Makes the guest see a nonzero Encore counter until EndEncoreOverride, for a
+// hook that wants one routine to act as in Encore. The API and the change
+// events keep reporting the real value meanwhile. No effect if the counter is
+// already nonzero. Calls must pair up on one thread.
+void BeginEncoreOverride();
+void EndEncoreOverride();
+
 }  // namespace eternalsonata

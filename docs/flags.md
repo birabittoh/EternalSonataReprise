@@ -189,3 +189,9 @@ The flag API (version 3) has `EternalSonataGet/SetEncoreCount`,
 game in memory and `EternalSonataGetSaveSlotEncoreState` for a slot on disk.
 A save point overwrites the location the moment the party reaches it, so to
 make a Game Clear save, set the location while the save menu is open.
+
+The `party_level_select` setting (Balance tab) set to `always` runs
+`sub_82228410` and `sub_822289C8` with the counter faked to 1
+(`party_level_menu.cpp`), so the Party Level menu changes the level outside
+Encore too. Nothing else sees the fake value, and the flag API keeps
+reporting the real one.

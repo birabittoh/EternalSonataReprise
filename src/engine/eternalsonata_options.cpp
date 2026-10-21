@@ -578,6 +578,9 @@ constexpr LocalizedLabel kLabelPhotoPrice = {"photo_price"};
 constexpr LocalizedLabel kLabelEnemyHp = {"enemy_hp"};
 constexpr LocalizedLabel kLabelEnemyDamage = {"enemy_damage"};
 constexpr LocalizedLabel kLabelAutoParry = {"auto_parry"};
+constexpr LocalizedLabel kLabelPartyLevel = {"party_level"};
+constexpr LocalizedLabel kLabelPartyLevelEncore = {"party_level_encore"};
+constexpr LocalizedLabel kLabelPartyLevelAlways = {"party_level_always"};
 // The volume block's new first entry, drawn in the column Music sits in.
 constexpr LocalizedLabel kLabelMasterVolume = {"master_volume"};
 // A gauge readout for a setting that is switched off.
@@ -1131,6 +1134,11 @@ RowStore& Rows() {
     MakeMultiplierRow(add(kPageBalance), kLabelEnemyHp, "enemy_hp_multiplier");
     MakeMultiplierRow(add(kPageBalance), kLabelEnemyDamage, "enemy_damage_multiplier");
     MakeBoolCvarRow(add(kPageBalance), kLabelAutoParry, "auto_parry");
+    OptionRow& party_level = add(kPageBalance);
+    MakeLiteralRow(party_level, kLabelPartyLevel, nullptr, 0);
+    party_level.values.push_back(LabelValue(kLabelPartyLevelEncore));
+    party_level.values.push_back(LabelValue(kLabelPartyLevelAlways));
+    BindChoiceCvar(party_level, "party_level_select", {"encore", "always"});
     // Left/right picks what A does.
     OptionRow& exit = add(kPagePlatform);
     MakeLiteralRow(exit, kLabelExit, nullptr, 0);

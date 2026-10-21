@@ -302,7 +302,7 @@ constexpr std::array kBasicCvarNames = {
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
     "progression_curves",
     "enemy_hp_multiplier",
-    "enemy_damage_multiplier", "auto_parry", "ui_scale",
+    "enemy_damage_multiplier", "auto_parry", "party_level_select", "ui_scale",
     "right_trigger_behavior", "special_hold_time", "ranged_special_buffer",
     "party_tactical_time_multiplier", "party_action_time_multiplier",
     "enemy_action_time_multiplier",
@@ -849,6 +849,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawMultiplierRow("enemy_action_time_multiplier",
                           std::span(kActionTimeSteps).first(kActionTimeSteps.size() - 1));
         DrawCvarRow("auto_parry");
+        DrawPartyLevelRow();
         ImGui::EndTabItem();
       }
       ImGui::EndTabBar();
@@ -1662,6 +1663,12 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     const RadioOption options[] = {
         {"disabled", T("glyphs_disabled")}, {"xbox", "Xbox 360"}, {"ps3", "PS3"}};
     DrawRadioRow("override_button_glyphs", options);
+  }
+
+  void DrawPartyLevelRow() {
+    const RadioOption options[] = {{"encore", T("party_level_encore")},
+                                   {"always", T("party_level_always")}};
+    DrawRadioRow("party_level_select", options);
   }
 
   void DrawRightTriggerRow() {

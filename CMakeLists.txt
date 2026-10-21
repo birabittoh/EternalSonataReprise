@@ -409,6 +409,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/eternalsonata_presence.cpp
     src/engine/room_presence.cpp
     src/engine/party_system.cpp
+    src/engine/party_level_menu.cpp
     src/engine/battle_system.cpp
     src/engine/overworld_system.cpp
     src/engine/cutscene_system.cpp

@@ -131,6 +131,9 @@ bool g_costumes_blocked_snapshot = false;
 int g_encore_count_snapshot = 0;
 int g_save_location_snapshot = 0;
 
+// Set while BeginEncoreOverride has a fake 1 in the counter.
+bool g_encore_override = false;
+
 rex::memory::Memory* Mem() { return g_runtime ? g_runtime->memory() : nullptr; }
 
 bool BankReadable() {
@@ -159,6 +162,9 @@ uint32_t ReadSaveLocation() {
 }
 
 uint32_t ReadEncoreCount() {
+  if (g_encore_override) {
+    return 0;
+  }
   const uint8_t* host = GuestHost(kEncoreCountAddr);
   return host ? *host : 0;
 }
@@ -320,6 +326,29 @@ void BindFlagSystem(rex::Runtime* runtime) {
 void NotifyFlagsSaveLoaded() {
   std::lock_guard<std::mutex> lock(g_mutex);
   g_have_snapshot = false;
+}
+
+void BeginEncoreOverride() {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (g_encore_override || !BankReadable()) {
+    return;
+  }
+  uint8_t* host = GuestHost(kEncoreCountAddr);
+  if (host && *host == 0) {
+    *host = 1;
+    g_encore_override = true;
+  }
+}
+
+void EndEncoreOverride() {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!g_encore_override) {
+    return;
+  }
+  g_encore_override = false;
+  if (uint8_t* host = BankReadable() ? GuestHost(kEncoreCountAddr) : nullptr) {
+    *host = 0;
+  }
 }
 
 }  // namespace eternalsonata
@@ -511,6 +540,8 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetEncoreCount(int value) {
     return ETERNALSONATA_FLAG_ERR_UNAVAILABLE;
   }
   *host = static_cast<uint8_t>(value);
+  // A real value replaces the fake one, so EndEncoreOverride must keep it.
+  g_encore_override = false;
   return value;
 }
 
