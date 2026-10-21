@@ -226,9 +226,11 @@ def recolor_texture(model, tex, fn):
             new = np.where(four, bits ^ 1, np.where(bits < 2, bits ^ 1, bits))
             swap |= np.where(flip, new, bits).astype(np.uint32) << (2 * i)
         idx = swap
+        # Part ties in blue alone: a carry out of it would turn near white red.
         tie = four & (n0 == n1)
-        n0 = np.where(tie, np.where(n1 < 0xFFFF, n1 + 1, n0), n0)
-        n1 = np.where(tie & (n0 == n1), n1 - 1, n1)
+        up = (n0 & 31) < 31
+        n0 = np.where(tie & up, n0 + 1, n0)
+        n1 = np.where(tie & ~up, n1 - 1, n1)
     colour[:, 0], colour[:, 1] = n0.astype('<u2'), n1.astype('<u2')
     colour[:, 2], colour[:, 3] = (idx & 0xFFFF).astype('<u2'), (idx >> 16).astype('<u2')
     if stride == 8:

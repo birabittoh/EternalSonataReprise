@@ -75,8 +75,8 @@ AppKeep.bmd:1 dir --png` splits one into chunk files plus PNGs of its
 textures, and `pack dir out.nobj` rebuilds it from the chunks, so an edited
 chunk replaces the original. A chunk may only change size in multiples of 4096,
 as an `NTX2`'s pixels are found by 4 KB alignment. `recolor_texture` rewrites
-the DXT endpoints in place, which needs no untiling and keeps every size;
-`polka_colors` in EternalSonataReprise-Mods uses it.
+the DXT endpoints in place, which needs no untiling and keeps every size.
+For a plain recolour, `tint` (§4) does the same at run time with no files.
 
 ## 4. Adding costumes from a mod
 
@@ -143,6 +143,105 @@ Not covered: the save rows, which draw each save's own party from
 `0x822FF530` and would need that save's costumes, and the battle HUD, whose
 portraits are layout groups of BattleKeep slot 41 (the PS3 adds its costumes
 as groups 18..21).
+
+### Tints
+
+A costume can instead start from one the character already has, and replace
+some of its colours, so a mod ships no files at all:
+
+```toml
+[[costume]]
+character = "polka"
+name = "blue"
+label = "Blue"
+base = "ps3/2"              # optional: the costume to start from, else "default"
+
+[[costume.tint]]            # any number: colours of the model
+from = "#B4443A"            # the colour to replace
+to = "#3E6EC0"              # what it becomes
+textures = [2, 4, "hood.tga"]  # optional: which textures, else all of them
+hue_range = 18              # optional: degrees either side of from, default 20
+min_saturation = 0.38       # optional, 0..1: default 65% of from's
+max_saturation = 1          # optional, 0..1
+min_value = 0               # optional, 0..1: brightness bounds
+max_value = 1               # optional
+
+[[costume.portrait_tint]]   # any number: colours of the portraits
+from = "#B4443A"
+to = "#3E6EC0"
+kinds = ["status", "face"]  # optional: status, panel, face, small_face; else all
+```
+
+A colour of a texture is replaced by as much as its hue is within
+`hue_range` of `from`'s and its saturation reaches `min_saturation`, with a
+soft edge; `from` itself becomes `to`, and its lighter, darker and greyer
+shades follow, so shading survives. The saturation and value bounds take
+colours out that share the hue, such as skin beside brown leather (Jazz's
+portraits keep `max_value = 0.38`). A grey `from` (saturation under 5%) has
+no hue to match: its rule paints `to`'s hue and saturation over everything
+its bounds catch, scaling brightness as usual, which is how Claves's grey
+outfit takes a colour. Textures are named as
+`scripts/models.py list -v` shows them, or by their index in that list:
+Xbox 360 models name theirs, PS3 models (`.p3obj`, the PS3 costumes) do not,
+and a character's model lists its textures in the same order on both.
+`scripts/tint_preview.py` previews a rule on a model and portraits, and
+`--mask` shows what it catches. Portrait tints are separate from model ones,
+since the same outfit is usually a different shade in the art.
+
+Only DXT colour endpoints change, so nothing is decoded or re-encoded
+(`src/engine/costume_tint.cpp`). The base's model and portraits are copied at
+boot, before the game builds anything from them, and a tinted copy is made
+when the costume is worn; a costume that ships its own `model` or a portrait
+file uses that instead. A base is any costume of the character but another
+tinted one. One whose base the game data lacks, such as `ps3/2` on Xbox 360
+data, is skipped with a log line. `polka_colors` in EternalSonataReprise-Mods
+is eight tints of Polka and two of her PS3 costume, and `<name>_colors`
+does the same for every other character.
+
+What those mods tint, as a starting point for others (texture indices as
+`models.py list -v` orders them; colours as `from`, hue range, bounds):
+
+| character | model textures | model rule | portrait rule |
+|---|---|---|---|
+| Allegretto | 7 vest | `#7F9997` 25°, sat ≥ 0.08 | `#85A6A6` 14°, sat 0.06..0.3 |
+| Polka | 2, 4, 5, 7, 10 red; 15 umbrella | `#B4443A` 18°, sat ≥ 0.38 | same red |
+| Beat | 1, 4 coat, 6 sleeves | `#CCCA85` 14°, sat ≥ 0.28 | `#CED96C` 14°, sat ≥ 0.3, value ≥ 0.65 |
+| Frederic | 1, 2, 3 coat | `#252238` 25°, sat ≥ 0.2 | `#2D2A4C` 20°, sat ≥ 0.38, value ≥ 0.12 |
+| Viola | 2 skirt, 9 shoes, 11 stole | `#D4A974` 12°, sat ≥ 0.3 | `#997245` 8°, sat ≥ 0.45, value ≤ 0.75 |
+| Salsa | 0 hat band, 8 top | `#BF7143` 12°, sat ≥ 0.45 | `#CC7833` 7°, sat ≥ 0.6 |
+| Jazz | 0 boots, 2 vest, 6 gloves | `#4C2A1F` 15°, sat ≥ 0.45 | same, value ≤ 0.38 |
+| Falsetto | 1, 3, 4, 7, 9 navy | `#2C3E5C` 18°, sat ≥ 0.3 | `#2E4773` 18°, sat ≥ 0.35 |
+| Claves | 1, 4 grey outfit | grey `#4C4C4C`, sat ≤ 0.12, value ≤ 0.6 | grey, sat ≤ 0.12, value 0.08..0.5 |
+| March | 7 top | `#6C9E91` 22°, sat ≥ 0.18 | `#74A69D` 28°, sat ≥ 0.1 |
+| Crescendo | 3, 4, 5 navy trim | `#2D3859` 20°, sat ≥ 0.25 | `#454973` 25°, sat ≥ 0.2 |
+| Serenade | 3, 4, 7, 8, 9 dress | `#D9D2AD` 18°, sat 0.08..0.35 | none: her skin is the dress's cream |
+
+Every texture of the default models, by index. Hair is a texture of its
+own, so a hair tint needs only its index; silver and black hair (Allegretto,
+Frederic, Jazz) wants a grey `from`. Eyebrows and the hairline are painted
+on the face texture and keep their colour. Names are the Xbox 360 model's;
+Crescendo and Serenade exist only as PS3 models, whose textures have no
+names, so theirs are described by look.
+
+| character | hair | face, eyes | outfit | weapon | alpha masks |
+|---|---|---|---|---|---|
+| Allegretto | 5, 6 | 4, 0 | 1 bottom, 2 hand, 3 arm, 7 vest, 8 feather, 9 and 12 bag, 10 boot, 11 boot plate, 13 ribbon, 15 jewel, 16 belt, 17 belt heart | 14 | 18, 19, 20 |
+| Polka | 3 | 1, 0 | 2 ribbon, 4 skirt, 5 shoes, 6 apron, 7 stole, 8 arm, 9 vest, 10 hood, 11 frill, 12 accessories, 13 feather, 14 leg | 15 canopy, 16, 17 | 18 |
+| Beat | 3 | 2, 5 | 0 feet, 1 and 4 coat, 6 hands, 7 camera | 8 | |
+| Frederic | 9 | 10, 11 | 0 hands, 1, 2 and 3 coat, 4 and 5 lace, 6 metal fittings | 7, 8 | 12, 13 |
+| Viola | 4 | 10, 6 | 0 accessories, 1 top, 2 skirt, 3 hands, 5 belt, 7 legs, 8 fringe, 9 shoes, 11 stole | 12, 13, 14 | 15, 16 |
+| Salsa | 4 | 5, 7 | 0 and 11 hat, 1 trousers, 2 necklace, 3 accessories, 6 lining, 8 top, 9 legs, 12 hands | 10 | |
+| Jazz | 12 | 11, 10 | 0 boots, 1 shirt, 2 vest, 3 coat, 4 skirt, 5 and 8 metal, 6 gloves, 7 shoes, 9 chain | 13, 14, 15 | |
+| Falsetto | 6 | 5, 0 | 1, 3 and 4 outfit, 2 fringe, 7 lining | 8, 9 | 10 |
+| Claves | 5 | 7, 2 | 0 trims, 1 lower body, 3 legs, 4 upper body, 6 shoes, 8 hands, 9 gauntlet | 10 | |
+| March | 9 | 4, 6 | 0 hands, 1 trousers, 2 necklace, 3 accessories, 5 lining, 7 top, 8 legs | 10 | |
+| Crescendo | 1 | 0, 8 | 2 gloves, 3 coat, 4 gold trim, 5 cape, 6 white cloth, 7 crystal and gold | 10 | 9 |
+| Serenade | 2 | 1, 0 | 3 accessories, 4 skirt, 5 gold ornaments, 6 skin, 7 and 8 dress, 9 gloves | 12 | 10, 11 |
+
+Portrait AppKeep entries for the preview are image id minus one: status
+194 + n, panel 204 + n (n up to 4), faces 208 + n and 218 + n, for party
+number n. Crescendo and Serenade's are PS3 `appkeep.bmd` 204 and 205 and
+`campdata/camp_char.bmd` 39, 40, 48 and 49.
 
 `mods/costume_test` in EternalSonataReprise-Mods dresses all twelve in a
 costume that keeps each model and captions every portrait with its

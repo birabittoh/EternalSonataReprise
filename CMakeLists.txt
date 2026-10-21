@@ -465,6 +465,7 @@ set(ETERNALSONATA_SOURCES
     src/platform/touch_input_driver.cpp
     src/engine/dlc_auto_install.cpp
     src/engine/costume_system.cpp
+    src/engine/costume_tint.cpp
     src/engine/character_roster.cpp
     src/engine/party_arrays.cpp
     src/engine/progression_curves.cpp
