@@ -306,7 +306,8 @@ constexpr std::array kBasicCvarNames = {
     "right_trigger_behavior", "special_hold_time", "ranged_special_buffer",
     "party_tactical_time_multiplier", "party_action_time_multiplier",
     "enemy_action_time_multiplier",
-    "save_row_portraits", "force_japanese_font", "skip_intro", "show_start_screen"};
+    "save_row_portraits", "force_japanese_font", "skip_intro", "show_start_screen",
+    "discord_activity"};
 
 // Steps for the multiplier rows. HP stops short of zero, the
 // same floor enemy_hp_multiplier has.
@@ -808,6 +809,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawPromptDeviceRow();
         DrawFieldLeaderModelRow();
         DrawFieldActionModelRow();
+        DrawCvarRow("discord_activity");
         DrawCvarRow("show_start_screen");
         DrawStartScreenRow();
         ImGui::EndTabItem();
