@@ -208,6 +208,19 @@ uint64_t g_index_bytes = 0;
 uint64_t g_constant_bytes = 0;
 uint64_t g_stream_cache_hits = 0;
 
+// A BeginVertices block is drawn once, so its pointer coming back within a frame
+// means the guest's vertex ring wrapped and the bytes there are a new draw's.
+// Those draws never take the cached upload; this counts how often it happens.
+uint64_t g_inline_pointer_reuse = 0;
+
+bool InlineReuse(const GuestDrawCall& call) {
+  if (!call.inlined)
+    return false;
+  if (g_inline_pointer_reuse++ == 0)
+    REXLOG_WARN("native_renderer: an inline vertex block reused an address within a frame");
+  return true;
+}
+
 // Cross frame vertex cache for the streams the guest binds with SetStreamSource.
 // Those are real vertex buffers at stable addresses, and most of them are
 // static meshes whose bytes never change, so re-swapping them every frame is
@@ -2263,7 +2276,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 
       const StreamCacheKey widened_key{source.data, uint32_t(bytes), widened_stride,
                                        kWidenedCacheKind};
-      if (const auto found = g_stream_cache.find(widened_key); found != g_stream_cache.end()) {
+      if (const auto found = g_stream_cache.find(widened_key);
+          found != g_stream_cache.end() && !InlineReuse(call)) {
         ++g_stream_cache_hits;
         views[slot] = RenderVertexBufferView(found->second.ref, found->second.size);
         continue;
@@ -2375,7 +2389,9 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     // A run of draws out of one mesh buffer is the common shape here, and the
     // swap is the expensive part.
     const StreamCacheKey stream_key{stream.data, uint32_t(out_bytes), stream.stride, cache_kind};
-    const auto cached = g_stream_cache.find(stream_key);
+    auto cached = g_stream_cache.find(stream_key);
+    if (cached != g_stream_cache.end() && InlineReuse(call))
+      cached = g_stream_cache.end();
 
     // Only the SetStreamSource streams, uploaded plain, are worth remembering
     // across frames; see g_persistent_streams.
@@ -3096,11 +3112,12 @@ void LogGuestDrawSummary() {
 
   REXLOG_DEBUG(
       "native_renderer: draws issued={} requested={} dropped={} | uploaded {} KiB vertices, {} "
-      "KiB indices, {} KiB constants | stream cache hits={} | persistent streams {} ({} KiB) "
-      "hits={} misses={} | arena {} block(s) | rect lists={} (unexpanded {}) | quad lists={} "
-      "(indexed {})",
+      "KiB indices, {} KiB constants | stream cache hits={} (inline reuse {}) | persistent streams "
+      "{} ({} KiB) hits={} misses={} | arena {} block(s) | rect lists={} (unexpanded {}) | quad "
+      "lists={} (indexed {})",
       g_draws_issued, g_draws_requested, dropped, g_vertex_bytes / 1024, g_index_bytes / 1024,
-      g_constant_bytes / 1024, g_stream_cache_hits, g_persistent_streams.size(),
+      g_constant_bytes / 1024, g_stream_cache_hits, g_inline_pointer_reuse,
+      g_persistent_streams.size(),
       g_persistent_stream_bytes / 1024, g_persistent_stream_hits, g_persistent_stream_misses,
       Arena().size(), g_rect_draws, g_rect_fallbacks, g_quad_draws, g_quad_indexed_draws);
 
