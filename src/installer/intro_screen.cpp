@@ -245,6 +245,15 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     BuildOptions();
   }
 
+  // The runtime's input driver only learns of pads from the device added events
+  // SDL queues when the subsystem first starts, so drop ours before it does.
+  ~IntroDialog() override {
+    if (pad_)
+      SDL_CloseGamepad(pad_);
+    if (pad_init_)
+      SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+  }
+
   void Update(const GameDataPrompt& prompt) {
     const bool rebuild = prompt.confirm.empty() != prompt_.confirm.empty() ||
                          prompt.outdated.empty() != prompt_.outdated.empty() ||
