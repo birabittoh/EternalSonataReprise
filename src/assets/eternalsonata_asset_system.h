@@ -81,4 +81,7 @@ bool JapaneseTitleServed();
 // BindAssetSystem has run; true before that, and when the probe cannot be read.
 bool BtxLanguageAvailable(const char* fourcc, bool count_mods = true);
 
+// The patched copy of a container when mods changed it, else empty.
+std::filesystem::path PatchedAssetFile(const std::string& guest_path);
+
 }  // namespace eternalsonata

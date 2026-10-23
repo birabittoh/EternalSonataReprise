@@ -16,6 +16,7 @@
 
 #include "ps3_appkeep.h"
 
+#include "eternalsonata_asset_system.h"
 #include "generated/eternalsonata_init.h"
 #include "target.h"
 
@@ -111,7 +112,10 @@ uint32_t ReadBe32(const std::vector<uint8_t>& data, size_t at) {
 }
 
 bool ReadFile(const std::string& name, std::vector<uint8_t>& out) {
-  std::ifstream in(eternalsonata::GameDataRoot() / name, std::ios::binary);
+  auto path = eternalsonata::PatchedAssetFile(name);
+  if (path.empty())
+    path = eternalsonata::GameDataRoot() / name;
+  std::ifstream in(path, std::ios::binary);
   if (!in)
     return false;
   out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());

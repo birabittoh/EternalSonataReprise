@@ -2094,6 +2094,15 @@ bool SupplyReplacementPcm(void*, const uint8_t tag[16], uint64_t* cursor, int sa
 
 }  // namespace
 
+std::filesystem::path PatchedAssetFile(const std::string& guest_path) {
+  State& s = state();
+  std::error_code ec;
+  if (s.cache_dir.empty())
+    return {};
+  auto path = s.cache_dir / std::filesystem::path(guest_path);
+  return std::filesystem::is_regular_file(path, ec) ? path : std::filesystem::path{};
+}
+
 namespace {
 
 struct ModFolder {
