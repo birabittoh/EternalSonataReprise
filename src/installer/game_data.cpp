@@ -27,6 +27,7 @@
 #include "game_library.h"
 #include "install_pipeline.h"
 #include "intro_screen.h"
+#include "mods_screen.h"
 #include "ui_text.h"
 
 // The storage probes come from the SDK's GameDataSelector
@@ -817,6 +818,11 @@ bool UsePreparedGameData(const GameDataOptions& options) {
   REXLOG_INFO("Game version {} at {}", version.key, version.dir.string());
   if (g_asked || version.needs_phases || version.outdated)
     return false;
+  // The screen explains why Start is off.
+  if (!ModsScreen::BlockingIssue().empty()) {
+    g_asked = true;
+    return false;
+  }
   g_selected_dir = version.dir;
   return true;
 }

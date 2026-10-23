@@ -112,6 +112,40 @@ ModsScreen::~ModsScreen() {
   }
 }
 
+std::string ModsScreen::BlockingIssue() {
+  // The runtime refuses to start only on a version mismatch; other problems are logged.
+  using rex::system::CompareVersions;
+  using rex::system::ParseVersionComponents;
+  const auto root = rex::system::ModState::ResolveModsRoot();
+  const auto entries = rex::system::ModState::LoadReconciled(root);
+  std::unordered_map<std::string, rex::system::ModInfo> infos;
+  std::vector<std::string> enabled;
+  for (const auto& entry : entries) {
+    if (!entry.enabled)
+      continue;
+    enabled.push_back(entry.id);
+    infos.emplace(entry.id, rex::system::ParseModInfo(root / entry.id));
+  }
+  std::vector<int> have, want;
+  for (const auto& id : enabled) {
+    const auto& info = infos.at(id);
+    if (!info.min_game_version.empty() && ParseVersionComponents(info.min_game_version, want) &&
+        ParseVersionComponents(ETERNALSONATA_VERSION, have) && CompareVersions(have, want) < 0)
+      return id + ": " + Fmt("incompatible_version", "Requires game version >= %s (running %s)",
+                             info.min_game_version.c_str(), ETERNALSONATA_VERSION);
+    for (const auto& req : info.requires_mods) {
+      const auto dep = infos.find(req.name);
+      if (req.name == id || dep == infos.end() || req.min_version.empty())
+        continue;
+      if (ParseVersionComponents(req.min_version, want) &&
+          ParseVersionComponents(dep->second.version, have) && CompareVersions(have, want) < 0)
+        return id + " requires " + req.name + " >= " + req.min_version + " (found " +
+               dep->second.version + ")";
+    }
+  }
+  return {};
+}
+
 void ModsScreen::Reload() {
   mods_root_ = rex::system::ModState::ResolveModsRoot();
   entries_ = rex::system::ModState::LoadReconciled(mods_root_);

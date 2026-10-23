@@ -420,6 +420,13 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
                      ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav);
     ImDrawList* draw = ImGui::GetWindowDrawList();
 
+    // Reread once at first, and again whenever the Mods page closes.
+    if (!mod_block_known_ || (mods_was_open_ && !mods_open_)) {
+      mod_block_ = ModsScreen::BlockingIssue();
+      mod_block_known_ = true;
+    }
+    mods_was_open_ = mods_open_;
+
     draw->AddRectFilledMultiColor(ImVec2(0, 0), size, kTop, kTop, kBottom, kBottom);
     if (g_background.texture)
       Cover(draw, g_background, size, IM_COL32_WHITE);
@@ -734,7 +741,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const VersionRow* row = SelectedRow();
     switch (option.choice) {
       case GameDataChoice::kStart:
-        return row && Supported(IntroLanguage());
+        return row && Supported(IntroLanguage()) && mod_block_.empty();
       case GameDataChoice::kExtract:
         return prompt_.can_extract;
       case GameDataChoice::kDelete:
@@ -1037,8 +1044,11 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         }
       }
       const GameDataChoice go = library ? GameDataChoice::kStart : GameDataChoice::kExtract;
-      if (option.version < 0 && option.choice == go && prompt_.confirm.empty() &&
-          !Supported(IntroLanguage())) {
+      if (option.version < 0 && option.choice == go && library && prompt_.confirm.empty() &&
+          !mod_block_.empty()) {
+        DrawWarning(draw, font, size, unit, ImVec2(max.x, min.y), h, alpha, mod_block_);
+      } else if (option.version < 0 && option.choice == go && prompt_.confirm.empty() &&
+                 !Supported(IntroLanguage())) {
         const std::string release =
             library ? (SelectedRow() ? SelectedRow()->label : std::string()) : prompt_.release;
         DrawLanguageWarning(draw, font, size, unit, ImVec2(max.x, min.y), h, alpha, release);
@@ -1361,7 +1371,11 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   // corner is `start_max`.
   void DrawLanguageWarning(ImDrawList* draw, ImFont* font, ImVec2 size, float unit,
                            ImVec2 start_max, float h, float a, const std::string& release) {
-    const std::string text = Tr(IntroText::kUnsupportedLanguage, release);
+    DrawWarning(draw, font, size, unit, start_max, h, a, Tr(IntroText::kUnsupportedLanguage, release));
+  }
+
+  void DrawWarning(ImDrawList* draw, ImFont* font, ImVec2 size, float unit, ImVec2 start_max,
+                   float h, float a, const std::string& text) {
     const float text_size = 18.0f * unit;
     const float text_x = start_max.x + 16.0f * unit;
     const float wrap = std::max(size.x - text_x - 16.0f * unit, 120.0f * unit);
@@ -1395,6 +1409,10 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   std::optional<GameDataChoice> choice_;
   std::unique_ptr<ModsScreen> mods_;
   bool mods_open_ = false;
+  bool mods_was_open_ = false;
+  // Why enabled mods stop the game starting; empty when none do.
+  std::string mod_block_;
+  bool mod_block_known_ = false;
 };
 
 std::unique_ptr<IntroDialog> g_dialog;

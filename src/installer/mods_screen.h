@@ -45,6 +45,10 @@ class ModsScreen {
   // staged updates real right away.
   void Commit();
 
+  // The first error among the enabled mods (unmet requirement, game too old),
+  // or empty when the game can start.
+  static std::string BlockingIssue();
+
   // The cursor is on the intro's music toggle, which the intro draws.
   bool MusicFocused() const { return focus_.zone == Zone::kMusic; }
   // Likewise the language picker.
