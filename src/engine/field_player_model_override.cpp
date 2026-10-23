@@ -636,8 +636,8 @@ REX_HOOK_RAW(sub_820FCF80) {
 }
 
 // Beat and Viola have a 0.30 collision radius, too small for the interaction
-// range of some NPCs (Forte City shopkeepers); Salsa's 0.33 is enough.
-constexpr float kMinLeaderRadius = 0.33f;
+// range of some NPCs (Forte City shopkeepers); 0.33 was still too small.
+constexpr float kMinLeaderRadius = 0.45f;
 
 REX_EXTERN(__imp__sub_820F1290);
 
