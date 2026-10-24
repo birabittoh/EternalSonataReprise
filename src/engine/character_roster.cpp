@@ -51,6 +51,9 @@ constexpr const char* kPs3Names[2][7] = {
 
 constexpr int kAddedSlots = kRosterSize - kRetailCast;
 
+// Modded characters are unfinished
+constexpr bool kModdedCharactersEnabled = false;
+
 std::mutex g_mutex;
 std::array<std::optional<ModdedCharacter>, kAddedSlots> g_slots;
 
@@ -223,7 +226,7 @@ bool ModdedDefinition(int character, ModdedCharacter& out) {
 }
 
 int DefineModdedCharacter(int character, ModdedCharacter definition) {
-  if (IsPs3Target())
+  if (!kModdedCharactersEnabled || IsPs3Target())
     return ETERNALSONATA_PARTY_ERR_NO_SLOTS;
   if (definition.name.empty() || definition.id.empty())
     return ETERNALSONATA_PARTY_ERR_INVALID_ARGUMENT;
@@ -295,7 +298,7 @@ int UndefineModdedCharacter(int character) {
 }
 
 int AddedSlotCount() {
-  return IsPs3Target() ? 0 : kAddedSlots;
+  return !kModdedCharactersEnabled || IsPs3Target() ? 0 : kAddedSlots;
 }
 
 int AddedSlot(int index) {
@@ -380,7 +383,7 @@ int RetailFromText(std::string_view text) {
 }  // namespace
 
 void ScanModCharacters(rex::Runtime* runtime) {
-  if (IsPs3Target())
+  if (!kModdedCharactersEnabled || IsPs3Target())
     return;
   static constexpr const char* kPortraitKeys[kCharacterPortraitKinds] = {
       "portrait", "panel_portrait", "face_portrait", "small_face_portrait"};
