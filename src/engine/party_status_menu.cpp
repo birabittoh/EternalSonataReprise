@@ -21,7 +21,6 @@
 #include "generated/eternalsonata_init.h"
 #include "party_system.h"
 #include "ps3_appkeep.h"
-#include "ps3_natives.h"
 #include "target.h"
 
 // AppKeep image ids are the slot plus one.
@@ -242,8 +241,6 @@ constexpr uint32_t kPromptGlyphSlot = 80u;
 constexpr uint32_t kPromptTextSlot = 384u;
 
 bool CanChangeCostume(int character) {
-  if (eternalsonata::IsPs3Target() && eternalsonata::Ps3CostumesBlocked())
-    return false;
   const int next = eternalsonata::NextUnlockedCostume(character);
   return next >= 0 && next != eternalsonata::WornCostume(character);
 }

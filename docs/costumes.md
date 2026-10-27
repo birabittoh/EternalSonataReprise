@@ -310,8 +310,9 @@ routine's (`lib.e` `0x5E50`): items 427..430 are kept out of the inventory and
 unlock ALG v2, PLK v2, PLK v3 and BET v2. The chests are in `tcd04` (427),
 `lam05` (428), `tnt40`/`tnt45` (429) and `rty04` (430), so this needs no host
 code beyond 5026. The PS3 changes them on a
-camp menu page of its own; here X on the status page does, and is off while
-the camp menu flag `+0x920` (5032) is, as that page is on the PS3. Their
+camp menu page of its own, which the camp menu flag `+0x920` (5032) turns off;
+here X on the status page does, whenever the character has another unlocked
+costume, regardless of that flag. Their
 portraits are `campdata/camp_char.bmd` entries, which the PS3 picks with
 `sub_1E5840(character, kind)`: kind n of variant v is entry 3n + 12v +
 character - 13 (Polka's v3: n + 24), kind 0 the panel, 1 and 2 the face sets,
