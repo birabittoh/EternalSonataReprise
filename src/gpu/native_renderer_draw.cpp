@@ -25,6 +25,7 @@
 #include "native_renderer_plume.h"
 #include "native_renderer_plume_internal.h"
 #include "native_renderer_profile.h"
+#include "native_renderer_readback.h"
 #include "native_renderer_shader_debug.h"
 #include "native_renderer_texture.h"
 
@@ -2135,6 +2136,7 @@ bool IssueGuestDraw(const GuestDrawCall& call) {
 namespace {
 
 bool RecordGuestDraw(const GuestDrawCall& call) {
+  const ReadbackDrawScope readback_scope;
   if (call.pipeline == nullptr) {
     Drop(kDropNoPipeline, "the pipeline cache refused this draw");
     return false;

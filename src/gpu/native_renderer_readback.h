@@ -105,6 +105,14 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
 // disagreement is reported rather than reconciled.
 bool ReadbackFillForRead(const TextureFetch& bound);
 
+// Held while a guest draw is recorded. A flush inside one ends the list under
+// the draw's bound state and recycles its arena, and the rest of the draw then
+// records into a closed list; same frame reads in there go unanswered instead.
+struct ReadbackDrawScope {
+  ReadbackDrawScope();
+  ~ReadbackDrawScope();
+};
+
 // Once a frame, from the thread that records it. Writes back every destination
 // whose copy has retired since the last call and disarms any arming that has
 // outlived its resolve, so guest memory the game has since reused is never

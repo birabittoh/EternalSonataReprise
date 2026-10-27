@@ -344,6 +344,8 @@ uint64_t g_retried_faults = 0;
 // was attempted and failed. Counted apart so the summary says which.
 uint64_t g_unanswered_thread = 0;
 uint64_t g_unanswered_flush = 0;
+// Reads on the render thread that needed a flush while a draw was half recorded.
+uint64_t g_unanswered_draw = 0;
 // Reads answered by waiting for the recording thread's present rather than by
 // flushing. See WaitForCopy.
 uint64_t g_waited_copies = 0;
@@ -366,6 +368,9 @@ uint64_t g_unanswered = 0;
 // it is "am I the thread that records the frame", and every platform answers
 // that the same way. The id form needed GetCurrentThreadId().
 thread_local bool g_is_render_thread = false;
+
+// See ReadbackDrawScope. A depth, so a nested scope cannot clear it early.
+thread_local uint32_t g_draw_depth = 0;
 uint64_t g_fills = 0;
 uint64_t g_fill_bytes = 0;
 uint64_t g_refused_format = 0;
@@ -808,6 +813,11 @@ bool EnsureData(Destination& destination, std::unique_lock<std::mutex>& lock) {
       return true;
     }
     ++g_unanswered_thread;
+    ++g_unanswered;
+    return false;
+  }
+  if (g_draw_depth != 0) {
+    ++g_unanswered_draw;
     ++g_unanswered;
     return false;
   }
@@ -1441,6 +1451,9 @@ void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8
 #endif
 }
 
+ReadbackDrawScope::ReadbackDrawScope() { ++g_draw_depth; }
+ReadbackDrawScope::~ReadbackDrawScope() { --g_draw_depth; }
+
 bool ReadbackFillForRead(const TextureFetch& bound) {
   if (CurrentMode() == Mode::kOff || bound.base_address == 0)
     return false;
@@ -1553,14 +1566,14 @@ void LogReadbackSummary() {
   REXLOG_DEBUG(
       "native_renderer: readback destinations={} arms={} | faults read={} write={} outside={} "
       "retried={} | mirror pulls={} | fills={} ({} MiB) | flushes={} waited={} "
-      "unanswered={} (thread {}, flush {}) | "
+      "unanswered={} (thread {}, flush {}, in draw {}) | "
       "refused format={} "
       "extent={} unmapped={} stale={} untrapped={} | re-baselined={} | copies skipped large={} "
       "idle={} | layout disagreements={}",
       g_destinations.size(), g_arms, g_read_faults, g_write_faults, g_outside_faults,
       g_retried_faults, g_pulls,
       g_fills, g_fill_bytes >> 20, g_flushes, g_waited_copies, g_unanswered, g_unanswered_thread,
-      g_unanswered_flush, g_refused_format, g_refused_extent,
+      g_unanswered_flush, g_unanswered_draw, g_refused_format, g_refused_extent,
       g_refused_unmapped, g_refused_stale, g_refused_large, g_rebaselined,
       g_copies_skipped_large, g_copies_skipped_idle, g_layout_disagreements);
 
