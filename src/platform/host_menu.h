@@ -9,8 +9,8 @@
 //
 // It also carries the actions that have no overlay behind them and that an
 // Android user cannot perform for themselves, because Android 11+ hides
-// Android/data from on-device file managers: installing mods and picking a
-// GPU driver. Saves are imported and exported on the start screen.
+// Android/data from on-device file managers: picking a GPU driver. Saves are
+// imported and exported, and mods installed, on the start screen.
 #pragma once
 
 namespace rex::ui {
