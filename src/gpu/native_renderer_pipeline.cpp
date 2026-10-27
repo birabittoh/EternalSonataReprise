@@ -1096,6 +1096,7 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   if (request.has_color_target) {
     desc.renderTargetFormat[0] = FrameColorFormat();
     desc.renderTargetCount = 1;
+    desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
   }
 
   // Render state, out of the guest's register shadows. Before this existed the

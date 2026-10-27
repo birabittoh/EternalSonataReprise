@@ -755,6 +755,7 @@ bool EnsureDownscaleResources(RenderDevice* device) {
     // image the readback copy then reads as kColorFormat.
     pipeline_desc.renderTargetFormat[0] = kColorFormat;
     pipeline_desc.renderTargetCount = 1;
+    pipeline_desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
     pipeline_desc.cullMode = RenderCullMode::NONE;
     pipeline_desc.depthEnabled = false;
     pipeline_desc.depthWriteEnabled = false;
@@ -840,6 +841,7 @@ bool EnsureFxaaResources(RenderDevice* device) {
     pipeline_desc.pixelShader = g_fxaa.pixel_shader.get();
     pipeline_desc.renderTargetFormat[0] = kColorFormat;
     pipeline_desc.renderTargetCount = 1;
+    pipeline_desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
     pipeline_desc.cullMode = RenderCullMode::NONE;
     pipeline_desc.depthEnabled = false;
     pipeline_desc.depthWriteEnabled = false;
@@ -1014,6 +1016,7 @@ bool EnsureCropResources(RenderDevice* device) {
     pipeline_desc.pixelShader = g_crop.pixel_shader.get();
     pipeline_desc.renderTargetFormat[0] = kColorFormat;
     pipeline_desc.renderTargetCount = 1;
+    pipeline_desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
     pipeline_desc.cullMode = RenderCullMode::NONE;
     pipeline_desc.depthEnabled = false;
     pipeline_desc.depthWriteEnabled = false;
@@ -1090,6 +1093,7 @@ bool EnsureDepthResolveResources(RenderDevice* device) {
     pipeline_desc.pixelShader = g_depth_resolve.pixel_shader.get();
     pipeline_desc.renderTargetFormat[0] = RenderFormat::R32_FLOAT;
     pipeline_desc.renderTargetCount = 1;
+    pipeline_desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
     pipeline_desc.cullMode = RenderCullMode::NONE;
     pipeline_desc.depthEnabled = false;
     pipeline_desc.depthWriteEnabled = false;
@@ -3122,6 +3126,7 @@ bool EnsureBlitResources(RenderDevice* device) {
     // same everywhere except Android; see PlumeSwapChainFormat.
     pipeline_desc.renderTargetFormat[0] = PlumeSwapChainFormat();
     pipeline_desc.renderTargetCount = 1;
+    pipeline_desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
     pipeline_desc.cullMode = RenderCullMode::NONE;
     pipeline_desc.depthEnabled = false;
     pipeline_desc.depthWriteEnabled = false;
