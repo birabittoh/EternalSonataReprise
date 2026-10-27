@@ -518,6 +518,33 @@ void CaptureNewGame() {
       g_new_game[i] = Hex(entries, kExtra * kArrays[i].stride);
 }
 
+// Members dropped on load (a PS3 save's 11 and 12 on 360 data) leave holes in
+// the display positions; the camp screen reads a hole as character 0.
+void ClosePositionGaps() {
+  auto* runtime = rex::Runtime::instance();
+  auto* memory = runtime ? runtime->memory() : nullptr;
+  if (!memory)
+    return;
+  const auto position = [&](uint32_t c) {
+    return memory->TranslateVirtual<uint8_t*>(PartyArrayAddress(PartyArray::kPosition, c));
+  };
+  uint32_t next = 1;
+  for (uint32_t p = 1; p <= kPartyCharacterCount * 2; ++p) {
+    for (uint32_t c = 0; c < kPartyCharacterCount; ++c) {
+      if (rex::memory::load_and_swap<uint32_t>(position(c)) != p)
+        continue;
+      if (p != next) {
+        REXLOG_INFO("party arrays: character {} moves from position {} to {}", c + 1, p, next);
+        rex::memory::store_and_swap<uint32_t>(position(c), next);
+        auto* slot = memory->TranslateVirtual<uint8_t*>(PartyArrayAddress(PartyArray::kSlotBytes, c));
+        if (*slot)
+          *slot = static_cast<uint8_t>(next);
+      }
+      ++next;
+    }
+  }
+}
+
 }  // namespace
 
 void SavePartyRecord(SaveRecord& record) {
@@ -539,6 +566,7 @@ void LoadPartyRecord(const SaveRecord& record) {
     if (!Unhex(g_new_game[i], entries, size))
       std::memset(entries, 0, size);
   }
+  ClosePositionGaps();
 }
 
 void InitPartyArrays(rex::Runtime* runtime) {
