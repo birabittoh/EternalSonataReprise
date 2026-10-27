@@ -540,6 +540,10 @@ elseif(ANDROID)
         CXX_VISIBILITY_PRESET default
         C_VISIBILITY_PRESET default
     )
+    # System.loadLibrary opens the library RTLD_LOCAL, and bionic's
+    # dlsym(RTLD_DEFAULT) skips local libraries, hiding the mod API from mods.
+    # DF_1_GLOBAL makes the linker treat it as RTLD_GLOBAL.
+    target_link_options(eternalsonata PRIVATE "LINKER:-z,global")
 else()
     add_executable(eternalsonata ${ETERNALSONATA_SOURCES})
     # ELF executables do not auto-export their own symbols, so without this the
