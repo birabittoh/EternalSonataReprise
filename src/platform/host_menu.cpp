@@ -10,19 +10,13 @@
 
 #include <SDL3/SDL.h>
 
-#include <cstdio>
-#include <cstring>
-#include <ctime>
+#include <cstdarg>
 #include <string>
-#include <system_error>
 #include <vector>
 
-#include <rex/filesystem.h>
-#include <rex/logging.h>
-#include <rex/system/kernel_state.h>
 #include <rex/system/mod_state.h>
-#include <rex/system/xcontent.h>
 
+#include "document_picker.h"
 #include "ui_text.h"
 #endif
 
@@ -43,25 +37,19 @@ namespace {
 // are what nativeHostMenuSelect switches on, so keep the two in step.
 enum MenuItem : int {
   kInstallMod = 0,
-  kExportSaves,
-  kImportSaves,
   kGpuDriver,
   kExit,
 };
 
 std::vector<std::string> MenuItems() {
-  return {Tr("host_menu", "menu_install_mod"), Tr("host_menu", "menu_export_saves"),
-          Tr("host_menu", "menu_import_saves"), Tr("host_menu", "menu_gpu_driver"),
+  return {Tr("host_menu", "menu_install_mod"), Tr("host_menu", "menu_gpu_driver"),
           Tr("host_menu", "menu_exit")};
 }
 
 // The strings EternalSonataActivity draws itself, in the order of its T_*
 // constants. Fetched whenever a dialog opens, so a language change shows.
 std::vector<std::string> JavaTexts() {
-  return {Tr("host_menu", "read_failed"),
-          Tr("host_menu", "write_failed"),
-          Tr("host_menu", "saves_exported"),
-          Tr("host_menu", "driver_invalid"),
+  return {Tr("host_menu", "driver_invalid"),
           Tr("host_menu", "driver_installed"),
           Tr("host_menu", "driver_system"),
           Tr("host_menu", "driver_title_startup"),
@@ -75,15 +63,6 @@ std::vector<std::string> JavaTexts() {
           Tr("host_menu", "close_game"),
           Tr("host_menu", "later")};
 }
-
-// Which document request a JNI file callback belongs to. Passed to Java and
-// handed straight back, since the picker result arrives on a later turn of
-// the Android activity's own lifecycle.
-enum DocumentOp : int {
-  kOpImportSaves = 0,
-  kOpExportSaves,
-  kOpInstallMod,
-};
 
 JNIEnv* JniEnv() { return static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv()); }
 
@@ -146,106 +125,6 @@ void ShowToast(const std::string& message) {
   env->DeleteLocalRef(text);
 }
 
-// content_root/<xuid>/<title id>. Saves live under this per profile, so an
-// export has to sweep every xuid directory rather than just the signed in
-// one; the reference layout has both a zeroed and a real profile id.
-std::string TitleIdDirName() {
-  auto* kernel_state = rex::system::kernel_state();
-  char buffer[16] = {};
-  std::snprintf(buffer, sizeof(buffer), "%08X", kernel_state ? kernel_state->title_id() : 0u);
-  return buffer;
-}
-
-// Copies every <xuid>/<title id> tree into `staging`, keeping the xuid level
-// so an import can put each back where it came from.
-bool StageSavesForExport(const std::filesystem::path& user_data_root,
-                         const std::filesystem::path& staging, std::string& error) {
-  const std::string title_id = TitleIdDirName();
-  std::error_code ec;
-  std::filesystem::create_directories(staging, ec);
-
-  int copied = 0;
-  for (const auto& entry : std::filesystem::directory_iterator(user_data_root, ec)) {
-    if (ec) {
-      break;
-    }
-    if (!entry.is_directory(ec) || ec) {
-      continue;
-    }
-    // A profile directory is a 16 hex digit xuid; everything else under the
-    // user folder (achievements, cache, ...) is not a save.
-    const std::string name = entry.path().filename().string();
-    if (name.size() != 16 ||
-        name.find_first_not_of("0123456789ABCDEFabcdef") != std::string::npos) {
-      continue;
-    }
-    const auto source = entry.path() / title_id;
-    if (!std::filesystem::is_directory(source, ec)) {
-      continue;
-    }
-    const auto dest = staging / name / title_id;
-    std::filesystem::create_directories(dest.parent_path(), ec);
-    std::filesystem::copy(source, dest,
-                          std::filesystem::copy_options::recursive |
-                              std::filesystem::copy_options::overwrite_existing,
-                          ec);
-    if (ec) {
-      error = Tr("host_menu", "profile_read_failed", name) + ": " + ec.message();
-      return false;
-    }
-    ++copied;
-  }
-
-  if (!copied) {
-    error = Tr("host_menu", "no_saves");
-    return false;
-  }
-  return true;
-}
-
-// ---------------------------------------------------------------------------
-// The menu actions. Each runs on the UI thread (see the JNI callbacks below)
-// and returns the message to show the user.
-// ---------------------------------------------------------------------------
-
-std::string DoExportSaves(const std::filesystem::path& user_data_root,
-                          const std::filesystem::path& cache_root,
-                          std::filesystem::path& out_archive) {
-  const auto staging = cache_root / "export_staging";
-  std::error_code ec;
-  std::filesystem::remove_all(staging, ec);
-
-  std::string error;
-  if (!StageSavesForExport(user_data_root, staging, error)) {
-    std::filesystem::remove_all(staging, ec);
-    return Tr("host_menu", "export_failed", error);
-  }
-
-  const std::time_t now = std::time(nullptr);
-  std::tm local_time;
-  localtime_r(&now, &local_time);
-  char timestamp[16] = {};
-  std::strftime(timestamp, sizeof(timestamp), "%Y%m%d-%H%M%S", &local_time);
-  const auto archive = cache_root / (std::string("eternalsonata-saves-") + timestamp + ".zip");
-  std::filesystem::remove(archive, ec);
-  const bool ok = rex::filesystem::CreateZip(staging, archive, error);
-  std::filesystem::remove_all(staging, ec);
-  if (!ok) {
-    return Tr("host_menu", "export_failed", error);
-  }
-  out_archive = archive;
-  return {};
-}
-
-std::string DoImportSaves(const std::filesystem::path& archive,
-                          const std::filesystem::path& user_data_root) {
-  std::string error;
-  if (!rex::filesystem::ExtractZip(archive, user_data_root, error)) {
-    return Tr("host_menu", "import_failed", error);
-  }
-  return Tr("host_menu", "import_ok");
-}
-
 std::string DoInstallMod(const std::filesystem::path& archive) {
   std::string error;
   const auto result = rex::system::ModState::InstallLocalArchive(
@@ -271,8 +150,7 @@ void RunOnUiThread(std::function<void()> work) {
 // The JNI callbacks below all arrive on an Android thread that is not the one
 // owning the SDL window, so anything touching engine state is marshalled
 // through CallInUIThread; that is the same hazard and fix as settings.cpp's
-// RestartNow(). The file work is marshalled too, since the content manager is
-// shared with the guest's own DLC enumeration.
+// RestartNow().
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeHostMenuSelect(JNIEnv*, jobject,
@@ -281,18 +159,16 @@ Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeHostMenuSelect(JNI
     return;
   }
   rex::ui::Window* window = g_instance->window_for_callback();
-  const auto user_data_root = g_instance->user_data_root();
-  const auto cache_root = g_instance->cache_root();
 
   switch (index) {
     case kInstallMod:
-      CallActivityVoid("requestOpenDocument", "(I)V", static_cast<jint>(kOpInstallMod));
-      break;
-    case kExportSaves:
-      CallActivityVoid("requestCreateDocument", "(I)V", static_cast<jint>(kOpExportSaves));
-      break;
-    case kImportSaves:
-      CallActivityVoid("requestOpenDocument", "(I)V", static_cast<jint>(kOpImportSaves));
+      RunOnUiThread([window] {
+        PickFileToRead(window->app_context(), [](std::optional<std::filesystem::path> picked) {
+          if (picked) {
+            ShowToast(DoInstallMod(*picked));
+          }
+        });
+      });
       break;
     case kGpuDriver:
       CallActivityVoid("showGpuDriverDialog", "(Z)V", static_cast<jboolean>(JNI_FALSE));
@@ -319,64 +195,9 @@ Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeCloseGame(JNIEnv*,
   RunOnUiThread([window] { window->RequestClose(); });
 }
 
-// `path` is a plain cache file Java already copied the picked document into
-// (import/install), or null when Java is asking for the file to write out
-// (export). Returns the path to hand back to the picked destination, or null.
-// Keeping SAF on the Java side like this is what stops content:// URIs from
-// having to reach the save and content code at all.
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_birabittoh_eternalsonata_EternalSonataActivity_nativeDocumentReady(JNIEnv* env, jobject,
-                                                                           jint op, jstring path) {
-  if (!g_instance) {
-    return nullptr;
-  }
-  const auto user_data_root = g_instance->user_data_root();
-  const auto cache_root = g_instance->cache_root();
-
-  std::filesystem::path host_path;
-  if (path) {
-    const char* chars = env->GetStringUTFChars(path, nullptr);
-    host_path = rex::to_path(std::string(chars ? chars : ""));
-    env->ReleaseStringUTFChars(path, chars);
-  }
-
-  std::filesystem::path produced;
-  std::string message;
-  // Synchronous so the result can be reported here, and so Java does not copy
-  // the export archive out before it has been written.
-  g_instance->window_for_callback()->app_context().CallInUIThreadSynchronous(
-      [&, op, user_data_root, cache_root] {
-        switch (op) {
-          case kOpInstallMod:
-            message = DoInstallMod(host_path);
-            break;
-          case kOpImportSaves:
-            message = DoImportSaves(host_path, user_data_root);
-            break;
-          case kOpExportSaves:
-            message = DoExportSaves(user_data_root, cache_root, produced);
-            break;
-          default:
-            break;
-        }
-      });
-
-  if (!message.empty()) {
-    ShowToast(message);
-  }
-  if (produced.empty()) {
-    return nullptr;
-  }
-  return env->NewStringUTF(produced.string().c_str());
-}
-
 #endif  // REX_PLATFORM_ANDROID
 
-HostMenu::HostMenu(rex::ui::Window* window, std::filesystem::path user_data_root,
-                   std::filesystem::path cache_root)
-    : window_(window),
-      user_data_root_(std::move(user_data_root)),
-      cache_root_(std::move(cache_root)) {
+HostMenu::HostMenu(rex::ui::Window* window) : window_(window) {
   g_instance = this;
 #if REX_PLATFORM_ANDROID
   // "BrowserBack" is the Android back button (trapped by SDL_HINT_

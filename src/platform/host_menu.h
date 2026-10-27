@@ -9,11 +9,9 @@
 //
 // It also carries the actions that have no overlay behind them and that an
 // Android user cannot perform for themselves, because Android 11+ hides
-// Android/data from on-device file managers: installing mods,
-// importing and exporting saves, and clearing the shader cache.
+// Android/data from on-device file managers: installing mods and picking a
+// GPU driver. Saves are imported and exported on the start screen.
 #pragma once
-
-#include <filesystem>
 
 namespace rex::ui {
 class Window;
@@ -23,11 +21,7 @@ namespace eternalsonata {
 
 class HostMenu {
  public:
-  // `user_data_root` is the content root the saves live under and
-  // `cache_root` the one holding cache/shaders; both come from the Runtime,
-  // which the JNI callbacks have no other route to.
-  HostMenu(rex::ui::Window* window, std::filesystem::path user_data_root,
-           std::filesystem::path cache_root);
+  explicit HostMenu(rex::ui::Window* window);
   ~HostMenu();
 
   HostMenu(const HostMenu&) = delete;
@@ -36,13 +30,9 @@ class HostMenu {
   // Used by the JNI callbacks in host_menu.cpp to reach the window that owns
   // the SDL/UI thread the callback has to marshal onto.
   rex::ui::Window* window_for_callback() const { return window_; }
-  const std::filesystem::path& user_data_root() const { return user_data_root_; }
-  const std::filesystem::path& cache_root() const { return cache_root_; }
 
  private:
   rex::ui::Window* window_;
-  std::filesystem::path user_data_root_;
-  std::filesystem::path cache_root_;
 };
 
 }  // namespace eternalsonata

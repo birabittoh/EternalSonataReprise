@@ -247,6 +247,20 @@ add_custom_command(
     VERBATIM
 )
 
+# The chapter and save location names of the load menu, for the start screen.
+set(ETERNALSONATA_SAVE_TEXT_HEADER ${CMAKE_SOURCE_DIR}/src/save_text.generated.h)
+add_custom_command(
+    OUTPUT ${ETERNALSONATA_SAVE_TEXT_HEADER}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/gen-save-text.py
+    DEPENDS
+        ${CMAKE_SOURCE_DIR}/scripts/gen-save-text.py
+        ${CMAKE_SOURCE_DIR}/src/guest_data/text/chapters.txt
+        ${CMAKE_SOURCE_DIR}/src/guest_data/text/save_locations.txt
+        ${CMAKE_SOURCE_DIR}/src/guest_data/ps3/text/save_locations.txt
+    COMMENT "Generating src/save_text.generated.h"
+    VERBATIM
+)
+
 # The PS3's item and magic text. Its tables are extracted from the EBOOT
 # once and committed (src/engine/ps3_*.inc), so the build needs no EBOOT.
 file(GLOB ETERNALSONATA_PS3_TEXT CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/guest_data/ps3/text/*.txt)
@@ -440,6 +454,8 @@ set(ETERNALSONATA_SOURCES
     src/installer/install_pipeline.cpp
     src/installer/intro_screen.cpp
     src/installer/mods_screen.cpp
+    src/installer/save_slots.cpp
+    src/installer/saves_screen.cpp
     src/installer/intro_music.cpp
     src/installer/ui_text.cpp
     src/installer/japanese_title.cpp
@@ -460,6 +476,7 @@ set(ETERNALSONATA_SOURCES
     src/platform/android_gpu_driver.cpp
     src/platform/big_core_affinity.cpp
     src/platform/fast_forward_key.cpp
+    src/platform/document_picker.cpp
     src/platform/host_menu.cpp
     src/platform/input_overlay.cpp
     src/platform/touch_controls_overlay.cpp
@@ -509,6 +526,7 @@ set(ETERNALSONATA_SOURCES
     ${ETERNALSONATA_GUEST_SHADER_DEBUG_PACK_ASM}
     ${ETERNALSONATA_GUEST_IMAGE_ASM}
     ${ETERNALSONATA_AREA_NAMES_HEADER}
+    ${ETERNALSONATA_SAVE_TEXT_HEADER}
     ${ETERNALSONATA_PS3_TABLES}
     ${ETERNALSONATA_ICON_HEADER}
     ${ETERNALSONATA_XLAST_HEADER}

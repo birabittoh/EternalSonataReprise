@@ -36,6 +36,7 @@
 #include "images.generated.h"
 #include "intro_music.h"
 #include "mods_screen.h"
+#include "saves_screen.h"
 #include "ui_text.h"
 #include "native_renderer_plume.h"
 #include "release_id.h"
@@ -60,6 +61,7 @@ constexpr ImVec4 kError(1.0f, 0.55f, 0.50f, 1.0f);
 
 rex::ui::ImGuiDrawer* g_drawer = nullptr;
 rex::ui::WindowedAppContext* g_context = nullptr;
+std::filesystem::path g_user_data_root;
 std::optional<Clock::time_point> g_first_shown;
 
 // The SDK's AutoUpdater cannot check yet (it needs a Runtime, which does not
@@ -299,7 +301,9 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         options_.push_back({IntroText::kDeleteVersion, GameDataChoice::kDelete, kTrashColumn,
                             i % kColumnRows, i, true});
       options_.push_back({IntroText::kStart, GameDataChoice::kStart, right, 0});
-      options_.push_back({IntroText::kStart, GameDataChoice::kCancel, right, 1, -1, false, true});
+      options_.push_back(
+          {IntroText::kStart, GameDataChoice::kCancel, right, 1, -1, false, false, true});
+      options_.push_back({IntroText::kStart, GameDataChoice::kCancel, right, 2, -1, false, true});
       if (can_add)
         options_.push_back({IntroText::kAddVersion, GameDataChoice::kAddVersion,
                             versions / kColumnRows, versions % kColumnRows});
@@ -437,21 +441,9 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     Motes(draw, size, unit, t, shown);
 
     if (mods_open_) {
-      const float body_in = Smooth((t - 0.7f) / 0.8f);
-      ImFont* font = FindFont(kIntroFontName);
-      const bool ready = body_in >= 1.0f && !busy_ && !working_;
-      if (mods_->Draw(draw, font, size, unit, body_in, ready && !picker_open_))
-        mods_open_ = false;
-      DrawMusicToggle(draw, font, size, unit, body_in, mods_->MusicFocused(), false);
-      // The picker keeps its keys here too; the page is told where the cursor goes.
-      on_picker_ = mods_->PickerFocused();
-      on_music_ = false;
-      DrawLanguagePicker(draw, font, size, unit, body_in, ready);
-      if (on_picker_ && !mods_->PickerFocused())
-        mods_->FocusPicker();
-      else if (!on_picker_ && mods_->PickerFocused())
-        on_music_ ? mods_->FocusMusic() : mods_->ReturnFocus();
-      on_picker_ = on_music_ = false;
+      DrawPage(*mods_, mods_open_, draw, size, unit, t);
+    } else if (saves_open_) {
+      DrawPage(*saves_, saves_open_, draw, size, unit, t);
     } else {
       float y = 46.0f * unit;
       if (g_logo.texture) {
@@ -537,6 +529,26 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   }
 
  private:
+  // The Mods or Saves page in place of the main one.
+  template <class Page>
+  void DrawPage(Page& page, bool& open, ImDrawList* draw, ImVec2 size, float unit, float t) {
+    const float body_in = Smooth((t - 0.7f) / 0.8f);
+    ImFont* font = FindFont(kIntroFontName);
+    const bool ready = body_in >= 1.0f && !busy_ && !working_;
+    if (page.Draw(draw, font, size, unit, body_in, ready && !picker_open_))
+      open = false;
+    DrawMusicToggle(draw, font, size, unit, body_in, page.MusicFocused(), false);
+    // The picker keeps its keys here too; the page is told where the cursor goes.
+    on_picker_ = page.PickerFocused();
+    on_music_ = false;
+    DrawLanguagePicker(draw, font, size, unit, body_in, ready);
+    if (on_picker_ && !page.PickerFocused())
+      page.FocusPicker();
+    else if (!on_picker_ && page.PickerFocused())
+      on_music_ ? page.FocusMusic() : page.ReturnFocus();
+    on_picker_ = on_music_ = false;
+  }
+
   // Quit sits in the top right corner, one step above the right column.
   static constexpr int kCornerRow = -1;
   static constexpr int kColumnRows = 3;
@@ -553,7 +565,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     return !NewerVersion().empty() && Library() && !working_ && !busy_ && prompt_.confirm.empty();
   }
 
-  // Under Delete in the library's action column: download, progress, restart.
+  // Top left, under the version: download, progress, restart.
   void DrawUpdateButton(ImDrawList* draw, ImFont* font, float unit, float alpha, ImVec2 min,
                         float w, float h) {
     using rex::system::AutoUpdater;
@@ -626,6 +638,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     bool trash = false;
     // Opens the Mods page; answers nothing.
     bool mods = false;
+    // Opens the Saves page; answers nothing.
+    bool saves = false;
   };
 
   bool Library() const {
@@ -734,7 +748,7 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     const Option& option = options_[size_t(i)];
     if (option.trash)
       return CanDelete(option.version);
-    if (option.mods)
+    if (option.mods || option.saves)
       return true;
     if (option.version >= 0)
       return true;
@@ -836,6 +850,14 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         mods_ = std::make_unique<ModsScreen>(g_drawer->immediate_drawer());
       mods_->Reopen(gamepad_);
       mods_open_ = true;
+      return;
+    }
+    if (option.saves) {
+      if (!saves_)
+        saves_ = std::make_unique<SavesScreen>(g_drawer->immediate_drawer(), g_context,
+                                               g_user_data_root);
+      saves_->Reopen(gamepad_);
+      saves_open_ = true;
       return;
     }
     if (option.version < 0) {
@@ -1034,8 +1056,9 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
           draw->AddLine(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), ink, thick);
           draw->AddLine(ImVec2(c.x - r, c.y + r), ImVec2(c.x + r, c.y - r), ink, thick);
         } else {
-          const char* label = option.mods ? (SdkUiText("mods_title") ? SdkUiText("mods_title") : "Mods")
-                                          : Tr(text);
+          const char* label = option.mods    ? (SdkUiText("mods_title") ? SdkUiText("mods_title") : "Mods")
+                              : option.saves ? Tr("saves", "title")
+                                             : Tr(text);
           const ImVec2 extent = font->CalcTextSizeA(label_size, FLT_MAX, 0.0f, label);
           draw->AddText(font, label_size,
                         ImVec2(std::floor(min.x + (w - extent.x) * 0.5f),
@@ -1055,8 +1078,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
       }
     }
     if (ShowsUpdateButton())
-      DrawUpdateButton(draw, font, unit, alpha,
-                       ImVec2(column_x[columns - 1], top + 2.0f * (h + gap)), widths[columns - 1], h);
+      DrawUpdateButton(draw, font, unit, alpha, ImVec2(24.0f * unit, 54.0f * unit), 260.0f * unit,
+                       40.0f * unit);
     return keys && handled;
   }
 
@@ -1220,6 +1243,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
         if (mods_open_) {
           mods_->Commit();
           mods_open_ = false;
+        } else if (saves_open_) {
+          saves_open_ = false;
         } else {
           choice_ = GameDataChoice::kQuit;
         }
@@ -1409,6 +1434,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
   std::optional<GameDataChoice> choice_;
   std::unique_ptr<ModsScreen> mods_;
   bool mods_open_ = false;
+  std::unique_ptr<SavesScreen> saves_;
+  bool saves_open_ = false;
   bool mods_was_open_ = false;
   // Why enabled mods stop the game starting; empty when none do.
   std::string mod_block_;
@@ -1463,9 +1490,11 @@ void StopTicker() {
 
 }  // namespace
 
-void BindIntroScreen(rex::ui::ImGuiDrawer* drawer, rex::ui::WindowedAppContext* context) {
+void BindIntroScreen(rex::ui::ImGuiDrawer* drawer, rex::ui::WindowedAppContext* context,
+                     const std::filesystem::path& user_data_root) {
   g_drawer = drawer;
   g_context = context;
+  g_user_data_root = user_data_root;
 }
 
 bool IntroScreenAvailable() {

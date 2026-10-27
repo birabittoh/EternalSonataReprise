@@ -68,6 +68,7 @@ guest_shaders_debug.bin
 /src/images.generated.h
 /src/bgm.generated.h
 /src/lang.generated.h
+/src/save_text.generated.h
 
 # Windows exe-icon resource script, rewritten by CMake with an absolute path
 # to src/icon.generated.ico (see CMakeLists.txt)

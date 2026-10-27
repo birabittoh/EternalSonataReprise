@@ -52,6 +52,7 @@
 #include "host_timer_resolution.h"
 #include "icon.generated.h"
 #include "intro_screen.h"
+#include "save_slots.h"
 #include <rex/ui/ui_text.h>
 #include "ui_text.h"
 #include "music_system.h"
@@ -123,7 +124,7 @@ class EternalsonataApp : public rex::ReXApp {
     eternalsonata::InitNativeRenderer(window());
     // Applies ui_scale to the F-key overlays, the start screen's included.
     ui_scale_applier_ = eternalsonata::CreateUiScaleApplier(imgui_drawer());
-    eternalsonata::BindIntroScreen(imgui_drawer(), &app_context());
+    eternalsonata::BindIntroScreen(imgui_drawer(), &app_context(), user_data_root());
     eternalsonata::BindWindowTarget(window(), user_settings_path());
 
     eternalsonata::GameDataOptions options;
@@ -203,6 +204,7 @@ class EternalsonataApp : public rex::ReXApp {
     if (intro_glyphs.empty()) {
       ImFontGlyphRangesBuilder builder;
       builder.AddText(eternalsonata::IntroGlyphText().c_str());
+      builder.AddText(eternalsonata::SaveTextGlyphs().c_str());
       builder.BuildRanges(&intro_glyphs);
     }
     MergeJapaneseFont(atlas, 64.0f, intro_glyphs.Data);
@@ -548,8 +550,7 @@ class EternalsonataApp : public rex::ReXApp {
 
     // Constructed unconditionally, same reasoning as the profiler overlay
     // above: the constructor is what registers the back/gamepad-Back binds.
-    host_menu_ = std::make_unique<eternalsonata::HostMenu>(window(), runtime()->user_data_root(),
-                                                           cache_root());
+    host_menu_ = std::make_unique<eternalsonata::HostMenu>(window());
 
     fast_forward_key_ = eternalsonata::CreateFastForwardKey(window());
     active_input_ = eternalsonata::CreateActiveInputTracker(

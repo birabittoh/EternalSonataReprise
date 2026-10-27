@@ -6,6 +6,7 @@
 // is found, or one still has phases to run. Driven by the app's main loop,
 // which is what feeds it input.
 
+#include <filesystem>
 #include <functional>
 #include <string>
 
@@ -21,7 +22,9 @@ namespace eternalsonata {
 // Name of the atlas font baked for the screen; see OnConfigureFonts.
 inline constexpr char kIntroFontName[] = "Loading screen";
 
-void BindIntroScreen(rex::ui::ImGuiDrawer* drawer, rex::ui::WindowedAppContext* context);
+// `user_data_root` holds the saves the Saves page lists.
+void BindIntroScreen(rex::ui::ImGuiDrawer* drawer, rex::ui::WindowedAppContext* context,
+                     const std::filesystem::path& user_data_root);
 
 // Whether the intro can draw: bound, and the native renderer is up.
 bool IntroScreenAvailable();

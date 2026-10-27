@@ -179,7 +179,10 @@ The counter is what Encore does:
 
 `sub_82241190` also copies both fields into the save's 24 byte slot header,
 the location's low byte at `+9` and the counter as a u32 at `+20` (file
-offsets 25 and 36, after the 16 byte `SAV` header). The load menu reads only
+offsets 25 and 36, after the 16 byte `SAV` header). The chapter the slot
+shows under the place (0 the prologue, 8 the final chapter, the `BTX` at
+`0x822FD6F8`) is the byte at `+10`, and the play time ticks are at `+12`.
+The load menu reads only
 that copy: `sub_82243C68` gives a slot the reward icon when its counter is
 nonzero or its location is 1. So the Game Clear save and every save of an
 Encore run carry it, and only the first asks to start Encore.

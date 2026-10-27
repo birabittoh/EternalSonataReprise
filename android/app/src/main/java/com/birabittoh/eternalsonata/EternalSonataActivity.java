@@ -76,33 +76,30 @@ public class EternalSonataActivity extends SDLActivity {
     // ---------------------------------------------------------------------
 
     private static final int REQUEST_BASE = 0x4E4D;
+    private static final int REQUEST_OPEN = REQUEST_BASE, REQUEST_CREATE = REQUEST_BASE + 1;
 
-    /** The op code passed back to native, and the export destination once picked. */
-    private int pendingOp = -1;
-    private android.net.Uri pendingExportUri;
-
-    public void requestOpenDocument(final int op) {
+    /** Called from native code (document_picker.cpp); answered by nativeDocumentPicked. */
+    public void requestOpenDocument() {
         runOnUiThread(() -> {
-            pendingOp = op;
             android.content.Intent intent =
                 new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
-            // STFS packages and mod/save zips have no reliable MIME type,
+            // STFS packages, saves and mod zips have no reliable MIME type,
             // and a picker hides whatever it cannot name.
             intent.setType("*/*");
-            startActivityForResult(intent, REQUEST_BASE + op);
+            startActivityForResult(intent, REQUEST_OPEN);
         });
     }
 
-    public void requestCreateDocument(final int op) {
+    /** Called from native code; answered by nativeDocumentWrite and nativeDocumentWritten. */
+    public void requestCreateDocument(final String title) {
         runOnUiThread(() -> {
-            pendingOp = op;
             android.content.Intent intent =
                 new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
             intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
             intent.setType("application/zip");
-            intent.putExtra(android.content.Intent.EXTRA_TITLE, "eternalsonata-saves.zip");
-            startActivityForResult(intent, REQUEST_BASE + op);
+            intent.putExtra(android.content.Intent.EXTRA_TITLE, title);
+            startActivityForResult(intent, REQUEST_CREATE);
         });
     }
 
@@ -112,34 +109,27 @@ public class EternalSonataActivity extends SDLActivity {
             onDriverPicked(resultCode == RESULT_OK && data != null ? data.getData() : null);
             return;
         }
-        if (requestCode < REQUEST_BASE || resultCode != RESULT_OK || data == null
-                || data.getData() == null) {
+        if (requestCode != REQUEST_OPEN && requestCode != REQUEST_CREATE) {
             super.onActivityResult(requestCode, resultCode, data);
             return;
         }
-        final int op = requestCode - REQUEST_BASE;
-        final android.net.Uri uri = data.getData();
-        // Off the UI thread: this copies files, and nativeDocumentReady blocks
-        // on the SDL thread finishing the work.
+        final android.net.Uri uri = resultCode == RESULT_OK && data != null ? data.getData() : null;
+        // Off the UI thread: this copies files, and native blocks on the SDL
+        // thread finishing the work.
         new Thread(() -> {
-            if (op == pendingOp && uri != null) {
-                if (isExport(op)) {
-                    exportTo(op, uri);
-                } else {
-                    importFrom(op, uri);
-                }
+            if (uri == null) {
+                nativeDocumentCancelled();
+            } else if (requestCode == REQUEST_CREATE) {
+                exportTo(uri);
+            } else {
+                importFrom(uri);
             }
-        }, "host-menu-transfer").start();
-    }
-
-    private boolean isExport(int op) {
-        // Matches DocumentOp::kOpExportSaves in host_menu.cpp.
-        return op == 2;
+        }, "document-transfer").start();
     }
 
     /** Stage the picked document as a cache file, then let native consume it. */
-    private void importFrom(int op, android.net.Uri uri) {
-        File staged = new File(getCacheDir(), "hostmenu_import.zip");
+    private void importFrom(android.net.Uri uri) {
+        File staged = new File(getCacheDir(), "document_import");
         try (InputStream in = getContentResolver().openInputStream(uri);
              OutputStream out = new FileOutputStream(staged)) {
             byte[] buf = new byte[1 << 16];
@@ -147,34 +137,32 @@ public class EternalSonataActivity extends SDLActivity {
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
         } catch (Exception e) {
             Log.w(TAG, "Import staging failed: " + e.getMessage());
-            showHostToast(text(T_READ_FAILED));
+            staged.delete();
+            nativeDocumentPicked(null);
             return;
         }
-        nativeDocumentReady(op, staged.getAbsolutePath());
+        nativeDocumentPicked(staged.getAbsolutePath());
         staged.delete();
     }
 
-    /** Let native write the archive, then copy it out to the picked document. */
-    private void exportTo(int op, android.net.Uri uri) {
-        String produced = nativeDocumentReady(op, null);
+    /** Let native write the file, then copy it out to the picked document. */
+    private void exportTo(android.net.Uri uri) {
+        String produced = nativeDocumentWrite();
         if (produced == null) {
             // Native already reported why.
             return;
         }
-        File source = new File(produced);
-        try (InputStream in = new java.io.FileInputStream(source);
+        boolean ok = true;
+        try (InputStream in = new java.io.FileInputStream(new File(produced));
              OutputStream out = getContentResolver().openOutputStream(uri)) {
             byte[] buf = new byte[1 << 16];
             int n;
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
         } catch (Exception e) {
             Log.w(TAG, "Export copy failed: " + e.getMessage());
-            showHostToast(text(T_WRITE_FAILED));
-            return;
-        } finally {
-            source.delete();
+            ok = false;
         }
-        showHostToast(text(T_SAVES_EXPORTED));
+        nativeDocumentWritten(ok);
     }
 
     // ---------------------------------------------------------------------
@@ -436,11 +424,10 @@ public class EternalSonataActivity extends SDLActivity {
     }
 
     // Indices into nativeHostTexts(), in the order of JavaTexts() in host_menu.cpp.
-    private static final int T_READ_FAILED = 0, T_WRITE_FAILED = 1, T_SAVES_EXPORTED = 2,
-        T_DRIVER_INVALID = 3, T_DRIVER_INSTALLED = 4, T_DRIVER_SYSTEM = 5,
-        T_DRIVER_TITLE_STARTUP = 6, T_DRIVER_TITLE = 7, T_START = 8, T_OK = 9, T_INSTALL = 10,
-        T_DELETE = 11, T_DRIVER_CHANGED_TITLE = 12, T_DRIVER_CHANGED_MESSAGE = 13,
-        T_CLOSE_GAME = 14, T_LATER = 15;
+    private static final int T_DRIVER_INVALID = 0, T_DRIVER_INSTALLED = 1, T_DRIVER_SYSTEM = 2,
+        T_DRIVER_TITLE_STARTUP = 3, T_DRIVER_TITLE = 4, T_START = 5, T_OK = 6, T_INSTALL = 7,
+        T_DELETE = 8, T_DRIVER_CHANGED_TITLE = 9, T_DRIVER_CHANGED_MESSAGE = 10,
+        T_CLOSE_GAME = 11, T_LATER = 12;
 
     private String text(int index) {
         try {
@@ -452,7 +439,10 @@ public class EternalSonataActivity extends SDLActivity {
 
     private native String[] nativeHostTexts();
     private native void nativeHostMenuSelect(int index);
-    private native String nativeDocumentReady(int op, String path);
+    private native void nativeDocumentPicked(String path);
+    private native String nativeDocumentWrite();
+    private native void nativeDocumentWritten(boolean ok);
+    private native void nativeDocumentCancelled();
     private native void nativeGpuDriverDialogClosed();
     private native void nativeCloseGame();
 }
