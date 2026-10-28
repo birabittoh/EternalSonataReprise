@@ -1568,10 +1568,6 @@ REX_HOOK_RAW(sub_8210AAD8) {
   eternalsonata::EnemySystemTick();
   // Releases the mouse-look override the aim hook takes; see aim_input.h.
   eternalsonata::AimInputTick();
-  // These live in eternalsonata_options.cpp (the value-highlight memory
-  // differ), polled here so the F9-F12 hotkeys work from anywhere.
-  eternalsonata_hooks::ScanPollKeys(base);
-  eternalsonata_hooks::ScanTick(base);
   eternalsonata_hooks::OptionsTick();
 
   // Pace after the present, so the wait covers the whole frame. Passing 0 while

@@ -744,8 +744,7 @@ before the answer was found; do not re-derive them:
 | The value lives in the `0x824D0440` config struct | No — the setting lives in `0x8243FC04` (see below); that earlier 0x800-byte diff was simply looking in the wrong place |
 
 **How it was found.** Guessing was the problem, so the search was made
-exhaustive: a full-memory differ (`menu_scan` cvar, "Value-highlight hunt" in
-`src/engine/eternalsonata_hooks.cpp`) snapshots all committed guest memory on every
+exhaustive: a full-memory differ (since removed) snapshots all committed guest memory on every
 left press and again on every right press, and intersects across toggles. A
 two-option row is idempotent per direction, so left is unambiguously state A and
 right state B regardless of press order. 334 MiB collapsed to 724 stable
