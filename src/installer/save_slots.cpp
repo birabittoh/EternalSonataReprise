@@ -16,6 +16,7 @@
 #include <rex/logging.h>
 #include <rex/platform.h>
 
+#include "ps3_pfd.h"
 #include "save_text.generated.h"
 #include "ui_text.h"
 
@@ -342,10 +343,13 @@ fs::path FindSaveIn(const fs::path& dir) {
   return found.empty() ? fs::path() : found.front();
 }
 
-std::string PrepareFrom(const fs::path& file, PreparedSave& out) {
-  const Bytes data = ReadFile(file);
-  if (data.empty())
-    return Tr("saves", "err_read");
+// A console's protected SAVEDATA is padded to whole AES blocks, a plain one never is.
+bool IsEncryptedPs3(const Bytes& data) {
+  return data.size() == (kPs3Size + 15) / 16 * 16;
+}
+
+// `dir` is where a 360 save's reprise.txt may sit.
+std::string PrepareData(const Bytes& data, const fs::path& dir, PreparedSave& out) {
   std::string error;
   if (data.size() >= 4 && std::memcmp(data.data(), "SAV", 4) == 0)
     error = Convert360(data, out);
@@ -359,7 +363,7 @@ std::string PrepareFrom(const fs::path& file, PreparedSave& out) {
     return {};
   // A 360 save keeps the record it was written with, when it sits beside it.
   std::error_code ec;
-  const fs::path record = file.parent_path() / "reprise.txt";
+  const fs::path record = dir / "reprise.txt";
   out.record = fs::is_regular_file(record, ec) ? ReadText(record) : std::string();
   if (!out.record.empty() && out.record.back() != '\n')
     out.record += '\n';
@@ -373,6 +377,25 @@ std::string PrepareFrom(const fs::path& file, PreparedSave& out) {
   }
   out.kind = target;
   return {};
+}
+
+std::string PrepareFrom(const fs::path& file, PreparedSave& out) {
+  Bytes data = ReadFile(file);
+  if (data.empty())
+    return Tr("saves", "err_read");
+  if (IsEncryptedPs3(data)) {
+    std::error_code ec;
+    const fs::path pfd = file.parent_path() / "PARAM.PFD";
+    // Not beside it (a single picked file on Android): the caller asks for it.
+    if (!fs::is_regular_file(pfd, ec)) {
+      out.savedata = std::move(data);
+      out.needs_pfd = true;
+      return {};
+    }
+    if (!DecryptPs3ProtectedFile(ReadFile(pfd), "SAVEDATA", data))
+      return Tr("saves", "err_wrong_pfd");
+  }
+  return PrepareData(data, file.parent_path(), out);
 }
 
 std::vector<uint8_t> ContentHeader(int slot) {
@@ -469,6 +492,19 @@ std::string PrepareSaveImport(const fs::path& user_data_root, const fs::path& so
   error = found.empty() ? Tr("saves", "err_no_save_in_zip") : PrepareFrom(found, out);
   fs::remove_all(staging, ec);
   return error;
+}
+
+std::string FinishEncryptedImport(const fs::path& pfd, PreparedSave& out) {
+  Bytes data = std::move(out.savedata);
+  out = {};
+  const Bytes table = ReadFile(pfd);
+  if (table.empty())
+    return Tr("saves", "err_read");
+  // Another save's PFD decrypts to noise, which fails the header check.
+  if (!DecryptPs3ProtectedFile(table, "SAVEDATA", data) || data.size() != kPs3Size ||
+      U32(data.data()) != kHeaderSize + kThumbSize)
+    return Tr("saves", "err_wrong_pfd");
+  return PrepareData(data, {}, out);
 }
 
 std::string WriteSaveSlot(const fs::path& user_data_root, int slot, const PreparedSave& save) {

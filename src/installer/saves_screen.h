@@ -59,8 +59,11 @@ class SavesScreen {
   void Press(const Focus& focus);
   void Export(int slot);
   void Import(int slot);
+  void PickPfd();
+  void FinishImport(int slot, const PreparedSave& save, std::string error);
   void Delete();
   void CancelDelete();
+  void ConfirmAccept();
   void Input();
   void ConfirmInput();
 
@@ -102,8 +105,14 @@ class SavesScreen {
 
   // A delete waiting for the player to agree, asked twice; -1 for none.
   int deleting_ = -1;
+  // 1 and 2 for the delete's two questions, kConfirmPfd for an encrypted import's.
+  static constexpr int kConfirmPfd = 3;
   int confirm_step_ = 0;
+  // The focused button is the accepting one.
   bool confirm_on_delete_ = false;
+  // An encrypted PS3 import waiting for its PARAM.PFD.
+  int pfd_slot_ = -1;
+  std::shared_ptr<PreparedSave> pfd_save_;
 
   std::string status_;
   bool status_error_ = false;

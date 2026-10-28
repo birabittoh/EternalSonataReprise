@@ -3,7 +3,8 @@
 
 Inputs, by folder or by the file inside:
   * a PS3 save, any region (BLES00444, BLUS30161, BLJS10017), as RPCS3 keeps
-    them (SAVEDATA, unencrypted);
+    them (SAVEDATA, unencrypted), or as a console writes them (encrypted,
+    with PARAM.PFD beside it; needs pycryptodome);
   * an Xbox 360 save, any region, as Xenia keeps them (savedata.txt);
   * one of this project's slots (savedata.txt plus reprise.txt).
 
@@ -97,6 +98,11 @@ CHAR_SIZE = 213140
 CHARS = 12
 
 PS3_SIZE = 2772900
+
+# For a console's protected saves: Bruteforce Save Data's games.conf (one id
+# for every release) and the PS3's syscon manager key.
+PS3_SECURE_FILE_ID = bytes.fromhex("35FCBD0EF48B9AE723DCCDCE15F2C454")
+PS3_SYSCON_MANAGER_KEY = bytes.fromhex("D413B89663E1FE9F75143D3BB4565274")
 X360_BODY = 2772432
 
 PS3_BLOCKS = [("party", 2604), ("inventory", 2048), ("stats_base", 576),
@@ -634,6 +640,37 @@ def write_ps3(region, slot, out_dir, savedata, force):
 # Reading
 # ---------------------------------------------------------------------------
 
+def decrypt_protected(pfd, name, data):
+    """A file PARAM.PFD lists, as a console writes it. The entry key is CBC
+    encrypted under the syscon manager key, with an IV made from the secure
+    file id; its first 16 bytes are the file key. Each block is then ECB
+    decrypted and XORed with its encrypted index."""
+    try:
+        from Crypto.Cipher import AES
+    except ImportError:
+        raise SaveError("decrypting a console's PS3 save needs pycryptodome")
+    if pfd[:8] != b"\0\0\0\0PFDB":
+        raise SaveError("PARAM.PFD is not a PFD")
+    capacity, _, used = struct.unpack_from(">QQQ", pfd, 0x60)
+    entries = 0x60 + 24 + capacity * 8
+    for n in range(used):
+        entry = pfd[entries + n * 272:entries + (n + 1) * 272]
+        if entry[8:8 + 65].split(b"\0")[0] != name.encode():
+            continue
+        sfid = PS3_SECURE_FILE_ID
+        iv = sfid[:1] + bytes([11, 15]) + sfid[1:3] + bytes([14]) + sfid[3:5] + bytes([10]) + sfid[5:12]
+        key = AES.new(PS3_SYSCON_MANAGER_KEY, AES.MODE_CBC, iv).decrypt(entry[80:144])[:16]
+        size = struct.unpack_from(">Q", entry, 264)[0]
+        if len(data) % 16 or size > len(data):
+            raise SaveError(f"{name} does not match its PARAM.PFD entry")
+        aes = AES.new(key, AES.MODE_ECB)
+        counters = aes.encrypt(b"".join(struct.pack(">QQ", i, 0) for i in range(len(data) // 16)))
+        plain = aes.decrypt(data)
+        out = (int.from_bytes(plain, "big") ^ int.from_bytes(counters, "big")).to_bytes(len(data), "big")
+        return out[:size]
+    raise SaveError(f"PARAM.PFD does not list {name}")
+
+
 def read_record(path):
     record = {}
     if os.path.isfile(path):
@@ -657,6 +694,12 @@ def load(path):
             raise SaveError(f"no SAVEDATA or savedata.txt in {path}")
     with open(path, "rb") as f:
         data = f.read()
+    if len(data) == (PS3_SIZE + 15) // 16 * 16:
+        pfd = os.path.join(folder, "PARAM.PFD")
+        if not os.path.isfile(pfd):
+            raise SaveError(f"{path} is encrypted and has no PARAM.PFD beside it")
+        with open(pfd, "rb") as f:
+            data = decrypt_protected(f.read(), "SAVEDATA", data)
     if data[:4] == b"SAV\0":
         record = read_record(os.path.join(folder, "reprise.txt"))
         return from_360(parse_body(unwrap_360(data), ps3=False), record)

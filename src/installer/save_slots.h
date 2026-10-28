@@ -2,7 +2,8 @@
 
 // The game's ten save slots on disk, for the start screen's Saves page, which
 // runs before a Runtime exists. Imports fill an empty slot from a slot export, a 360 container's
-// savedata.txt (any region) or a PS3 SAVEDATA (any region, unencrypted); the
+// savedata.txt (any region) or a PS3 SAVEDATA (any region; a console's
+// encrypted one also needs its PARAM.PFD); the
 // layouts are in scripts/convert_save.py, which this ports.
 
 #include <cstdint>
@@ -40,6 +41,9 @@ struct PreparedSave {
   // The data the save was made on, "360" or "ps3".
   std::string kind;
   uint32_t play_seconds = 0;
+  // An encrypted PS3 SAVEDATA with no PARAM.PFD beside it, held in `savedata`
+  // until FinishEncryptedImport gets one.
+  bool needs_pfd = false;
 };
 
 std::vector<SaveSlotInfo> ReadSaveSlots(const std::filesystem::path& user_data_root);
@@ -49,6 +53,7 @@ std::string ExportSaveSlot(const std::filesystem::path& user_data_root, int slot
                            const std::filesystem::path& archive);
 std::string PrepareSaveImport(const std::filesystem::path& user_data_root,
                               const std::filesystem::path& source, PreparedSave& out);
+std::string FinishEncryptedImport(const std::filesystem::path& pfd, PreparedSave& out);
 std::string WriteSaveSlot(const std::filesystem::path& user_data_root, int slot,
                           const PreparedSave& save);
 std::string DeleteSaveSlot(const std::filesystem::path& user_data_root, int slot);

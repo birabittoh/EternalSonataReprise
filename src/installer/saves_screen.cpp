@@ -235,18 +235,48 @@ void SavesScreen::Import(int slot) {
     waiting_ = false;
     if (!picked)
       return;
-    PreparedSave save;
-    std::string error = PrepareSaveImport(root_, *picked, save);
-    if (error.empty())
-      error = WriteSaveSlot(root_, slot, save);
-    status_error_ = !error.empty();
-    if (status_error_)
-      status_ = Fill("import_failed", {error});
-    else
-      status_ = Fill(save.kind == "ps3" ? "imported_ps3" : "imported", {SlotNumber(slot)});
-    Reload();
-    focus_ = {Zone::kSlot, slot};
+    auto save = std::make_shared<PreparedSave>();
+    std::string error = PrepareSaveImport(root_, *picked, *save);
+    if (error.empty() && save->needs_pfd) {
+      // Asked first, since on Android the picker would cover the explanation.
+      pfd_slot_ = slot;
+      pfd_save_ = save;
+      confirm_step_ = kConfirmPfd;
+      confirm_on_delete_ = true;
+      return;
+    }
+    FinishImport(slot, *save, error);
   });
+}
+
+// Android hands over one file, so an encrypted PS3 save's PARAM.PFD is asked for next.
+void SavesScreen::PickPfd() {
+  const int slot = pfd_slot_;
+  std::shared_ptr<PreparedSave> save = std::move(pfd_save_);
+  CancelDelete();
+  waiting_ = true;
+  std::weak_ptr<bool> alive = alive_;
+  PickFileToRead(*context_, [this, alive, slot, save](std::optional<std::filesystem::path> picked) {
+    if (alive.expired())
+      return;
+    waiting_ = false;
+    if (!picked)
+      return;
+    const std::string error = FinishEncryptedImport(*picked, *save);
+    FinishImport(slot, *save, error);
+  });
+}
+
+void SavesScreen::FinishImport(int slot, const PreparedSave& save, std::string error) {
+  if (error.empty())
+    error = WriteSaveSlot(root_, slot, save);
+  status_error_ = !error.empty();
+  if (status_error_)
+    status_ = Fill("import_failed", {error});
+  else
+    status_ = Fill(save.kind == "ps3" ? "imported_ps3" : "imported", {SlotNumber(slot)});
+  Reload();
+  focus_ = {Zone::kSlot, slot};
 }
 
 void SavesScreen::Delete() {
@@ -263,6 +293,19 @@ void SavesScreen::Delete() {
 void SavesScreen::CancelDelete() {
   deleting_ = -1;
   confirm_step_ = 0;
+  pfd_slot_ = -1;
+  pfd_save_.reset();
+}
+
+void SavesScreen::ConfirmAccept() {
+  if (confirm_step_ == kConfirmPfd) {
+    PickPfd();
+  } else if (confirm_step_ == 1) {
+    confirm_step_ = 2;
+    confirm_on_delete_ = false;
+  } else {
+    Delete();
+  }
 }
 
 void SavesScreen::ConfirmInput() {
@@ -271,14 +314,10 @@ void SavesScreen::ConfirmInput() {
     confirm_on_delete_ = !confirm_on_delete_;
   } else if (Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space,
                       ImGuiKey_GamepadFaceDown})) {
-    if (!confirm_on_delete_) {
+    if (!confirm_on_delete_)
       CancelDelete();
-    } else if (confirm_step_ == 1) {
-      confirm_step_ = 2;
-      confirm_on_delete_ = false;
-    } else {
-      Delete();
-    }
+    else
+      ConfirmAccept();
   } else if (Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight})) {
     CancelDelete();
   }
@@ -520,8 +559,10 @@ void SavesScreen::DrawConfirm() {
   const float w = std::min(640.0f * u, size_.x - 32.0f);
   const float pad = 24.0f * u;
   const float text_size = 21.0f * u;
+  const bool pfd = confirm_step_ == kConfirmPfd;
   const std::string message =
-      confirm_step_ == 1
+      pfd ? std::string(S("pfd_prompt"))
+      : confirm_step_ == 1
           ? Fill("confirm_delete",
                  {SlotNumber(deleting_), FormatPlayTime(slots_[size_t(deleting_)].play_seconds)})
           : Fill("confirm_delete_again", {SlotNumber(deleting_)});
@@ -541,7 +582,7 @@ void SavesScreen::DrawConfirm() {
   const float y = max.y - pad - button_h;
   const float left = (size_.x - 2.0f * button_w - gap) * 0.5f;
   for (int i = 0; i < 2; ++i) {
-    const bool remove = (i == 1) == (confirm_step_ == 1);
+    const bool remove = (i == 1) == (confirm_step_ != 2);
     const ImVec2 bmin(left + float(i) * (button_w + gap), y);
     const ImVec2 bmax(bmin.x + button_w, y + button_h);
     ImGui::SetCursorScreenPos(bmin);
@@ -552,25 +593,22 @@ void SavesScreen::DrawConfirm() {
     if (ready_ && hovered && moved_ && !touch_)
       confirm_on_delete_ = remove;
     const bool focused = confirm_on_delete_ == remove;
-    const ImVec4& accent = remove ? kQuitRed : kAccent;
+    const bool danger = remove && !pfd;
+    const ImVec4& accent = danger ? kQuitRed : kAccent;
     draw_->AddRectFilled(bmin, bmax, IM_COL32(0, 0, 0, int((focused ? 150 : 100) * a)), 6.0f * u);
-    if (focused && remove)
+    if (focused && danger)
       draw_->AddRectFilled(bmin, bmax, Col(kQuitRed, 0.3f * a), 6.0f * u);
     draw_->AddRect(bmin, bmax, focused ? Col(accent, a) : IM_COL32(255, 255, 255, int(60 * a)),
                    6.0f * u, 0, std::max(1.0f, (focused ? 2.0f : 1.0f) * u));
     FitText(draw_, font_, 22.0f * u, ImVec2(bmin.x + 8.0f * u, bmin.y),
             ImVec2(bmax.x - 8.0f * u, bmax.y), Col(kText, a * (focused ? 1.0f : 0.8f)),
-            remove ? S("delete") : Tr(IntroText::kCancel));
+            !remove ? Tr(IntroText::kCancel) : pfd ? S("pick_pfd") : S("delete"));
     if (!clicked || !ready_)
       continue;
-    if (!remove) {
+    if (!remove)
       CancelDelete();
-    } else if (confirm_step_ == 1) {
-      confirm_step_ = 2;
-      confirm_on_delete_ = false;
-    } else {
-      Delete();
-    }
+    else
+      ConfirmAccept();
     return;
   }
 }
@@ -659,7 +697,7 @@ bool SavesScreen::Draw(ImDrawList* draw, ImFont* font, ImVec2 size, float unit, 
                   nullptr, width);
   }
   DrawHints(bottom + 58.0f * u);
-  if (confirm_step_ && deleting_ >= 0)
+  if (confirm_step_)
     DrawConfirm();
   return back_;
 }
