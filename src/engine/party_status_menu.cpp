@@ -4,6 +4,8 @@
 #include "party_status_menu.h"
 
 #include <algorithm>
+#include <bit>
+#include <chrono>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -100,6 +102,21 @@ constexpr std::uint32_t kPromptShift = 8u;
 
 // Free below the party name ids. Answered only for the executable's blocks.
 constexpr std::uint32_t kCostumeSid = 850u;
+constexpr std::uint32_t kCostumeNameSid = 851u;
+
+// {1, x, y, w, h, 2100, n} makes panel n the parent until 2101. n is the
+// index the walk gives the new panel; the status list builds 13 of its own.
+constexpr std::uint32_t kTypePanel = 1u;
+constexpr std::uint32_t kNamePanel = 13u;
+constexpr std::uint32_t kOpenPanel = 2100u;
+constexpr std::uint32_t kClosePanel = 2101u;
+constexpr std::uint32_t kNameWidth = 320u;
+constexpr std::uint32_t kNamePad = 24u;
+constexpr std::uint32_t kNameTop = 6u;
+constexpr std::uint32_t kNameHeight = 48u;
+constexpr std::uint32_t kNameSize = 36u;
+constexpr std::uint32_t kNameParkedY = 2000u;
+constexpr std::uint32_t kNameBytes = 128u;
 
 constexpr std::uint32_t kLanguageIndexAddress = 0x8243D370u;
 
@@ -111,6 +128,7 @@ constexpr const char* kCostumeLabel[7] = {
 
 std::uint32_t g_list_copy = 0;
 std::uint32_t g_label = 0;
+std::uint32_t g_name_text = 0;
 bool g_prompt_built = false;
 int g_prompt_shown = -1;
 
@@ -120,6 +138,52 @@ std::uint32_t ReadU32(const std::uint8_t* base, std::uint32_t address) {
 
 void WriteU32(std::uint8_t* base, std::uint32_t address, std::uint32_t value) {
   rex::memory::store_and_swap<std::uint32_t>(base + address, value);
+}
+
+// The guest copy of the shown costume name, empty until one is set.
+std::uint32_t CostumeNameBuffer(std::uint8_t* base) {
+  if (!g_name_text) {
+    auto* mem = rex::system::kernel_memory();
+    g_name_text = mem ? mem->SystemHeapAlloc(kNameBytes, 0x20) : 0;
+    if (g_name_text)
+      REX_STORE_U8(g_name_text, 0);
+  }
+  return g_name_text;
+}
+
+// Labels are UTF-8; the font reads Shift-JIS in Japanese and Latin-1 otherwise.
+std::string CostumeNameText(std::uint8_t* base, const char* label) {
+  const std::string utf8 = label ? label : "";
+  if (ReadU32(base, kLanguageIndexAddress) == 0u) {
+    std::string sjis;
+    return eternalsonata::assets::EncodeShiftJis(utf8, sjis) ? sjis : utf8;
+  }
+  std::string latin;
+  for (std::size_t i = 0; i < utf8.size(); ++i) {
+    const auto c = static_cast<unsigned char>(utf8[i]);
+    if (c < 0x80) {
+      latin.push_back(static_cast<char>(c));
+    } else if ((c & 0xE0) == 0xC0 && i + 1 < utf8.size()) {
+      const unsigned cp = ((c & 0x1Fu) << 6) | (static_cast<unsigned char>(utf8[++i]) & 0x3Fu);
+      latin.push_back(cp < 0x100 ? static_cast<char>(cp) : '?');
+    } else {
+      while (i + 1 < utf8.size() && (static_cast<unsigned char>(utf8[i + 1]) & 0xC0) == 0x80)
+        ++i;
+      latin.push_back('?');
+    }
+  }
+  return latin;
+}
+
+// Writes the name the label shows; empty hides it.
+void SetCostumeName(std::uint8_t* base, const std::string& text) {
+  const std::uint32_t buffer = CostumeNameBuffer(base);
+  if (!buffer)
+    return;
+  const std::uint32_t n = static_cast<std::uint32_t>(std::min<std::size_t>(text.size(), kNameBytes - 1));
+  for (std::uint32_t i = 0; i < n; ++i)
+    REX_STORE_U8(buffer + i, static_cast<std::uint8_t>(text[i]));
+  REX_STORE_U8(buffer + n, 0);
 }
 
 }  // namespace
@@ -134,6 +198,8 @@ std::uint32_t MaybeSwapStatusList(std::uint8_t* base, std::uint32_t list) {
   }
   g_prompt_built = false;
   g_prompt_shown = -1;
+  if (const std::uint32_t name = CostumeNameBuffer(base))
+    REX_STORE_U8(name, 0);
   std::vector<std::uint32_t> words;
   for (std::uint32_t i = 0; i < kMaxListWords; ++i) {
     const std::uint32_t word = ReadU32(base, list + 4u * i);
@@ -170,9 +236,21 @@ std::uint32_t MaybeSwapStatusList(std::uint8_t* base, std::uint32_t list) {
   words[p + 16] = words[p + 2] + label_dx;
   words[p + 17] = words[b + 10];
 
+  // The costume name: a panel of its own, parked until a change places it
+  // under the portrait.
+  words.insert(words.end(), {kTypePanel, 0, kNameParkedY, kNameWidth, kNameHeight, kOpenPanel,
+                             kNamePanel});
+  words.insert(words.end(), {kTypeText, kCostumeNameSid, kNamePad, kNameTop,
+                             kNameWidth - 2u * kNamePad, kNameHeight, 0, kNameSize, 0xFFFFFFFFu,
+                             1});
+  words.push_back(kClosePanel);
+
+  constexpr std::uint32_t kCopyWords = kMaxListWords + 32u;
+  if (words.size() + 1u > kCopyWords)
+    return 0;
   if (!g_list_copy) {
     auto* mem = rex::system::kernel_memory();
-    g_list_copy = mem ? mem->SystemHeapAlloc(4u * (kMaxListWords + 1u), 0x20) : 0;
+    g_list_copy = mem ? mem->SystemHeapAlloc(4u * kCopyWords, 0x20) : 0;
     if (!g_list_copy)
       return 0;
   }
@@ -186,7 +264,11 @@ std::uint32_t MaybeSwapStatusList(std::uint8_t* base, std::uint32_t list) {
 
 std::uint32_t CostumePromptText(std::uint8_t* base, std::uint32_t blob,
                                 std::uint32_t sid) {
-  if (sid != kCostumeSid || blob < 0x82000000u || blob >= 0x82600000u)
+  if (blob < 0x82000000u || blob >= 0x82600000u)
+    return 0;
+  if (sid == kCostumeNameSid)
+    return CostumeNameBuffer(base);
+  if (sid != kCostumeSid)
     return 0;
   if (!g_label) {
     auto* mem = rex::system::kernel_memory();
@@ -219,6 +301,19 @@ REX_EXTERN(sub_821425D8);
 REX_EXTERN(sub_82179160);
 REX_EXTERN(sub_821F6580);
 REX_EXTERN(sub_821D3890);
+// sub_821D4598(texts, widget, 1, 1): a widget's text width.
+// sub_821D3D50(texts, widget, f1): its text scale.
+// sub_8217BF28(&out, objects, handle) / sub_82178A88(objects, handle, &xyz):
+// reads / sets an object's position.
+// sub_821E8F58(dword_824400DC, image): an AppKeep image's texture, whose size
+// sub_8217CF58 / sub_8217CFA8(objects, texture) answer.
+REX_EXTERN(sub_821D4598);
+REX_EXTERN(sub_821D3D50);
+REX_EXTERN(sub_8217BF28);
+REX_EXTERN(sub_82178A88);
+REX_EXTERN(sub_821E8F58);
+REX_EXTERN(sub_8217CF58);
+REX_EXTERN(sub_8217CFA8);
 REX_EXTERN(__imp__sub_82230658);
 REX_EXTERN(__imp__sub_8222FFE8);
 
@@ -285,11 +380,169 @@ void RefreshCostumePrompt(PPCContext& ctx, uint8_t* base) {
   sub_821D3890(call, base);
 }
 
+// The costume name under the portrait: how long it stays, and the gap below
+// the art. Screen object layout as scrapbook_menu.cpp reads it.
+constexpr auto kNameShownFor = std::chrono::seconds(3);
+constexpr float kNameGap = 4.0f;
+constexpr float kNameLowestY = 600.0f;
+constexpr float kNameParked = 2000.0f;
+constexpr float kPortraitScale = 0.92f;  // sub_82232C10, all but Japanese
+constexpr uint32_t kPortraitIcon = 124u;
+constexpr uint32_t kPanelCount = 72u;
+constexpr uint32_t kTextBase = 384u;
+constexpr uint32_t kTextCount = 640u;
+constexpr uint32_t kTextures = 0x824400DCu;
+constexpr uint32_t kStatusArt = 0x8202C894u;
+constexpr uint32_t kLanguage = 0x8243D370u;
+
+std::chrono::steady_clock::time_point g_name_until{};
+int g_name_character = 0;
+uint32_t g_scratch = 0;
+
+struct NameLabel {
+  uint32_t panel = 0;
+  uint32_t widget = 0;
+};
+
+// The appended panel and its text are the last ones the list walk made.
+NameLabel FindNameLabel(PPCContext& ctx, uint8_t* base) {
+  using namespace party_status_menu;
+  const uint32_t ui = REX_LOAD_U32(kUiRoot);
+  const uint32_t screen = ui ? REX_LOAD_U32(ui + 2836u) : 0u;
+  if (!g_prompt_built || !screen)
+    return {};
+  const uint32_t panels = REX_LOAD_U8(screen + kPanelCount);
+  const uint32_t texts = REX_LOAD_U8(screen + kTextCount);
+  if (panels != kNamePanel + 1u || !texts)
+    return {};
+  PPCContext call = ctx;
+  call.r3.u64 = ui;
+  call.r4.u64 = REX_LOAD_U32(screen + kTextBase + 4u * (texts - 1u));
+  sub_821F6580(call, base);
+  return {REX_LOAD_U32(screen + 4u * (panels - 1u)), call.r3.u32};
+}
+
+void PlaceObject(PPCContext& ctx, uint8_t* base, uint32_t handle, float x, float y) {
+  REX_STORE_U32(g_scratch + 16, std::bit_cast<uint32_t>(x));
+  REX_STORE_U32(g_scratch + 20, std::bit_cast<uint32_t>(y));
+  REX_STORE_U32(g_scratch + 24, 0);
+  PPCContext call = ctx;
+  call.r3.u64 = kObjectManager;
+  call.r4.u64 = handle;
+  call.r5.u64 = g_scratch + 16;
+  call.r6.u64 = 0;
+  call.r7.u64 = 0;
+  call.r8.s64 = -1;
+  sub_82178A88(call, base);
+}
+
+void SetNameText(PPCContext& ctx, uint8_t* base, uint32_t widget, uint32_t text) {
+  PPCContext call = ctx;
+  call.r3.u64 = kTextManager;
+  call.r4.u64 = widget;
+  call.r5.u64 = text;
+  call.r6.s64 = -1;
+  sub_821D3890(call, base);
+}
+
+void HideCostumeName(PPCContext& ctx, uint8_t* base) {
+  g_name_character = 0;
+  const NameLabel label = FindNameLabel(ctx, base);
+  if (!label.widget || !g_scratch)
+    return;
+  party_status_menu::SetCostumeName(base, {});
+  SetNameText(ctx, base, label.widget, kEmptyString);
+  PlaceObject(ctx, base, label.panel, 0.0f, kNameParked);
+}
+
+// The portrait's art size, from the image sub_82232C10 gives it.
+bool PortraitSize(PPCContext& ctx, uint8_t* base, int character, float& w, float& h) {
+  PPCRegister image{}, who{};
+  who.u64 = static_cast<uint32_t>(character);
+  if (character >= 1 && character <= 10)
+    image.u64 = REX_LOAD_U16(kStatusArt + 2u * static_cast<uint32_t>(character - 1));
+  PartyStatusPortrait(image, who);
+  if (!image.u32)
+    return false;
+  PPCContext call = ctx;
+  call.r3.u64 = REX_LOAD_U32(kTextures);
+  call.r4.u64 = image.u32;
+  sub_821E8F58(call, base);
+  const uint32_t texture = call.r3.u32;
+  call = ctx;
+  call.r3.u64 = kObjectManager;
+  call.r4.u64 = texture;
+  sub_8217CF58(call, base);
+  w = static_cast<float>(call.r3.s32);
+  call = ctx;
+  call.r3.u64 = kObjectManager;
+  call.r4.u64 = texture;
+  sub_8217CFA8(call, base);
+  h = static_cast<float>(call.r3.s32);
+  return w > 0.0f && h > 0.0f;
+}
+
+// Centres the worn costume's name under the portrait for a few seconds.
+void ShowCostumeName(PPCContext& ctx, uint8_t* base, int character) {
+  using namespace party_status_menu;
+  if (!g_scratch) {
+    auto* mem = rex::system::kernel_memory();
+    g_scratch = mem ? mem->SystemHeapAlloc(32, 0x10) : 0;
+  }
+  const NameLabel label = FindNameLabel(ctx, base);
+  const uint32_t ui = REX_LOAD_U32(kUiRoot);
+  const uint32_t screen = ui ? REX_LOAD_U32(ui + 2836u) : 0u;
+  float art_w = 0.0f, art_h = 0.0f;
+  if (!label.widget || !g_scratch || !screen ||
+      !PortraitSize(ctx, base, character, art_w, art_h))
+    return;
+
+  SetCostumeName(base, CostumeNameText(base, eternalsonata::CostumeLabel(
+                                                 character, eternalsonata::WornCostume(character))));
+  SetNameText(ctx, base, label.widget, CostumeNameBuffer(base));
+  PPCContext call = ctx;
+  call.r3.u64 = kTextManager;
+  call.r4.u64 = label.widget;
+  call.r5.u64 = 1;
+  call.r6.u64 = 1;
+  sub_821D4598(call, base);
+  const float text_w = static_cast<float>(call.r3.s32);
+  const float max_w = static_cast<float>(kNameWidth - 2u * kNamePad);
+  const float fit = text_w > max_w ? max_w / text_w : 1.0f;
+  call = ctx;
+  call.r3.u64 = kTextManager;
+  call.r4.u64 = label.widget;
+  call.f1.f64 = fit;
+  sub_821D3D50(call, base);
+
+  call = ctx;
+  call.r3.u64 = g_scratch;
+  call.r4.u64 = kObjectManager;
+  call.r5.u64 = REX_LOAD_U32(screen + kPortraitIcon);
+  sub_8217BF28(call, base);
+  const float art_x = std::bit_cast<float>(REX_LOAD_U32(g_scratch));
+  const float art_y = std::bit_cast<float>(REX_LOAD_U32(g_scratch + 4));
+  const float scale = REX_LOAD_U32(kLanguage) ? kPortraitScale : 1.0f;
+  const float x = art_x;
+  const float y = std::min(art_y + art_h * scale + kNameGap, kNameLowestY);
+  PlaceObject(ctx, base, label.panel, x, y);
+  g_name_character = character;
+  g_name_until = std::chrono::steady_clock::now() + kNameShownFor;
+}
+
+void TickCostumeName(PPCContext& ctx, uint8_t* base) {
+  if (g_name_character &&
+      (std::chrono::steady_clock::now() >= g_name_until ||
+       static_cast<int>(REX_LOAD_U32(kShownCharacter)) != g_name_character))
+    HideCostumeName(ctx, base);
+}
+
 }  // namespace
 
 // sub_8222FFE8: builds the status page.
 REX_HOOK_RAW(sub_8222FFE8) {
   __imp__sub_8222FFE8(ctx, base);
+  g_name_character = 0;
   RefreshCostumePrompt(ctx, base);
 }
 
@@ -309,8 +562,10 @@ REX_HOOK_RAW(sub_82230658) {
       call.r5.u64 = 0;
       call.r6.u64 = 0;
       sub_821425D8(call, base);
+      ShowCostumeName(ctx, base, character);
     }
   }
   __imp__sub_82230658(ctx, base);
   RefreshCostumePrompt(ctx, base);
+  TickCostumeName(ctx, base);
 }
