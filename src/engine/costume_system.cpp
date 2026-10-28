@@ -18,6 +18,7 @@
 #include "character_roster.h"
 #include "costume_tint.h"
 
+#include "eternalsonata_asset_system.h"
 #include "field_player_model_override.h"
 #include "generated/eternalsonata_init.h"
 #include "party_arrays.h"
@@ -137,6 +138,9 @@ struct State {
   // builds anything from them.
   std::array<std::vector<uint8_t>, kCharacters> own_model;
   std::unordered_map<uint32_t, std::vector<uint8_t>> images;
+  // By image id, the game's art where a mod's texture patch replaced it;
+  // empty where none did.
+  std::unordered_map<uint32_t, std::vector<uint8_t>> shipped;
   // Model buffers of costumes a redefined slot dropped, freed once unread.
   std::vector<uint32_t> retired;
   bool live = false;
@@ -491,6 +495,24 @@ std::vector<uint8_t> ImageChunk(uint32_t id) {
   return CopyChunk(at);
 }
 
+// The game's own art behind an image id a mod replaced, else null. Costumes
+// made from a base start from it, so a mod's art shows only on the base.
+const std::vector<uint8_t>* ShippedImage(uint32_t id) {
+  State& s = state();
+  auto it = s.shipped.find(id);
+  if (it == s.shipped.end()) {
+    std::vector<uint8_t> chunk = ImageChunk(id);
+    if (chunk.empty())
+      return nullptr;
+    if (eternalsonata::RestoreShippedTexture(chunk))
+      REXLOG_INFO("costumes: image {} is a mod's; costumes made from it use the game's", id);
+    else
+      chunk.clear();
+    it = s.shipped.emplace(id, std::move(chunk)).first;
+  }
+  return it->second.empty() ? nullptr : &it->second;
+}
+
 bool TintsKind(const Costume& costume, int kind) {
   return std::any_of(costume.portrait_tints.begin(), costume.portrait_tints.end(),
                      [kind](const eternalsonata::TintRule& rule) {
@@ -507,13 +529,16 @@ uint32_t PortraitImage(int character, Costume& costume, int kind) {
       (costume.portrait_path[kind].empty() && !derived))
     return costume.portrait[kind];
   Costume* base = nullptr;
+  const std::vector<uint8_t>* shipped = nullptr;
   if (derived) {
     const int index = FindLocked(character, costume.base);
     if (index < 0)
       return 0;
     base = &s.costumes[character - 1][index];
+    if (base->portrait_path[kind].empty())
+      shipped = ShippedImage(BaseImageId(character, *base, kind));
     // Untinted, it shows what the base does.
-    if (!TintsKind(costume, kind))
+    if (!TintsKind(costume, kind) && !shipped)
       return PortraitImage(character, *base, kind);
   }
   for (size_t i = 0; i < s.portraits.size(); ++i) {
@@ -532,7 +557,9 @@ uint32_t PortraitImage(int character, Costume& costume, int kind) {
   }
   std::vector<uint8_t> chunk;
   if (base) {
-    if (base->portrait_path[kind].empty())
+    if (shipped)
+      chunk = *shipped;
+    else if (base->portrait_path[kind].empty())
       chunk = ImageChunk(BaseImageId(character, *base, kind));
     else
       ReadPortrait(base->portrait_path[kind], chunk);
@@ -597,7 +624,8 @@ void SnapshotTintSources(int character) {
     if (base.model.empty() && base.path.empty() && s.own_model[c].empty())
       s.own_model[c] = CopyChunk(s.defaults[c]);
     for (int kind = 0; kind < kPortraitKinds; ++kind) {
-      if (!TintsKind(costume, kind) || !base.portrait_path[kind].empty())
+      // Every kind, as an untinted one may still need the game's art back.
+      if (!costume.portrait_path[kind].empty() || !base.portrait_path[kind].empty())
         continue;
       const uint32_t id = BaseImageId(character, base, kind);
       if (id && !s.images.contains(id))

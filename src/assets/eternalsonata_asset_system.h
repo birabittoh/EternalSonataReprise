@@ -84,4 +84,8 @@ bool BtxLanguageAvailable(const char* fourcc, bool count_mods = true);
 // The patched copy of a container when mods changed it, else empty.
 std::filesystem::path PatchedAssetFile(const std::string& guest_path);
 
+// When a texture chunk (an NTEX or NTX2 on its own) carries the pixels a mod's
+// texture patch put in a container, puts the shipped pixels back and says so.
+bool RestoreShippedTexture(std::vector<uint8_t>& chunk);
+
 }  // namespace eternalsonata

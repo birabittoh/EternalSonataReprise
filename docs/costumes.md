@@ -192,7 +192,10 @@ Only DXT colour endpoints change, so nothing is decoded or re-encoded
 (`src/engine/costume_tint.cpp`). The base's model and portraits are copied at
 boot, before the game builds anything from them, and a tinted copy is made
 when the costume is worn; a costume that ships its own `model` or a portrait
-file uses that instead. A base is any costume of the character but another
+file uses that instead. Where another mod replaced a base portrait
+through a texture patch (`assets/<container>/textures/`), the costume starts
+from the game's own art instead: the rules were made for it, and the mod's art
+stays the base's. A base is any costume of the character but another
 tinted one. One whose base the game data lacks, such as `ps3/2` on Xbox 360
 data, is skipped with a log line. `polka_colors` in EternalSonataReprise-Mods
 is eight tints of Polka and two of her PS3 costume, and `<name>_colors`

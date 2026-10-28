@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <limits>
 #include <mutex>
@@ -22,6 +23,7 @@
 #include <span>
 #include <set>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -172,6 +174,10 @@ struct State {
   // Clips a converted game directory ships as PCM (src/installer/ps3_audio.cpp), keyed
   // on the tag its banks already carry; loaded on first play.
   std::map<std::array<uint8_t, 16>, AudioPatch> game_pcm;
+  // The texture chunks mods replaced, by pixel hash: container and ordinal.
+  // Built on first ask, with the shipped pixels of those asked about.
+  std::optional<std::map<size_t, std::pair<std::string, size_t>>> mod_textures;
+  std::map<size_t, std::vector<uint8_t>> shipped_pixels;
 };
 
 State& state() {
@@ -2101,6 +2107,70 @@ std::filesystem::path PatchedAssetFile(const std::string& guest_path) {
     return {};
   auto path = s.cache_dir / std::filesystem::path(guest_path);
   return std::filesystem::is_regular_file(path, ec) ? path : std::filesystem::path{};
+}
+
+namespace {
+
+// The hash of a texture's pixels, mips included: the game may rewrite a
+// chunk's header once loaded, never its pixels.
+std::optional<size_t> PixelHash(const std::vector<uint8_t>& data, const assets::TextureRef& ref) {
+  const size_t at = ref.chunk_offset + ref.pix_offset;
+  if (at + ref.pix_size > data.size())
+    return std::nullopt;
+  return std::hash<std::string_view>{}(
+      {reinterpret_cast<const char*>(data.data() + at), ref.pix_size});
+}
+
+}  // namespace
+
+bool RestoreShippedTexture(std::vector<uint8_t>& chunk) {
+  State& s = state();
+  std::lock_guard lock(s.mutex);
+  if (!s.mod_textures) {
+    // From the served containers, so a cache that was not rebuilt counts too.
+    auto& replaced = s.mod_textures.emplace();
+    for (const auto& [guest_path, container] : s.containers) {
+      std::vector<uint8_t> bytes;
+      const auto path = container.textures.empty() ? std::filesystem::path{}
+                                                   : PatchedAssetFile(guest_path);
+      if (path.empty() || !ReadWholeFile(path, bytes))
+        continue;
+      const auto textures = assets::FindTextures(bytes);
+      for (const auto& [key, patch] : container.textures) {
+        for (size_t i = 0; i < textures.size(); ++i) {
+          if (!TextureMatches(textures[i], i, patch.selector))
+            continue;
+          if (const auto hash = PixelHash(bytes, textures[i]))
+            replaced.emplace(*hash, std::make_pair(guest_path, i));
+          break;
+        }
+      }
+    }
+  }
+  const auto textures = assets::FindTextures(chunk);
+  if (textures.size() != 1 || textures[0].chunk_offset != 0)
+    return false;
+  const assets::TextureRef& ref = textures[0];
+  const auto hash = PixelHash(chunk, ref);
+  const auto found = hash ? s.mod_textures->find(*hash) : s.mod_textures->end();
+  if (found == s.mod_textures->end())
+    return false;
+  auto shipped = s.shipped_pixels.find(*hash);
+  if (shipped == s.shipped_pixels.end()) {
+    // A texture patch moves nothing, so the ordinal names the same chunk.
+    std::vector<uint8_t> bytes;
+    if (!LoadDecodedContainer(found->second.first, bytes))
+      return false;
+    const auto originals = assets::FindTextures(bytes);
+    const size_t i = found->second.second;
+    if (i >= originals.size() || originals[i].pix_size != ref.pix_size ||
+        originals[i].chunk_offset + originals[i].pix_offset + ref.pix_size > bytes.size())
+      return false;
+    const auto from = bytes.begin() + originals[i].chunk_offset + originals[i].pix_offset;
+    shipped = s.shipped_pixels.emplace(*hash, std::vector<uint8_t>(from, from + ref.pix_size)).first;
+  }
+  std::copy(shipped->second.begin(), shipped->second.end(), chunk.begin() + ref.pix_offset);
+  return true;
 }
 
 namespace {
