@@ -4027,6 +4027,8 @@ void ResetRowGroup(u8* base, u32 group_id) {
 // <Q1>), so the text manager runs the choice and the menu only polls it.
 REX_EXTERN(__imp__sub_82206028);
 REX_EXTERN(__imp__sub_822062D0);
+// Shows (1) or hides (0) the root's menu cursor; the album hides it around its dialog.
+REX_EXTERN(__imp__sub_821F65C8);
 // Leaves the Unlock Key screen and gives the menu its input back.
 REX_EXTERN(__imp__sub_8222B260);
 
@@ -4110,11 +4112,12 @@ u32 WriteQuitPrompt(u8* base, u32 stock) {
 // Run on the hook's own ctx: the build reaches other hooks that call into the
 // guest themselves.
 void CallAlbumRoutine(PPCContext& ctx, u8* base,
-                      void (*routine)(PPCContext&, u8*)) {
+                      void (*routine)(PPCContext&, u8*), u32 arg = 0) {
   const u32 saved_root = REX_LOAD_U32(kUiRootMenu);
   REX_STORE_U32(kUiRootMenu, REX_LOAD_U32(g_confirm_root));
   const PPCContext saved = ctx;
   ctx.r3.u64 = g_quit_album;
+  ctx.r4.u64 = arg;
   routine(ctx, base);
   ctx = saved;
   REX_STORE_U32(kUiRootMenu, saved_root);
@@ -4157,6 +4160,7 @@ void OpenQuitConfirm(PPCContext& ctx, u8* base, u32 menu, ConfirmKind kind, u32 
     REXLOG_WARN("[options] quit confirm: dialog was not built");
     return;
   }
+  CallAlbumRoutine(ctx, base, __imp__sub_821F65C8, 0);
   REX_STORE_U8(menu + kMenuInputEnabled, 0);
   REX_STORE_U32(menu + kMenuInputHold, 0xFFFFFFFFu);
   g_quit_ticks = 0;
@@ -4196,6 +4200,7 @@ bool ConfirmPoll(PPCContext& ctx, u8* base, u32 menu) {
     return true;
   }
   CallAlbumRoutine(ctx, base, __imp__sub_822062D0);
+  CallAlbumRoutine(ctx, base, __imp__sub_821F65C8, 1);
   g_quit_confirm = QuitConfirm::kIdle;
   if (g_confirm_kind == ConfirmKind::kDlc) {
     // The Unlock Key screen only ticks with input on, so it cannot finish
