@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <optional>
 #include <utility>
@@ -14,6 +16,7 @@
 #include <rex/logging.h>
 #include <rex/ui/progress_window.h>
 
+#include "aes128.h"
 #include "icon.generated.h"
 #include "progress_theme.h"
 #include "ui_text.h"
@@ -86,8 +89,11 @@ class Progress {
   uint64_t last_log_ms_ = 0;
 };
 
+constexpr uint64_t kSectorSize = 2048;
+
 // Bounds checked reads over an untrusted image. SDL_IOStream so an Android
-// content URI is read where it lives.
+// content URI is read where it lives. Once given a disc key, the sectors of
+// an encrypted PS3 image come out decrypted.
 class FileReader {
  public:
   explicit FileReader(const std::string& path) {
@@ -111,7 +117,42 @@ class FileReader {
 
   bool ok() const { return size_ > 0; }
 
+  // Inclusive sector ranges.
+  using Regions = std::vector<std::pair<uint64_t, uint64_t>>;
+
+  void SetDiscKey(Regions encrypted, const uint8_t key[16]) {
+    encrypted_ = std::move(encrypted);
+    key_.emplace(key);
+  }
+
   bool Read(uint64_t off, void* dst, uint64_t len) {
+    if (len == 0)
+      return true;
+    if (off > size_ || len > size_ - off)
+      return false;
+    const uint64_t first = off / kSectorSize, last = (off + len - 1) / kSectorSize;
+    if (!key_ || !Encrypted(first, last))
+      return RawRead(off, dst, len);
+    // CBC needs each sector from its start, so whole sectors are read.
+    const uint64_t base = first * kSectorSize;
+    const uint64_t span = std::min((last + 1) * kSectorSize, size_) - base;
+    scratch_.resize(span);
+    if (!RawRead(base, scratch_.data(), span))
+      return false;
+    for (uint64_t sector = first; sector <= last; ++sector) {
+      const uint64_t at = (sector - first) * kSectorSize;
+      if (at + kSectorSize > span || !Encrypted(sector, sector))
+        continue;
+      uint8_t iv[16];
+      SectorIv(sector, iv);
+      key_->DecryptCbc(scratch_.data() + at, kSectorSize, iv);
+    }
+    std::memcpy(dst, scratch_.data() + (off - base), len);
+    return true;
+  }
+
+  // Ignores the disc key.
+  bool RawRead(uint64_t off, void* dst, uint64_t len) {
     if (len == 0)
       return true;
     if (off > size_ || len > size_ - off)
@@ -139,6 +180,15 @@ class FileReader {
     if (!Read(off, b, sizeof(b)))
       return std::nullopt;
     return uint16_t(b[0] | (b[1] << 8));
+  }
+
+  uint64_t size() const { return size_; }
+
+  // Each encrypted sector is CBC on its own, its IV the sector number.
+  static void SectorIv(uint64_t sector, uint8_t iv[16]) {
+    std::memset(iv, 0, 16);
+    for (int i = 0; i < 8; ++i)
+      iv[15 - i] = uint8_t(sector >> (8 * i));
   }
 
   std::optional<uint32_t> U32LE(uint64_t off) {
@@ -171,8 +221,16 @@ class FileReader {
   }
 
  private:
+  bool Encrypted(uint64_t first, uint64_t last) const {
+    return std::any_of(encrypted_.begin(), encrypted_.end(),
+                       [&](const auto& r) { return r.first <= last && r.second >= first; });
+  }
+
   SDL_IOStream* io_ = nullptr;
   uint64_t size_ = 0;
+  std::optional<Aes128> key_;
+  Regions encrypted_;
+  std::vector<uint8_t> scratch_;
 };
 
 // Joins archive supplied names under `base`, refusing anything that escapes it.
@@ -189,7 +247,6 @@ std::optional<fs::path> SafeJoin(const fs::path& base, const std::string& name) 
 constexpr uint64_t kXdvdfsPartitionOffsets[] = {0x00000000, 0x0000FB20, 0x00020600, 0x02080000,
                                                 0x0FD90000};
 constexpr std::string_view kXdvdfsMagic = "MICROSOFT*XBOX*MEDIA";
-constexpr uint64_t kSectorSize = 2048;
 constexpr int kMaxDirectoryDepth = 64;
 
 struct Xdvdfs {
@@ -415,6 +472,111 @@ std::optional<IsoEntry> FindIsoPath(FileReader& reader, std::string_view path) {
   return at;
 }
 
+// Redump's disc keys for BLES00444, BLUS30161 and BLJS10017.
+constexpr uint8_t kDiscKeys[][16] = {
+    {0x40, 0x12, 0x3B, 0xA7, 0xE7, 0xAC, 0xC6, 0x2E, 0xDC, 0xBF, 0x78, 0xAC, 0x19, 0x3F, 0x03, 0x2D},
+    {0xCB, 0x61, 0xF9, 0xB3, 0x02, 0xA9, 0x4D, 0x76, 0x31, 0x14, 0x12, 0xA5, 0x83, 0x44, 0xA0, 0x80},
+    {0x59, 0xAB, 0x76, 0x3C, 0x1E, 0x57, 0x28, 0xCB, 0xB1, 0x55, 0x38, 0x14, 0xF0, 0xE4, 0x01, 0xA3},
+};
+
+// Sector 0 of a raw PS3 image lists its plain regions as inclusive start and
+// end sector pairs; the gaps between them are encrypted.
+FileReader::Regions ReadEncryptedRegions(FileReader& reader) {
+  uint8_t s[kSectorSize];
+  FileReader::Regions encrypted;
+  if (!reader.RawRead(0, s, sizeof(s)))
+    return encrypted;
+  auto be = [&](size_t at) {
+    return (uint32_t(s[at]) << 24) | (uint32_t(s[at + 1]) << 16) | (uint32_t(s[at + 2]) << 8) | s[at + 3];
+  };
+  const uint32_t count = be(0);
+  if (count < 2 || count > 127)
+    return encrypted;
+  const uint64_t sectors = reader.size() / kSectorSize;
+  uint64_t previous_end = 0;
+  for (uint32_t k = 0; k < count; ++k) {
+    const uint64_t start = be(8 + 8 * k), end = be(12 + 8 * k);
+    if ((k == 0 && start != 0) || (k > 0 && start <= previous_end + 1) || end < start || end >= sectors)
+      return {};
+    if (k > 0)
+      encrypted.emplace_back(previous_end + 1, start - 1);
+    previous_end = end;
+  }
+  return encrypted;
+}
+
+// A key file beside the image, as RPCS3 takes them: a .dkey of 32 hex
+// digits or a .key of 16 raw bytes.
+bool ReadKeyFile(const std::string& image, uint8_t key[16]) {
+  if (image.starts_with("content://"))
+    return false;
+  for (const char* ext : {".dkey", ".key"}) {
+    const std::string path = fs::path(image).replace_extension(ext).string();
+    size_t size = 0;
+    void* data = SDL_LoadFile(path.c_str(), &size);
+    if (!data)
+      continue;
+    const std::string text(static_cast<const char*>(data), size);
+    SDL_free(data);
+    if (size == 16) {
+      std::memcpy(key, text.data(), 16);
+      return true;
+    }
+    bool hex = size >= 32;
+    for (int i = 0; i < 16 && hex; ++i) {
+      const char pair[3] = {text[2 * i], text[2 * i + 1], 0};
+      hex = std::isxdigit(uint8_t(pair[0])) && std::isxdigit(uint8_t(pair[1]));
+      key[i] = uint8_t(std::strtoul(pair, nullptr, 16));
+    }
+    if (hex)
+      return true;
+  }
+  return false;
+}
+
+// Gives the reader of an encrypted PS3 image its disc key: the one, from a
+// key file or the known ones, that turns EBOOT.BIN back into a SELF. The
+// filesystem sits in a plain region, so the file can be found first.
+void UnlockPs3Image(FileReader& reader, const std::string& image) {
+  FileReader::Regions encrypted = ReadEncryptedRegions(reader);
+  if (encrypted.empty())
+    return;
+  const auto eboot = FindIsoPath(reader, "PS3_GAME/USRDIR/EBOOT.BIN");
+  uint8_t cipher[16];
+  if (!eboot || eboot->directory || !reader.RawRead(eboot->offset, cipher, sizeof(cipher)) ||
+      std::memcmp(cipher, "SCE\0", 4) == 0)
+    return;
+  auto fits = [&](const uint8_t key[16]) {
+    uint8_t block[16], iv[16];
+    std::memcpy(block, cipher, sizeof(block));
+    FileReader::SectorIv(eboot->offset / kSectorSize, iv);
+    Aes128(key).DecryptCbc(block, sizeof(block), iv);
+    return std::memcmp(block, "SCE\0", 4) == 0;
+  };
+  uint8_t key[16];
+  if (ReadKeyFile(image, key) && fits(key)) {
+    REXLOG_INFO("Decrypting the PS3 disc image with its key file");
+    reader.SetDiscKey(std::move(encrypted), key);
+    return;
+  }
+  for (const auto& known : kDiscKeys) {
+    if (fits(known)) {
+      REXLOG_INFO("Decrypting the PS3 disc image with a known disc key");
+      reader.SetDiscKey(std::move(encrypted), known);
+      return;
+    }
+  }
+  REXLOG_WARN("Encrypted PS3 disc image, and no disc key fits it");
+}
+
+// An ISO 9660 image, unlocked if it is an encrypted PS3 one.
+bool OpenIso(FileReader& reader, const std::string& image) {
+  if (!reader.ok() || !IsIso9660(reader))
+    return false;
+  UnlockPs3Image(reader, image);
+  return true;
+}
+
 uint64_t MoreBytes(const IsoEntry& e) {
   uint64_t n = 0;
   for (const auto& part : e.more)
@@ -571,7 +733,7 @@ uint64_t MeasureDiscImage(const std::string& image) {
 
 uint64_t MeasureIsoFolder(const std::string& image, std::string_view folder) {
   FileReader reader(image);
-  if (!reader.ok() || !IsIso9660(reader))
+  if (!OpenIso(reader, image))
     return 0;
   const auto dir = FindIsoPath(reader, folder);
   if (!dir || !dir->directory)
@@ -592,7 +754,7 @@ std::string ReadIsoImageFile(const std::string& image, std::string_view path,
   FileReader reader(image);
   if (!reader.ok())
     return TrErr("err_read");
-  const auto file = IsIso9660(reader) ? FindIsoPath(reader, path) : std::nullopt;
+  const auto file = OpenIso(reader, image) ? FindIsoPath(reader, path) : std::nullopt;
   if (!file || file->directory)
     return TrErr("err_not_es");
   out.resize(file->length);
@@ -607,7 +769,7 @@ std::string WithIsoFiles(const std::string& image, std::string_view folder, std:
   FileReader reader(image);
   if (!reader.ok())
     return TrErr("err_read");
-  const auto dir = IsIso9660(reader) ? FindIsoPath(reader, folder) : std::nullopt;
+  const auto dir = OpenIso(reader, image) ? FindIsoPath(reader, folder) : std::nullopt;
   if (!dir || !dir->directory)
     return TrErr("err_not_es");
   std::vector<IsoEntry> entries;
@@ -651,7 +813,7 @@ std::string ExtractIsoFolder(const std::string& image, std::string_view folder,
   FileReader reader(image);
   if (!reader.ok())
     return TrErr("err_read");
-  const auto dir = IsIso9660(reader) ? FindIsoPath(reader, folder) : std::nullopt;
+  const auto dir = OpenIso(reader, image) ? FindIsoPath(reader, folder) : std::nullopt;
   if (!dir || !dir->directory)
     return TrErr("err_not_es");
   Walk measured;

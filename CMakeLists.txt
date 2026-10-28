@@ -448,6 +448,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/equipment_system.cpp
     src/core/game_settings.cpp
     src/core/ui_language.cpp
+    src/installer/aes128.cpp
     src/installer/disc_image.cpp
     src/installer/game_data.cpp
     src/installer/game_library.cpp

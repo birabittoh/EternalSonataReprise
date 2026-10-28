@@ -2,6 +2,8 @@
 
 #include <cstring>
 
+#include "aes128.h"
+
 namespace eternalsonata {
 namespace {
 
@@ -27,120 +29,6 @@ uint64_t U64(const uint8_t* p) {
     v = (v << 8) | p[i];
   return v;
 }
-
-// A small table AES-128; saves are a few megabytes, so speed does not matter.
-uint8_t Mul(uint8_t a, uint8_t b) {
-  uint8_t r = 0;
-  while (b) {
-    if (b & 1)
-      r ^= a;
-    a = uint8_t((a << 1) ^ ((a & 0x80) ? 0x1B : 0));
-    b >>= 1;
-  }
-  return r;
-}
-
-struct SBoxes {
-  uint8_t fwd[256];
-  uint8_t inv[256];
-  SBoxes() {
-    for (int x = 0; x < 256; ++x) {
-      // x^254 is the multiplicative inverse, 0 for 0.
-      uint8_t v = 1, base = uint8_t(x);
-      for (int e = 254; e; e >>= 1, base = Mul(base, base))
-        if (e & 1)
-          v = Mul(v, base);
-      if (!x)
-        v = 0;
-      uint8_t s = 0x63 ^ v;
-      for (int r = 1; r <= 4; ++r)
-        s ^= uint8_t((v << r) | (v >> (8 - r)));
-      fwd[x] = s;
-      inv[s] = uint8_t(x);
-    }
-  }
-};
-const SBoxes& Boxes() {
-  static const SBoxes boxes;
-  return boxes;
-}
-
-class Aes128 {
- public:
-  explicit Aes128(const uint8_t key[16]) {
-    const SBoxes& sb = Boxes();
-    std::memcpy(round_keys_, key, 16);
-    uint8_t rcon = 1;
-    for (int i = 16; i < 176; i += 4) {
-      uint8_t t[4];
-      std::memcpy(t, round_keys_ + i - 4, 4);
-      if (i % 16 == 0) {
-        const uint8_t first = t[0];
-        t[0] = sb.fwd[t[1]] ^ rcon;
-        t[1] = sb.fwd[t[2]];
-        t[2] = sb.fwd[t[3]];
-        t[3] = sb.fwd[first];
-        rcon = Mul(rcon, 2);
-      }
-      for (int j = 0; j < 4; ++j)
-        round_keys_[i + j] = round_keys_[i - 16 + j] ^ t[j];
-    }
-  }
-
-  void Encrypt(uint8_t b[16]) const {
-    const SBoxes& sb = Boxes();
-    AddRoundKey(b, 0);
-    for (int round = 1; round <= 10; ++round) {
-      uint8_t t[16];
-      for (int r = 0; r < 4; ++r)
-        for (int c = 0; c < 4; ++c)
-          t[r + 4 * c] = sb.fwd[b[r + 4 * ((c + r) % 4)]];
-      if (round != 10) {
-        for (int c = 0; c < 4; ++c) {
-          uint8_t* a = t + 4 * c;
-          const uint8_t a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
-          a[0] = Mul(a0, 2) ^ Mul(a1, 3) ^ a2 ^ a3;
-          a[1] = a0 ^ Mul(a1, 2) ^ Mul(a2, 3) ^ a3;
-          a[2] = a0 ^ a1 ^ Mul(a2, 2) ^ Mul(a3, 3);
-          a[3] = Mul(a0, 3) ^ a1 ^ a2 ^ Mul(a3, 2);
-        }
-      }
-      std::memcpy(b, t, 16);
-      AddRoundKey(b, round);
-    }
-  }
-
-  void Decrypt(uint8_t b[16]) const {
-    const SBoxes& sb = Boxes();
-    AddRoundKey(b, 10);
-    for (int round = 9; round >= 0; --round) {
-      uint8_t t[16];
-      for (int r = 0; r < 4; ++r)
-        for (int c = 0; c < 4; ++c)
-          t[r + 4 * ((c + r) % 4)] = sb.inv[b[r + 4 * c]];
-      std::memcpy(b, t, 16);
-      AddRoundKey(b, round);
-      if (round) {
-        for (int c = 0; c < 4; ++c) {
-          uint8_t* a = b + 4 * c;
-          const uint8_t a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
-          a[0] = Mul(a0, 14) ^ Mul(a1, 11) ^ Mul(a2, 13) ^ Mul(a3, 9);
-          a[1] = Mul(a0, 9) ^ Mul(a1, 14) ^ Mul(a2, 11) ^ Mul(a3, 13);
-          a[2] = Mul(a0, 13) ^ Mul(a1, 9) ^ Mul(a2, 14) ^ Mul(a3, 11);
-          a[3] = Mul(a0, 11) ^ Mul(a1, 13) ^ Mul(a2, 9) ^ Mul(a3, 14);
-        }
-      }
-    }
-  }
-
- private:
-  void AddRoundKey(uint8_t b[16], int round) const {
-    for (int i = 0; i < 16; ++i)
-      b[i] ^= round_keys_[16 * round + i];
-  }
-
-  uint8_t round_keys_[176];
-};
 
 }  // namespace
 
