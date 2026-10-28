@@ -46,7 +46,7 @@ REXCVAR_DECLARE(bool, frame_debug);
 // Bisection switches for the wall-clock mode, each bit disables one of its
 // parts: 1 exact float delta, 2 per-frame byte (stays 60, so the game runs
 // fast), 4 animation fixups, 8 physics and script timer frame time, 16
-// script wait, 32 the NMTN key grid sampling, 64 the physics substep rescale,
+// script waits and sleeps, 32 the NMTN key grid sampling, 64 the physics substep rescale,
 // 128, 256 and 512 the three physics collision passes, 1024 root velocity,
 // 2048 cloth spread timing, 4096 long chain length correction at every frame
 // rate, 16384 the 60 Hz cloth clock, 32768 the field command rate fixups.
@@ -1458,6 +1458,76 @@ REX_HOOK_RAW(sub_820EA758) {
     (mode == 1 ? g_task_wait_alt : g_task_wait)(0x824CF500u, handle, frames, 0, 0, 0xFFFFFFFFu);
   }
   ctx.r3.u64 = 0;
+}
+
+// Cutscene scripts pause with `sleep ceil(units / (300 / native115()))`, and
+// native 115 returns the byte, i.e. one frame's step in wall mode; the pauses
+// came out wrong and dialogue cut off the previous voice clip. When a VM read
+// the step and then sleeps longer than a frame, count that sleep down in
+// measured units, since the frame rate can swing during it. Literal frame
+// sleeps and `sleep 1` loops are left alone.
+namespace {
+thread_local u32 g_step_reader_vm = 0;
+thread_local u32 g_step_read = 0;
+
+struct TimedSleep {
+  double units_left;
+  u32 count;  // the frame counter as last left, to spot a reused context
+};
+std::mutex g_timed_sleep_mutex;
+std::unordered_map<u32, TimedSleep> g_timed_sleeps;
+
+// Runs before the VM's own countdown (`if (--count > 0) return`), so the count
+// written here is what keeps it asleep or wakes it this tick.
+void TickTimedSleep(u8* base, u32 vm) {
+  std::lock_guard<std::mutex> lock(g_timed_sleep_mutex);
+  const auto it = g_timed_sleeps.find(vm);
+  if (it == g_timed_sleeps.end()) {
+    return;
+  }
+  if (!g_wall_active || REX_LOAD_U32(vm + 8) != 2 || REX_LOAD_U32(vm + 12) != it->second.count) {
+    g_timed_sleeps.erase(it);
+    return;
+  }
+  it->second.units_left -= g_wall_units;
+  if (it->second.units_left <= 0.5 * g_wall_units) {
+    REX_STORE_U32(vm + 12, 1);
+    g_timed_sleeps.erase(it);
+    return;
+  }
+  REX_STORE_U32(vm + 12, 2);
+  it->second.count = 1;
+}
+}  // namespace
+
+REX_EXTERN(__imp__sub_821030B8);
+REX_HOOK_RAW(sub_821030B8) {
+  __imp__sub_821030B8(ctx, base);
+  const u32 byte = ctx.r3.u32 & 0xFF;
+  if (g_wall_active && byte) {
+    g_step_reader_vm = REX_LOAD_U32(0x824405FC);
+    g_step_read = 300 / byte;
+  }
+}
+
+REX_EXTERN(__imp__sub_820FFE28);
+REX_HOOK_RAW(sub_820FFE28) {
+  const u32 vm = ctx.r3.u32;
+  const u32 outer_vm = g_step_reader_vm;
+  const u32 outer_step = g_step_read;
+  g_step_reader_vm = 0;
+  TickTimedSleep(base, vm);
+  __imp__sub_820FFE28(ctx, base);
+  if (g_step_reader_vm == vm && g_wall_active && !(REXCVAR_GET(frame_wall_debug) & 16) &&
+      REX_LOAD_U32(vm + 8) == 2) {
+    const u32 frames = REX_LOAD_U32(vm + 12);
+    if (frames > 1) {
+      std::lock_guard<std::mutex> lock(g_timed_sleep_mutex);
+      g_timed_sleeps[vm] = {double(frames) * g_step_read, frames};
+    }
+  }
+  g_step_reader_vm = outer_vm;
+  g_step_read = outer_step;
 }
 
 namespace {
