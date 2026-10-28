@@ -182,7 +182,7 @@ open and close slides (`sub_8220C988`, `sub_8220DB50`) move it with them.
 ### Marking more than one
 
 The PS3 lets any number of pieces be marked. Its party block keeps a u32 at
-`+0x928`, bit `n - 1` for piece `n`, after six bytes of padding behind the
+`+0x928`, bit `n - 1` for the nth row of the collected piece list (not piece number `n`), after six bytes of padding behind the
 camp menu flags: `sub_232698` packs the menu's 32 flag bytes (`menu+0x208`)
 into it on close and `sub_234A18` unpacks it on open, making one Mark sprite
 (image 0x166) per piece. Nothing else in either game reads the Mark.

@@ -67,8 +67,8 @@ struct Worn {
   const char* name;
 };
 constexpr Worn kPs3Worn[] = {{0x91D, "allegretto"}, {0x91E, "polka"}, {0x91F, "beat"}};
-// The score piece marks, u32 bit n - 1 per piece (sub_232698), after six
-// bytes of padding.
+// The score piece marks, u32 with bit n for the nth row of the collected
+// piece list (sub_232698), after six bytes of padding.
 constexpr size_t kPs3Marks = 0x928;
 
 using Bytes = std::vector<uint8_t>;

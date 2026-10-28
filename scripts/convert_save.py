@@ -45,8 +45,8 @@ first 204824 bytes of SAVEDATA.
 
 The PS3 party block widens position[] and slotbytes[] to twelve and realigns
 what follows; it adds costume unlocks and choices (+0x919..+0x91F), the camp
-menu flags (+0x920, +0x921) and the score piece marks (+0x928, any number of
-them, where the 360 has one at +0x90C). Nothing in the EBOOT reads
+menu flags (+0x920, +0x921) and the score piece marks (+0x928, by row of the
+collected list, any number of them, where the 360 has one at +0x90C). Nothing in the EBOOT reads
 +0x918, +0x922..+0x927 or +0x92C on, so those are dropped. Here, members 11 and 12, the
 costumes, the flags and the marks go to reprise.txt
 (src/engine/save_record.cpp); a retail 360 save keeps the lowest mark.
@@ -141,6 +141,8 @@ PS3_CAMP_FLAGS = 0x920
 PS3_MARKS = 0x928
 # The 360 keeps one, the piece number at party +0x90C.
 MARK = 0x90C
+# The collected piece numbers; mark bit n is for the nth of them, not piece n + 1.
+PIECES = 0x8EC
 MARKS_KEY = "score_pieces.marked"
 
 # The PS3's item master records, for Item Set costs (u16 at +0x36).
@@ -288,8 +290,8 @@ def from_360(blocks, record):
     s.target = record.get("target") or ("ps3" if "ps3.camp_menu_flags" in record else "360")
     if MARKS_KEY in record:
         s.marks = int(record[MARKS_KEY], 16)
-    elif 1 <= party[MARK] <= 32:
-        s.marks = 1 << (party[MARK] - 1)
+    elif party[MARK] and party[MARK] in party[PIECES:PIECES + 32]:
+        s.marks = 1 << party[PIECES:PIECES + 32].index(party[MARK])
     for key, value in record.items():
         m = re.fullmatch(r"unlocked\.(\w+)\.ps3/(\d+)", key)
         if m:
@@ -419,15 +421,16 @@ def blank_stats(rows, count):
 # Writers
 # ---------------------------------------------------------------------------
 
-def lowest_mark(marks):
-    return (marks & -marks).bit_length()
+def lowest_mark(marks, party):
+    """The piece number of the first marked row, 0 for none."""
+    return party[PIECES + (marks & -marks).bit_length() - 1] if marks else 0
 
 
 def to_360_body(s):
     header = bytearray(s.header)
     struct.pack_into(">I", header, 16, 2)
     party = bytearray(s.party)
-    party[MARK] = lowest_mark(s.marks)
+    party[MARK] = lowest_mark(s.marks, party)
     for c in range(RETAIL_CHARS):
         struct.pack_into(">I", party, POSITION + 4 * c, s.position[c])
     party[SLOTBYTES:SLOTBYTES + RETAIL_CHARS] = bytes(s.slotbytes[:RETAIL_CHARS])
@@ -466,7 +469,7 @@ def to_retail_360(s):
     if s.passthrough:
         warn("dropped: " + ", ".join(sorted(s.passthrough)))
     if s.marks & (s.marks - 1):
-        warn(f"the 360 marks one score piece; only piece {lowest_mark(s.marks)} stays marked")
+        warn(f"the 360 marks one score piece; only piece {lowest_mark(s.marks, s.party)} stays marked")
     drop_members(s, (10, 11))
     s.base[10:] = s.live[10:] = [None, None]
     drop_items(s, *LIMITS["360"])
@@ -498,7 +501,7 @@ def to_ps3(s):
     p[0x850:0x85C] = bytes(s.slotbytes)
     p[0x85C:0x8E2] = q[0x852:0x8D8]
     p[0x8E4:0x919] = q[0x8D8:0x90D]
-    p[0x8E4 + MARK - 0x8D8] = lowest_mark(s.marks)
+    p[0x8E4 + MARK - 0x8D8] = lowest_mark(s.marks, q)
     struct.pack_into(">I", p, PS3_MARKS, s.marks)
     for at, name, variant in PS3_UNLOCKS:
         p[at] = 1 if s.unlocks.get((name, variant)) else 0

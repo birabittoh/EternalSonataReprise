@@ -38,6 +38,7 @@ namespace {
 
 constexpr int kPieces = 32;
 constexpr std::uint32_t kMarkAddr = 0x8243FCF4u;  // u8 piece number, 0 for none
+constexpr std::uint32_t kListAddr = 0x8243FCD4u;  // u8[32], collected piece numbers
 constexpr char kRecordKey[] = "score_pieces.marked";
 
 std::atomic<std::uint32_t> g_marks{0};
@@ -50,6 +51,30 @@ std::uint8_t* GuestBase() {
 
 std::uint8_t LowestMarked(std::uint32_t marks) {
   return marks ? static_cast<std::uint8_t>(std::countr_zero(marks) + 1) : 0;
+}
+
+// The PS3 record has bit n set for the nth row of the collected list, not for
+// piece number n + 1, so the list is the way between the two.
+std::uint32_t PiecesToRows(std::uint32_t pieces) {
+  const std::uint8_t* base = GuestBase();
+  std::uint32_t rows = 0;
+  for (int row = 0; base && row < kPieces; ++row) {
+    const std::uint8_t number = base[kListAddr + row];
+    if (number >= 1 && number <= kPieces && (pieces >> (number - 1) & 1u))
+      rows |= 1u << row;
+  }
+  return rows;
+}
+
+std::uint32_t RowsToPieces(std::uint32_t rows) {
+  const std::uint8_t* base = GuestBase();
+  std::uint32_t pieces = 0;
+  for (int row = 0; base && row < kPieces; ++row) {
+    const std::uint8_t number = base[kListAddr + row];
+    if (number >= 1 && number <= kPieces && (rows >> row & 1u))
+      pieces |= 1u << (number - 1);
+  }
+  return pieces;
 }
 
 void WriteMarkByte(std::uint32_t marks) {
@@ -70,7 +95,7 @@ void SetScorePieceMarks(std::uint32_t marks) {
 
 void SaveScorePieceMarks(SaveRecord& record) {
   char hex[9];
-  std::snprintf(hex, sizeof(hex), "%08X", ScorePieceMarks());
+  std::snprintf(hex, sizeof(hex), "%08X", PiecesToRows(ScorePieceMarks()));
   record[kRecordKey] = hex;
 }
 
@@ -78,7 +103,8 @@ void SaveScorePieceMarks(SaveRecord& record) {
 void LoadScorePieceMarks(const SaveRecord& record) {
   const auto it = record.find(kRecordKey);
   if (it != record.end()) {
-    g_marks.store(static_cast<std::uint32_t>(std::strtoul(it->second.c_str(), nullptr, 16)),
+    g_marks.store(RowsToPieces(static_cast<std::uint32_t>(
+                      std::strtoul(it->second.c_str(), nullptr, 16))),
                   std::memory_order_relaxed);
     WriteMarkByte(ScorePieceMarks());
     return;
@@ -97,7 +123,6 @@ namespace score_piece_marks {
 namespace {
 
 constexpr std::uint32_t kMarkImage = 0x15Du;
-constexpr std::uint32_t kListAddr = 0x8243FCD4u;  // u8[32], collected pieces
 constexpr std::uint32_t kObjects = 0x824CF500u;
 constexpr std::uint32_t kUiRootAddr = 0x824400E4u;
 constexpr std::uint32_t kScrollGroupAddr = 0x8243F234u;
