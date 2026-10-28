@@ -578,6 +578,10 @@ constexpr LocalizedLabel kLabelPhotoPrice = {"photo_price"};
 constexpr LocalizedLabel kLabelEnemyHp = {"enemy_hp"};
 constexpr LocalizedLabel kLabelEnemyDamage = {"enemy_damage"};
 constexpr LocalizedLabel kLabelAutoParry = {"auto_parry"};
+constexpr LocalizedLabel kLabelTacticalTime = {"tactical_time"};
+constexpr LocalizedLabel kLabelActionTime = {"action_time"};
+constexpr LocalizedLabel kLabelEnemyActionTime = {"enemy_action_time"};
+constexpr LocalizedLabel kLabelValueUnlimited = {"value_unlimited"};
 constexpr LocalizedLabel kLabelPartyLevel = {"party_level"};
 constexpr LocalizedLabel kLabelPartyLevelEncore = {"party_level_encore"};
 constexpr LocalizedLabel kLabelPartyLevelAlways = {"party_level_always"};
@@ -945,8 +949,13 @@ std::string DrawnLabel(const LocalizedLabel& label) {
   return LabelText(label, HasText(label, lang) ? lang : 0);
 }
 
-void MakeMultiplierRow(OptionRow& row, const LocalizedLabel& label, const char* cvar) {
-  MakeSliderRow(row, label, eternalsonata::MultiplierOptionCount(cvar), [cvar](int idx) {
+void MakeMultiplierRow(OptionRow& row, const LocalizedLabel& label, const char* cvar,
+                       bool unlimited_at_max = false) {
+  const int count = eternalsonata::MultiplierOptionCount(cvar);
+  MakeSliderRow(row, label, count, [cvar, count, unlimited_at_max](int idx) {
+    if (unlimited_at_max && idx == count - 1) {
+      return DrawnLabel(kLabelValueUnlimited);
+    }
     char text[16];
     std::snprintf(text, sizeof(text), "%gx", eternalsonata::MultiplierOptionValue(cvar, idx));
     return std::string(text);
@@ -1100,7 +1109,12 @@ RowStore& Rows() {
     MakeBoolCvarRow(add(kPageGraphics), kLabelGeneratedMips, "render_generated_mips");
     MakeBoolCvarRow(add(kPageGraphics), kLabelVsync, "vsync");
 
-    // Page 5, platform: which release's behaviour each system follows.
+    // Page 5, platform: the battle gauge timers, then which release's
+    // behaviour each system follows.
+    MakeMultiplierRow(add(kPagePlatform), kLabelTacticalTime, "party_tactical_time_multiplier",
+                      true);
+    MakeMultiplierRow(add(kPagePlatform), kLabelActionTime, "party_action_time_multiplier", true);
+    MakeMultiplierRow(add(kPagePlatform), kLabelEnemyActionTime, "enemy_action_time_multiplier");
     // Auto, Xbox 360 and PS3 over a string cvar whose ids are `ids`.
     auto platform_row = [&](const LocalizedLabel& label, const char* cvar,
                             std::vector<const char*> ids) {

@@ -2002,6 +2002,13 @@ std::span<const double> MultiplierSteps(const char* cvar) {
   if (name == "enemy_exp_multiplier" || name == "enemy_gold_multiplier" ||
       name == "photo_price_multiplier" || name == "enemy_damage_multiplier")
     return kRewardMultiplierSteps;
+  if (name == "party_tactical_time_multiplier")
+    return kTacticalTimeSteps;
+  if (name == "party_action_time_multiplier")
+    return kActionTimeSteps;
+  // The overlay leaves the "no limit" step off the enemy gauge.
+  if (name == "enemy_action_time_multiplier")
+    return std::span(kActionTimeSteps).first(kActionTimeSteps.size() - 1);
   return {};
 }
 }  // namespace
