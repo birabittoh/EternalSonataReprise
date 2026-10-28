@@ -23,6 +23,7 @@
 #include "button_glyphs.h"
 
 REXCVAR_DECLARE(double, touch_scale);
+REXCVAR_DECLARE(bool, touch_function_keys);
 
 namespace eternalsonata {
 
@@ -118,6 +119,28 @@ inline touch::TouchLayout BuildTouchLayout(float width, float height) {
                                      "", UiModeButtons()));
   layout.controls.push_back(MakePill(width * 0.5f + menu_offset, pill_y, menu_rx, pill_ry, "START",
                                      X_INPUT_GAMEPAD_START));
+
+  // Optional second row of square buttons, one per F-key bind, read live.
+  if (REXCVAR_GET(touch_function_keys)) {
+    const auto keys = touch::TouchFunctionKeys();
+    const float side = u * 0.05f * scale;
+    const float gap = u * 0.015f;
+    const float row_y = pill_y + pill_ry + gap + side;
+    const float total = keys.size() * (side * 2.0f + gap) - gap;
+    float x = width * 0.5f - total * 0.5f + side;
+    for (const auto& key : keys) {
+      TouchControl c;
+      c.shape = TouchControl::Shape::kSquare;
+      c.cx = x;
+      c.cy = row_y;
+      c.half_width = side;
+      c.half_height = side;
+      c.label = "F" + std::to_string(key.number);
+      c.bind = key.bind;
+      layout.controls.push_back(std::move(c));
+      x += side * 2.0f + gap;
+    }
+  }
 
   return layout;
 }

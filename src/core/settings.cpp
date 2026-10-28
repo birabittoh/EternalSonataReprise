@@ -297,7 +297,7 @@ constexpr std::array kBasicCvarNames = {
     "audio_mute", "audio_volume", "field_leader_model", "field_action_default_model",
     "host_timer_resolution_ms", "vsync", "voice_language", "render_scale",
     "camera_fov_scale", "display_gamma", "render_pixelated_scaling", "render_msaa", "render_fxaa", "render_anisotropy", "render_generated_mips", "aim_invert_x", "aim_invert_y",
-    "touch_controls", "touch_scale", "touch_opacity", "touch_hide_delay", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "ui_mode_button", "override_button_glyphs", "prompt_device",
+    "touch_controls", "touch_function_keys", "touch_scale", "touch_opacity", "touch_hide_delay", "gyro_aim", "gyro_sensitivity", "gyro_invert_x", "gyro_invert_y", "fast_forward_button", "ui_mode_button", "override_button_glyphs", "prompt_device",
     "fast_forward_max_speed",
     "enemy_exp_multiplier", "benched_exp_multiplier", "incapacitated_exp_multiplier",
     "enemy_gold_multiplier", "photo_price_multiplier", "photo_price_algorithm",
@@ -782,6 +782,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawCvarRow("aim_invert_y");
         DrawCvarRow("touch_controls");
         if (rex::cvar::GetFlagByName("touch_controls") == "true") {
+          DrawCvarRow("touch_function_keys");
           DrawSensitivityRow("touch_scale", 0.5f, 2.0f, true);
           DrawSensitivityRow("touch_opacity", 0.1f, 1.0f, true);
           DrawSensitivityRow("touch_hide_delay", 1.0f, 11.0f, true, true);
