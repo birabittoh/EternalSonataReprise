@@ -70,7 +70,6 @@ constexpr Worn kPs3Worn[] = {{0x91D, "allegretto"}, {0x91E, "polka"}, {0x91F, "b
 // The score piece marks, u32 bit n - 1 per piece (sub_232698), after six
 // bytes of padding.
 constexpr size_t kPs3Marks = 0x928;
-constexpr size_t kPs3PartyUsed = 0x92C;
 
 using Bytes = std::vector<uint8_t>;
 using Blocks = std::map<std::string, std::pair<size_t, size_t>>;
@@ -276,8 +275,7 @@ std::string ConvertPs3(const Bytes& body, PreparedSave& out) {
   std::memcpy(&party[0x848], p + 0x850, 0x0A);  // slotbytes 1..10
   std::memcpy(&party[0x852], p + 0x85C, 0x86);  // 3 bytes, Item Set, its scratch copy
   std::memcpy(&party[0x8D8], p + 0x8E4, 0x35);  // Item Set count and budget .. score piece Mark
-  if (std::any_of(p + kPs3PartyUsed, p + 2604, [](uint8_t b) { return b != 0; }))
-    REXLOG_WARN("Saves: the PS3 party block has data past +0x92C; it is dropped");
+  // The EBOOT never reads +0x918, +0x922..+0x927 or anything past +0x92C.
 
   const size_t split = kRetailChars * kStatsStride;
   Bytes converted;

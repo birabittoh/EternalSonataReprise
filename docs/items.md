@@ -187,6 +187,13 @@ camp menu flags: `sub_232698` packs the menu's 32 flag bytes (`menu+0x208`)
 into it on close and `sub_234A18` unpacks it on open, making one Mark sprite
 (image 0x166) per piece. Nothing else in either game reads the Mark.
 
+The rest of the PS3 party block's tail is unused. `+0x918`, where the 360
+keeps its one Mark, is only zeroed by the new game reset (`0x1E75A8`); its
+address is the end pointer (TOC `0x53F3C0`) of the walks over the 32 bytes
+at `+0x8F8`. `+0x922..+0x927` and `+0x92C..+0xA2B` have no access at all
+beyond the save writer's and loader's whole block copies. The converters
+drop all three.
+
 `score_piece_marks.cpp` does the same on the 360 menu. The set is host state,
 saved as `score_pieces.marked` (8 hex digits, the PS3's layout) in reprise.txt;
 `byte_8243FCF4` follows it as the lowest marked piece, so a save taken to a

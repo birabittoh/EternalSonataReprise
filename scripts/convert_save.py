@@ -46,7 +46,8 @@ first 204824 bytes of SAVEDATA.
 The PS3 party block widens position[] and slotbytes[] to twelve and realigns
 what follows; it adds costume unlocks and choices (+0x919..+0x91F), the camp
 menu flags (+0x920, +0x921) and the score piece marks (+0x928, any number of
-them, where the 360 has one at +0x90C). Here, members 11 and 12, the
+them, where the 360 has one at +0x90C). Nothing in the EBOOT reads
++0x918, +0x922..+0x927 or +0x92C on, so those are dropped. Here, members 11 and 12, the
 costumes, the flags and the marks go to reprise.txt
 (src/engine/save_record.cpp); a retail 360 save keeps the lowest mark.
 
@@ -138,7 +139,6 @@ PS3_WORN = [(0x91D, "allegretto"), (0x91E, "polka"), (0x91F, "beat")]
 PS3_CAMP_FLAGS = 0x920
 # The score piece marks, u32 bit n - 1 per piece, after six bytes of padding.
 PS3_MARKS = 0x928
-PS3_PARTY_USED = 0x92C
 # The 360 keeps one, the piece number at party +0x90C.
 MARK = 0x90C
 MARKS_KEY = "score_pieces.marked"
@@ -250,9 +250,6 @@ def from_ps3(blocks):
     party[0x848:0x852] = p[0x850:0x85A]  # slotbytes 1..10
     party[0x852:0x8D8] = p[0x85C:0x8E2]  # 3 bytes, Item Set, its scratch copy
     party[0x8D8:0x90D] = p[0x8E4:0x919]  # Item Set count and budget .. score piece Mark
-    if any(p[PS3_PARTY_USED:]):
-        warn("the PS3 party block has data past +0x92C this converter does not know; "
-             "it is dropped")
     s = Save()
     s.target = "ps3"
     for name in ("header", "thumb", "inventory", "map", "b80", "chars", "b100"):
