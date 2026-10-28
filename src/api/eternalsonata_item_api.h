@@ -35,9 +35,10 @@
 // Loading a save republishes nothing: whatever the save restores is adopted
 // silently.
 //
-// Score pieces publish one more, ETERNALSONATA_SCORE_PIECE_EVENT_MARKED, whose
-// `u64` is the piece number now marked (0 when the mark was cleared) and whose
-// `f64` is the matching item id (0 when cleared). Collecting one is a normal
+// Score pieces publish one more, ETERNALSONATA_SCORE_PIECE_EVENT_MARKED, once
+// per piece whose mark changed: `u64` is the piece number and `f64` is 1 if it
+// is now marked, 0 if the mark came off. (Before ABI version 2 there was one
+// mark at a time and `f64` was its item id.) Collecting one is a normal
 // item.gained.
 //
 // Threading. Every entry point here is safe to call from any thread, including
@@ -63,7 +64,7 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_ITEM_ABI_VERSION 1u
+#define ETERNALSONATA_ITEM_ABI_VERSION 2u
 
 // Event names on the mod registry bus. See the note at the top.
 #define ETERNALSONATA_ITEM_EVENT_GAINED "eternalsonata.item.gained"
@@ -94,7 +95,7 @@ extern "C" {
 // never enter the inventory: the game keeps them in a collection of their own,
 // so they cannot be sold, cannot stack, and the Score Pieces menu lists them by
 // the order they were found in. Piece numbers below are 1..32, which is what
-// the game stores and what the Mark state names; item id is number + 349.
+// the game stores and what the marks name; item id is number + 349.
 #define ETERNALSONATA_SCORE_PIECE_COUNT 32
 #define ETERNALSONATA_SCORE_PIECE_ITEM_ID_MIN 350
 #define ETERNALSONATA_SCORE_PIECE_ITEM_ID_MAX 381
@@ -199,7 +200,7 @@ typedef struct EternalSonataItem {
 
 // One of the 32 score pieces.
 typedef struct EternalSonataScorePiece {
-  // 1..32, the number the game stores and the Score Pieces menu marks by.
+  // 1..32, the number the game stores and the marks name.
   int32_t number;
   // 350..381, the same piece as an item id. Everything in the item half of
   // this API accepts it.
@@ -207,7 +208,7 @@ typedef struct EternalSonataScorePiece {
 
   // 1 once the player has found it, 0 while it is still missing.
   int32_t unlocked;
-  // 1 if this is the piece the menu's Mark is on. At most one piece is marked.
+  // 1 if the piece is marked in the Score Pieces menu. Any number can be.
   int32_t marked;
 
   // Where the piece sits in the collected list, which is the order the Score
@@ -416,26 +417,37 @@ typedef int (*EternalSonataGetScorePieceCountFn)(void);
 // Whether piece `number` has been found. Returns 1, 0, or a negative error.
 typedef int (*EternalSonataIsScorePieceUnlockedFn)(int number);
 
-// Gives or takes away piece `number`. Locking a piece also clears the Mark if
-// it was on that piece. Returns ETERNALSONATA_ITEM_OK or a negative error.
+// Gives or takes away piece `number`. Locking a piece also takes its mark off.
+// Returns ETERNALSONATA_ITEM_OK or a negative error.
 typedef int (*EternalSonataSetScorePieceUnlockedFn)(int number, int unlocked);
 
 // The same for all 32 at once. Returns how many pieces actually changed, or a
 // negative error.
 typedef int (*EternalSonataSetAllScorePiecesUnlockedFn)(int unlocked);
 
-// The piece the Mark is on, 1..32, or 0 when nothing is marked. Negative on
+// Marks. The Score Pieces menu lets the player mark any number of pieces, as
+// the PS3 release does. A change made while that menu is on screen is kept,
+// but its marks are only redrawn the next time it opens.
+
+// The lowest marked piece, 1..32, or 0 when nothing is marked. Negative on
 // error.
 typedef int (*EternalSonataGetMarkedScorePieceFn)(void);
 
-// Moves the Mark to piece `number`, or clears it when `number` is 0. The piece
-// has to have been found, otherwise ETERNALSONATA_ITEM_ERR_NOT_OWNED. Returns
-// ETERNALSONATA_ITEM_OK or a negative error.
-//
-// The Score Pieces menu copies the Mark into its own state when it opens and
-// writes it back when it closes, so a change made while that menu is on screen
-// is overwritten on exit.
+// Marks piece `number` alone, taking every other mark off, or clears them all
+// when `number` is 0. The piece has to have been found, otherwise
+// ETERNALSONATA_ITEM_ERR_NOT_OWNED. Returns ETERNALSONATA_ITEM_OK or a
+// negative error.
 typedef int (*EternalSonataSetMarkedScorePieceFn)(int number);
+
+// Since ABI version 2. Every mark at once: bit n - 1 is set when piece n is
+// marked. Returns ETERNALSONATA_ITEM_OK or a negative error.
+typedef int (*EternalSonataGetScorePieceMarksFn)(uint32_t* out);
+
+// Since ABI version 2. Puts the mark on piece `number` or takes it off,
+// leaving the others alone. Marking needs the piece to have been found,
+// otherwise ETERNALSONATA_ITEM_ERR_NOT_OWNED. Returns ETERNALSONATA_ITEM_OK or
+// a negative error.
+typedef int (*EternalSonataSetScorePieceMarkedFn)(int number, int marked);
 
 // ---------------------------------------------------------------------------
 // Gold

@@ -67,7 +67,10 @@ struct Worn {
   const char* name;
 };
 constexpr Worn kPs3Worn[] = {{0x91D, "allegretto"}, {0x91E, "polka"}, {0x91F, "beat"}};
-constexpr size_t kPs3PartyUsed = 0x922;
+// The score piece marks, u32 bit n - 1 per piece (sub_232698), after six
+// bytes of padding.
+constexpr size_t kPs3Marks = 0x928;
+constexpr size_t kPs3PartyUsed = 0x92C;
 
 using Bytes = std::vector<uint8_t>;
 using Blocks = std::map<std::string, std::pair<size_t, size_t>>;
@@ -274,7 +277,7 @@ std::string ConvertPs3(const Bytes& body, PreparedSave& out) {
   std::memcpy(&party[0x852], p + 0x85C, 0x86);  // 3 bytes, Item Set, its scratch copy
   std::memcpy(&party[0x8D8], p + 0x8E4, 0x35);  // Item Set count and budget .. score piece Mark
   if (std::any_of(p + kPs3PartyUsed, p + 2604, [](uint8_t b) { return b != 0; }))
-    REXLOG_WARN("Saves: the PS3 party block has data past +0x922; it is dropped");
+    REXLOG_WARN("Saves: the PS3 party block has data past +0x92C; it is dropped");
 
   const size_t split = kRetailChars * kStatsStride;
   Bytes converted;
@@ -303,6 +306,7 @@ std::string ConvertPs3(const Bytes& body, PreparedSave& out) {
       {"party.stats_base", Hex(at("stats_base") + split, 576 - split)},
       {"party.stats_live", Hex(at("stats_live") + split, 576 - split)},
       {"ps3.camp_menu_flags", std::string(p[0x920] ? "1" : "0") + (p[0x921] ? "1" : "0")},
+      {"score_pieces.marked", Hex(p + kPs3Marks, 4)},
   };
   for (const Unlock& unlock : kPs3Unlocks) {
     if (p[unlock.at])

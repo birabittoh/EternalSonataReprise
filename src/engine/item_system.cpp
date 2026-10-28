@@ -35,7 +35,8 @@
 //     byte_8243FCD4, 32 bytes holding the piece numbers 1..32 in the order they
 //     were found and zero for a free slot. That list is what the Score Pieces
 //     menu (sub_8220A588) walks. byte_8243FCF4 is the menu's Mark, a piece
-//     number or 0. All three sit inside the block the save writes.
+//     number or 0. All three sit inside the block the save writes. Marks here
+//     are a set, as on the PS3 (score_piece_marks.h); the byte follows it.
 //
 //   * Names and descriptions are BTX text blocks in the xex image, at
 //     0x82376400 and 0x8233A3A8, both keyed by id - 1. They are read here
@@ -53,6 +54,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -73,6 +75,7 @@
 #include "guest_main_thread.h"
 #include "item_system.h"
 #include "ps3_item_tables.h"
+#include "score_piece_marks.h"
 
 namespace eternalsonata {
 namespace {
@@ -158,7 +161,7 @@ constexpr uint32_t kScorePieceMaskAddr = 0x8243FCD0u;
 // u8[32], piece numbers 1..32 in the order they were found, 0 for free. This
 // is the list the menu walks and the one sub_821FBE88 answers "owned" from.
 constexpr uint32_t kScorePieceListAddr = 0x8243FCD4u;
-// u8, the menu's Mark: a piece number, or 0 for nothing marked.
+// u8, the menu's Mark: the lowest marked piece, or 0 for nothing marked.
 constexpr uint32_t kScorePieceMarkAddr = 0x8243FCF4u;
 
 // BTX text blocks in the xex image, both keyed by item id - 1.
@@ -199,7 +202,7 @@ rex::Runtime* g_runtime = nullptr;
 bool g_have_snapshot = false;
 std::array<uint8_t, kMasterCount + 1> g_held{};      // count per item id
 std::array<uint8_t, kMasterCount + 1> g_in_set{};    // set entries per item id
-uint8_t g_marked_piece = 0;                          // score piece Mark, 0..32
+uint32_t g_marks = 0;                                // score piece marks, bit n - 1
 
 // Custom items registered by mods. The host copy is the authority; the guest
 // only ever sees what PublishCustomItemLocked writes into the master table and
@@ -486,9 +489,14 @@ int ScorePieceOrder(int number) {
 
 bool ScorePieceUnlocked(int number) { return ScorePieceOrder(number) >= 0; }
 
+bool ScorePieceMarked(int number) {
+  return ValidPieceNumber(number) && (ScorePieceMarks() >> (number - 1) & 1u);
+}
+
+// The lowest marked piece, which is what byte_8243FCF4 holds.
 int MarkedScorePiece() {
-  const int marked = ReadGuestByte(kScorePieceMarkAddr);
-  return ValidPieceNumber(marked) ? marked : 0;
+  const uint32_t marks = ScorePieceMarks();
+  return marks ? std::countr_zero(marks) + 1 : 0;
 }
 
 // Gives or takes away one piece, the way sub_821FBFC0 does it: set the bit,
@@ -522,9 +530,7 @@ bool SetScorePieceUnlockedLocked(int number, bool unlocked) {
   }
   WriteGuestByte(kScorePieceListAddr + (kScorePieceCount - 1), 0);
   WriteGuest<uint32_t>(kScorePieceMaskAddr, mask & ~bit);
-  if (MarkedScorePiece() == number) {
-    WriteGuestByte(kScorePieceMarkAddr, 0);
-  }
+  SetScorePieceMarks(ScorePieceMarks() & ~bit);
   return true;
 }
 
@@ -534,7 +540,7 @@ void ReadScorePiece(int number, EternalSonataScorePiece* out) {
   out->item_id = number + 349;
   out->order = ScorePieceOrder(number);
   out->unlocked = out->order >= 0 ? 1 : 0;
-  out->marked = MarkedScorePiece() == number ? 1 : 0;
+  out->marked = ScorePieceMarked(number) ? 1 : 0;
   out->name_text_id = out->item_id - 1;
 }
 
@@ -929,7 +935,7 @@ void Tick() {
         held[static_cast<size_t>(number) + 349u] = 1;
       }
     }
-    const auto marked = static_cast<uint8_t>(MarkedScorePiece());
+    const uint32_t marks = ScorePieceMarks();
 
     if (g_have_snapshot) {
       for (int id = ETERNALSONATA_ITEM_ID_MIN; id <= ETERNALSONATA_ITEM_ID_MAX; ++id) {
@@ -945,15 +951,16 @@ void Tick() {
                             id, in_set[slot]});
         }
       }
-      if (marked != g_marked_piece) {
-        events.push_back({ETERNALSONATA_SCORE_PIECE_EVENT_MARKED, marked,
-                          marked ? marked + 349 : 0});
+      for (uint32_t changed = marks ^ g_marks; changed; changed &= changed - 1) {
+        const int number = std::countr_zero(changed) + 1;
+        events.push_back({ETERNALSONATA_SCORE_PIECE_EVENT_MARKED, number,
+                          static_cast<int>(marks >> (number - 1) & 1u)});
       }
     }
 
     g_held = held;
     g_in_set = in_set;
-    g_marked_piece = marked;
+    g_marks = marks;
     g_have_snapshot = true;
   }
 
@@ -1609,6 +1616,36 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetMarkedScorePiece(int number
   if (number != 0 && !ScorePieceUnlocked(number)) {
     return ETERNALSONATA_ITEM_ERR_NOT_OWNED;
   }
-  WriteGuestByte(kScorePieceMarkAddr, static_cast<uint8_t>(number));
+  SetScorePieceMarks(number ? 1u << (number - 1) : 0u);
+  return ETERNALSONATA_ITEM_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetScorePieceMarks(uint32_t* out) {
+  using namespace eternalsonata;
+  if (!out) {
+    return ETERNALSONATA_ITEM_ERR_INVALID_ARGUMENT;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!ItemsReadable()) {
+    return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
+  }
+  *out = ScorePieceMarks();
+  return ETERNALSONATA_ITEM_OK;
+}
+
+extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetScorePieceMarked(int number, int marked) {
+  using namespace eternalsonata;
+  if (!ValidPieceNumber(number)) {
+    return ETERNALSONATA_ITEM_ERR_INVALID_ITEM;
+  }
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!ItemsReadable()) {
+    return ETERNALSONATA_ITEM_ERR_UNAVAILABLE;
+  }
+  if (marked && !ScorePieceUnlocked(number)) {
+    return ETERNALSONATA_ITEM_ERR_NOT_OWNED;
+  }
+  const uint32_t bit = 1u << (number - 1);
+  SetScorePieceMarks(marked ? ScorePieceMarks() | bit : ScorePieceMarks() & ~bit);
   return ETERNALSONATA_ITEM_OK;
 }

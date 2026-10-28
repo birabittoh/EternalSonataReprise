@@ -69,6 +69,7 @@
 #include "option_strip.h"
 #include "ps3_appkeep.h"
 #include "scrapbook_menu.h"
+#include "score_piece_marks.h"
 
 // sub_82179160(manager, handle, argb, 0, 0, -1): a screen object's colour.
 REX_EXTERN(__imp__sub_82179160);
@@ -737,8 +738,10 @@ REX_EXTERN(__imp__sub_821EF0E8);
 
 REX_HOOK_RAW(sub_821EF0E8) {
   const std::uint32_t image_id = ctx.r4.u32;
+  PPCContext before = ctx;
   __imp__sub_821EF0E8(ctx, base);
   option_strip::MaybeCatchExtraGlow(image_id, ctx.r3.u32);
+  score_piece_marks::ImageMade(before, base, image_id, ctx.r3.u32);
 }
 
 // sub_8223B288(slot) lights the glow at object slot and dims the other ten. On

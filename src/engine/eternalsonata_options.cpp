@@ -34,6 +34,7 @@
 #include "ps3_item_tables.h"
 #include "ps3_piano_music.h"
 #include "scrapbook_menu.h"
+#include "score_piece_marks.h"
 #include "settings.h"
 #include "ui_text.h"
 #include "ui_language.h"
@@ -4238,6 +4239,7 @@ REX_HOOK_RAW(sub_82178A88) {
 
 REX_EXTERN(__imp__sub_82179F78);
 REX_HOOK_RAW(sub_82179F78) {
+  score_piece_marks::MirrorSlide(ctx, base);
   LowerStockBar(ctx, base);
   __imp__sub_82179F78(ctx, base);
 }

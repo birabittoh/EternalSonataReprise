@@ -171,11 +171,29 @@ Rows are sheet music images out of the resource table at `dword_824409DC+376`,
 not text, which is why the pieces look nameless in game; the shipped item name
 for id 350 is only the placeholder "Score Piece 01".
 
-`sub_8220E550(screen, index)` is Mark: it sets `state[0x184]` to `index + 1`, or
-back to 0 when the same row was already marked, which is the press-again-to-
-unmark behaviour. The state is only written back to `byte_8243FCF4` when the
-screen closes (`sub_8220DEC8`), so a mod that moves the Mark while the menu is
-open has its change overwritten on exit.
+`sub_8220E550(screen, piece - 1)` is Mark: it sets `state[0x184]` to the piece
+number, or back to 0 when that piece was already marked, which is the
+press-again-to-unmark behaviour. The state is only written back to
+`byte_8243FCF4` when the screen closes (`sub_8220DEC8`). There is one Mark
+sprite, `state[0x180]` (image 0x15D), moved to the marked row; it sits in the
+list's scroll group (`dword_8243F234`, `sub_821F7AA0`) with the rows, and the
+open and close slides (`sub_8220C988`, `sub_8220DB50`) move it with them.
+
+### Marking more than one
+
+The PS3 lets any number of pieces be marked. Its party block keeps a u32 at
+`+0x928`, bit `n - 1` for piece `n`, after six bytes of padding behind the
+camp menu flags: `sub_232698` packs the menu's 32 flag bytes (`menu+0x208`)
+into it on close and `sub_234A18` unpacks it on open, making one Mark sprite
+(image 0x166) per piece. Nothing else in either game reads the Mark.
+
+`score_piece_marks.cpp` does the same on the 360 menu. The set is host state,
+saved as `score_pieces.marked` (8 hex digits, the PS3's layout) in reprise.txt;
+`byte_8243FCF4` follows it as the lowest marked piece, so a save taken to a
+retail 360 keeps one. The stock sprite is parked and `state[0x184]` kept at 0,
+which turns off every place the game moves it; one sprite per row is made with
+the stock call's own arguments, joins the scroll group, and replays whatever the
+slides do to the stock one. Mark is replaced to toggle that piece's sprite.
 
 ## The Item Set
 

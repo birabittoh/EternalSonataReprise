@@ -1,7 +1,7 @@
 // eternalsonata - Host state kept with each save slot.
 //
-// Some state has no room in the guest save: the costume worn, and the PS3's
-// costume unlocks and camp menu flags. It is written as key = value lines to
+// Some state has no room in the guest save: the costume worn, the PS3's
+// costume unlocks and camp menu flags, and every score piece mark. It is written as key = value lines to
 // reprise.txt inside the slot's save container, so deleting the save deletes
 // it too. A save without one loads with everything at its default.
 #pragma once

@@ -44,9 +44,11 @@ a u32 check derived from the key (sub_8223D4D8). The PS3's PREVIEW0 is the
 first 204824 bytes of SAVEDATA.
 
 The PS3 party block widens position[] and slotbytes[] to twelve and realigns
-what follows; it adds costume unlocks and choices (+0x919..+0x91F) and the
-camp menu flags (+0x920, +0x921). Here, members 11 and 12, the costumes and
-the flags go to reprise.txt (src/engine/save_record.cpp).
+what follows; it adds costume unlocks and choices (+0x919..+0x91F), the camp
+menu flags (+0x920, +0x921) and the score piece marks (+0x928, any number of
+them, where the 360 has one at +0x90C). Here, members 11 and 12, the
+costumes, the flags and the marks go to reprise.txt
+(src/engine/save_record.cpp); a retail 360 save keeps the lowest mark.
 
 usage:
   convert_save.py <input> --slot N [--root DIR] [--profile ID] [--force]
@@ -134,7 +136,12 @@ PS3_UNLOCKS = [(0x919, "allegretto", 2), (0x91A, "polka", 2), (0x91B, "beat", 2)
                (0x91C, "polka", 3)]
 PS3_WORN = [(0x91D, "allegretto"), (0x91E, "polka"), (0x91F, "beat")]
 PS3_CAMP_FLAGS = 0x920
-PS3_PARTY_USED = 0x922
+# The score piece marks, u32 bit n - 1 per piece, after six bytes of padding.
+PS3_MARKS = 0x928
+PS3_PARTY_USED = 0x92C
+# The 360 keeps one, the piece number at party +0x90C.
+MARK = 0x90C
+MARKS_KEY = "score_pieces.marked"
 
 # The PS3's item master records, for Item Set costs (u16 at +0x36).
 ITEM_TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "engine",
@@ -226,6 +233,7 @@ class Save:
         self.unlocks = {}
         self.worn = {}
         self.camp = (0, 0)
+        self.marks = 0
         self.passthrough = {}
         self.target = "360"
 
@@ -243,7 +251,7 @@ def from_ps3(blocks):
     party[0x852:0x8D8] = p[0x85C:0x8E2]  # 3 bytes, Item Set, its scratch copy
     party[0x8D8:0x90D] = p[0x8E4:0x919]  # Item Set count and budget .. score piece Mark
     if any(p[PS3_PARTY_USED:]):
-        warn("the PS3 party block has data past +0x922 this converter does not know; "
+        warn("the PS3 party block has data past +0x92C this converter does not know; "
              "it is dropped")
     s = Save()
     s.target = "ps3"
@@ -257,6 +265,7 @@ def from_ps3(blocks):
     s.unlocks = {(name, variant): bool(p[at]) for at, name, variant in PS3_UNLOCKS}
     s.worn = {name: p[at] for at, name in PS3_WORN}
     s.camp = (p[PS3_CAMP_FLAGS], p[PS3_CAMP_FLAGS + 1])
+    s.marks = u32(p, PS3_MARKS)
     return s
 
 
@@ -280,6 +289,10 @@ def from_360(blocks, record):
     s.base += stats_rows(extra["stats_base"], 2) if extra["stats_base"] else [None, None]
     s.live += stats_rows(extra["stats_live"], 2) if extra["stats_live"] else [None, None]
     s.target = record.get("target") or ("ps3" if "ps3.camp_menu_flags" in record else "360")
+    if MARKS_KEY in record:
+        s.marks = int(record[MARKS_KEY], 16)
+    elif 1 <= party[MARK] <= 32:
+        s.marks = 1 << (party[MARK] - 1)
     for key, value in record.items():
         m = re.fullmatch(r"unlocked\.(\w+)\.ps3/(\d+)", key)
         if m:
@@ -291,6 +304,8 @@ def from_360(blocks, record):
             continue
         if key == "ps3.camp_menu_flags":
             s.camp = tuple(int(value[i:i + 1] == "1") for i in range(2))
+            continue
+        if key == MARKS_KEY:
             continue
         if not key.startswith("party.") and key not in ("version", "target"):
             s.passthrough[key] = value
@@ -407,10 +422,15 @@ def blank_stats(rows, count):
 # Writers
 # ---------------------------------------------------------------------------
 
+def lowest_mark(marks):
+    return (marks & -marks).bit_length()
+
+
 def to_360_body(s):
     header = bytearray(s.header)
     struct.pack_into(">I", header, 16, 2)
     party = bytearray(s.party)
+    party[MARK] = lowest_mark(s.marks)
     for c in range(RETAIL_CHARS):
         struct.pack_into(">I", party, POSITION + 4 * c, s.position[c])
     party[SLOTBYTES:SLOTBYTES + RETAIL_CHARS] = bytes(s.slotbytes[:RETAIL_CHARS])
@@ -427,6 +447,7 @@ def to_project(s):
     record = dict(s.passthrough)
     record["version"] = "1"
     record["target"] = s.target
+    record[MARKS_KEY] = f"{s.marks:08X}"
     if s.target == "ps3":
         record["party.position"] = b"".join(struct.pack(">I", p)
                                             for p in s.position[10:]).hex().upper()
@@ -447,6 +468,8 @@ def to_project(s):
 def to_retail_360(s):
     if s.passthrough:
         warn("dropped: " + ", ".join(sorted(s.passthrough)))
+    if s.marks & (s.marks - 1):
+        warn(f"the 360 marks one score piece; only piece {lowest_mark(s.marks)} stays marked")
     drop_members(s, (10, 11))
     s.base[10:] = s.live[10:] = [None, None]
     drop_items(s, *LIMITS["360"])
@@ -478,6 +501,8 @@ def to_ps3(s):
     p[0x850:0x85C] = bytes(s.slotbytes)
     p[0x85C:0x8E2] = q[0x852:0x8D8]
     p[0x8E4:0x919] = q[0x8D8:0x90D]
+    p[0x8E4 + MARK - 0x8D8] = lowest_mark(s.marks)
+    struct.pack_into(">I", p, PS3_MARKS, s.marks)
     for at, name, variant in PS3_UNLOCKS:
         p[at] = 1 if s.unlocks.get((name, variant)) else 0
     for at, name in PS3_WORN:

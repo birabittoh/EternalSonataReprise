@@ -13,6 +13,7 @@
 #include "generated/eternalsonata_init.h"
 #include "ps3_natives.h"
 #include "save_system.h"
+#include "score_piece_marks.h"
 #include "target.h"
 
 #include <filesystem>
@@ -51,6 +52,7 @@ uint32_t LoadGuestU32(uint32_t address) {
 void Reset() {
   eternalsonata::ResetPs3Record();
   eternalsonata::ResetCostumeRecord();
+  eternalsonata::ResetScorePieceMarks();
 }
 
 bool Read(const std::filesystem::path& path, eternalsonata::SaveRecord& record) {
@@ -104,6 +106,7 @@ void CaptureSaveRecord() {
   SavePs3Record(record);
   SavePartyRecord(record);
   SaveRosterRecord(record);
+  SaveScorePieceMarks(record);
   std::lock_guard lock(g_mutex);
   g_captured = std::move(record);
 }
@@ -155,6 +158,7 @@ void NotifySaveRecordLoaded(uint32_t save) {
   LoadCostumeRecord(record);
   LoadPartyRecord(record);
   LoadRosterRecord(record);
+  LoadScorePieceMarks(record);
   REXLOG_INFO("save record: slot {} loaded, {} entries", slot, record.size());
 }
 
