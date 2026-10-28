@@ -3,14 +3,33 @@
 // colours. See docs/costumes.md.
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "eternalsonata_costume_api.h"
+
 namespace eternalsonata {
 
-// One colour replaced: endpoints near `from` in hue, and saturated enough,
+// Where in a portrait a rule applies, in pixels of its full size, x0 y0
+// inclusive and x1 y1 exclusive: inside one of `rects` (anywhere when there
+// are none) and outside all of `exclude`, by as much as `mask` is white
+// there, stretched over the portrait.
+struct TintRegion {
+  struct Rect {
+    float x0, y0, x1, y1;
+  };
+  std::vector<Rect> rects, exclude;
+  uint32_t mask_width = 0, mask_height = 0;
+  std::shared_ptr<const std::vector<uint8_t>> mask;  // grey, top row first
+
+  bool empty() const { return rects.empty() && exclude.empty() && !mask; }
+};
+
+// One colour replaced: texels near `from` in hue, and saturated enough,
 // move towards `to`, and the colour's other shades with them.
 struct TintRule {
   uint32_t from = 0, to = 0;
@@ -24,6 +43,8 @@ struct TintRule {
   std::vector<int> indices;
   // Portrait kinds it applies to, bit per ETERNALSONATA_COSTUME_PORTRAIT_*.
   uint32_t kinds = ~0u;
+  // Where in each kind's portrait it applies.
+  std::array<TintRegion, ETERNALSONATA_COSTUME_PORTRAIT_KIND_COUNT> regions;
 };
 
 // Applies the rules to a NOBJ's textures in place. False when it is not one.

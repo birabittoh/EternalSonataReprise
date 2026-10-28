@@ -170,6 +170,8 @@ max_value = 1               # optional
 from = "#B4443A"
 to = "#3E6EC0"
 kinds = ["status", "face"]  # optional: status, panel, face, small_face; else all
+region = "outfit"           # optional: a [[portrait_region]] of the character
+face_exclude = [[0, 0, 140, 180]]  # optional: region keys of its own, see below
 ```
 
 A colour of a texture is replaced by as much as its hue is within
@@ -188,10 +190,13 @@ and a character's model lists its textures in the same order on both.
 `--mask` shows what it catches. Portrait tints are separate from model ones,
 since the same outfit is usually a different shade in the art.
 
-Only DXT colour endpoints change, so nothing is decoded or re-encoded
+Each DXT block's four palette colours are tinted, which tints every pixel,
+and the block is encoded again on its own, so nothing is untiled and every
+size stays
 (`src/engine/costume_tint.cpp`). The base's model and portraits are copied at
-boot, before the game builds anything from them, and a tinted copy is made
-when the costume is worn; a costume that ships its own `model` or a portrait
+boot, before the game builds anything from them. A tint of the default model
+is written over the default's own buffer when worn and put back when taken
+off; other bases get a tinted copy; a costume that ships its own `model` or a portrait
 file uses that instead. Where another mod replaced a base portrait
 through a texture patch (`assets/<container>/textures/`), the costume starts
 from the game's own art instead: the rules were made for it, and the mod's art
@@ -217,7 +222,7 @@ What those mods tint, as a starting point for others (texture indices as
 | Claves | 1, 4 grey outfit | grey `#4C4C4C`, sat ≤ 0.12, value ≤ 0.6 | grey, sat ≤ 0.12, value 0.08..0.5 |
 | March | 7 top | `#6C9E91` 22°, sat ≥ 0.18 | `#74A69D` 28°, sat ≥ 0.1 |
 | Crescendo | 3, 4, 5 navy trim | `#2D3859` 20°, sat ≥ 0.25 | `#454973` 25°, sat ≥ 0.2 |
-| Serenade | 3, 4, 7, 8, 9 dress | `#D9D2AD` 18°, sat 0.08..0.35 | none: her skin is the dress's cream |
+| Serenade | 3, 4, 7, 8, 9 dress | `#D9D2AD` 18°, sat 0.08..0.35 | `#DBD3AC` 6°, sat 0.08..0.35, in a dress region, as her skin is the dress's cream |
 
 Every texture of the default models, by index. Hair is a texture of its
 own, so a hair tint needs only its index; silver and black hair (Allegretto,
@@ -250,7 +255,49 @@ number n. Crescendo and Serenade's are PS3 `appkeep.bmd` 204 and 205 and
 costume that keeps each model and captions every portrait with its
 character and kind; its art is generated from PS3 data at build time.
 
-From C++, register a model held in memory or a file the host reads on first
+### Portrait regions
+
+Colour alone rarely isolates one part of a portrait: eyes, lips and skin
+share hues with outfits, and a weapon may be the colour of a dress. A
+portrait rule can be confined to a region of the art, so one mod tints
+Polka's hair and another only her umbrella:
+
+```toml
+[[portrait_region]]               # any number, named per character
+character = "polka"
+name = "outfit"
+exclude = [[148, 138, 252, 254]]  # every kind: pixels to leave
+face_rects = [[0, 160, 256, 256]] # one kind: pixels to tint in
+status_mask = "regions/polka_hood.png"
+```
+
+Coordinates are pixels of the portrait's full size, `x0, y0` inclusive and
+`x1, y1` exclusive, top left origin; an array may run over several lines.
+Three keys say where: `rects` (inside any of them, or anywhere when there
+are none), `exclude` (outside all of them) and `mask` (a PNG or 32 bit DDS,
+stretched over the portrait; white tints fully, grey partly, black or
+transparent not at all). They multiply with the colour match. Each takes a
+kind prefix (`status_`, `panel_`, `face_`, `small_face_`) to apply to that
+kind alone, because each kind frames the art differently. A key without one
+applies to every kind, and a prefixed one replaces it for its kind.
+Characters 5 to 12 show the status art as their panel, so their `panel_`
+keys repeat the `status_` ones. Leaving a kind out entirely takes an
+`exclude` that covers it, such as `[[0, 0, 4096, 4096]]`.
+
+A rule names a region with `region`, and may add the same keys of its own
+on top, which replace the region's. Tinting works on DXT blocks,
+so a region resolves to 4 by 4 pixel blocks, and a block on its edge is
+tinted by the share of it inside. Regions apply to portraits only; a model
+rule picks its textures instead.
+
+`preview_costume_tints.py` in EternalSonataReprise-Mods renders a mod's
+portrait tints on the game's art, region included, with `--mask` to show
+what each costume catches and `--grid` for a pixel grid to read rectangles
+off.
+
+### From C++
+
+Register a model held in memory or a file the host reads on first
 wear:
 
 ```cpp

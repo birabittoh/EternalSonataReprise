@@ -19,6 +19,7 @@
 #include "costume_tint.h"
 
 #include "eternalsonata_asset_system.h"
+#include "eternalsonata_asset_texture.h"
 #include "field_player_model_override.h"
 #include "generated/eternalsonata_init.h"
 #include "party_arrays.h"
@@ -137,6 +138,10 @@ struct State {
   // chunks (by image id) they start from, copied at boot before the game
   // builds anything from them.
   std::array<std::vector<uint8_t>, kCharacters> own_model;
+  // The costume whose tint the default model's own buffer holds, 0 for none,
+  // and the byte ranges it changed there (PaintDefault).
+  std::array<int, kCharacters> painted{};
+  std::array<std::vector<std::pair<uint32_t, uint32_t>>, kCharacters> painted_ranges;
   std::unordered_map<uint32_t, std::vector<uint8_t>> images;
   // By image id, the game's art where a mod's texture patch replaced it;
   // empty where none did.
@@ -388,12 +393,69 @@ uint32_t LoadModel(Costume& costume, int* error, int character = 0) {
   return at;
 }
 
+// Whether a tint of the default model can be written over its own buffer:
+// a copy per worn tint is 4 MB of guest memory each, which ran out. Not when
+// another character draws the same buffer, as a modded slot its base's.
+bool PaintsDefault(int character, const Costume& costume) {
+  State& s = state();
+  const int c = character - 1;
+  if (costume.base != "default" || !costume.model.empty() || !costume.path.empty() ||
+      costume.model_tints.empty() || s.own_model[c].empty() || !s.defaults[c])
+    return false;
+  for (int i = 0; i < kCharacters; ++i)
+    if (i != c && s.defaults[i] == s.defaults[c])
+      return false;
+  return true;
+}
+
+// Puts back what the last tint changed in the default model's buffer, then
+// writes costume `index`'s tint there, 0 for none. Only texture pixels change,
+// which the game never rewrites, so the bytes that differ are all it writes.
+void PaintDefault(int character, int index) {
+  State& s = state();
+  const int c = character - 1;
+  if (s.painted[c] == index)
+    return;
+  const std::vector<uint8_t>& own = s.own_model[c];
+  uint8_t* guest = GuestMemory()->TranslateVirtual<uint8_t*>(s.defaults[c]);
+  for (const auto& [at, size] : s.painted_ranges[c])
+    std::memcpy(guest + at, own.data() + at, size);
+  s.painted_ranges[c].clear();
+  s.painted[c] = ETERNALSONATA_COSTUME_DEFAULT;
+  if (index == ETERNALSONATA_COSTUME_DEFAULT)
+    return;
+  std::vector<uint8_t> tinted = own;
+  if (!eternalsonata::TintModel(s.costumes[c][index].model_tints, tinted))
+    return;
+  // Runs closer than a DXT block merge; no header is that short, so a merged
+  // run never spans one.
+  constexpr size_t kGap = 8;
+  auto& ranges = s.painted_ranges[c];
+  for (size_t i = 0; i < own.size(); ++i) {
+    if (tinted[i] == own[i])
+      continue;
+    if (!ranges.empty() && i - (ranges.back().first + ranges.back().second) <= kGap)
+      ranges.back().second = static_cast<uint32_t>(i + 1 - ranges.back().first);
+    else
+      ranges.emplace_back(static_cast<uint32_t>(i), 1u);
+  }
+  for (const auto& [at, size] : ranges)
+    std::memcpy(guest + at, tinted.data() + at, size);
+  s.painted[c] = index;
+}
+
 // The guest model a costume puts in the table, loading it the first time.
 uint32_t GuestModel(int character, int index, int* error) {
   State& s = state();
   Costume& costume = s.costumes[character - 1][index];
-  if (index == ETERNALSONATA_COSTUME_DEFAULT || costume.own_model)
+  if (index == ETERNALSONATA_COSTUME_DEFAULT || costume.own_model) {
+    PaintDefault(character, ETERNALSONATA_COSTUME_DEFAULT);
     return s.defaults[character - 1];
+  }
+  if (PaintsDefault(character, costume)) {
+    PaintDefault(character, index);
+    return s.defaults[character - 1];
+  }
   return LoadModel(costume, error, character);
 }
 
@@ -743,12 +805,26 @@ void WearBootCostumes() {
 //
 //   [[costume.portrait_tint]]      # the same for the portraits, with
 //   kinds = ["status", "face"]     # optional: which, else all four
+//   region = "outfit"              # optional: a [[portrait_region]] below
+//   rects, exclude, mask           # optional: region keys, over the region's
 //
-// Hand-parsed, like the asset system's [[language]] tables.
+//   [[portrait_region]]            # where portrait tints apply, by name
+//   character = "polka"
+//   name = "outfit"
+//   rects = [[96, 40, 300, 180]]   # optional: x0, y0, x1, y1 pixels to tint in
+//   exclude = [[150, 90, 230, 170]]  # optional: pixels to leave
+//   mask = "costumes/polka_hair.png"  # optional: grey, white tints
+//   face_exclude = [[...]]         # any of the three for one kind only
+//
+// Hand-parsed, like the asset system's [[language]] tables; an array may
+// run over several lines.
+using RegionKeys = std::vector<std::pair<std::string, std::string>>;
+
 struct DeclaredTint {
-  std::string from, to, hue_range;
+  std::string from, to, hue_range, region;
   std::map<std::string, std::string> bounds;  // min_saturation .. max_value
   std::vector<std::pair<std::string, bool>> textures, kinds;  // item, quoted
+  RegionKeys region_keys;
 };
 
 struct DeclaredCostume {
@@ -757,6 +833,42 @@ struct DeclaredCostume {
   bool locked = false;
   std::vector<DeclaredTint> tints, portrait_tints;
 };
+
+struct DeclaredRegion {
+  std::string character, name;
+  RegionKeys keys;
+};
+
+struct DeclaredAssets {
+  std::vector<DeclaredCostume> costumes;
+  std::vector<DeclaredRegion> regions;
+};
+
+constexpr std::string_view kKindNames[kPortraitKinds] = {"status", "panel", "face",
+                                                         "small_face"};
+
+// "rects", "exclude" or "mask", alone or after a kind and '_'; the kind is
+// -1 for every kind.
+bool SplitRegionKey(std::string_view key, int& kind, std::string_view& field) {
+  for (std::string_view name : {"rects", "exclude", "mask"}) {
+    if (key == name) {
+      kind = -1;
+      field = name;
+      return true;
+    }
+    if (key.size() > name.size() + 1 && key.ends_with(name) &&
+        key[key.size() - name.size() - 1] == '_') {
+      const auto prefix = key.substr(0, key.size() - name.size() - 1);
+      const auto it = std::find(std::begin(kKindNames), std::end(kKindNames), prefix);
+      if (it == std::end(kKindNames))
+        return false;
+      kind = static_cast<int>(it - std::begin(kKindNames));
+      field = name;
+      return true;
+    }
+  }
+  return false;
+}
 
 // The items of a one line array, each with whether it was quoted.
 std::vector<std::pair<std::string, bool>> ParseArray(std::string_view text) {
@@ -778,14 +890,16 @@ std::vector<std::pair<std::string, bool>> ParseArray(std::string_view text) {
   return items;
 }
 
-std::vector<DeclaredCostume> ReadDeclaredCostumes(const std::filesystem::path& path) {
-  std::vector<DeclaredCostume> costumes;
+DeclaredAssets ReadDeclaredCostumes(const std::filesystem::path& path) {
+  DeclaredAssets declared;
+  auto& costumes = declared.costumes;
   std::ifstream in(path);
   if (!in)
-    return costumes;
-  std::string line;
+    return declared;
+  std::string line, pending;
   bool inside = false;
-  DeclaredTint* tint = nullptr;  // the [[costume.*tint]] being read
+  DeclaredTint* tint = nullptr;      // the [[costume.*tint]] being read
+  DeclaredRegion* region = nullptr;  // the [[portrait_region]] being read
   while (std::getline(in, line)) {
     bool quoted = false;
     for (size_t i = 0; i < line.size(); ++i) {
@@ -800,8 +914,17 @@ std::vector<DeclaredCostume> ReadDeclaredCostumes(const std::filesystem::path& p
     if (first == std::string::npos)
       continue;
     line = line.substr(first, line.find_last_not_of(" \t\r") - first + 1);
+    // An array left open goes on over the next lines.
+    line = pending + line;
+    if (std::count(line.begin(), line.end(), '[') > std::count(line.begin(), line.end(), ']') &&
+        line.find('=') != std::string::npos) {
+      pending = line + " ";
+      continue;
+    }
+    pending.clear();
     if (line.front() == '[') {
       tint = nullptr;
+      region = nullptr;
       if (line == "[[costume]]") {
         costumes.emplace_back();
       } else if (inside && line == "[[costume.tint]]") {
@@ -810,12 +933,14 @@ std::vector<DeclaredCostume> ReadDeclaredCostumes(const std::filesystem::path& p
       } else if (inside && line == "[[costume.portrait_tint]]") {
         tint = &costumes.back().portrait_tints.emplace_back();
         continue;
+      } else if (line == "[[portrait_region]]") {
+        region = &declared.regions.emplace_back();
       }
       inside = line == "[[costume]]";
       continue;
     }
     const size_t eq = line.find('=');
-    if (!inside || eq == std::string::npos)
+    if ((!inside && !region) || eq == std::string::npos)
       continue;
     std::string key = line.substr(0, eq);
     std::string value = line.substr(eq + 1);
@@ -824,6 +949,17 @@ std::vector<DeclaredCostume> ReadDeclaredCostumes(const std::filesystem::path& p
     value = vstart == std::string::npos ? std::string() : value.substr(vstart);
     if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
       value = value.substr(1, value.size() - 2);
+    int kind = 0;
+    std::string_view field;
+    if (region) {
+      if (key == "character")
+        region->character = value;
+      else if (key == "name")
+        region->name = value;
+      else if (SplitRegionKey(key, kind, field))
+        region->keys.emplace_back(key, value);
+      continue;
+    }
     if (tint) {
       if (key == "from")
         tint->from = value;
@@ -838,6 +974,10 @@ std::vector<DeclaredCostume> ReadDeclaredCostumes(const std::filesystem::path& p
         tint->textures = ParseArray(value);
       else if (key == "kinds")
         tint->kinds = ParseArray(value);
+      else if (key == "region")
+        tint->region = value;
+      else if (SplitRegionKey(key, kind, field))
+        tint->region_keys.emplace_back(key, value);
       continue;
     }
     DeclaredCostume& costume = costumes.back();
@@ -862,7 +1002,7 @@ std::vector<DeclaredCostume> ReadDeclaredCostumes(const std::filesystem::path& p
     else if (key == "locked")
       costume.locked = value == "true";
   }
-  return costumes;
+  return declared;
 }
 
 // "#RRGGBB" or "RRGGBB".
@@ -883,9 +1023,118 @@ bool ParseNumber(const std::string& text, float& out) {
   return !text.empty() && end == text.c_str() + text.size();
 }
 
+// "[[x0, y0, x1, y1], ...]" on one line; also a lone "[x0, y0, x1, y1]".
+bool ParseRects(std::string_view text, std::vector<eternalsonata::TintRegion::Rect>& out) {
+  const auto trim = [](std::string_view s) {
+    const size_t first = s.find_first_not_of(" \t");
+    return first == std::string_view::npos
+               ? std::string_view()
+               : s.substr(first, s.find_last_not_of(" \t") - first + 1);
+  };
+  text = trim(text);
+  if (text.size() < 2 || text.front() != '[' || text.back() != ']')
+    return false;
+  if (trim(text.substr(1)).front() == '[')
+    text = trim(text.substr(1, text.size() - 2));
+  while (!text.empty()) {
+    const size_t open = text.find('['), close = text.find(']');
+    if (open != 0 || close == std::string_view::npos)
+      return false;
+    float v[4];
+    int n = 0;
+    for (const auto& [item, quoted] : ParseArray(text.substr(0, close + 1)))
+      if (quoted || n == 4 || !ParseNumber(item, v[n++]))
+        return false;
+    if (n != 4 || v[2] <= v[0] || v[3] <= v[1])
+      return false;
+    out.push_back({v[0], v[1], v[2], v[3]});
+    text = trim(text.substr(close + 1));
+    if (!text.empty()) {
+      if (text.front() != ',')
+        return false;
+      text = trim(text.substr(1));
+    }
+  }
+  return true;
+}
+
+// A mod's mask images, each read once however many rules use it.
+class MaskCache {
+ public:
+  explicit MaskCache(std::filesystem::path root) : root_(std::move(root)) {}
+
+  // Grey, transparent counting as black; false with `error` set when the
+  // file is not an image.
+  bool Load(const std::string& name, eternalsonata::TintRegion& region, std::string& error) {
+    const auto path = root_ / std::filesystem::u8path(name);
+    auto it = masks_.find(path);
+    if (it == masks_.end()) {
+      eternalsonata::assets::SourceImage image;
+      std::string why;
+      if (!eternalsonata::assets::LoadSourceImage(path, image, &why)) {
+        error = "has a mask " + path.string() + " that " + why;
+        return false;
+      }
+      auto grey = std::make_shared<std::vector<uint8_t>>(size_t(image.width) * image.height);
+      for (size_t i = 0; i < grey->size(); ++i) {
+        const uint8_t* p = &image.pixels[i * 4];
+        (*grey)[i] = uint8_t((p[0] * 77 + p[1] * 150 + p[2] * 29) / 256 * p[3] / 255);
+      }
+      it = masks_.emplace(path, Mask{image.width, image.height, std::move(grey)}).first;
+    }
+    region.mask_width = it->second.width;
+    region.mask_height = it->second.height;
+    region.mask = it->second.grey;
+    return true;
+  }
+
+ private:
+  struct Mask {
+    uint32_t width, height;
+    std::shared_ptr<const std::vector<uint8_t>> grey;
+  };
+  std::filesystem::path root_;
+  std::map<std::filesystem::path, Mask> masks_;
+};
+
+using RegionSet = std::array<eternalsonata::TintRegion, kPortraitKinds>;
+
+// Sets region keys over `regions`, those for every kind before those for one,
+// so "face_exclude" replaces the "exclude" of the face alone.
+bool ApplyRegionKeys(const RegionKeys& keys, MaskCache& masks, RegionSet& regions,
+                     std::string& error) {
+  for (const bool all_kinds : {true, false}) {
+    for (const auto& [key, value] : keys) {
+      int kind = 0;
+      std::string_view field;
+      if (!SplitRegionKey(key, kind, field) || (kind < 0) != all_kinds)
+        continue;
+      for (int k = 0; k < kPortraitKinds; ++k) {
+        if (kind >= 0 && k != kind)
+          continue;
+        eternalsonata::TintRegion& region = regions[k];
+        if (field == "mask") {
+          if (!masks.Load(value, region, error))
+            return false;
+          continue;
+        }
+        auto& rects = field == "rects" ? region.rects : region.exclude;
+        rects.clear();
+        if (!ParseRects(value, rects)) {
+          error = "has a " + key + " that is not [[x0, y0, x1, y1], ...] with x0 < x1, y0 < y1";
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 // A declared rule, or an empty optional with `error` saying what is wrong.
-std::optional<eternalsonata::TintRule> ParseTint(const DeclaredTint& declared,
-                                                 std::string& error) {
+// `regions` are the character's [[portrait_region]]s by name.
+std::optional<eternalsonata::TintRule> ParseTint(const DeclaredTint& declared, bool portrait,
+                                                 const std::map<std::string, RegionSet>& regions,
+                                                 MaskCache& masks, std::string& error) {
   eternalsonata::TintRule rule;
   if (!ParseColour(declared.from, rule.from) || !ParseColour(declared.to, rule.to)) {
     error = "needs from and to as #RRGGBB";
@@ -927,24 +1176,56 @@ std::optional<eternalsonata::TintRule> ParseTint(const DeclaredTint& declared,
     }
   }
   if (!declared.kinds.empty()) {
-    constexpr std::string_view kKinds[kPortraitKinds] = {"status", "panel", "face",
-                                                         "small_face"};
     rule.kinds = 0;
     for (const auto& [item, quoted] : declared.kinds) {
-      const auto it = std::find(std::begin(kKinds), std::end(kKinds), item);
-      if (it == std::end(kKinds)) {
+      const auto it = std::find(std::begin(kKindNames), std::end(kKindNames), item);
+      if (it == std::end(kKindNames)) {
         error = "names a portrait kind '" + item + "'";
         return std::nullopt;
       }
-      rule.kinds |= 1u << (it - std::begin(kKinds));
+      rule.kinds |= 1u << (it - std::begin(kKindNames));
     }
   }
+  if (!portrait && (!declared.region.empty() || !declared.region_keys.empty())) {
+    error = "has a region, which only portrait tints take";
+    return std::nullopt;
+  }
+  if (!declared.region.empty()) {
+    const auto it = regions.find(declared.region);
+    if (it == regions.end()) {
+      error = "names a [[portrait_region]] '" + declared.region + "' its character lacks";
+      return std::nullopt;
+    }
+    rule.regions = it->second;
+  }
+  if (!ApplyRegionKeys(declared.region_keys, masks, rule.regions, error))
+    return std::nullopt;
   return rule;
 }
 
 void ScanModCostumes(rex::Runtime* runtime) {
   for (const auto& mod : runtime->EnabledModsInfo()) {
-    for (const auto& declared : ReadDeclaredCostumes(mod.mod_root / "assets.toml")) {
+    const DeclaredAssets assets = ReadDeclaredCostumes(mod.mod_root / "assets.toml");
+    MaskCache masks(mod.mod_root);
+    // Regions by character, as the mod spells it, then name.
+    std::map<std::string, std::map<std::string, RegionSet>> regions;
+    for (const DeclaredRegion& declared : assets.regions) {
+      std::string error;
+      RegionSet set;
+      if (declared.character.empty() || declared.name.empty())
+        error = "has no character or name";
+      else if (regions[declared.character].contains(declared.name))
+        error = "is declared twice";
+      else
+        ApplyRegionKeys(declared.keys, masks, set, error);
+      if (!error.empty()) {
+        REXLOG_WARN("costumes: mod '{}' [[portrait_region]] '{}' {}", mod.folder_name,
+                    declared.name, error);
+        continue;
+      }
+      regions[declared.character].emplace(declared.name, std::move(set));
+    }
+    for (const auto& declared : assets.costumes) {
       const int character = CharacterFromName(declared.character);
       std::filesystem::path model;
       if (!declared.model.empty())
@@ -968,7 +1249,8 @@ void ScanModCostumes(rex::Runtime* runtime) {
       for (const auto* list : {&declared.tints, &declared.portrait_tints}) {
         for (const DeclaredTint& tint : *list) {
           std::string error;
-          if (auto rule = ParseTint(tint, error))
+          if (auto rule = ParseTint(tint, list == &declared.portrait_tints,
+                                    regions[declared.character], masks, error))
             (list == &declared.tints ? costume.model_tints : costume.portrait_tints)
                 .push_back(std::move(*rule));
           else {
@@ -1027,6 +1309,9 @@ void CostumeCharacterDefined(int character) {
   for (const Costume& costume : list)
     if (costume.guest)
       s.retired.push_back(costume.guest);
+  if (s.live && s.defaults[c])
+    PaintDefault(character, ETERNALSONATA_COSTUME_DEFAULT);
+  s.own_model[c].clear();
   list.clear();
   list.push_back({"default", "Default"});
   s.worn[c] = s.boot[c] = ETERNALSONATA_COSTUME_DEFAULT;
@@ -1048,8 +1333,10 @@ void CostumeCharacterDefined(int character) {
       it = s.pending.erase(it);
     }
   }
-  if (s.live)
+  if (s.live) {
     SetupAddedSlot(character);
+    SnapshotTintSources(character);
+  }
 }
 
 int CostumeCount(int character) {
@@ -1353,6 +1640,10 @@ REX_HOOK_RAW(sub_82162058) {
   EnsureCharacterLists();
   State& s = state();
   auto* memory = s.runtime ? s.runtime->memory() : rex::Runtime::instance()->memory();
+  // The models were just read in clean.
+  s.painted = {};
+  for (auto& ranges : s.painted_ranges)
+    ranges.clear();
   for (int c = 0; c < kRetailCharacters; ++c) {
     s.defaults[c] = REX_LOAD_U32(kModelTableAddr + 4 * kModelSlot[c]);
     s.models[c] = s.defaults[c];
