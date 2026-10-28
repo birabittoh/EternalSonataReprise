@@ -16,6 +16,7 @@ extern "C" int EternalSonataGetEffectiveRightTriggerBehavior(void);
 #include "field_player_model_override.h"
 #include "game_data.h"
 #include "game_settings.h"
+#include "host_menu.h"
 #include "host_timer_resolution.h"
 #include "ui_text.h"
 #include "native_renderer.h"
@@ -2100,6 +2101,10 @@ bool RestartNow() {
   if (!g_window) {
     return false;
   }
+#if REX_PLATFORM_ANDROID
+  // Replaces the process itself, so there is no window left to close here.
+  return RestartAndroidApp();
+#else
   if (!rex::platform::process::Relaunch()) {
     return false;
   }
@@ -2115,6 +2120,7 @@ bool RestartNow() {
   rex::ui::Window* window = g_window;
   window->app_context().CallInUIThread([window] { window->RequestClose(); });
   return true;
+#endif
 }
 
 bool RestartIntoStartScreen() {

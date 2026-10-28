@@ -2,7 +2,9 @@ package com.birabittoh.eternalsonata;
 
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.os.Bundle;
+import android.os.Process;
 import android.util.Log;
 
 import java.io.File;
@@ -56,6 +58,24 @@ public class EternalSonataActivity extends SDLActivity {
                 .setOnCancelListener((DialogInterface dialog) -> nativeHostMenuSelect(-1))
                 .show();
         });
+    }
+
+    /**
+     * Called from native code to start the game over. The runtime holds process wide
+     * state that cannot be rebuilt, so a fresh process is the clean restart. The
+     * trampoline relaunches from its own process, keeping the app in the foreground.
+     */
+    public void restartApp() {
+        Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (launch == null) {
+            return;
+        }
+        Intent next = Intent.makeRestartActivityTask(launch.getComponent());
+        Intent trampoline = new Intent(this, RestartTrampolineActivity.class);
+        trampoline.putExtra(RestartTrampolineActivity.EXTRA_NEXT, next);
+        trampoline.putExtra(RestartTrampolineActivity.EXTRA_PID, Process.myPid());
+        startActivity(trampoline);
+        Process.killProcess(Process.myPid());
     }
 
     /** Called from native code to report the outcome of a menu action. */

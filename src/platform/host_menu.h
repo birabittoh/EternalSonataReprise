@@ -19,6 +19,11 @@ class Window;
 
 namespace eternalsonata {
 
+// Starts the game over in a fresh process, replacing this one. Android only: the
+// relaunch used elsewhere forks the executable, which on Android would be a bare
+// process with no activity. False elsewhere, or if the activity cannot be reached.
+bool RestartAndroidApp();
+
 class HostMenu {
  public:
   explicit HostMenu(rex::ui::Window* window);
