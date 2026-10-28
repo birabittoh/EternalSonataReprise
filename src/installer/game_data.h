@@ -30,6 +30,7 @@ enum class GameDataChoice {
   kCancel,
   kAddVersion,
   kExtractAgain,
+  kDiscKey,
 };
 
 // The library holds this many versions.
@@ -74,6 +75,9 @@ struct GameDataPrompt {
   // Asking whether to extract the selected version again, shown with Skip and
   // Extract Again.
   std::string outdated;
+  // The picked image is encrypted with an unknown key: Select Key File
+  // stands in for Extract.
+  bool needs_disc_key = false;
 };
 
 struct GameDataOptions {

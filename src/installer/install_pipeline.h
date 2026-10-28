@@ -57,6 +57,8 @@ struct SourceInfo {
   uint64_t required_bytes = 0;
   // The library folder name (Release::id), empty when not known.
   std::string id;
+  // An encrypted PS3 image no known key fits; its key file would unlock it.
+  bool needs_disc_key = false;
 };
 
 // Identifies `picked` (as Install takes it) without extracting anything.

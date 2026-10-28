@@ -1,11 +1,13 @@
 #include "disc_image.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <optional>
 #include <utility>
 #include <unordered_set>
@@ -505,64 +507,93 @@ FileReader::Regions ReadEncryptedRegions(FileReader& reader) {
   return encrypted;
 }
 
-// A key file beside the image, as RPCS3 takes them: a .dkey of 32 hex
-// digits or a .key of 16 raw bytes.
-bool ReadKeyFile(const std::string& image, uint8_t key[16]) {
-  if (image.starts_with("content://"))
+// A key file as RPCS3 takes them: a .dkey of 32 hex digits or a .key of 16
+// raw bytes. SDL, so a content URI works.
+bool ReadKeyFile(const std::string& path, uint8_t key[16]) {
+  size_t size = 0;
+  void* data = SDL_LoadFile(path.c_str(), &size);
+  if (!data)
     return false;
-  for (const char* ext : {".dkey", ".key"}) {
-    const std::string path = fs::path(image).replace_extension(ext).string();
-    size_t size = 0;
-    void* data = SDL_LoadFile(path.c_str(), &size);
-    if (!data)
-      continue;
-    const std::string text(static_cast<const char*>(data), size);
-    SDL_free(data);
-    if (size == 16) {
-      std::memcpy(key, text.data(), 16);
-      return true;
-    }
-    bool hex = size >= 32;
-    for (int i = 0; i < 16 && hex; ++i) {
-      const char pair[3] = {text[2 * i], text[2 * i + 1], 0};
-      hex = std::isxdigit(uint8_t(pair[0])) && std::isxdigit(uint8_t(pair[1]));
-      key[i] = uint8_t(std::strtoul(pair, nullptr, 16));
-    }
-    if (hex)
-      return true;
+  const std::string text(static_cast<const char*>(data), size);
+  SDL_free(data);
+  if (size == 16) {
+    std::memcpy(key, text.data(), 16);
+    return true;
   }
-  return false;
+  bool hex = size >= 32;
+  for (int i = 0; i < 16 && hex; ++i) {
+    const char pair[3] = {text[2 * i], text[2 * i + 1], 0};
+    hex = std::isxdigit(uint8_t(pair[0])) && std::isxdigit(uint8_t(pair[1]));
+    key[i] = uint8_t(std::strtoul(pair, nullptr, 16));
+  }
+  return hex;
 }
 
-// Gives the reader of an encrypted PS3 image its disc key: the one, from a
-// key file or the known ones, that turns EBOOT.BIN back into a SELF. The
+// Keys the player picked, for as long as the game runs.
+std::mutex g_key_mutex;
+std::vector<std::array<uint8_t, 16>> g_picked_keys;
+
+// What a disc key is tested against: EBOOT.BIN's first encrypted block. Its
 // filesystem sits in a plain region, so the file can be found first.
-void UnlockPs3Image(FileReader& reader, const std::string& image) {
-  FileReader::Regions encrypted = ReadEncryptedRegions(reader);
-  if (encrypted.empty())
-    return;
-  const auto eboot = FindIsoPath(reader, "PS3_GAME/USRDIR/EBOOT.BIN");
+struct Ps3Lock {
+  FileReader::Regions encrypted;
+  uint64_t sector;
   uint8_t cipher[16];
-  if (!eboot || eboot->directory || !reader.RawRead(eboot->offset, cipher, sizeof(cipher)) ||
-      std::memcmp(cipher, "SCE\0", 4) == 0)
-    return;
-  auto fits = [&](const uint8_t key[16]) {
+
+  bool Fits(const uint8_t key[16]) const {
     uint8_t block[16], iv[16];
     std::memcpy(block, cipher, sizeof(block));
-    FileReader::SectorIv(eboot->offset / kSectorSize, iv);
+    FileReader::SectorIv(sector, iv);
     Aes128(key).DecryptCbc(block, sizeof(block), iv);
     return std::memcmp(block, "SCE\0", 4) == 0;
-  };
-  uint8_t key[16];
-  if (ReadKeyFile(image, key) && fits(key)) {
-    REXLOG_INFO("Decrypting the PS3 disc image with its key file");
-    reader.SetDiscKey(std::move(encrypted), key);
+  }
+};
+
+// Empty for an image that is not an encrypted PS3 one.
+std::optional<Ps3Lock> FindPs3Lock(FileReader& reader) {
+  Ps3Lock lock;
+  lock.encrypted = ReadEncryptedRegions(reader);
+  if (lock.encrypted.empty())
+    return std::nullopt;
+  const auto eboot = FindIsoPath(reader, "PS3_GAME/USRDIR/EBOOT.BIN");
+  if (!eboot || eboot->directory || !reader.RawRead(eboot->offset, lock.cipher, sizeof(lock.cipher)) ||
+      std::memcmp(lock.cipher, "SCE\0", 4) == 0)
+    return std::nullopt;
+  lock.sector = eboot->offset / kSectorSize;
+  return lock;
+}
+
+// Gives the reader of an encrypted PS3 image the disc key that turns
+// EBOOT.BIN back into a SELF: from a key file beside it, one the player
+// picked, or a known one.
+void UnlockPs3Image(FileReader& reader, const std::string& image) {
+  std::optional<Ps3Lock> lock = FindPs3Lock(reader);
+  if (!lock)
     return;
+  uint8_t key[16];
+  if (!image.starts_with("content://")) {
+    for (const char* ext : {".dkey", ".key"}) {
+      if (ReadKeyFile(fs::path(image).replace_extension(ext).string(), key) && lock->Fits(key)) {
+        REXLOG_INFO("Decrypting the PS3 disc image with the key file beside it");
+        reader.SetDiscKey(std::move(lock->encrypted), key);
+        return;
+      }
+    }
+  }
+  {
+    std::lock_guard guard(g_key_mutex);
+    for (const auto& picked : g_picked_keys) {
+      if (lock->Fits(picked.data())) {
+        REXLOG_INFO("Decrypting the PS3 disc image with the picked key file");
+        reader.SetDiscKey(std::move(lock->encrypted), picked.data());
+        return;
+      }
+    }
   }
   for (const auto& known : kDiscKeys) {
-    if (fits(known)) {
+    if (lock->Fits(known)) {
       REXLOG_INFO("Decrypting the PS3 disc image with a known disc key");
-      reader.SetDiscKey(std::move(encrypted), known);
+      reader.SetDiscKey(std::move(lock->encrypted), known);
       return;
     }
   }
@@ -806,6 +837,21 @@ std::string WithIsoFiles(const std::string& image, std::string_view folder, std:
                      }});
   }
   return use(files);
+}
+
+std::string AddPs3DiscKey(const std::string& image, const std::string& key_file) {
+  std::array<uint8_t, 16> key;
+  if (!ReadKeyFile(key_file, key.data()))
+    return TrErr("err_bad_dkey");
+  FileReader reader(image);
+  if (!reader.ok() || !IsIso9660(reader))
+    return TrErr("err_read");
+  const std::optional<Ps3Lock> lock = FindPs3Lock(reader);
+  if (lock && !lock->Fits(key.data()))
+    return TrErr("err_wrong_dkey");
+  std::lock_guard guard(g_key_mutex);
+  g_picked_keys.push_back(key);
+  return {};
 }
 
 std::string ExtractIsoFolder(const std::string& image, std::string_view folder,

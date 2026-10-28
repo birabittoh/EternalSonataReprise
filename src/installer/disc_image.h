@@ -61,6 +61,11 @@ struct ImageFile {
 std::string WithIsoFiles(const std::string& image, std::string_view folder, std::string_view suffix,
                          const std::function<std::string(const std::vector<ImageFile>&)>& use);
 
+// Lets the encrypted PS3 `image`, and any other the disc key in `key_file`
+// (.dkey or .key) fits, be read for as long as the game runs. Returns why
+// not, for the player, or empty.
+std::string AddPs3DiscKey(const std::string& image, const std::string& key_file);
+
 // Copies the folder `folder` of an ISO 9660 `image` into `out_dir`, which is
 // replaced. Returns why it failed, for the player, or empty.
 std::string ExtractIsoFolder(const std::string& image, std::string_view folder,

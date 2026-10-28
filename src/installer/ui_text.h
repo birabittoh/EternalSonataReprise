@@ -55,6 +55,7 @@ enum class IntroText {
   kSkip,
   kExtractAgain,
   kEncryptedIso,
+  kSelectKey,
   kCount,
 };
 

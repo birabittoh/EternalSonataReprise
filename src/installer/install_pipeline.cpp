@@ -234,8 +234,11 @@ SourceInfo IdentifySource(const std::string& picked) {
     if (std::string error = ReadIsoImageFile(picked, kPs3Eboot, eboot); !error.empty())
       return {{}, error};
     // A readable EBOOT.BIN starts with the SELF magic; an encrypted ISO yields noise.
-    if (eboot.size() < 4 || std::memcmp(eboot.data(), "SCE\0", 4) != 0)
-      return {{}, Tr(IntroText::kEncryptedIso)};
+    if (eboot.size() < 4 || std::memcmp(eboot.data(), "SCE\0", 4) != 0) {
+      SourceInfo info{{}, Tr(IntroText::kEncryptedIso)};
+      info.needs_disc_key = true;
+      return info;
+    }
     SourceInfo info = FromHash(eboot, TrErr("err_ps3_iso_unknown"));
     info.required_bytes =
         MeasureIsoFolder(picked, "PS3_GAME/USRDIR/archives") * kConvertedPercent / 100 + kPatchSlack;

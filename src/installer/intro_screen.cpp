@@ -263,7 +263,8 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
                          prompt.versions.size() != prompt_.versions.size() ||
                          prompt.selected_version != selected_version_ ||
                          prompt.can_extract != prompt_.can_extract ||
-                         prompt.confirm_forget != prompt_.confirm_forget;
+                         prompt.confirm_forget != prompt_.confirm_forget ||
+                         prompt.needs_disc_key != prompt_.needs_disc_key;
     prompt_ = prompt;
     if (rebuild) {
       BuildOptions();
@@ -314,12 +315,17 @@ class IntroDialog final : public rex::ui::ImGuiDialog {
     options_.push_back({IntroText::kSelectFile, GameDataChoice::kDiscImage, 0, 0});
     if (prompt_.can_pick_folder)
       options_.push_back({IntroText::kSelectFolder, GameDataChoice::kFolder, 0, 1});
-    options_.push_back({IntroText::kExtract, GameDataChoice::kExtract, 1, 0});
+    if (prompt_.needs_disc_key)
+      options_.push_back({IntroText::kSelectKey, GameDataChoice::kDiscKey, 1, 0});
+    else
+      options_.push_back({IntroText::kExtract, GameDataChoice::kExtract, 1, 0});
     if (prompt_.versions.empty())
       options_.push_back({IntroText::kQuit, GameDataChoice::kQuit, 1, kCornerRow});
     else
       options_.push_back({IntroText::kCancel, GameDataChoice::kCancel, 1, 1});
-    selected_ = prompt_.can_extract ? IndexOf(GameDataChoice::kExtract) : 0;
+    selected_ = prompt_.can_extract      ? IndexOf(GameDataChoice::kExtract)
+                : prompt_.needs_disc_key ? IndexOf(GameDataChoice::kDiscKey)
+                                         : 0;
   }
   void SetBusy(bool busy) { busy_ = busy; }
   void SetWorking(bool working) {

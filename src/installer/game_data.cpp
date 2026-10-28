@@ -205,6 +205,8 @@ struct Flow {
   std::string picked;
   SourceInfo picked_info;
   uint64_t required_bytes = 0;
+  // The encrypted image a key file is asked for.
+  std::string key_image;
   bool finished = false;
 };
 
@@ -299,7 +301,7 @@ void SDLCALL DialogCallback(void* userdata, const char* const* files, int) {
 }
 
 void ShowDialog(std::shared_ptr<Flow> flow, bool folder,
-                std::function<void(std::shared_ptr<Flow>, std::string)> then) {
+                std::function<void(std::shared_ptr<Flow>, std::string)> then, bool key = false) {
   // A content link has no folder to resolve a dump's file to.
   static const SDL_DialogFileFilter kFilters[] = {
 #if REX_PLATFORM_ANDROID
@@ -309,9 +311,19 @@ void ShowDialog(std::shared_ptr<Flow> flow, bool folder,
 #endif
       {"All files", "*"},
   };
+  // Android maps filters to MIME types, which a .dkey has none of.
+  static const SDL_DialogFileFilter kKeyFilters[] = {
+#if !REX_PLATFORM_ANDROID
+      {"Disc key (.dkey, .key)", "dkey;key"},
+#endif
+      {"All files", "*"},
+  };
   auto* request = new DialogRequest{std::move(flow), std::move(then)};
   if (folder)
     SDL_ShowOpenFolderDialog(DialogCallback, request, nullptr, nullptr, false);
+  else if (key)
+    SDL_ShowOpenFileDialog(DialogCallback, request, nullptr, kKeyFilters,
+                           int(std::size(kKeyFilters)), nullptr, false);
   else
     SDL_ShowOpenFileDialog(DialogCallback, request, nullptr, kFilters, 2, nullptr, false);
 }
@@ -343,6 +355,8 @@ GameDataChoice MessageBoxPrompt(const GameDataPrompt& prompt) {
     if (prompt.can_extract)
       buttons[count++] = {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, int(GameDataChoice::kExtract),
                           Tr(IntroText::kExtract)};
+    else if (prompt.needs_disc_key)
+      buttons[count++] = {0, int(GameDataChoice::kDiscKey), Tr(IntroText::kSelectKey)};
     buttons[count++] = {prompt.can_extract ? 0u : SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,
                         int(GameDataChoice::kDiscImage), Tr(IntroText::kSelectFile)};
     if (prompt.can_pick_folder)
@@ -597,6 +611,8 @@ void OnPicked(std::shared_ptr<Flow> flow, std::string picked) {
   flow->prompt.release = info.release;
   flow->prompt.languages = info.languages;
   flow->prompt.error = info.error;
+  flow->prompt.needs_disc_key = info.needs_disc_key;
+  flow->key_image = info.needs_disc_key ? picked : std::string();
   flow->picked_info = info;
   // Extracted files are used in place and need no room.
   flow->required_bytes = extracted.empty() ? info.required_bytes : 0;
@@ -617,6 +633,23 @@ void OnPicked(std::shared_ptr<Flow> flow, std::string picked) {
   if (!flow->prompt.error.empty())
     REXLOG_ERROR("{}: {}", picked, flow->prompt.error);
   Ask(flow);
+}
+
+// The key file asked for an encrypted image, which is then identified again.
+void OnKeyPicked(std::shared_ptr<Flow> flow, std::string key) {
+  if (flow->finished)
+    return;
+  const std::string image = flow->key_image;
+  if (!key.empty()) {
+    if (std::string error = AddPs3DiscKey(image, key); !error.empty()) {
+      REXLOG_ERROR("{}: {}", key, error);
+      flow->prompt.error = std::move(error);
+      flow->prompt.needs_disc_key = true;
+      Ask(flow);
+      return;
+    }
+  }
+  OnPicked(flow, image);
 }
 
 const GameVersion* Selected(const Flow& flow) {
@@ -688,6 +721,7 @@ void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice, int version) {
   if (version >= 0 && version < int(flow->versions.size()))
     flow->selected = version;
   flow->prompt.error.clear();
+  flow->prompt.needs_disc_key = false;
   const bool skipped = !flow->prompt.outdated.empty();
   flow->prompt.outdated.clear();
   switch (choice) {
@@ -748,6 +782,14 @@ void OnChoice(std::shared_ptr<Flow> flow, GameDataChoice choice, int version) {
         Extract(flow);
       else
         Ask(flow);
+      return;
+    case GameDataChoice::kDiscKey:
+      if (flow->key_image.empty()) {
+        Ask(flow);
+        return;
+      }
+      SetIntroBusy(true);
+      ShowDialog(flow, false, OnKeyPicked, true);
       return;
     case GameDataChoice::kDiscImage:
     case GameDataChoice::kFolder:
