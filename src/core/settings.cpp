@@ -305,6 +305,7 @@ constexpr std::array kBasicCvarNames = {
     "enemy_hp_multiplier",
     "enemy_damage_multiplier", "auto_parry", "party_level_select", "ui_scale",
     "right_trigger_behavior", "special_hold_time", "ranged_special_buffer",
+    "battle_intro_overview",
     "party_tactical_time_multiplier", "party_action_time_multiplier",
     "enemy_action_time_multiplier",
     "save_row_portraits", "force_japanese_font", "skip_intro", "show_start_screen",
@@ -821,6 +822,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawPlatformChoiceRow("photo_price_algorithm");
         DrawPlatformChoiceRow("progression_curves");
         DrawPlatformChoiceRow("ranged_special_buffer");
+        DrawPlatformChoiceRow("battle_intro_overview");
         DrawRightTriggerRow();
         if (EternalSonataGetEffectiveRightTriggerBehavior() ==
             ETERNALSONATA_BATTLE_RIGHT_TRIGGER_CAMERA) {
@@ -1618,7 +1620,8 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
 
   void SetAllPlatform(const char* choice, const char* glyphs, const char* trigger) {
     for (const char* name :
-         {"photo_price_algorithm", "progression_curves", "ranged_special_buffer"}) {
+         {"photo_price_algorithm", "progression_curves", "ranged_special_buffer",
+          "battle_intro_overview"}) {
       rex::cvar::SetFlagByName(name, choice, /*persist=*/true);
     }
     rex::cvar::SetFlagByName("override_button_glyphs", glyphs, /*persist=*/true);

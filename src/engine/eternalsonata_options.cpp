@@ -563,8 +563,8 @@ constexpr LocalizedLabel kLabelButtonGlyphs = {"button_glyphs"};
 // Which release's formula prices a photo.
 constexpr LocalizedLabel kLabelPhotoPricing = {"photo_pricing"};
 constexpr LocalizedLabel kLabelProgressionCurves = {"progression_curves"};
-constexpr LocalizedLabel kLabelRangedSpecial = {"ranged_special"};
 constexpr LocalizedLabel kLabelRightTrigger = {"right_trigger"};
+constexpr LocalizedLabel kLabelBattleOverview = {"battle_overview"};
 constexpr LocalizedLabel kLabelRtCamera = {"rt_camera"};
 constexpr LocalizedLabel kLabelRtSpecial = {"rt_special"};
 constexpr LocalizedLabel kLabelValueAuto = {"value_auto"};
@@ -1132,13 +1132,13 @@ RowStore& Rows() {
     platform_row(kLabelButtonGlyphs, "override_button_glyphs", {"disabled", "xbox", "ps3"});
     platform_row(kLabelPhotoPricing, "photo_price_algorithm", {"auto", "360", "ps3"});
     platform_row(kLabelProgressionCurves, "progression_curves", {"auto", "360", "ps3"});
-    platform_row(kLabelRangedSpecial, "ranged_special_buffer", {"auto", "360", "ps3"});
     OptionRow& trigger = add(kPagePlatform);
     MakeLiteralRow(trigger, kLabelRightTrigger, nullptr, 0);
     trigger.values.push_back(LabelValue(kLabelValueAuto));
     trigger.values.push_back(LabelValue(kLabelRtCamera));
     trigger.values.push_back(LabelValue(kLabelRtSpecial));
     BindChoiceCvar(trigger, "right_trigger_behavior", {"auto", "camera", "special"});
+    platform_row(kLabelBattleOverview, "battle_intro_overview", {"auto", "360", "ps3"});
 
     // Page 4, balance.
     MakeMultiplierRow(add(kPageBalance), kLabelExp, "enemy_exp_multiplier");

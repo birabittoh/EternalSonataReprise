@@ -1,0 +1,7 @@
+# Battle FSM behaviour (battle_intro_overview.cpp).
+
+# State 4 holds for the PS3's look over the battlefield before the intro.
+[[midasm_hook]]
+address = 0x821AD448
+name = "EternalSonataBattleIntroOverview"
+jump_address_on_true = 0x821ADF00
