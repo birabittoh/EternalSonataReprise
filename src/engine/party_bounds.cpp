@@ -5,6 +5,7 @@
 // bounds: loop counts, end addresses and id gates. config/party.toml hooks
 // each of those sites with one of these, which redo the bound for twelve.
 
+#include <rex/memory/utils.h>
 #include <rex/ppc/context.h>
 #include <rex/runtime.h>
 #include <rex/system/xmemory.h>
@@ -101,4 +102,42 @@ extern "C++" void PartyEndU32(PPCRegister& r) {
 }
 extern "C++" void PartyEndStats(PPCRegister& r) {
   r.u64 = r.u32 + (kTwelve - kRetail) * 48;
+}
+
+// sub_821FCAD8's weapon tab groups the weapon list by owner in ten stack
+// buckets, so a weapon only characters 11 or 12 may wear never reaches the
+// tab. Rebuild the grouping twelve wide straight into the output list (r27,
+// count r26) and skip the retail one. r31 is the inventory object 0x8255EED8.
+extern "C++" bool PartyWeaponTabByOwner(PPCRegister& r26, PPCRegister& r27, PPCRegister& r31) {
+  auto* runtime = rex::Runtime::instance();
+  auto* memory = runtime ? runtime->memory() : nullptr;
+  if (!memory)
+    return false;
+  constexpr uint32_t kMasterTable = 0x82017630u;
+  constexpr uint32_t kMasterStride = 100u;
+  constexpr uint32_t kMasterCount = 511u;
+  constexpr uint32_t kListCapacity = 512u;
+  auto read16 = [&](uint32_t at) {
+    return rex::memory::load_and_swap<uint16_t>(memory->TranslateVirtual<uint8_t*>(at));
+  };
+  const uint32_t count =
+      rex::memory::load_and_swap<uint32_t>(memory->TranslateVirtual<uint8_t*>(r31.u32 + 0x4748));
+  const uint32_t weapons = r31.u32 + 0x4F54;
+  uint32_t written = 0;
+  for (int32_t c = 0; c < kTwelve; ++c) {
+    for (uint32_t i = 0; i < count && i < kListCapacity; ++i) {
+      const uint16_t id = read16(weapons + 4 * i);
+      if (!id || id > kMasterCount || written >= kListCapacity)
+        continue;
+      const uint32_t record = kMasterTable + (id - 1u) * kMasterStride;
+      const uint32_t flags =
+          rex::memory::load_and_swap<uint32_t>(memory->TranslateVirtual<uint8_t*>(record + 4));
+      if (!(flags & 4u) || !(flags & (8u << c)))
+        continue;
+      rex::memory::store_and_swap<uint16_t>(
+          memory->TranslateVirtual<uint8_t*>(r27.u32 + 2 * written++), read16(record));
+    }
+  }
+  r26.u64 = written;
+  return true;
 }

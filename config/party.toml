@@ -1848,3 +1848,10 @@ address = 0x821E895C
 name = "EquipmentLevelUpMagicTwelve"
 registers = ["r10"]
 jump_address_on_true = 0x821E8960
+
+# sub_821FCAD8: weapon tab grouped by owner in ten buckets, regrouped twelve wide
+[[midasm_hook]]
+address = 0x821FCDB0
+name = "PartyWeaponTabByOwner"
+registers = ["r26", "r27", "r31"]
+jump_address_on_true = 0x821FD5A4
