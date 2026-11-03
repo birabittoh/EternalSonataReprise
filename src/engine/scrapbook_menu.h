@@ -24,19 +24,8 @@ bool Active();
 // any other tag takes the mode off.
 bool Dispatch(std::uint8_t* base, std::uint32_t tag);
 
-// After the gallery's init and every tab draw, which reset the row count.
-void FixRowCount(std::uint8_t* base);
-std::uint32_t RowCount();
-
-// Around one row build, so its title lookup is answered.
-void BeginRow(int index);
-void EndRow();
-
-// After sub_821FEBC8 built a row into `row_object`: drops the track crystal,
-// which the PS3 cells do not have.
-void RowBuilt(PPCContext& ctx, std::uint8_t* base, std::uint32_t row_object);
-
-// After the gallery's per frame tick.
+// After the gallery's per frame tick: centres the cell titles once built and
+// slides the grid with the header.
 void Tick(PPCContext& ctx, std::uint8_t* base);
 
 // Stands in for the gallery's input handler while the page is up.
@@ -46,7 +35,7 @@ void Input(PPCContext& ctx, std::uint8_t* base);
 std::uint32_t TextOverride(std::uint8_t* base, std::uint32_t blob, std::uint32_t sid);
 
 // From the sub_821F2F38 hook, before and after the interpreter: the Music list
-// with the playback prompts gone and the picture panel added.
+// with its list parked and the grid and picture panel added.
 std::uint32_t MaybeSwapScreenList(std::uint8_t* base, std::uint32_t list);
 void ScreenBuilt(std::uint8_t* base, std::uint32_t root);
 

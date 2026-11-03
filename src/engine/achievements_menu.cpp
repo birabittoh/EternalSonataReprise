@@ -1098,9 +1098,6 @@ REX_HOOK_RAW(sub_822265C8) {
     REX_STORE_U8(achievements_menu::kMutedFlagAddr, 0u);
     achievements_menu::FixRowCount(base, 0);
   }
-  if (scrapbook_menu::Active()) {
-    scrapbook_menu::FixRowCount(base);
-  }
 }
 
 REX_EXTERN(__imp__sub_821DD108);
@@ -1130,20 +1127,22 @@ REX_HOOK_RAW(sub_821DD108) {
 }
 
 // sub_822273A0(tab, animate): draws four rows of one tab and, like the init,
-// ends by taking the scroll limit from byte_822FF594.
+// ends by taking the scroll limit from byte_822FF594. The Scrapbook has a grid
+// in place of rows; with none built the row containers stay empty, which every
+// other gallery state checks for.
 REX_EXTERN(__imp__sub_822273A0);
 
 REX_HOOK_RAW(sub_822273A0) {
+  if (scrapbook_menu::Active()) {
+    ctx.r3.u32 = 0;
+    return;
+  }
   const int tab = static_cast<int>(ctx.r3.u32);
-  achievements_menu::t_building_tab =
-      achievements_menu::Active() || scrapbook_menu::Active() ? tab : -1;
+  achievements_menu::t_building_tab = achievements_menu::Active() ? tab : -1;
   __imp__sub_822273A0(ctx, base);
   achievements_menu::t_building_tab = -1;
   if (achievements_menu::Active()) {
     achievements_menu::FixRowCount(base, tab);
-  }
-  if (scrapbook_menu::Active()) {
-    scrapbook_menu::FixRowCount(base);
   }
 }
 
@@ -1151,9 +1150,8 @@ REX_EXTERN(__imp__sub_821F8B38);
 
 REX_HOOK_RAW(sub_821F8B38) {
   using namespace achievements_menu;
-  if ((g_active || scrapbook_menu::Active()) && t_building_tab >= 0) {
-    const std::uint32_t rows =
-        g_active ? RowCount(t_building_tab) : scrapbook_menu::RowCount();
+  if (g_active && t_building_tab >= 0) {
+    const std::uint32_t rows = RowCount(t_building_tab);
     const std::uint32_t maximum = rows > 4u ? rows - 4u : 0u;
     const std::uint32_t scrollbar = ctx.r3.u32;
     REX_STORE_U32(scrollbar + 48u, maximum);
@@ -1172,13 +1170,6 @@ REX_EXTERN(__imp__sub_821F2890);
 
 REX_HOOK_RAW(sub_821F2890) {
   using namespace achievements_menu;
-  if (scrapbook_menu::Active()) {
-    scrapbook_menu::BeginRow(static_cast<int>(ctx.r7.u32) - 1);
-    ctx.r6.u32 = kPlaceholderTrackId;
-    __imp__sub_821F2890(ctx, base);
-    scrapbook_menu::EndRow();
-    return;
-  }
   if (!g_active) {
     __imp__sub_821F2890(ctx, base);
     return;
@@ -1319,7 +1310,6 @@ REX_HOOK_RAW(sub_821FEBC8) {
     ctx.r6.u32 = kLockedCrystalTab;
   }
   __imp__sub_821FEBC8(ctx, base);
-  scrapbook_menu::RowBuilt(ctx, base, row_object);
   if (!ours) {
     return;
   }
