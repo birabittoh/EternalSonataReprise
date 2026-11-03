@@ -5,3 +5,8 @@
 address = 0x821AD448
 name = "EternalSonataBattleIntroOverview"
 jump_address_on_true = 0x821ADF00
+
+# Scene render: the overview's PS3 pan over the 360's idle orbit.
+[[midasm_hook]]
+address = 0x820C7554
+name = "EternalSonataBattleOverviewCamera"
