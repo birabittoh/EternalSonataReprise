@@ -72,6 +72,75 @@ name = "EternalSonataPs3MagicOrder"
 registers = ["r6"]
 after_instruction = true
 
+# The PS3's Music gallery tabs (ps3_music_tabs.cpp): the readers of the tab
+# table take a copy with 64 byte rows.
+[[midasm_hook]]
+address = 0x822268D8
+name = "EternalSonataMusicTabTable"
+registers = ["r23"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822273FC
+name = "EternalSonataMusicTabTable"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822276A0
+name = "EternalSonataMusicTabTable"
+registers = ["r23"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82227964
+name = "EternalSonataMusicTabTable"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82226948
+name = "EternalSonataMusicTabStride"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82226BD4
+name = "EternalSonataMusicTabStride"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82227410
+name = "EternalSonataMusicTabStride"
+registers = ["r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822276F4
+name = "EternalSonataMusicTabStride"
+registers = ["r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822277BC
+name = "EternalSonataMusicTabStride"
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82227960
+name = "EternalSonataMusicTabStride"
+registers = ["r9"]
+after_instruction = true
+
+# sub_821FEBC8's track id range check.
+[[midasm_hook]]
+address = 0x821FEBEC
+name = "EternalSonataMusicTrackRange"
+registers = ["r11"]
+after_instruction = true
+
 # The PS3's eighth Piano Music piece (ps3_piano_music.cpp): the readers of the
 # flag id table take an eight entry copy.
 [[midasm_hook]]

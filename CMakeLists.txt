@@ -509,6 +509,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/ps3_models.cpp
     src/engine/ps3_motion.cpp
     src/engine/ps3_natives.cpp
+    src/engine/ps3_music_tabs.cpp
     src/engine/ps3_piano_music.cpp
     src/engine/ps3_start_events.cpp
     src/gpu/guest_shaders.cpp

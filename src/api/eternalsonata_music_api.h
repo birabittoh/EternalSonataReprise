@@ -45,17 +45,20 @@ extern "C" {
 
 // Bumped whenever anything below changes meaning. Additive changes bump the
 // version; existing entry points keep their signature.
-#define ETERNALSONATA_MUSIC_ABI_VERSION 1u
+#define ETERNALSONATA_MUSIC_ABI_VERSION 2u
 
 // Event names on the mod registry bus. See the note at the top.
 #define ETERNALSONATA_MUSIC_EVENT_UNLOCKED "eternalsonata.music.unlocked"
 #define ETERNALSONATA_MUSIC_EVENT_LOCKED "eternalsonata.music.locked"
 
 // Track ids are 1..66 and double as the number in the track's own
-// sound\cxs\MP1<nn>.cxs. The menu range-checks exactly this range.
+// sound\cxs\MP1<nn>.cxs. The menu range-checks exactly this range. PS3 data
+// runs to ETERNALSONATA_MUSIC_TRACK_ID_MAX_PS3, with 66..68 listed; ask
+// EternalSonataGetMusicTrackCount for the live count.
 #define ETERNALSONATA_MUSIC_TRACK_ID_MIN 1
 #define ETERNALSONATA_MUSIC_TRACK_ID_MAX 66
 #define ETERNALSONATA_MUSIC_TRACK_COUNT 66
+#define ETERNALSONATA_MUSIC_TRACK_ID_MAX_PS3 68
 
 // The menu has three tabs and cycles through them modulo 3.
 #define ETERNALSONATA_MUSIC_TAB_COUNT 3
@@ -130,8 +133,8 @@ typedef uint32_t (*EternalSonataMusicAbiVersionFn)(void);
 // screen has finished coming up.
 typedef int (*EternalSonataIsMusicAvailableFn)(void);
 
-// Always ETERNALSONATA_MUSIC_TRACK_COUNT. Present so a mod can size a buffer
-// without hard-coding the constant it was built against.
+// ETERNALSONATA_MUSIC_TRACK_COUNT, or 68 on PS3 data. Present so a mod can
+// size a buffer without hard-coding the constant it was built against.
 typedef int (*EternalSonataGetMusicTrackCountFn)(void);
 
 // How many tracks `tab` lists (22, 31, 9), or the count of unlisted tracks for

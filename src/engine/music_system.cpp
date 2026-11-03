@@ -12,7 +12,8 @@
 //   * byte_8238E128 is the tab table, three rows of 32 bytes holding the track
 //     ids of each tab in menu order, and byte_822FF594[3] = {22, 31, 9} is how
 //     many of each row are real. Both are read rather than hard-coded so this
-//     file keeps agreeing with what the screen walks.
+//     file keeps agreeing with what the screen walks. PS3 mode swaps in its
+//     own layout and tracks 66..68 (ps3_music_tabs.cpp).
 //
 //   * sub_821FEBC8 builds one row and makes the whole locked/unlocked
 //     decision: byte_8255EE70[track_id] picks between title id `track_id` and
@@ -48,6 +49,7 @@
 #include "eternalsonata_music_api.h"
 #include "guest_main_thread.h"
 #include "music_system.h"
+#include "ps3_music_tabs.h"
 
 namespace eternalsonata {
 namespace {
@@ -60,9 +62,8 @@ namespace {
 constexpr uint32_t kFlagsAddr = 0x8255EE70u;
 constexpr uint32_t kFlagsCount = 100u;
 
-// u8[3][32]: the track ids of each tab, in menu order, zero padded.
-constexpr uint32_t kTabTableAddr = 0x8238E128u;
-constexpr uint32_t kTabStride = 32u;
+// The tab table, byte_8238E128 (u8[3][32]) or the PS3 mode copy, comes from
+// ps3_music_tabs.h.
 
 // u8[3]: how many entries of each tab row are real.
 constexpr uint32_t kTabCountsAddr = 0x822FF594u;
@@ -75,8 +76,10 @@ constexpr uint32_t kLanguageIndexAddr = 0x8243D370u;
 
 constexpr int kTabCount = ETERNALSONATA_MUSIC_TAB_COUNT;
 constexpr int kTrackIdMin = ETERNALSONATA_MUSIC_TRACK_ID_MIN;
-constexpr int kTrackIdMax = ETERNALSONATA_MUSIC_TRACK_ID_MAX;
-constexpr int kTrackCount = ETERNALSONATA_MUSIC_TRACK_COUNT;
+// The PS3 lists three more tracks, 67 and 68 past the 360's range.
+constexpr int kTrackIdLimit = 68;
+int TrackIdMax() { return MusicTrackIdMax(); }
+int TrackCount() { return TrackIdMax() - kTrackIdMin + 1; }
 
 // sub_821F77F0(unused, filename) prepends sound\cxs\ and starts the stream.
 REX_IMPORT(__imp__sub_821F77F0, g_play_bgm, u32(u32, u32));
@@ -92,7 +95,7 @@ rex::Runtime* g_runtime = nullptr;
 // before the first tick and after a load, which is what makes a restored save
 // adopt silently instead of republishing everything it holds.
 bool g_have_snapshot = false;
-std::array<bool, kTrackCount + 1> g_snapshot{};  // indexed by track id
+std::array<bool, kTrackIdLimit + 1> g_snapshot{};  // indexed by track id
 
 // The guest-side filename buffer playback hands to the game. Allocated once,
 // on the guest thread, and reused.
@@ -237,24 +240,25 @@ bool Bound() { return g_runtime != nullptr; }
 
 bool ListReadable() {
   return Bound() && Readable(kFlagsAddr, kFlagsCount) &&
-         Readable(kTabTableAddr, kTabStride * kTabCount) && Readable(kTabCountsAddr, kTabCount);
+         Readable(MusicTabTable(), MusicTabStride() * kTabCount) &&
+         Readable(kTabCountsAddr, kTabCount);
 }
 
-bool ValidId(int track_id) { return track_id >= kTrackIdMin && track_id <= kTrackIdMax; }
+bool ValidId(int track_id) { return track_id >= kTrackIdMin && track_id <= TrackIdMax(); }
 
 int TabRowCount(int tab) {
   if (tab < 0 || tab >= kTabCount) {
     return 0;
   }
   const int count = ReadGuestByte(kTabCountsAddr + static_cast<uint32_t>(tab));
-  return std::min<int>(count, static_cast<int>(kTabStride));
+  return std::min<int>(count, static_cast<int>(MusicTabStride()));
 }
 
 int TrackAt(int tab, int row) {
   if (row < 0 || row >= TabRowCount(tab)) {
     return 0;
   }
-  return ReadGuestByte(kTabTableAddr + static_cast<uint32_t>(tab) * kTabStride +
+  return ReadGuestByte(MusicTabTable() + static_cast<uint32_t>(tab) * MusicTabStride() +
                        static_cast<uint32_t>(row));
 }
 
@@ -380,13 +384,13 @@ void Tick() {
       return;
     }
 
-    std::array<bool, kTrackCount + 1> state{};
-    for (int id = kTrackIdMin; id <= kTrackIdMax; ++id) {
+    std::array<bool, kTrackIdLimit + 1> state{};
+    for (int id = kTrackIdMin; id <= TrackIdMax(); ++id) {
       state[static_cast<size_t>(id)] = Unlocked(id);
     }
 
     if (g_have_snapshot) {
-      for (int id = kTrackIdMin; id <= kTrackIdMax; ++id) {
+      for (int id = kTrackIdMin; id <= TrackIdMax(); ++id) {
         const auto slot = static_cast<size_t>(id);
         if (state[slot] == g_snapshot[slot]) {
           continue;
@@ -446,7 +450,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataIsMusicAvailable(void) {
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetMusicTrackCount(void) {
-  return ETERNALSONATA_MUSIC_TRACK_COUNT;
+  return eternalsonata::TrackCount();
 }
 
 extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetMusicTabTrackCount(int tab) {
@@ -462,7 +466,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetMusicTabTrackCount(int tab)
     return TabRowCount(tab);
   }
   int unlisted = 0;
-  for (int id = kTrackIdMin; id <= kTrackIdMax; ++id) {
+  for (int id = kTrackIdMin; id <= TrackIdMax(); ++id) {
     if (Placement(id).first < 0) {
       ++unlisted;
     }
@@ -477,7 +481,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetUnlockedMusicTrackCount(voi
     return ETERNALSONATA_MUSIC_ERR_UNAVAILABLE;
   }
   int count = 0;
-  for (int id = kTrackIdMin; id <= kTrackIdMax; ++id) {
+  for (int id = kTrackIdMin; id <= TrackIdMax(); ++id) {
     if (Unlocked(id)) {
       ++count;
     }
@@ -516,7 +520,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataGetMusicTracks(
     return ETERNALSONATA_MUSIC_ERR_UNAVAILABLE;
   }
 
-  const int available = tab >= 0 ? TabRowCount(tab) : kTrackCount;
+  const int available = tab >= 0 ? TabRowCount(tab) : TrackCount();
   if (max == 0) {
     return available;
   }
@@ -572,7 +576,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT int EternalSonataSetAllMusicTracksUnlocked(int 
     return ETERNALSONATA_MUSIC_ERR_UNAVAILABLE;
   }
   int changed = 0;
-  for (int id = kTrackIdMin; id <= kTrackIdMax; ++id) {
+  for (int id = kTrackIdMin; id <= TrackIdMax(); ++id) {
     if (SetUnlockedLocked(id, unlocked != 0)) {
       ++changed;
     }

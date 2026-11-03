@@ -39,6 +39,7 @@
 #include "game_data.h"
 #include "force_load_area.h"
 #include "ps3_item_tables.h"
+#include "ps3_music_tabs.h"
 #include "ps3_piano_music.h"
 #include "guest_image.h"
 #include "guest_profiler.h"
@@ -358,6 +359,7 @@ class EternalsonataApp : public rex::ReXApp {
     eternalsonata::InitPartyArrays(runtime());
     eternalsonata::ApplyPs3ItemTables();
     eternalsonata::ApplyPs3PianoMusic();
+    eternalsonata::ApplyPs3MusicTabs();
 
     // Seed the GPU plugin/Vulkan device lists once here rather than every
     // time the F4 settings overlay is opened (see settings.cpp).

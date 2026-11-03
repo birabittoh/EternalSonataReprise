@@ -182,6 +182,19 @@ for a character code, here `É`.
 | 8 | 17 | Well Done |
 | 9 | 18 | The End of My Days |
 
+## PS3 mode: three more tracks
+
+The PS3 lists 66 The Royal Mirror (tab 1, No. 25), 67 321 - Summer! (tab 1,
+No. 33) and 68 321 - Crescendo! (tab 2, No. 7), shipped as `MP166..MP168.cxs`
+and titled in its text. Its EBOOT keeps the tabs at `0x46A908` with 36 byte
+rows and the counts at `0x46A978`: 22, 33, 10. Ids 69..79 have no file on any
+release and are unused.
+
+Tab 1 no longer fits a 32 byte row, so `src/engine/ps3_music_tabs.cpp` gives
+every reader of `byte_8238E128` (four table loads, six `slwi 5` row steps) a
+copy with 64 byte rows, writes the PS3 counts over `byte_822FF594`, and lets
+`sub_821FEBC8` accept ids up to 68.
+
 ## Traps
 
 * Never clear `byte_8255EE70` wholesale. The piano music owns 80..86 and other
