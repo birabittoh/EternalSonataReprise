@@ -58,7 +58,7 @@ import zlib
 
 # xex_image lives in the KryptonRecomp submodule.
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "KryptonRecomp"))
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ext", "KryptonRecomp"))
 from xex_image import XexImage  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "guest_data")

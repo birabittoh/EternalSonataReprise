@@ -111,7 +111,7 @@ git clone --recursive https://github.com/birabittoh/EternalSonataReprise
 cd EternalSonataReprise
 ```
 
-If you already cloned without `--recursive`, fetch the `plume` submodule with:
+If you already cloned without `--recursive`, fetch the submodules with:
 
 ```bash
 git submodule update --init --recursive

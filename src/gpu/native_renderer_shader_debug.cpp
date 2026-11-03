@@ -1,7 +1,7 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
 // See native_renderer_shader_debug.h. The implementation is shared with the
-// other ReXGlue titles (KryptonRecomp/native_renderer_shader_debug_impl.h);
+// other ReXGlue titles (ext/KryptonRecomp/native_renderer_shader_debug_impl.h);
 // this file only provides the includes, the debug pack symbols, and the
 // namespace to define it in.
 

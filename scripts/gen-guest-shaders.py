@@ -49,7 +49,7 @@ import sys
 
 # The translator lives in the KryptonRecomp submodule, next to this repo's root.
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "KryptonRecomp"))
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ext", "KryptonRecomp"))
 import extract_shaders as X  # noqa: E402
 from shader_build import compile_all, write_if_different, write_pack_asm  # noqa: E402
 import xenos_hlsl as H  # noqa: E402

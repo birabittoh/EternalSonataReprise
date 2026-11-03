@@ -6,7 +6,7 @@
 // default.xex, walked once at init by sub_82129260 into the two 256 entry
 // tables at dword_824BBEE8 and dword_824BC2E8. That closed set is what makes
 // static compilation possible at all: scripts/gen-guest-shaders.py extracts the
-// 260 containers, translates the microcode to HLSL (KryptonRecomp/xenos_hlsl.py) and
+// 260 containers, translates the microcode to HLSL (ext/KryptonRecomp/xenos_hlsl.py) and
 // compiles it with DXC, all at build time. Nothing here translates anything.
 //
 // The result, `guest_shaders.bin`, is linked straight into the executable's
@@ -16,7 +16,7 @@
 // same index the device mirror resolves a bound shader object to, so binding is
 // a direct index rather than a hash of anything.
 //
-// The pack format and the reader live in KryptonRecomp/guest_shader_pack.h,
+// The pack format and the reader live in ext/KryptonRecomp/guest_shader_pack.h,
 // shared with the other ReXGlue titles; guest_shaders.cpp is the thin driver
 // that fixes this title's PackTraits and pack symbol.
 

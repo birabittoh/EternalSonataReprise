@@ -1,7 +1,7 @@
 // eternalsonata - ReXGlue Recompiled Project
 //
 // Driver for the shared pack reader; see guest_shaders.h and
-// KryptonRecomp/guest_shader_pack.h.
+// ext/KryptonRecomp/guest_shader_pack.h.
 //
 // The pack symbol comes from a generated `.S` that `.incbin`s guest_shaders.bin
 // into the executable's own read-only data (see write_pack_asm in

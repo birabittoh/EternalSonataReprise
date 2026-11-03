@@ -17,13 +17,13 @@ include(generated/rexglue.cmake)
 # Plume, the RHI the native renderer is built on (see src/native_renderer.h).
 # It is a low level interface over D3D12, Vulkan and Metal that does no shader
 # compilation of its own, which is what makes it the right fit here: this
-# project compiles the guest's shaders offline (KryptonRecomp/xenos_hlsl.py) rather
+# project compiles the guest's shaders offline (ext/KryptonRecomp/xenos_hlsl.py) rather
 # than translating microcode at runtime.
 #
 # Plume is tracked as a submodule, including its own dependencies (volk,
 # Vulkan-Headers, VMA and D3D12MemoryAllocator). Keeping the renderer revision
 # in the superproject makes local and CI builds use the same source.
-set(ETERNALSONATA_PLUME_DIR "${CMAKE_SOURCE_DIR}/plume")
+set(ETERNALSONATA_PLUME_DIR "${CMAKE_SOURCE_DIR}/ext/plume")
 if(NOT EXISTS "${ETERNALSONATA_PLUME_DIR}/plume_render_interface.h")
     message(FATAL_ERROR
         "Plume submodule is missing. Run: git submodule update --init --recursive")
@@ -290,7 +290,7 @@ plume_shaders_init()
 # The game's whole shader inventory is a static blob inside default.xex (see
 # scripts/extract_shaders.py), so this is a finite offline job rather than a
 # runtime translator: extract the 260 containers, emit HLSL from the Xenos
-# microcode (KryptonRecomp/xenos_hlsl.py), compile each with DXC, and pack the results
+# microcode (ext/KryptonRecomp/xenos_hlsl.py), compile each with DXC, and pack the results
 # into guest_shaders.bin.
 #
 # The pack is linked into the exe: gen-guest-shaders.py also writes a `.S` that
@@ -350,11 +350,11 @@ add_custom_command(
     DEPENDS
         ${CMAKE_SOURCE_DIR}/scripts/gen-guest-shaders.py
         ${CMAKE_SOURCE_DIR}/scripts/extract_shaders.py
-        ${CMAKE_SOURCE_DIR}/KryptonRecomp/shader_build.py
-        ${CMAKE_SOURCE_DIR}/KryptonRecomp/shader_extract.py
-        ${CMAKE_SOURCE_DIR}/KryptonRecomp/xenos_hlsl.py
-        ${CMAKE_SOURCE_DIR}/KryptonRecomp/xenos_ucode.py
-        ${CMAKE_SOURCE_DIR}/KryptonRecomp/xex_image.py
+        ${CMAKE_SOURCE_DIR}/ext/KryptonRecomp/shader_build.py
+        ${CMAKE_SOURCE_DIR}/ext/KryptonRecomp/shader_extract.py
+        ${CMAKE_SOURCE_DIR}/ext/KryptonRecomp/xenos_hlsl.py
+        ${CMAKE_SOURCE_DIR}/ext/KryptonRecomp/xenos_ucode.py
+        ${CMAKE_SOURCE_DIR}/ext/KryptonRecomp/xex_image.py
         ${CMAKE_SOURCE_DIR}/assets/default.xex
     COMMENT "Translating and compiling the guest's 260 shaders"
     VERBATIM
@@ -513,7 +513,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/ps3_piano_music.cpp
     src/engine/ps3_start_events.cpp
     src/gpu/guest_shaders.cpp
-    ${CMAKE_SOURCE_DIR}/KryptonRecomp/guest_shader_pack.cpp
+    ${CMAKE_SOURCE_DIR}/ext/KryptonRecomp/guest_shader_pack.cpp
     src/gpu/native_renderer.cpp
     src/gpu/native_renderer_batch.cpp
     src/gpu/native_renderer_d3d.cpp
@@ -588,7 +588,7 @@ target_link_libraries(eternalsonata PRIVATE plume)
 # hook libraries are dlopen'd by name from nativeLibraryDir, so they are built
 # next to libeternalsonata.so for staging into jniLibs.
 if(ANDROID)
-    add_subdirectory(libadrenotools EXCLUDE_FROM_ALL)
+    add_subdirectory(ext/libadrenotools EXCLUDE_FROM_ALL)
     set_target_properties(main_hook file_redirect_hook gsl_alloc_hook hook_impl PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
     target_link_libraries(eternalsonata PRIVATE adrenotools)
@@ -630,7 +630,7 @@ target_include_directories(eternalsonata PRIVATE
     src/api
     src/installer
     # Shared ReXGlue shader tooling (guest_shader_pack.h, xenos_*.py, ...).
-    ${CMAKE_SOURCE_DIR}/KryptonRecomp
+    ${CMAKE_SOURCE_DIR}/ext/KryptonRecomp
 )
 
 if(WIN32)

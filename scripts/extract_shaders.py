@@ -27,7 +27,7 @@ import sys
 
 # The shared container parsing lives in the KryptonRecomp submodule.
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "KryptonRecomp"))
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ext", "KryptonRecomp"))
 from shader_extract import (FIRST_INDEX, MAX_INDEX,  # noqa: E402
                             XexImage, parse_blob, write_shader_files)
 

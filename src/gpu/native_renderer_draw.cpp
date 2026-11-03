@@ -1698,7 +1698,7 @@ void WaterProbeEndFrame() {
 // param gen, the point sprite size, the sampled texture's scale and the per
 // stage fetch swizzles all share one buffer because they are all fixed function
 // state with no host equivalent and a root descriptor is per pipeline layout
-// rather than per stage. See XeDrawState in KryptonRecomp/xenos_hlsl.py.
+// rather than per stage. See XeDrawState in ext/KryptonRecomp/xenos_hlsl.py.
 //
 // 32 words: 14 built state words, then the texture0 scale, then 16 fetch
 // swizzles. The cache compares whole words, so the count must match the
