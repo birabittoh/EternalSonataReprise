@@ -96,11 +96,74 @@ REX_HOOK_RAW(sub_821ABC68) {
   }
 }
 
+namespace {
+
+// Marks a category already in the PS3's numbering.
+constexpr uint32_t kPs3Category = 0x100u;
+
+constexpr uint32_t kBattleRecord = 0x8253923Cu;
+constexpr uint32_t kPartyCount = 0x824D0720u;
+constexpr uint32_t kPartyArray = 0x824FD1A0u;
+constexpr uint32_t kPartyStride = 81972u;
+
+// The pre-battle reply by a fixed member: encounter, first and fallback
+// character, category in PS3 numbering (EBOOT sub_19FC80). The 360's table
+// (sub_821BAB70) asks Jazz for 38 against Waltz, which the PS3 left empty,
+// and the line never ends.
+struct FixedReply {
+  int16_t encounter;
+  uint32_t character, fallback, category;
+};
+constexpr FixedReply kPs3FixedReplies[] = {
+    {151, 8, 0, 38}, {157, 2, 0, 38}, {161, 1, 0, 38}, {162, 3, 0, 38}, {168, 8, 0, 38},
+    {169, 7, 1, 39}, {170, 7, 1, 41}, {171, 2, 1, 42}, {313, 2, 0, 41},
+};
+
+int32_t PartySlot(uint8_t* base, uint32_t character) {
+  const uint32_t count = REX_LOAD_U8(kPartyCount);
+  for (uint32_t i = 0; character && i < count; ++i)
+    if (REX_LOAD_U32(kPartyArray + kPartyStride * i) == character)
+      return int32_t(i);
+  return -1;
+}
+
+}  // namespace
+
+REX_EXTERN(__imp__sub_821BAB70);
+
+// Battle intro setup (intro): +8 the replying member, +12 its category.
+REX_HOOK_RAW(sub_821BAB70) {
+  const uint32_t intro = ctx.r3.u32;
+  __imp__sub_821BAB70(ctx, base);
+  const uint32_t record = REX_LOAD_U32(kBattleRecord);
+  if (!eternalsonata::IsPs3Target() || !record)
+    return;
+  const auto encounter = static_cast<int16_t>(REX_LOAD_U16(record));
+  for (const FixedReply& reply : kPs3FixedReplies) {
+    if (reply.encounter != encounter)
+      continue;
+    int32_t slot = PartySlot(base, reply.character);
+    if (slot < 0)
+      slot = PartySlot(base, reply.fallback);
+    if (slot >= 0) {
+      REX_STORE_U32(intro + 8, uint32_t(slot));
+      REX_STORE_U32(intro + 12, reply.category < kFirstShiftedCategory
+                                    ? reply.category
+                                    : reply.category | kPs3Category);
+    }
+    return;
+  }
+}
+
 REX_EXTERN(__imp__sub_821BCC40);
 
 // Voice pick (table, row, category, ...).
 REX_HOOK_RAW(sub_821BCC40) {
-  if (eternalsonata::IsPs3Target() && ctx.r5.s32 >= kFirstShiftedCategory)
-    ctx.r5.u64 = ctx.r5.u32 + kPs3NewCategories;
+  if (eternalsonata::IsPs3Target()) {
+    if (ctx.r5.u32 & kPs3Category)
+      ctx.r5.u64 = ctx.r5.u32 & ~kPs3Category;
+    else if (ctx.r5.s32 >= kFirstShiftedCategory)
+      ctx.r5.u64 = ctx.r5.u32 + kPs3NewCategories;
+  }
   __imp__sub_821BCC40(ctx, base);
 }

@@ -712,6 +712,13 @@ that voice ends, so a wrong table leaves the intro camera circling forever.
 PS3 mode adds 2 to enemy rows (`sub_821ABC68`) and to categories from 41
 (`sub_821BCC40`).
 
+The reply after that line comes from a fixed member in some boss fights
+(`sub_821BAB70`, by encounter id). The PS3's table (`sub_19FC80`) differs: 169
+(Waltz) asks Jazz, or Allegretto, for 39 where the 360 asks Jazz for 38, which
+the PS3 left empty; 170, 171 and 313 ask for the new 41 and 42. PS3 mode
+applies the PS3's table after the 360's and tags 41 and 42 as already in PS3
+numbering so `sub_821BCC40` does not shift them.
+
 `title.bmd` holds six entries but its count says five. The sixth word is a
 `Mefc` of five "Coming Soon" labels (`TEX1`..`TEX5`, one per PAL language) over
 a glow (`TEX0`) that the 360 title task never reads: `sub_821333C0` loads
