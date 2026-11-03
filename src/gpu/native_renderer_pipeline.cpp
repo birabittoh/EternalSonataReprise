@@ -99,7 +99,6 @@ enum RefusalReason {
   kRefuseTooManyElements,
   kRefuseDeviceDown,
   kRefuseCreateFailed,
-  kRefuseNoGeometryShader,
   kRefuseCount,
 };
 constexpr const char* kRefusalNames[kRefuseCount] = {
@@ -112,7 +111,6 @@ constexpr const char* kRefusalNames[kRefuseCount] = {
     "declaration has more elements than the layout holds",
     "device not up",
     "pipeline creation failed",
-    "point sprites need a geometry shader this backend has not got",
 };
 uint64_t g_refusals[kRefuseCount] = {};
 bool g_refusal_reported[kRefuseCount] = {};
@@ -616,10 +614,6 @@ bool g_layout_failed = false;
 std::unique_ptr<RenderShader> g_vertex_shaders[d3d::kShaderTableEntries];
 std::unique_ptr<RenderShader> g_pixel_shaders[d3d::kShaderTableEntries];
 
-// The point sprite expansion shader, which is one object for the whole title
-// rather than one per slot: every vertex shader declares the same output
-// signature, so the same geometry shader links against all of them.
-std::unique_ptr<RenderShader> g_point_sprite_shader;
 std::unique_ptr<RenderShader> g_sprite_batch_vertex_shader;
 std::unique_ptr<RenderShader> g_sprite_batch_pixel_shader;
 
@@ -941,24 +935,12 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
 
   // Point sprites. The console rasterises a POINT_LIST vertex as a screen
   // aligned quad and hands the pixel shader a coordinate across it; a host point
-  // list draws one pixel and generates nothing, so without the expansion shader
-  // every particle and flower draw in the title is invisible rather than wrong.
-  // Metal has no geometry shaders at all, hence the capability check rather than
-  // an assumption.
-  RenderShader* geometry_shader = nullptr;
-  if (request.primitive_type == kPrimitivePointList) {
-    if (!device->getCapabilities().geometryShader) {
-      Refuse(kRefuseNoGeometryShader, "the point sprite quads cannot be built",
-             request.vertex_slot, request.pixel_slot);
-      return nullptr;
-    }
-    geometry_shader = EnsureShader(device, GuestPointSpriteShader(), g_point_sprite_shader);
-    if (geometry_shader == nullptr) {
-      Refuse(kRefuseNoBlob, "the pack carries no point sprite geometry shader",
-             request.vertex_slot, request.pixel_slot);
-      return nullptr;
-    }
-  }
+  // list draws one pixel and generates nothing. The vertex shader builds the
+  // quad instead, one instanced four vertex strip per point with every input
+  // stepped per instance: Metal has no geometry shaders, and measured on
+  // desktop and Adreno the two cost the same. See point_sprite_vs_epilogue in
+  // KryptonRecomp/xenos_hlsl.py.
+  const bool point_expand = request.primitive_type == kPrimitivePointList;
 
   // The input layout. This is the match 0x82267218 performs when it patches the
   // microcode -- shader input signature against declaration elements, by usage
@@ -1081,17 +1063,20 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
     pipeline->slots[widened_host_slot] =
         RenderInputSlot(uint32_t(widened_host_slot), pipeline->widened_stride);
   }
+  if (point_expand) {
+    for (uint32_t slot = 0; slot < pipeline->slot_count; ++slot)
+      pipeline->slots[slot].classification = RenderInputSlotClassification::PER_INSTANCE_DATA;
+  }
 
   RenderGraphicsPipelineDesc desc;
   desc.pipelineLayout = layout;
   desc.vertexShader = vertex_shader;
-  desc.geometryShader = geometry_shader;
   desc.pixelShader = pixel_shader;
   desc.inputSlots = pipeline->slots;
   desc.inputSlotsCount = pipeline->slot_count;
   desc.inputElements = elements.data();
   desc.inputElementsCount = uint32_t(elements.size());
-  desc.primitiveTopology = topology;
+  desc.primitiveTopology = point_expand ? RenderPrimitiveTopology::TRIANGLE_STRIP : topology;
 
   if (request.has_color_target) {
     desc.renderTargetFormat[0] = FrameColorFormat();
@@ -1147,7 +1132,7 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   // host; it is a draw that produces nothing, and NONE is the wrong answer for
   // it, so it is counted and left uncalled rather than silently inverted.
   // A point has no winding for the setup unit to cull against, so the console
-  // ignores the cull bits for a point list. The quads the geometry shader builds
+  // ignores the cull bits for a point list. The quads the vertex shader builds
   // do have one, and it would be culled by whatever the scene last set.
   if (request.primitive_type == kPrimitivePointList) {
     desc.cullMode = RenderCullMode::NONE;
@@ -1248,7 +1233,6 @@ void ShutdownGuestPipelines() {
     shader.reset();
   for (auto& shader : g_pixel_shaders)
     shader.reset();
-  g_point_sprite_shader.reset();
   g_sprite_batch_vertex_shader.reset();
   g_sprite_batch_pixel_shader.reset();
   g_layout.reset();

@@ -25,8 +25,8 @@ extern const uint8_t kGuestShaderDebugPackDataEnd[];
 namespace eternalsonata {
 namespace {
 
-// 'ESGD', with the point sprite shader past the two slot tables.
-constexpr krypton::DebugPackTraits kGuestShaderDebugPackTraits{0x44475345, 2, 1};
+// 'ESGD', with nothing past the two slot tables.
+constexpr krypton::DebugPackTraits kGuestShaderDebugPackTraits{0x44475345, 3, 0};
 
 // Echo the overlay id of the vs_040/ps_058 pair under investigation, so the
 // number on screen can be compared with the one a toggle sends back.

@@ -21,15 +21,15 @@ namespace {
 
 // The renderer-owned entries past the slot tables, in gen-guest-shaders.py's
 // EXTRA_NAMES order.
-enum Extra : uint32_t { kPointSprite, kSpriteBatchVertex, kSpriteBatchPixel, kExtraCount };
+enum Extra : uint32_t { kSpriteBatchVertex, kSpriteBatchPixel, kExtraCount };
 
 // This title's pack: magic 'ESGS', version, and the flag/block layout it uses.
 // Eternal Sonata carries a param_gen flag and a fixed 64 byte literal block,
-// with no per-entry hash section, and three renderer-owned extras.
+// with no per-entry hash section, and two renderer-owned extras.
 krypton::PackTraits MakeTraits() {
   krypton::PackTraits traits{};
   traits.magic = 0x53475345;  // 'ESGS', little endian
-  traits.version = 9;
+  traits.version = 10;
   traits.flag_point_size = 1 << 0;
   traits.flag_has_cube = 1 << 1;
   traits.flag_param_gen = 1 << 2;
@@ -53,7 +53,6 @@ bool LoadGuestShaders() {
 const GuestShader& GuestVertexShader(uint32_t slot) { return g_pack.Vertex(slot); }
 const GuestShader& GuestPixelShader(uint32_t slot) { return g_pack.Pixel(slot); }
 
-const GuestShader& GuestPointSpriteShader() { return g_pack.Extra(kPointSprite); }
 const GuestShader& GuestSpriteBatchVertexShader() { return g_pack.Extra(kSpriteBatchVertex); }
 const GuestShader& GuestSpriteBatchPixelShader() { return g_pack.Extra(kSpriteBatchPixel); }
 

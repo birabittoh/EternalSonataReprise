@@ -176,6 +176,7 @@ enum DropReason {
   kDropIndicesMissing,
   kDropShaderDisabled,
   kDropSampleMismatch,
+  kDropIndexedPointList,
   kDropCount,
 };
 constexpr const char* kDropNames[kDropCount] = {
@@ -190,6 +191,7 @@ constexpr const char* kDropNames[kDropCount] = {
     "an indexed draw with no index buffer bound",
     "a bound shader is switched off in the shader debugger",
     "the pipeline was built for another sample count than the target has",
+    "an indexed point list, which the instanced sprite expansion cannot draw",
 };
 uint64_t g_drops[kDropCount] = {};
 bool g_drop_reported[kDropCount] = {};
@@ -2219,6 +2221,12 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
 
   const bool rect_list = call.primitive_type == 8;
   const bool quad_list = call.primitive_type == 13;
+  // Instancing steps the inputs once per point, so there is nowhere for an
+  // index buffer to come in.
+  if (call.indexed && call.primitive_type == 1) {
+    Drop(kDropIndexedPointList, "point sprites are drawn instanced");
+    return false;
+  }
 
   // The vertex streams. Each host slot is filled from the guest stream the
   // pipeline recorded for it, or from the zero buffer for the missing-attribute
@@ -2783,29 +2791,26 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   // something and a stale enabled test would discard the draw. Param gen is
   // sent as off for anything that is not a point list: the guest sets it per
   // pixel shader and leaves it set, but its zw is only meaningful under the
-  // point sprite geometry shader, and overwriting an interpolator register
+  // point sprite expansion, and overwriting an interpolator register
   // with a stale one elsewhere would break more geometry than it fixed.
   //
   // The scaled viewport reciprocal turns a point diameter in guest pixels into
   // a clip space radius. It includes the target and world clip scales because
   // both PA_SU_POINT_SIZE and a vertex shader's e63 export are measured on the
   // guest's 1280x720 pixel grid, and the uniform world fit keeps the quads
-  // square when the target aspect changes. Its y is negated under SPIR-V
-  // because the vertex shaders are compiled with -fvk-invert-y and the geometry
-  // shader is not: the position it expands is already in Vulkan's y-down clip
-  // space while the sprite coordinate's v still runs from the top down.
+  // square when the target aspect changes. It needs no y flip under SPIR-V:
+  // the expansion runs before -fvk-invert-y applies its own.
   //
   // Reused between draws while the values hold, like the constant banks: a 256
   // byte root CBV allocation per draw would be the largest consumer of the
   // arena, and this changes far less often than it is read.
   const bool point_list = call.primitive_type == 1;
-  const float ndc_y_sign = PlumeShaderFormat() == RenderShaderFormat::SPIRV ? -1.0f : 1.0f;
   uint32_t draw_state[kDrawStateWords] = {};
   const uint32_t alpha_func = alpha_enabled ? uint32_t(call.state.alpha_func) : 7u;  // 7 is ALWAYS
   const uint32_t param_gen = point_list && call.state.param_gen_enabled ? 1u : 0u;
   const float point_ndc[2] = {target_scale_x * clip_scale_x / width,
-                              ndc_y_sign * target_scale_y * clip_scale_y / height};
-  // Which of the two point sizes the geometry shader reads. A vertex shader
+                              target_scale_y * clip_scale_y / height};
+  // Which of the two point sizes the expansion reads. A vertex shader
   // with no e63 export leaves the varying at its sentinel, and a real export
   // can be negative, so the choice cannot be made from the value.
   uint32_t point_size_from_vertex = 0u;
@@ -2825,7 +2830,8 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   std::memcpy(&draw_state[7], &point_ndc[1], 4);
   std::memcpy(&draw_state[8], &call.state.point_diameter_min, 4);
   std::memcpy(&draw_state[9], &call.state.point_diameter_max, 4);
-  draw_state[10] = point_size_from_vertex;  // 11 is the cbuffer's tail padding
+  draw_state[10] = point_size_from_vertex;
+  draw_state[11] = point_list ? 1u : 0u;
   // The shader scan excludes direct clip space writes. The target selection
   // keeps auxiliary projections independent of the window aspect.
   std::memcpy(&draw_state[12], &clip_scale_x, 4);
@@ -3058,7 +3064,9 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
     commands->setGraphicsDescriptorSet(sampler_set, kSamplerDescriptorSet);
     commands->setVertexBuffers(0, views, slot_count, slots);
 
-    if (indexed) {
+    if (point_list) {
+      commands->drawInstanced(4, draw_count, 0, 0);
+    } else if (indexed) {
       commands->setIndexBuffer(&index_view);
       commands->drawIndexedInstanced(index_count, 1, 0, call.indexed ? call.base_vertex : 0, 0);
     } else {

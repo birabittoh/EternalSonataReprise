@@ -42,12 +42,6 @@ bool LoadGuestShaders();
 const GuestShader& GuestVertexShader(uint32_t slot);
 const GuestShader& GuestPixelShader(uint32_t slot);
 
-// The point sprite expansion geometry shader, which is the renderer's own and
-// so has no guest table slot. A POINT_LIST draw needs it: the console rasterises
-// each vertex as a quad sized by the vertex shader's e63 export and generates a
-// sprite coordinate across it, and a host point list does neither. See
-// KryptonRecomp/xenos_hlsl.py's point_sprite_gs.
-const GuestShader& GuestPointSpriteShader();
 // The sprite batcher's pair: vs_015 with a COLOR0 input carried on interpolator
 // 1, and ps_003 modulating by it instead of pixel c0. See
 // native_renderer_batch.cpp and the derivation in scripts/gen-guest-shaders.py.

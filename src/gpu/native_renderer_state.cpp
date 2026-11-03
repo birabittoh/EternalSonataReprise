@@ -111,7 +111,7 @@ GuestRenderState ReadGuestRenderState(uint8_t* base, uint32_t device) {
   state.param_gen_pos = (context_misc >> 8) & 0xFFu;
 
   // PA_SU_POINT_SIZE: height +0, width +16, each a half extent in 12.4 fixed
-  // point. Doubled back to a diameter so the geometry shader's one multiply by
+  // point. Doubled back to a diameter so the expansion's one multiply by
   // the reciprocal viewport extent produces a clip space radius.
   const uint32_t point_size = REX_LOAD_U32(device + Reg2280(0x2280));
   state.point_diameter_y = float(point_size & 0xFFFFu) * (2.0f / 16.0f);

@@ -60,7 +60,7 @@ import xenos_ucode as U  # noqa: E402
 H.REFRACTION_SLOT = 13
 
 PACK_MAGIC = b"ESGS"
-PACK_VERSION = 9
+PACK_VERSION = 10
 
 # The sidecar the F2 shader debugger reads: per shader, the extractor's name,
 # the microcode disassembly and the emitted HLSL. Kept out of guest_shaders.bin
@@ -69,7 +69,7 @@ PACK_VERSION = 9
 # out of it on demand rather than loading it. Missing, the overlay still lists,
 # names and toggles shaders; it just has no source to show.
 DEBUG_MAGIC = b"ESGD"
-DEBUG_VERSION = 2
+DEBUG_VERSION = 3
 
 # Both guest tables are 256 entries; the pack holds vertex slots first, then
 # pixel slots, so an entry index is `kind_base + slot`.
@@ -80,20 +80,15 @@ FLAG_HAS_CUBE = 1 << 1
 FLAG_PARAM_GEN = 1 << 2
 FLAG_FOOTPRINT = 1 << 3
 
-# The point sprite expansion shader, which is ours rather than the guest's: it
-# has no table slot, so it rides in one extra entry past the two 256 slot
-# tables. See xenos_hlsl.point_sprite_gs.
-POINT_SPRITE_NAME = "point_sprite_gs"
-
 # The sprite batcher's pair (src/gpu/native_renderer_batch.cpp): vs_015 with a
 # COLOR0 input passed through interpolator 1, and ps_003 modulating by that
 # interpolator instead of pixel c0, so sprites with different colours can share
 # one draw. Derived from the translated sources by patching, so they track the
-# guest shaders exactly. Ours like the geometry shader, so no table slot; the
-# three ride in fixed order after the two tables.
+# guest shaders exactly. Ours rather than the guest's, so no table slot; the
+# two ride in fixed order after the two tables.
 SPRITE_BATCH_VS_NAME = "sprite_batch_vs"
 SPRITE_BATCH_PS_NAME = "sprite_batch_ps"
-EXTRA_NAMES = [POINT_SPRITE_NAME, SPRITE_BATCH_VS_NAME, SPRITE_BATCH_PS_NAME]
+EXTRA_NAMES = [SPRITE_BATCH_VS_NAME, SPRITE_BATCH_PS_NAME]
 SPRITE_BATCH_VS_SLOT = 15
 SPRITE_BATCH_PS_SLOT = 3
 SPRITE_BATCH_TEXTURES = 8
@@ -200,14 +195,6 @@ def translate(xex, hlsl_dir):
             entry.disassembly = ("; %s does not disassemble: %s"
                                  % (shader.name, exc)).encode("utf-8")
         out.append(entry)
-
-    # The point sprite expansion shader. Built against the same title-wide
-    # interpolator layout, so it passes every varying through unchanged.
-    gs = Translated("gs", 0, POINT_SPRITE_NAME, None)
-    gs.hlsl = H.point_sprite_gs(layout).encode("utf-8")
-    gs.source = os.path.join(hlsl_dir, POINT_SPRITE_NAME + ".hlsl")
-    write_if_different(gs.source, gs.hlsl)
-    out.append(gs)
 
     def patched(kind, slot, name, edits):
         base = next(e for e in out if e.kind == kind and e.slot == slot)
@@ -362,14 +349,11 @@ def pack_debug(entries):
         return where
 
     empty = struct.pack("<IIIIII", 0, 0, 0, 0, 0, 0)
-    table = [empty] * (SLOTS * 2 + 1)
+    table = [empty] * (SLOTS * 2)
     for entry in entries:
         if getattr(entry, "extra", False):
             continue
-        if entry.kind == "gs":
-            index = SLOTS * 2
-        else:
-            index = (0 if entry.kind == "vs" else SLOTS) + entry.slot
+        index = (0 if entry.kind == "vs" else SLOTS) + entry.slot
         name = place(entry.name.encode("utf-8"))
         ucode = place(entry.disassembly)
         hlsl = place(entry.hlsl)
