@@ -437,6 +437,30 @@ const char* AchievementsLabel(const std::uint8_t* base) {
   return kAchievementsLabel[language < 7u ? language : 1u];
 }
 
+// Whether selectable group `id` carries the Scrapbook's tag, so a cap meant for
+// the strip is never applied to another screen's group 0.
+bool GroupHasScrapbook(std::uint8_t* base, std::uint32_t id) {
+  const std::uint32_t menu = REX_LOAD_U32(kMenuRootAddress);
+  std::uint32_t group = menu ? REX_LOAD_U32(menu + 392u) : 0u;
+  for (unsigned count = 0; group && count < 48u; ++count) {
+    if (REX_LOAD_U32(group) == id) {
+      break;
+    }
+    group = REX_LOAD_U32(group + 48u);
+  }
+  const std::uint32_t entries = group ? REX_LOAD_U32(group + 4u) : 0u;
+  for (std::uint32_t i = 0; entries && i < 32u; ++i) {
+    const std::uint32_t rec = entries + 16u * i;
+    if (REX_LOAD_U32(rec) == 0xFFFFFFFFu) {
+      break;
+    }
+    if (REX_LOAD_U32(rec + 12u) == scrapbook_menu::kTag) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 const char* AchievementsWord(const std::uint8_t* base) {
@@ -760,6 +784,19 @@ REX_HOOK_RAW(sub_8223B288) {
   ctx.r3.u32 = static_cast<std::uint32_t>(record < 0 ? option_strip::kStripCount : record);
   __imp__sub_8223B288(ctx, base);
   option_strip::SetExtraGlow(ctx, base, record < 0);
+}
+
+// sub_822004E0(ui, group, last): the highest index the cursor may reach in a
+// selectable group. Away from a save point the strip's build caps group 0 at 9,
+// stock Load, to shut Save out; on the wide strip Load is 10.
+REX_EXTERN(__imp__sub_822004E0);
+
+REX_HOOK_RAW(sub_822004E0) {
+  if (ctx.r4.u32 == 0u && ctx.r5.u32 == option_strip::kStripCount - 2u &&
+      option_strip::StripIsWide() && option_strip::GroupHasScrapbook(base, 0u)) {
+    ctx.r5.u32 = option_strip::kWideCount - 2u;
+  }
+  __imp__sub_822004E0(ctx, base);
 }
 
 // Spanish alone re-registers the eleven selectables by hand (x = 445 + 70 * i,
