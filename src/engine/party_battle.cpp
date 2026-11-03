@@ -118,6 +118,21 @@ extern "C++" void PartyHitMotionCharacter(PPCRegister& r3) {
     r3.u64 = static_cast<uint32_t>(eternalsonata::CharacterBase(character));
 }
 
+// sub_821C8878 picks the voice category of a cast from a table indexed by the
+// action id, which ends at the 360's 118 magic ids. The PS3 appends Crescendo's
+// and Serenade's (119..132): three plain categories, then four spoken ones.
+// r9 = the index * 4, r6 = the category just loaded.
+constexpr uint32_t kFirstPs3Magic = 119;
+constexpr uint32_t kLastPs3Magic = 132;
+constexpr int32_t kPs3MagicVoice[] = {3, 4, 5, 8, 9, 10, 11};
+
+extern "C++" void PartyMagicVoiceCategory(PPCRegister& r6, PPCRegister& r9) {
+  const uint32_t id = r9.u32 >> 2;
+  if (!eternalsonata::IsPs3Target() || id < kFirstPs3Magic || id > kLastPs3Magic)
+    return;
+  r6.s64 = kPs3MagicVoice[(id - kFirstPs3Magic) % std::size(kPs3MagicVoice)];
+}
+
 // sub_821E7358 ORs bits 13..21 of each equipped item's flags into the
 // member's status word at +0x3C. No retail item sets them, but the wear bits
 // of 11 and 12 (4 << c) are 13 and 14, which gave whoever wore their gear the
@@ -129,26 +144,6 @@ constexpr uint32_t kSerenadeStatus = (4u << kSerenade) >> kStatusShift;
 
 extern "C++" void PartyEquipStatus(PPCRegister& r10) {
   r10.u64 = r10.u32 & ~(kCrescendoStatus | kSerenadeStatus);
-}
-
-// After sub_821A2B38's member copy, r23 = the member's character, r28 = the
-// copy: on the PS3 Crescendo shines with light and Serenade with dark.
-extern "C++" void PartyMemberStatus(PPCRegister& r23, PPCRegister& r28) {
-  if (!eternalsonata::IsPs3Target())
-    return;
-  auto* runtime = rex::Runtime::instance();
-  auto* memory = runtime ? runtime->memory() : nullptr;
-  if (!memory || !r23.u32 || !r28.u32)
-    return;
-  const uint32_t character =
-      rex::memory::load_and_swap<uint32_t>(memory->TranslateVirtual<uint8_t*>(r23.u32));
-  const uint32_t status = character == kCrescendo  ? kCrescendoStatus
-                          : character == kSerenade ? kSerenadeStatus
-                                                   : 0u;
-  if (!status)
-    return;
-  auto* word = memory->TranslateVirtual<uint8_t*>(r28.u32 + 0x3C);
-  rex::memory::store_and_swap<uint32_t>(word, rex::memory::load_and_swap<uint32_t>(word) | status);
 }
 
 // The battle HUD's name, r4 = character - 1 into a ten entry text block.
