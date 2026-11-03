@@ -7,11 +7,12 @@
 // Entries 10 and 11 of one array sit at the retail address of the next one
 // (position[10] is slotbytes[0], stats_live[10] is stats_base[0]), so the
 // address alone cannot say which is meant. The instruction can: each one
-// keeps reaching the same array, and while only ten characters exist every
-// access it makes is unambiguous. So each instruction learns its array from
-// its first access, and from then on an access just past that array's
-// retail end is its entry 10 or 11. An instruction seen reaching two arrays
-// (a helper given pointers into both) is only ever mapped by address.
+// keeps reaching the same array. Most are traced offline from the base
+// constant their address is built from (scripts/party_static_owners.py); the
+// rest learn their array from their first unambiguous access, and from then
+// on an access just past that array's retail end is its entry 10 or 11. An
+// instruction seen reaching two arrays (a helper given pointers into both) is
+// only ever mapped by address.
 
 #include "party_arrays.h"
 #include "character_roster.h"
@@ -21,6 +22,7 @@
 #include "shop_stock.h"
 #include "target.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -335,6 +337,22 @@ int StaticOwner(uint32_t pc, const Hit& hit) {
   return -1;
 }
 
+// The array each instruction's base pointer is built from, traced offline.
+struct TracedEntry {
+  uint32_t pc;
+  uint8_t array;
+};
+constexpr TracedEntry kTracedOwners[] = {
+#include "party_static_owners.inc"
+};
+
+int TracedOwner(uint32_t pc) {
+  const auto* end = std::end(kTracedOwners);
+  const auto* it = std::lower_bound(std::begin(kTracedOwners), end, pc,
+                                    [](const TracedEntry& e, uint32_t v) { return e.pc < v; });
+  return it != end && it->pc == pc ? it->array : -1;
+}
+
 Hit Classify(uint32_t ea) {
   Hit hit;
   for (size_t i = 0; i < kArrays.size(); ++i) {
@@ -385,6 +403,11 @@ uint32_t Resolve(uint32_t ea, uint32_t pc, const Hit& hit) {
   const int static_owner = StaticOwner(pc, hit);
   if (static_owner >= 0)
     return Relocated(static_owner, hit.extension_offset, ea);
+  if (const int traced = TracedOwner(pc); traced >= 0) {
+    const uint32_t offset = ea - kArrays[traced].retail;
+    if (offset < kPartyCharacterCount * kArrays[traced].stride)
+      return Relocated(traced, offset, ea);
+  }
   std::atomic<uint64_t>* slot = pc ? OwnerSlot(pc) : nullptr;
   if (!slot)
     return by_address();
@@ -399,6 +422,10 @@ uint32_t Resolve(uint32_t ea, uint32_t pc, const Hit& hit) {
       SetBits(*slot, static_cast<uint64_t>(hit.extension + 1) | kReported);
       return Relocated(hit.extension, hit.extension_offset, ea);
     }
+    // Learning from an address that is also 11 or 12 of the previous array
+    // pinned whole menus to the wrong array when those two came first.
+    if (hit.extension >= 0)
+      return by_address();
     SetBits(*slot, static_cast<uint64_t>(hit.retail + 1));
     return by_address();
   }
@@ -439,6 +466,18 @@ void ReportUnlisted(const char* function) {
 uint32_t RemapCrt(uint32_t address, uint32_t caller, uint32_t span, uint32_t size) {
   const Hit hit = Classify(address);
   const Hit first = Classify(span);
+  const auto holds = [&](int a) {
+    const uint32_t offset = span - kArrays[a].retail;
+    const uint32_t end = kPartyCharacterCount * kArrays[a].stride;
+    return offset < end && size <= end - offset;
+  };
+  // The equipment preview copies stats_base[c] whole; for 11 that starts on
+  // charwords[0], whose array is too short to be what it means.
+  int owner = TracedOwner(caller | 2);
+  if (owner < 0 && first.retail >= 0 && first.extension >= 0 && !holds(first.retail))
+    owner = first.extension;
+  if (owner >= 0 && holds(owner))
+    return Relocated(owner, address - kArrays[owner].retail, address);
   const Hit last = Classify(span + size - 1);
   const auto shares = [&](int a) { return a >= 0 && (a == last.retail || a == last.extension); };
   const bool one_array = shares(first.retail) || shares(first.extension);

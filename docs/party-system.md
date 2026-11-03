@@ -67,14 +67,23 @@ config/party.toml`. Add them and set `all_functions = false` again.
 Entries 10 and 11 of one array sit at the retail address of the next
 (`position[10]` is `slotbytes[0]`, `stats_live[10]` is `stats_base[0]`), so
 the address alone is ambiguous. The handler also gets the guest PC of the
-access. Each instruction learns its array from its first access, which is
-unambiguous while only ten characters exist, and from then on an access just
-past that array's end is its entry 10 or 11. An instruction seen reaching two
-arrays is mapped by address only, with a warning. The native CRT
-`memcpy`/`memset` family remaps the same ranges, keyed by the call's LR: a
-span inside one array learns and extends the same way, and a span crossing
-arrays (the save loader restores position and slotbytes with one `memcpy`)
-keeps every byte in its own retail array.
+access. `scripts/party_static_owners.py` traces, in IDA, which array's base
+constant each instruction of the listed functions builds its address from,
+into `src/engine/party_static_owners.inc`; a base inside an array's last
+retail entry is the next array's 1 based access (`base - stride + field`).
+Rerun it after changing the function list. An instruction it cannot trace (a
+pointer passed in as an argument) learns its array from its first access
+that is not also another array's entry 10 or 11, and from then on an access
+just past that array's end is its entry 10 or 11. Learning from an ambiguous
+address pinned instructions to the wrong array whenever Crescendo or
+Serenade came first, corrupting Allegretto's and Polka's stats. An
+instruction seen reaching two arrays is mapped by address only, with a
+warning. The native CRT `memcpy`/`memset` family remaps the same ranges,
+keyed by the call's LR: traced call sites use their traced array, a span too
+long for the array it starts in (`stats_base[10]` starts on `charwords[0]`)
+belongs to the one it extends, other spans inside one array learn and extend
+the same way, and a span crossing arrays (the save loader restores position
+and slotbytes with one `memcpy`) keeps every byte in its own retail array.
 
 What remains is the game's own bounds, raised at each site by a mid asm hook
 listed in `config/party.toml` (`src/engine/party_bounds.cpp`): loop counts,
