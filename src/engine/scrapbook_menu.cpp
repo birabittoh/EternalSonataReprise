@@ -22,6 +22,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -41,6 +42,9 @@ REX_EXTERN(sub_82178A88);
 REX_EXTERN(sub_82179160);
 REX_EXTERN(sub_821D4598);
 REX_EXTERN(sub_821D3D50);
+REX_EXTERN(sub_821796B8);
+REX_EXTERN(sub_82179780);
+REX_EXTERN(sub_82179848);
 
 namespace scrapbook_menu {
 namespace {
@@ -111,7 +115,8 @@ constexpr std::uint32_t kTypeSlide = 2u;
 constexpr std::uint32_t kTypePanel = 1u;
 // `9 x y w h kind`: a panel of a given frame kind (sub_821E8FE8 takes it as
 // 3 * fill + border). Kind 10 is the gold framed one the camp grid gives the
-// active party (sub_821E3408) and sub_211108 gives the cells.
+// active party (sub_821E3408), sub_211108 the cells and sub_1F0C80 the
+// picture view.
 constexpr std::uint32_t kTypeFramedPanel = 9u;
 constexpr std::uint32_t kGoldFrame = 10u;
 constexpr std::uint32_t kTypeIcon = 100u;
@@ -160,17 +165,60 @@ constexpr std::uint32_t kSidCellFirst = 0x7100u;
 // Text the gallery asks for while the page is up.
 constexpr std::uint32_t kMenuBlob = 0x82031A00u;
 
-// The picture panel, the size the PS3 builds it at (sub_1F0C80), parked where
-// the gallery parks its own track name panel.
+// The picture panel, the size and kind the PS3 builds it at (sub_1F0C80),
+// parked where the gallery parks its own track name panel.
 constexpr std::int32_t kPanelX = 65;
 constexpr std::int32_t kPanelY = 140;
 constexpr std::int32_t kPanelHiddenY = 880;
 constexpr std::uint32_t kPanelW = 1150;
 constexpr std::uint32_t kPanelH = 543;
-constexpr std::int32_t kPictureX = 24;
-constexpr std::int32_t kPictureY = 40;
-constexpr std::int32_t kColumnX = kPictureX + 816 + 24;
-constexpr std::uint32_t kColumnW = kPanelW - kColumnX - 24;
+constexpr std::uint32_t kPictureX = 298;
+constexpr std::uint32_t kPictureY = 34;
+// Title and caption down the left of the picture. The caption is one text
+// per line so the lines can sit on sub_1F0C80's rules: four, 60 apart, or
+// seven, 46 apart, for FRA ITA DEU ESP. The rules sit 4 above the PS3's 250
+// and 242, as our smaller text ends higher.
+constexpr std::uint32_t kColumnX = 40;
+constexpr std::uint32_t kColumnW = 230;
+constexpr std::uint32_t kTitleY = 100;
+constexpr std::uint32_t kTitleSize = 44;
+constexpr std::uint32_t kCaptionY = 200;
+constexpr std::uint32_t kCaptionLines = 7;
+constexpr std::uint32_t kTypeRule = 600u;  // `600 x y width`, sub_821F0D90
+struct CaptionLayout {
+  std::uint32_t rules, step, first_rule, size;
+};
+constexpr CaptionLayout kShortCaptions = {4, 60, 246, 40};
+constexpr CaptionLayout kLongCaptions = {7, 46, 238, 30};
+// Italian's longer words crowd the column at those sizes.
+constexpr std::uint32_t kItalian = 4;
+constexpr std::uint32_t kItalianTitleSize = 34;
+constexpr std::uint32_t kItalianCaptionSize = 24;
+// Rule handles from +908, count at +972.
+constexpr std::uint32_t kRuleBase = 908u;
+constexpr std::uint32_t kRuleCount = 972u;
+
+// The picture's frame: AppKeep image 303 (the PS3's store id 312), the one
+// the Photos menu frames its thumbnails with, cut into nine pieces as
+// sub_1F0C80 does: quarter texture corners, the middle half stretched. The
+// PS3 starts the middle row at 40, two short of the corners, which leaves a
+// line between it and the bottom row.
+constexpr std::uint32_t kFrameImage = 303;
+struct FramePiece {
+  std::uint32_t x, y;
+  float w, h, u0, v0, u1, v1;
+};
+constexpr std::array<FramePiece, 9> kFrame = {{
+    {274, 10, 32, 32, 0.0f, 0.0f, 0.25f, 0.25f},
+    {1108, 10, 32, 32, 0.75f, 0.0f, 1.0f, 0.25f},
+    {274, 508, 32, 32, 0.0f, 0.75f, 0.25f, 1.0f},
+    {1108, 508, 32, 32, 0.75f, 0.75f, 1.0f, 1.0f},
+    {306, 10, 802, 32, 0.25f, 0.0f, 0.75f, 0.25f},
+    {274, 42, 32, 466, 0.0f, 0.25f, 0.25f, 0.75f},
+    {1108, 42, 32, 466, 0.75f, 0.25f, 1.0f, 0.75f},
+    {306, 508, 802, 32, 0.25f, 0.75f, 0.75f, 1.0f},
+    {306, 42, 802, 466, 0.25f, 0.25f, 0.75f, 0.75f},
+}};
 constexpr float kAway = 1000.0f;
 
 
@@ -194,11 +242,16 @@ struct View {
   std::array<std::uint32_t, kPictures> cells{};
   std::array<std::uint32_t, kPictures> cell_texts{};
   std::uint32_t panel = 0;
+  std::array<std::uint32_t, kFrame.size()> frame{};
   std::array<std::uint32_t, kPictures> pictures{};
   std::uint32_t title = 0;
-  std::uint32_t caption = 0;
+  std::array<std::uint32_t, kCaptionLines> caption{};
+  std::array<std::uint32_t, kCaptionLines> rules{};
+  // The confirm prompt, which the picture view does not show.
+  std::uint32_t prompt_icon = 0;
+  std::uint32_t prompt_text = 0;
   bool ready = false;
-  bool centred = false;
+  bool laid_out = false;
   // How far the cells currently sit below their place.
   float grid_offset = 0.0f;
 };
@@ -213,9 +266,14 @@ std::uint32_t g_picture_group = 0xFFFFFFFFu;
 
 std::uint32_t g_list_copy = 0;
 std::uint32_t g_scratch = 0;
+std::uint32_t g_quad = 0;
 std::uint32_t g_clip_name = 0;
 std::uint32_t g_title_text = 0;
-std::uint32_t g_caption_text = 0;
+std::array<std::uint32_t, kCaptionLines> g_caption_text{};
+// Where the confirm prompt lands in the screen's icon and text lists, taken
+// while its label is looked up during the walk.
+std::uint32_t g_prompt_icon_index = 0xFFFFFFFFu;
+std::uint32_t g_prompt_text_index = 0xFFFFFFFFu;
 
 // Guest copies of what the lookups return, one per id, rewritten per call so
 // a language change needs no restart.
@@ -230,8 +288,18 @@ std::uint32_t Language(const std::uint8_t* base) {
   return rex::memory::load_and_swap<std::uint32_t>(base + kLanguageAddr);
 }
 
+// Without the space French sets before ! ? : and ;, which the narrow column
+// would otherwise strand at the start of a line.
 std::string Text(const std::uint8_t* base, std::uint32_t id) {
-  return eternalsonata::Ps3ScrapbookText(Language(base), id);
+  std::string text = eternalsonata::Ps3ScrapbookText(Language(base), id);
+  std::string out;
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    const bool before_mark = i + 1 < text.size() && std::string_view("!?:;").find(text[i + 1]) !=
+                                                        std::string_view::npos;
+    if (!(text[i] == ' ' && before_mark))
+      out += text[i];
+  }
+  return out;
 }
 
 // sub_211108 sets the hints at 36 points for FRA ITA DEU ESP.
@@ -360,6 +428,37 @@ void CentreCellTitles(PPCContext& ctx, std::uint8_t* base) {
   }
 }
 
+// Corner positions and UVs as {x, y} pairs, top left, top right, bottom left,
+// bottom right; sub_822057D8 shapes the Photos menu's frames the same way.
+void ShapeFrame(PPCContext& ctx, std::uint8_t* base) {
+  if (!g_quad && !(g_quad = Alloc(64)))
+    return;
+  const auto store = [&](std::uint32_t at, std::initializer_list<float> values) {
+    for (const float value : values) {
+      REX_STORE_U32(at, std::bit_cast<std::uint32_t>(value));
+      at += 4;
+    }
+  };
+  for (std::size_t i = 0; i < kFrame.size(); ++i) {
+    const FramePiece& piece = kFrame[i];
+    store(g_quad, {0.0f, 0.0f, piece.w, 0.0f, 0.0f, piece.h, piece.w, piece.h});
+    store(g_quad + 32, {piece.u0, piece.v0, piece.u1, piece.v0, piece.u0, piece.v1, piece.u1,
+                        piece.v1});
+    for (const auto& [set, arg] : {std::pair{sub_821796B8, g_quad},
+                                   std::pair{sub_82179780, g_quad + 32},
+                                   std::pair{sub_82179848, 1u}}) {
+      PPCContext call = ctx;
+      call.r3.u64 = kObjects;
+      call.r4.u64 = g_view.frame[i];
+      call.r5.u64 = arg;
+      call.r6.u64 = 0;
+      call.r7.u64 = 0;
+      call.r8.s64 = -1;
+      set(call, base);
+    }
+  }
+}
+
 void SetText(PPCContext& ctx, std::uint8_t* base, std::uint32_t id, std::uint32_t buffer,
              const std::string& text) {
   constexpr std::uint32_t kCapacity = 400;  // the setter's own limit
@@ -373,6 +472,114 @@ void SetText(PPCContext& ctx, std::uint8_t* base, std::uint32_t id, std::uint32_
   call.r5.u64 = buffer;
   call.r6.s64 = -1;
   sub_821D3890(call, base);
+}
+
+// sub_821CF7B0 bakes a glyph cream (0xFFF2B8) when its text's style byte is
+// 1, as every menu text's is, and white otherwise. The PS3 draws the picture
+// view's text white. Text records hang off dword_82557568, linked at +932.
+void DrawWhite(PPCContext& ctx, std::uint8_t* base, std::uint32_t id) {
+  constexpr std::uint32_t kTextList = 0x82557568u;
+  constexpr std::uint32_t kNextOffset = 932u;
+  constexpr std::uint32_t kGlyphStyleOffset = 926u;
+  const std::uint32_t handle = Resolve(ctx, base, id);
+  for (std::uint32_t text = REX_LOAD_U32(kTextList); text && handle;
+       text = REX_LOAD_U32(text + kNextOffset)) {
+    if (REX_LOAD_U32(text) == handle) {
+      REX_STORE_U8(text + kGlyphStyleOffset, 0);
+      return;
+    }
+  }
+}
+
+float TextWidth(PPCContext& ctx, std::uint8_t* base, std::uint32_t id) {
+  const std::uint32_t text = Resolve(ctx, base, id);
+  if (!text)
+    return 0.0f;
+  PPCContext call = ctx;
+  call.r3.u64 = kTextManager;
+  call.r4.u64 = text;
+  call.r5.u64 = 1;
+  call.r6.u64 = 1;
+  sub_821D4598(call, base);
+  return static_cast<float>(call.r3.s32);
+}
+
+// The PS3 wraps its text to the column; ours is wrapped by measuring it a
+// word at a time in text `id`.
+std::vector<std::string> WrapLine(PPCContext& ctx, std::uint8_t* base, std::uint32_t id,
+                                  std::uint32_t buffer, const std::string& text, float width) {
+  std::vector<std::string> lines;
+  std::string line;
+  std::size_t at = 0;
+  while (at < text.size()) {
+    const std::size_t space = text.find(' ', at);
+    const std::string word = text.substr(at, space == std::string::npos ? space : space - at);
+    at = space == std::string::npos ? text.size() : space + 1;
+    if (word.empty())
+      continue;
+    const std::string longer = line.empty() ? word : line + ' ' + word;
+    SetText(ctx, base, id, buffer, longer);
+    if (!line.empty() && TextWidth(ctx, base, id) > width) {
+      lines.push_back(line);
+      line = word;
+    } else {
+      line = longer;
+    }
+  }
+  lines.push_back(line);
+  return lines;
+}
+
+void SetWrappedText(PPCContext& ctx, std::uint8_t* base, std::uint32_t id, std::uint32_t buffer,
+                    const std::string& text, float width) {
+  std::string wrapped;
+  for (const std::string& line : WrapLine(ctx, base, id, buffer, text, width))
+    wrapped += (wrapped.empty() ? "" : "\n") + line;
+  SetText(ctx, base, id, buffer, wrapped);
+}
+
+std::vector<std::string> SplitLines(const std::string& text) {
+  std::vector<std::string> lines;
+  std::size_t at = 0;
+  while (true) {
+    const std::size_t real = text.find('\n', at);
+    const std::size_t escaped = text.find("\\n", at);
+    const std::size_t end = std::min(real, escaped);
+    lines.push_back(text.substr(at, end == std::string::npos ? end : end - at));
+    if (end == std::string::npos)
+      return lines;
+    at = end + (end == real ? 1 : 2);
+  }
+}
+
+// Only the lines the caption has get a rule, as sub_1F0C80 hides the rest.
+// The French captions come as one long line plus the signature, so every line
+// is wrapped to the column.
+void SetCaption(PPCContext& ctx, std::uint8_t* base, const std::string& caption) {
+  for (std::uint32_t i = 0; i < kCaptionLines; ++i) {
+    if (!g_caption_text[i] && !(g_caption_text[i] = Alloc(400)))
+      return;
+  }
+  std::vector<std::string> lines;
+  for (const std::string& line : SplitLines(caption)) {
+    for (std::string& wrapped : WrapLine(ctx, base, g_view.caption[0], g_caption_text[0], line,
+                                         static_cast<float>(kColumnW)))
+      lines.push_back(std::move(wrapped));
+  }
+  const std::uint32_t rules = Language(base) >= 3 && Language(base) <= 6
+                                  ? kLongCaptions.rules
+                                  : kShortCaptions.rules;
+  for (std::uint32_t i = 0; i < kCaptionLines; ++i) {
+    SetText(ctx, base, g_view.caption[i], g_caption_text[i], i < lines.size() ? lines[i] : "");
+    const bool ruled = i < rules && i < lines.size();
+    Tint(ctx, base, g_view.rules[i], ruled ? 0xFFFFFFFFu : 0u);
+  }
+}
+
+void ShowConfirmPrompt(PPCContext& ctx, std::uint8_t* base, bool shown) {
+  const float dx = shown ? -kAway : kAway;
+  Shift(ctx, base, g_view.prompt_icon, dx, 0.0f);
+  Shift(ctx, base, g_view.prompt_text, dx, 0.0f);
 }
 
 void PlayClip(PPCContext& ctx, std::uint8_t* base, int picture) {
@@ -401,10 +608,24 @@ void Cooldown(std::uint8_t* base, std::uint32_t menu, std::uint32_t frames) {
   REX_STORE_U32(menu + kCooldownOffset, frames);
 }
 
+// The menu cursor (ui + 1596) draws its sprite from the object at +48. The
+// PS3 hides it while a picture is up; tinted per frame, as the cursor's own
+// animation may tint it back.
+void ShowCursor(PPCContext& ctx, std::uint8_t* base, bool shown) {
+  constexpr std::uint32_t kCursorOffset = 1596u;
+  constexpr std::uint32_t kCursorSpriteOffset = 48u;
+  const std::uint32_t ui = REX_LOAD_U32(kUiRootAddr);
+  const std::uint32_t cursor = ui ? REX_LOAD_U32(ui + kCursorOffset) : 0;
+  const std::uint32_t sprite = cursor ? REX_LOAD_U32(cursor + kCursorSpriteOffset) : 0xFFFFFFFFu;
+  if (sprite != 0xFFFFFFFFu)
+    Tint(ctx, base, sprite, shown ? 0xFFFFFFFFu : 0u);
+}
+
 // While a picture is up the cursor sits in a group of its own with one
 // selectable, as sub_210A50 does on the PS3, so the cells behind cannot be
-// reached. Confirm still answers with its tag, which closes the picture.
-void IsolateCursor(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu) {
+// reached. Confirm still answers with its tag, which closes the picture. The
+// selectable takes the opened cell's place so the hidden cursor stays put.
+void IsolateCursor(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu, int picture) {
   PPCContext call = ctx;
   call.r3.u64 = menu;
   sub_821FFC48(call, base);
@@ -414,10 +635,13 @@ void IsolateCursor(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu) {
   call = ctx;
   call.r3.u64 = menu;
   call.r4.u64 = group;
-  call.r5.u64 = kOffscreen;
-  call.r6.u64 = kOffscreen;
+  const auto column = static_cast<std::int32_t>(picture) % static_cast<std::int32_t>(kGridColumns);
+  const auto row = static_cast<std::int32_t>(picture) / static_cast<std::int32_t>(kGridColumns);
+  call.r5.s64 = kCellX + kCellPitchX * column + kSelectableDx;
+  call.r6.s64 = kCellY + kCellPitchY * row + kSelectableDy;
   call.r7.u64 = 1;
   sub_821FFEF8(call, base);
+  ShowCursor(ctx, base, false);
   g_list_group = REX_LOAD_U32(menu + kActiveGroupOffset);
   g_picture_group = group;
   REX_STORE_U32(menu + kActiveGroupOffset, group);
@@ -445,6 +669,7 @@ void RestoreCursor(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu) {
   if (g_picture_group == 0xFFFFFFFFu)
     return;
   REX_STORE_U32(menu + kActiveGroupOffset, g_list_group);
+  ShowCursor(ctx, base, true);
   FreeGroupTable(ctx, base, menu, g_picture_group);
   PPCContext call = ctx;
   call.r3.u64 = menu;
@@ -456,19 +681,19 @@ void RestoreCursor(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu) {
 void OpenPicture(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu, int picture) {
   if (!g_view.ready)
     return;
-  if (!g_title_text)
-    g_title_text = Alloc(400);
-  if (!g_caption_text)
-    g_caption_text = Alloc(400);
+  if (!g_title_text && !(g_title_text = Alloc(400)))
+    return;
   for (std::uint32_t i = 0; i < kPictures; ++i)
     Tint(ctx, base, g_view.pictures[i], static_cast<int>(i) == picture ? 0xFFFFFFFFu : 0u);
   const auto n = static_cast<std::uint32_t>(picture);
-  SetText(ctx, base, g_view.title, g_title_text, Text(base, n));
-  SetText(ctx, base, g_view.caption, g_caption_text, Text(base, kTextCaption + n));
+  SetWrappedText(ctx, base, g_view.title, g_title_text, Text(base, n),
+                 static_cast<float>(kColumnW));
+  SetCaption(ctx, base, Text(base, kTextCaption + n));
+  ShowConfirmPrompt(ctx, base, false);
   SetGridOffset(ctx, base, kAway);
   Shift(ctx, base, g_view.panel, 0.0f, static_cast<float>(kPanelY - kPanelHiddenY));
   PlayClip(ctx, base, picture);
-  IsolateCursor(ctx, base, menu);
+  IsolateCursor(ctx, base, menu, picture);
   g_open = picture;
 }
 
@@ -477,6 +702,7 @@ void ClosePicture(PPCContext& ctx, std::uint8_t* base, std::uint32_t menu) {
     return;
   RestoreCursor(ctx, base, menu);
   Shift(ctx, base, g_view.panel, 0.0f, static_cast<float>(kPanelHiddenY - kPanelY));
+  ShowConfirmPrompt(ctx, base, true);
   SetGridOffset(ctx, base, 0.0f);
   g_open = -1;
 }
@@ -532,12 +758,11 @@ void KeepPanelParked(std::vector<std::uint32_t>& words, std::uint32_t panel, std
 void ReshapeHeader(const std::uint8_t* base, std::vector<std::uint32_t>& words) {
   const std::size_t title = FindRecord(words, kTypeText, kSidTitle);
   if (title + 10 <= words.size()) {
-    // sub_211108's title offset and size per language.
+    // sub_211108's title size per language. Its raised offsets for the
+    // smaller sizes suit the PS3's font; ours stays centred in the box.
     const std::uint32_t language = Language(base);
-    const auto [dy, size] = language == 4                    ? std::pair{-2, 38u}
-                            : language == 3 || language == 6 ? std::pair{-4, 40u}
-                                                             : std::pair{11, 48u};
-    words[title + 3] = static_cast<std::uint32_t>(dy);
+    const std::uint32_t size = language == 4 ? 38u : language == 3 || language == 6 ? 40u : 48u;
+    words[title + 3] = 11u + (48u - size) / 2u;
     words[title + 7] = size;
   }
 
@@ -620,17 +845,29 @@ void AppendCells(std::vector<std::uint32_t>& words) {
   }
 }
 
-void AppendPicturePanel(std::vector<std::uint32_t>& words) {
+void AppendPicturePanel(const std::uint8_t* base, std::vector<std::uint32_t>& words) {
   const std::uint32_t pictures = eternalsonata::kPs3ScrapbookSlot + 1u;
-  words.insert(words.end(), {kTypePanel, kPanelX, static_cast<std::uint32_t>(kPanelHiddenY),
-                             kPanelW, kPanelH, kOpenChildren, g_stock_panels + kPictures});
+  words.insert(words.end(), {kTypeFramedPanel, kPanelX,
+                             static_cast<std::uint32_t>(kPanelHiddenY), kPanelW, kPanelH,
+                             kGoldFrame, kOpenChildren, g_stock_panels + kPictures});
+  // Of two icons the later one draws below, so the pictures come before the
+  // frame whose middle they cover.
   for (std::uint32_t i = 0; i < kPictures; ++i)
     words.insert(words.end(), {kTypeIcon, pictures + i, kPictureX, kPictureY, 1000, 1000,
                                0xFFFFFFFFu});
-  words.insert(words.end(),
-               {kTypeText, 0, kColumnX, kPictureY, kColumnW, 96, 0, 40, 0xFFFFFFFFu, 1});
-  words.insert(words.end(), {kTypeText, 0, kColumnX, kPictureY + 110, kColumnW, 340, 0, 34,
-                             0xFFFFFFFFu, 1});
+  for (const FramePiece& piece : kFrame)
+    words.insert(words.end(), {kTypeIcon, kFrameImage, piece.x, piece.y, 1000, 1000, 0xFFFFFFFFu});
+  const bool italian = Language(base) == kItalian;
+  words.insert(words.end(), {kTypeText, 0, kColumnX, kTitleY, kColumnW, 96, 0,
+                             italian ? kItalianTitleSize : kTitleSize, 0xFFFFFFFFu, 1});
+  const CaptionLayout& layout = Language(base) >= 3 && Language(base) <= 6 ? kLongCaptions
+                                                                          : kShortCaptions;
+  const std::uint32_t caption_size = italian ? kItalianCaptionSize : layout.size;
+  for (std::uint32_t i = 0; i < kCaptionLines; ++i)
+    words.insert(words.end(), {kTypeText, 0, kColumnX, kCaptionY + layout.step * i, kColumnW,
+                               layout.step, 0, caption_size, 0xFFFFFFFFu, 1});
+  for (std::uint32_t i = 0; i < kCaptionLines; ++i)
+    words.insert(words.end(), {kTypeRule, kColumnX, layout.first_rule + layout.step * i, kColumnW});
   words.push_back(kCloseChildren);
 }
 
@@ -695,12 +932,18 @@ bool Dispatch(std::uint8_t* base, std::uint32_t tag) {
 void Tick(PPCContext& ctx, std::uint8_t* base) {
   if (!g_view.ready)
     return;
-  if (!g_view.centred) {
+  if (!g_view.laid_out) {
     CentreCellTitles(ctx, base);
-    g_view.centred = true;
+    ShapeFrame(ctx, base);
+    DrawWhite(ctx, base, g_view.title);
+    for (const std::uint32_t line : g_view.caption)
+      DrawWhite(ctx, base, line);
+    g_view.laid_out = true;
   }
   if (g_open < 0)
     SetGridOffset(ctx, base, GridOffsetFor(base));
+  else
+    ShowCursor(ctx, base, false);
 }
 
 void Input(PPCContext& ctx, std::uint8_t* base) {
@@ -738,8 +981,18 @@ void Input(PPCContext& ctx, std::uint8_t* base) {
 std::uint32_t TextOverride(std::uint8_t* base, std::uint32_t blob, std::uint32_t sid) {
   if (!g_active || blob != kMenuBlob)
     return 0;
-  if (sid == kSidPerform)
+  if (sid == kSidPerform) {
+    // Asked for by the label's own record, right after its glyph's.
+    if (g_pending_build) {
+      const std::uint32_t ui = REX_LOAD_U32(kUiRootAddr);
+      const std::uint32_t screen = ui ? ScreenOf(base, ui) : 0;
+      if (screen && REX_LOAD_U8(screen + kIconCount)) {
+        g_prompt_icon_index = REX_LOAD_U8(screen + kIconCount) - 1u;
+        g_prompt_text_index = REX_LOAD_U8(screen + kTextCount);
+      }
+    }
     return GuestString(base, kTextOpen, Text(base, kTextOpen));
+  }
   if (sid >= kSidCellFirst && sid < kSidCellFirst + kPictures) {
     const std::uint32_t picture = sid - kSidCellFirst;
     return GuestString(base, picture, Text(base, picture));
@@ -773,7 +1026,7 @@ std::uint32_t MaybeSwapScreenList(std::uint8_t* base, std::uint32_t list) {
   ReshapeHeader(base, words);
   ReplaceSelectables(words);
   AppendCells(words);
-  AppendPicturePanel(words);
+  AppendPicturePanel(base, words);
 
   if (!g_list_copy && !(g_list_copy = Alloc(4u * kListCapacity)))
     return 0;
@@ -782,13 +1035,14 @@ std::uint32_t MaybeSwapScreenList(std::uint8_t* base, std::uint32_t list) {
   for (std::size_t i = 0; i < words.size(); ++i)
     REX_STORE_U32(g_list_copy + 4u * static_cast<std::uint32_t>(i), words[i]);
   REX_STORE_U32(g_list_copy + 4u * static_cast<std::uint32_t>(words.size()), kListEnd);
+  g_prompt_icon_index = g_prompt_text_index = 0xFFFFFFFFu;
   g_pending_build = true;
   return g_list_copy;
 }
 
 // The appended records are the last eleven panels (ten cells and the picture
-// panel), the last ten icons, and the last twelve texts (one per cell, then
-// the picture's title and caption).
+// panel), the last nineteen icons (the pictures, then the frame), the last
+// texts and the last seven rules.
 void ScreenBuilt(std::uint8_t* base, std::uint32_t root) {
   if (!g_pending_build)
     return;
@@ -800,26 +1054,42 @@ void ScreenBuilt(std::uint8_t* base, std::uint32_t root) {
   const std::uint32_t panels = REX_LOAD_U8(screen + kPanelCount);
   const std::uint32_t icons = REX_LOAD_U8(screen + kIconCount);
   const std::uint32_t texts = REX_LOAD_U8(screen + kTextCount);
+  const std::uint32_t rules = REX_LOAD_U8(screen + kRuleCount);
   const std::uint32_t picture_panel = g_stock_panels + kPictures;
-  if (panels != picture_panel + 1 || icons < kPictures || texts < kPictures + 2) {
-    REXLOG_WARN("[scrapbook] grid not built: {} panels, {} icons, {} texts", panels, icons,
-                texts);
+  const std::uint32_t frame_icons = static_cast<std::uint32_t>(kFrame.size());
+  // Ours end the lists: one text per cell, then the title and caption lines.
+  const std::uint32_t view_texts = 1 + kCaptionLines;
+  if (panels != picture_panel + 1 || icons < kPictures + frame_icons ||
+      texts < kPictures + view_texts || rules < kCaptionLines ||
+      g_prompt_icon_index >= icons || g_prompt_text_index >= texts) {
+    REXLOG_WARN("[scrapbook] grid not built: {} panels, {} icons, {} texts, {} rules", panels,
+                icons, texts, rules);
     return;
   }
+  const auto icon = [&](std::uint32_t i) { return REX_LOAD_U32(screen + kIconBase + 4u * i); };
+  const auto text = [&](std::uint32_t i) { return REX_LOAD_U32(screen + kTextBase + 4u * i); };
   g_view.screen = screen;
   for (std::uint32_t i = 0; i < kPictures; ++i) {
     g_view.cells[i] = REX_LOAD_U32(screen + 4u * (g_stock_panels + i));
-    g_view.cell_texts[i] = REX_LOAD_U32(screen + kTextBase + 4u * (texts - kPictures - 2 + i));
-    g_view.pictures[i] = REX_LOAD_U32(screen + kIconBase + 4u * (icons - kPictures + i));
+    g_view.cell_texts[i] = text(texts - view_texts - kPictures + i);
+    g_view.pictures[i] = icon(icons - frame_icons - kPictures + i);
   }
+  for (std::uint32_t i = 0; i < frame_icons; ++i)
+    g_view.frame[i] = icon(icons - frame_icons + i);
   g_view.panel = REX_LOAD_U32(screen + 4u * picture_panel);
-  g_view.title = REX_LOAD_U32(screen + kTextBase + 4u * (texts - 2));
-  g_view.caption = REX_LOAD_U32(screen + kTextBase + 4u * (texts - 1));
+  g_view.title = text(texts - view_texts);
+  for (std::uint32_t i = 0; i < kCaptionLines; ++i) {
+    g_view.caption[i] = text(texts - kCaptionLines + i);
+    g_view.rules[i] = REX_LOAD_U32(screen + kRuleBase + 4u * (rules - kCaptionLines + i));
+  }
+  g_view.prompt_icon = icon(g_prompt_icon_index);
+  g_view.prompt_text = text(g_prompt_text_index);
   g_view.grid_offset = kGridSlide;
   const auto built = [](const auto& ids) {
     return std::find(ids.begin(), ids.end(), 0xFFFFFFFFu) == ids.end();
   };
-  g_view.ready = built(g_view.cells) && built(g_view.cell_texts) && built(g_view.pictures);
+  g_view.ready = built(g_view.cells) && built(g_view.cell_texts) && built(g_view.frame) &&
+                 built(g_view.pictures) && built(g_view.caption) && built(g_view.rules);
 }
 
 }  // namespace scrapbook_menu
