@@ -1419,14 +1419,19 @@ void ReadbackRecordCopy(RenderCommandList* commands, ResolvedTexture* destinatio
     source_layout = &destination->readback_source_layout;
   }
 
+  // Never past the buffer: an out of bounds copy is a device hang, not a clamp.
+  const RenderBox clamped(box.left, box.top, std::min(box.right, int32_t(destination->width)),
+                          std::min(box.bottom, int32_t(destination->height)));
+  if (clamped.right <= clamped.left || clamped.bottom <= clamped.top)
+    return;
   Transition(commands, source, *source_layout, RenderBarrierStage::COPY,
              RenderTextureLayout::COPY_SOURCE);
   commands->copyTextureRegion(
       RenderTextureCopyLocation::PlacedFootprint(destination->readback.get(), kColorFormat,
                                                  destination->width, destination->height, 1,
                                                  destination->readback_row_bytes / 4),
-      RenderTextureCopyLocation::Subresource(source), uint32_t(box.left), uint32_t(box.top), 0,
-      &box);
+      RenderTextureCopyLocation::Subresource(source), uint32_t(clamped.left),
+      uint32_t(clamped.top), 0, &clamped);
 }
 
 GuestTarget* AcquireTarget(const Surface& surface, bool depth, GuestLayer layer) {
@@ -2176,6 +2181,23 @@ void FrameResolve(uint32_t source, uint8_t* memory_base, const TextureFetch& des
     if (candidate->address == dest_address && candidate->layer == target->layer) {
       destination = candidate.get();
       break;
+    }
+  }
+  // The guest reuses addresses: a save thumbnail one camp visit, the 1280x720
+  // screen grab the next. A copy sized by the old extent ran past the readback
+  // buffer and hung the device, so the destination grows and its buffer goes.
+  if (destination != nullptr &&
+      (dest_width > destination->width || dest_height > destination->height)) {
+    destination->width = std::max(destination->width, dest_width);
+    destination->height = std::max(destination->height, dest_height);
+    if (destination->readback) {
+      ReadbackForget(destination->address);
+      if (destination->readback_mapped != nullptr) {
+        destination->readback->unmap();
+        destination->readback_mapped = nullptr;
+      }
+      RetireBatch().buffers.push_back(std::move(destination->readback));
+      destination->published_frame = ~0ull;
     }
   }
 

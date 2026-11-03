@@ -81,8 +81,8 @@ ReadbackCopyPlan ReadbackPlanCopy(const TextureFetch& dest);
 // just written is ever written again.
 // `pixel_rows` is how many rows the readback buffer holds. It is not always the
 // destination's height: a ResolvedTexture is looked up by address alone and
-// keeps the extent it was created with, so a later, taller resolve to the same
-// address describes more rows than the buffer has.
+// keeps the largest extent resolved into it, so a later, shorter resolve to the
+// same address describes fewer rows than the buffer has.
 void ReadbackPublish(uint8_t* memory_base, const TextureFetch& dest, const uint8_t* pixels,
                      uint32_t row_bytes, uint32_t pixel_rows, bool copy_recorded, uint64_t frame);
 
