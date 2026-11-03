@@ -474,6 +474,15 @@ err_no_save_in_zip = "アーカイブに savedata.txt も SAVEDATA もありま�
 err_write = "{} に書き込めませんでした。"
 err_write_location = "その場所に書き込めませんでした。"
 
+[releases]
+title = "リリースノート"
+loading = "リリースノートを読み込んでいます..."
+failed = "リリースノートを読み込めませんでした。接続を確認して、このページを開き直してください。"
+empty = "リリースが見つかりません。"
+current = "インストール済み"
+prerelease = "プレリリース"
+scroll = "スクロール"
+
 [mods_page]
 install_file = "Modをインストール..."
 install_failed = "そのModをインストールできませんでした: {}"

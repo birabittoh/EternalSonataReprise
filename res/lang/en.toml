@@ -476,6 +476,15 @@ err_no_save_in_zip = "The archive holds no savedata.txt or SAVEDATA."
 err_write = "Could not write {}."
 err_write_location = "Could not write to that location."
 
+[releases]
+title = "Release Notes"
+loading = "Loading release notes..."
+failed = "Could not load the release notes. Check your connection and open this page again."
+empty = "No releases found."
+current = "Installed"
+prerelease = "Pre-release"
+scroll = "Scroll"
+
 [mods_page]
 install_file = "Install mod..."
 install_failed = "Could not install that mod: {}"

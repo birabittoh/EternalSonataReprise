@@ -458,6 +458,7 @@ set(ETERNALSONATA_SOURCES
     src/installer/intro_screen.cpp
     src/installer/mods_screen.cpp
     src/installer/ps3_pfd.cpp
+    src/installer/releases_screen.cpp
     src/installer/save_slots.cpp
     src/installer/saves_screen.cpp
     src/installer/intro_music.cpp

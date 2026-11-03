@@ -474,6 +474,15 @@ err_no_save_in_zip = "El archivo no contiene savedata.txt ni SAVEDATA."
 err_write = "No se pudo escribir {}."
 err_write_location = "No se pudo escribir en esa ubicación."
 
+[releases]
+title = "Notas de la versión"
+loading = "Cargando las notas de la versión..."
+failed = "No se pudieron cargar las notas de la versión. Comprueba la conexión y vuelve a abrir esta página."
+empty = "No se encontraron versiones."
+current = "Instalada"
+prerelease = "Preliminar"
+scroll = "Desplazar"
+
 [mods_page]
 install_file = "Instalar mod..."
 install_failed = "No se pudo instalar ese mod: {}"
