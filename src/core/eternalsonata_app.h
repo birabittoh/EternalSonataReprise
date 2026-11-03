@@ -43,6 +43,9 @@
 #include "guest_image.h"
 #include "guest_profiler.h"
 #include "active_input.h"
+#if REX_PLATFORM_ANDROID
+#include "android_gpu_driver.h"
+#endif
 #include "fast_forward_key.h"
 #include "host_menu.h"
 #include "equipment_system.h"
@@ -579,6 +582,10 @@ class EternalsonataApp : public rex::ReXApp {
   void OnShutdown() override {
     // Tear the host renderer down before the window goes away.
     eternalsonata::ShutdownPlumeBackend();
+#if REX_PLATFORM_ANDROID
+    // A deliberate quit, even seconds after starting, is no failed driver start.
+    eternalsonata::MarkRendererStarted();
+#endif
 
     // Stop the Discord presence worker and clear the presence on exit. The
     // SDK only ships the RPC implementation for Windows and GNU Linux.

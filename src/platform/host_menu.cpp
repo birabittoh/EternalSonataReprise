@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "android_gpu_driver.h"
 #include "settings.h"
 #include "ui_text.h"
 #endif
@@ -178,6 +179,8 @@ bool RestartAndroidApp() {
   jclass cls = env->GetObjectClass(activity);
   jmethodID mid = env->GetMethodID(cls, "restartApp", "()V");
   if (mid) {
+    // restartApp kills the process, so OnShutdown never clears the mark.
+    MarkRendererStarted();
     env->CallVoidMethod(activity, mid);
   }
   env->DeleteLocalRef(cls);
