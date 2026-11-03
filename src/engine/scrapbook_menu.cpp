@@ -444,9 +444,9 @@ void ShapeFrame(PPCContext& ctx, std::uint8_t* base) {
     store(g_quad, {0.0f, 0.0f, piece.w, 0.0f, 0.0f, piece.h, piece.w, piece.h});
     store(g_quad + 32, {piece.u0, piece.v0, piece.u1, piece.v0, piece.u0, piece.v1, piece.u1,
                         piece.v1});
-    for (const auto& [set, arg] : {std::pair{sub_821796B8, g_quad},
-                                   std::pair{sub_82179780, g_quad + 32},
-                                   std::pair{sub_82179848, 1u}}) {
+    for (const auto& [set, arg] : {std::pair{&sub_821796B8, g_quad},
+                                   std::pair{&sub_82179780, g_quad + 32},
+                                   std::pair{&sub_82179848, 1u}}) {
       PPCContext call = ctx;
       call.r3.u64 = kObjects;
       call.r4.u64 = g_view.frame[i];
