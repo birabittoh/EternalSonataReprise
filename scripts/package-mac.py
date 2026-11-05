@@ -217,6 +217,9 @@ def build_app(app_path, project_name, version):
         print(f"+ cp {name} Contents/MacOS/")
         shutil.copy2(src, os.path.join(macos_dir, name))
 
+    from recomplauncher import stage_manifest
+    stage_manifest(macos_dir, is_windows=False, is_macos=True)
+
     exe = os.path.join(macos_dir, project_name)
     if not os.path.isfile(exe):
         print(f"error: {project_name} not found in {ROOT}; run build.py first", file=sys.stderr)

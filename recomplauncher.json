@@ -1,0 +1,136 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "name": "Eternal Sonata: Reprise",
+  "repo": "birabittoh/EternalSonataReprise",
+  "game": {
+    "kind": "iso_or_folder",
+    "label": "Your Eternal Sonata Xbox 360 or PS3 disc image (.iso), or its extracted folder, from Europe, North America or Japan. Encrypted PS3 images need a matching .dkey beside the image.",
+    "dumps": [
+      { "name": "Xbox 360 Europe", "size": 7835492352, "crc32": "2cec7d69" },
+      { "name": "Xbox 360 North America", "size": 7835492352, "crc32": "59e012cd" },
+      { "name": "Xbox 360 Japan", "size": 7835492352, "crc32": "6f0ebc6f" },
+      { "name": "PS3 Europe (Redump encrypted image)", "size": 11110907904, "crc32": "aa3753a7" },
+      { "name": "PS3 North America (Redump encrypted image)", "size": 11108483072, "crc32": "3ade94a2" },
+      { "name": "PS3 Japan (Redump encrypted image)", "size": 10885267456, "crc32": "fe205b52" }
+    ]
+  },
+  "start": {
+    "program": ["eternalsonata.exe", "eternalsonata"],
+    "args": ["--launcher_game={install}/assets/recomplauncher"]
+  },
+  "prepare": {
+    "program": ["eternalsonata.exe", "eternalsonata"],
+    "args": ["--prepare-content", "--source", "{game}", "--destination", "{install}/assets/recomplauncher"],
+    "label": "Preparing Eternal Sonata game files",
+    "timeout": 3600
+  },
+  "config": [
+    {
+      "id": "main",
+      "format": "toml",
+      "file": [
+        { "path": "{install}/user/settings.toml", "if": "{install}/portable.txt" },
+        { "path": "{documents}/eternalsonata/settings.toml" }
+      ]
+    }
+  ],
+  "folders": {
+    "saves": [
+      { "path": "{install}/user", "if": "{install}/portable.txt" },
+      { "path": "{documents}/eternalsonata" }
+    ],
+    "logs": [ { "path": "{install}/logs" } ]
+  },
+  "saves": [
+    "{install}/user",
+    "{documents}/eternalsonata"
+  ],
+  "exit_codes": {
+    "1": "The game could not start. Check its logs and prepare your copy again if needed.",
+    "2": "The content preparation command is invalid. Reinstall this build and try again."
+  },
+  "looks": { "graphics_key": "gpu_backend", "in": "main" },
+  "settings": [
+    {
+      "id": "fullscreen", "label": "Full screen",
+      "choices": [
+        { "label": "Off", "set": { "fullscreen": "false" } },
+        { "label": "On", "set": { "fullscreen": "true" } }
+      ],
+      "defaults": { "fullscreen": "false" }
+    },
+    {
+      "id": "resolution", "label": "Draw resolution",
+      "help": "Draws at a fraction of the window size. Higher values need a faster graphics card.",
+      "choices": [
+        { "label": "Match the window", "set": { "render_scale": "0" } },
+        { "label": "50%", "set": { "render_scale": "0.5" } },
+        { "label": "100%", "set": { "render_scale": "1" } },
+        { "label": "150%", "set": { "render_scale": "1.5" } },
+        { "label": "200%", "set": { "render_scale": "2" } }
+      ],
+      "defaults": { "render_scale": "0" }
+    },
+    {
+      "id": "frame_rate", "label": "Frame rate",
+      "help": "Adaptive targets 60 with frame skipping on slower PCs. Unlocked follows elapsed time without a frame cap.",
+      "choices": [
+        { "label": "Original", "set": { "frame_rate": "\"30\"" } },
+        { "label": "60 fps", "set": { "frame_rate": "\"60\"" } },
+        { "label": "Adaptive", "set": { "frame_rate": "\"adaptive\"" } },
+        { "label": "Unlocked", "set": { "frame_rate": "\"unlocked\"" } }
+      ],
+      "defaults": { "frame_rate": "\"30\"" }
+    },
+    {
+      "id": "vsync", "label": "V-Sync", "help": "Stops screen tearing.",
+      "choices": [
+        { "label": "Off", "set": { "vsync": "false" } },
+        { "label": "On", "set": { "vsync": "true" } }
+      ],
+      "defaults": { "vsync": "true" }
+    },
+    {
+      "id": "msaa", "label": "Anti-aliasing",
+      "choices": [
+        { "label": "Off", "set": { "render_msaa": "1" } },
+        { "label": "2x", "set": { "render_msaa": "2" } },
+        { "label": "4x", "set": { "render_msaa": "4" } },
+        { "label": "8x", "set": { "render_msaa": "8" } }
+      ],
+      "defaults": { "render_msaa": "2" }
+    },
+    {
+      "id": "fxaa", "label": "FXAA", "help": "Smooths edges and outlines in the 3D scene.",
+      "choices": [
+        { "label": "Off", "set": { "render_fxaa": "false" } },
+        { "label": "On", "set": { "render_fxaa": "true" } }
+      ],
+      "defaults": { "render_fxaa": "true" }
+    },
+    {
+      "id": "anisotropy", "label": "Texture filtering",
+      "choices": [
+        { "label": "Off", "set": { "render_anisotropy": "1" } },
+        { "label": "2x", "set": { "render_anisotropy": "2" } },
+        { "label": "4x", "set": { "render_anisotropy": "4" } },
+        { "label": "8x", "set": { "render_anisotropy": "8" } },
+        { "label": "16x", "set": { "render_anisotropy": "16" } }
+      ],
+      "defaults": { "render_anisotropy": "1" }
+    },
+    {
+      "id": "skip_intro", "label": "Skip intro logos",
+      "choices": [
+        { "label": "Off", "set": { "skip_intro": "false" } },
+        { "label": "On", "set": { "skip_intro": "true" } }
+      ],
+      "defaults": { "skip_intro": "false" }
+    }
+  ],
+  "actions": [
+    { "id": "saves", "label": "Saves and settings", "open": "saves" },
+    { "id": "logs", "label": "Logs", "open": "logs" }
+  ]
+}
