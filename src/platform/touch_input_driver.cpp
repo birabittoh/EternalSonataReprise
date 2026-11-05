@@ -18,6 +18,7 @@
 #include <utility>
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_sensor.h>
 #include <SDL3/SDL_video.h>
@@ -60,6 +61,12 @@ int64_t NowMs() {
 }
 
 constexpr rex::input::DeviceId kTouchDevice = static_cast<rex::input::DeviceId>(0x544F5543);
+
+// A connected controller (including a handheld's built-in one) takes over: the
+// on-screen pad would only cover the game and catch stray touches.
+bool PadConnected() {
+  return SDL_HasGamepad();
+}
 
 // Deflection at which a stick reports full range, as a fraction of the travel
 // from its centre to the edge of the ring. Short of 1.0 so the last sliver of
@@ -393,7 +400,7 @@ void TouchInputDriver::HandleTouchEvent(rex::ui::TouchEvent& e, std::string* bin
   // A release is always processed: the gate can close between a press and its
   // release (the controls are switched off, an overlay takes the input), and a
   // finger dropped that way would stay held and its stick drawn for good.
-  if (!releasing && (!REXCVAR_GET(touch_controls) || !is_active())) {
+  if (!releasing && (!REXCVAR_GET(touch_controls) || !is_active() || PadConnected())) {
     return;
   }
 
@@ -512,7 +519,7 @@ bool TouchInputDriver::GetVisualState(TouchVisualState* out_state) {
     return false;
   }
   const bool keep_visible = NowMs() < g_keep_visible_until_ms.load(std::memory_order_relaxed);
-  if (!is_active() && !keep_visible) {
+  if ((!is_active() || PadConnected()) && !keep_visible) {
     // Events stop arriving while the gate is shut, so a finger that was down
     // when it closed has no way to report its release. Drop them here, on the
     // frame that notices, rather than leaving a stick drawn.
