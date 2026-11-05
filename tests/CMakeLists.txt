@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.25)
+project(reprise_launcher_tests LANGUAGES CXX)
+enable_testing()
+add_executable(prepare_content_test prepare_content_test.cpp ../src/installer/prepare_content.cpp)
+target_include_directories(prepare_content_test PRIVATE ../src/installer)
+target_compile_features(prepare_content_test PRIVATE cxx_std_23)
+add_test(NAME prepare_content COMMAND prepare_content_test)

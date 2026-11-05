@@ -13,6 +13,20 @@ permissions:
   actions: write
 
 jobs:
+  launcher-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure transaction tests (no game data required)
+        run: cmake -S tests -B out/launcher-tests
+      - name: Build transaction tests
+        run: cmake --build out/launcher-tests --config Release
+      - name: Test content preparation
+        run: ctest --test-dir out/launcher-tests -C Release --output-on-failure
+
   prepare:
     runs-on: ubuntu-latest
     outputs:
