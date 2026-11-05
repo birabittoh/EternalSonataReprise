@@ -62,13 +62,17 @@ std::string CheckFolder(const fs::path& dir) {
 // A file picked inside an extracted folder, or a PS3 dump's EBOOT.BIN, means
 // the folder.
 fs::path Resolve(const std::string& picked) {
-  fs::path path(picked);
+  fs::path path(std::u8string(picked.begin(), picked.end()));
   std::error_code ec;
-  if (!IsContentUri(picked) && fs::is_regular_file(path, ec) &&
-      (SameFileName(path.filename().string(), kTableOfContents) ||
-       SameFileName(path.filename().string(), "EBOOT.BIN") ||
-       SameFileName(path.extension().string(), ".xex")))
-    return path.parent_path();
+  if (!IsContentUri(picked) && fs::is_regular_file(path, ec)) {
+    const auto name_utf8 = path.filename().u8string();
+    const auto extension_utf8 = path.extension().u8string();
+    const std::string name(name_utf8.begin(), name_utf8.end());
+    const std::string extension(extension_utf8.begin(), extension_utf8.end());
+    if (SameFileName(name, kTableOfContents) || SameFileName(name, "EBOOT.BIN") ||
+        SameFileName(extension, ".xex"))
+      return path.parent_path();
+  }
   return path;
 }
 

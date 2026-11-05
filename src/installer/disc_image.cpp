@@ -573,7 +573,9 @@ void UnlockPs3Image(FileReader& reader, const std::string& image) {
   uint8_t key[16];
   if (!image.starts_with("content://")) {
     for (const char* ext : {".dkey", ".key"}) {
-      if (ReadKeyFile(fs::path(image).replace_extension(ext).string(), key) && lock->Fits(key)) {
+      const auto key_path =
+          fs::path(std::u8string(image.begin(), image.end())).replace_extension(ext).u8string();
+      if (ReadKeyFile(std::string(key_path.begin(), key_path.end()), key) && lock->Fits(key)) {
         REXLOG_INFO("Decrypting the PS3 disc image with the key file beside it");
         reader.SetDiscKey(std::move(lock->encrypted), key);
         return;
