@@ -581,6 +581,14 @@ endif()
 
 rexglue_setup_target(eternalsonata)
 
+if(NOT ANDROID)
+    # Preserve SDK platform startup as a fallback after headless dispatch.
+    set_property(SOURCE ${REXGLUE_SHARE_DIR}/windowed_app_main_sdl.cpp APPEND PROPERTY
+        COMPILE_DEFINITIONS main=EternalSonataWindowedMain wWinMain=EternalSonataWindowedWinMain)
+    target_sources(eternalsonata PRIVATE
+        src/core/launcher_entry.cpp src/installer/prepare_content.cpp)
+endif()
+
 target_link_libraries(eternalsonata PRIVATE plume)
 
 # libadrenotools loads a user supplied Vulkan driver (Turnip) in place of the
