@@ -51,6 +51,14 @@ mods_dump_root   = "dumps"     # dumped textures and shaders (default: dumps)
 update_data_root = "update"    # extracted title update files (default: update)
 ```
 
+## RecompLauncher
+
+Desktop releases include a `recomplauncher.json` manifest for direct play,
+launcher settings, content preparation and save backups. Select your own Xbox
+360 or PS3 disc image or extracted folder in RecompLauncher; it prepares a
+separate copy without changing your dump. See [the integration guide](docs/recomplauncher.md)
+for supported formats, verification and the headless command.
+
 ## Troubleshooting
 
 ### Black screen before the window title appears
