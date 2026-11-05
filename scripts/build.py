@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import tomllib
 
+from recomplauncher import stage_manifest
+
 
 def detect_preset(build_type="release"):
     os_name = platform.system()
@@ -129,6 +131,7 @@ def do_package(name, project_name, is_windows):
 
     pkg_dir = "pkg"
     os.makedirs(pkg_dir, exist_ok=True)
+    stage_manifest(pkg_dir, is_windows)
 
     exe = f"{project_name}.exe" if is_windows else project_name
     lib_suffix = lib_extension()
