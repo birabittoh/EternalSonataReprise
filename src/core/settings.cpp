@@ -89,9 +89,6 @@ REXCVAR_DEFINE_STRING(frame_rate, "30", "Eternal Sonata",
                       "unlocked has no cap and steps the game by measured frame time.")
     .allowed({"stock", "30", "60", "adaptive", "unlocked"});
 
-REXCVAR_DEFINE_STRING(launcher_game, "", "Eternal Sonata",
-                      "Prepared game directory supplied by RecompLauncher").hidden();
-
 // Per-second frame pacing summary, off by default. Answers, in one line: what
 // rate are we declaring to the sim, how many presents/sec are we actually
 // getting, how long does a frame's work really take, and what is the adaptive

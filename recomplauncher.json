@@ -17,7 +17,7 @@
   },
   "start": {
     "program": ["eternalsonata.exe", "eternalsonata"],
-    "args": ["--launcher_game={install}/assets/recomplauncher"]
+    "args": ["--game_version={install}/assets/recomplauncher", "--show_start_screen=false"]
   },
   "prepare": {
     "program": ["eternalsonata.exe", "eternalsonata"],

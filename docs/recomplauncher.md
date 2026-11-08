@@ -46,8 +46,10 @@ remaining `.preparing` directory aside before retrying. A failed rollback also
 prints the location of the previous files. Do not run setup while the game is
 using the prepared directory.
 
-Play passes `--launcher_game=<prepared-folder>`. This selects the prepared
-version for that session without replacing the standalone library selection.
+Play passes `--game_version=<prepared-folder> --show_start_screen=false`.
+Command line cvars outrank `settings.toml` and are never saved, so this selects
+the prepared version for that session without replacing the standalone library
+selection.
 Fullscreen and button prompts follow the game's existing settings and input
 handling. Explicit in-game requests to revisit the start screen or resolve
 blocking mods still work.
