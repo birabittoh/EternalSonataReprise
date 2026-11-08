@@ -39,12 +39,13 @@ directory, then replaces only a destination carrying this tool's ownership
 marker. Other existing folders are refused. Failed installs preserve the old
 copy and remove only the transaction created by that invocation.
 
-If setup is killed, the `.preparing` directory is preserved and further setup
-refuses to overwrite it. If it contains `old`, that is the previous working
-copy: move it back to the destination when the destination is absent. Move the
-remaining `.preparing` directory aside before retrying. A failed rollback also
-prints the location of the previous files. Do not run setup while the game is
-using the prepared directory.
+Setup holds a lock on its `.preparing` directory, which the OS releases if the
+launcher cancels it or it times out. The next setup then removes that directory,
+first moving its `old` copy back to the destination when the destination is
+absent. A `.preparing` directory still locked by a running setup, or one without
+the ownership marker, is refused and left alone. A failed rollback prints the
+location of the previous files. Do not run setup while the game is using the
+prepared directory.
 
 Play passes `--game_version=<prepared-folder> --show_start_screen=false`.
 Command line cvars outrank `settings.toml` and are never saved, so this selects
