@@ -104,14 +104,6 @@ class EternalsonataApp : public rex::ReXApp {
     if (std::filesystem::exists(user_settings_path()))
       rex::cvar::LoadConfig(user_settings_path());
 
-    // The external launcher owns this selection for this launch. Keep the
-    // standalone library and the player's saved settings intact.
-    const std::string launcher_game = rex::cvar::GetFlagByName("launcher_game");
-    if (!launcher_game.empty()) {
-      rex::cvar::SetFlagByName("game_version", launcher_game, /*persist=*/false);
-      rex::cvar::SetFlagByName("show_start_screen", "false", /*persist=*/false);
-    }
-
     // Both config files are loaded by now, so the cvar holds the user's value.
     // Has to land before the guest starts: the audio thread arms its 5 ms
     // periodic timer early, and the period it gets is whatever the host tick
