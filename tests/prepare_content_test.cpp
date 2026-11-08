@@ -9,11 +9,13 @@
 #include <chrono>
 #include <cctype>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <sstream>
 namespace fs = std::filesystem;
 namespace {
 bool fail_install = false, unknown_source = false, dirty_output = false;
+std::function<void()> during_install;
 fs::path changed_destination;
 int installs = 0;
 fs::path Path(const std::string& s) { return fs::path(std::u8string(s.begin(), s.end())); }
@@ -53,6 +55,7 @@ const char* PhaseName(Phase) { return "Preparing"; }
 std::string Install(const std::string& picked, const fs::path& dest, const InstallHooks& hooks,
                     fs::path& ready) {
   ++installs;
+  if (during_install) during_install();
   assert(hooks.progress);
   hooks.phase(Phase::kExtract, PhaseState::kActive);
   hooks.progress("Extracting\nfiles", 0.5f, {});
@@ -140,6 +143,29 @@ int main() {
   assert(!eternalsonata::PrepareContent(source, dest, out).empty());
   assert(Text(transaction / "old" / "recovery") == "keep");
   fs::remove_all(transaction);
+
+  // A killed setup's marked transaction is cleaned up, restoring the copy it moved aside.
+  const std::string owner = "EternalSonataReprise content v1\n";
+  Write(transaction / ".recomplauncher-content", owner);
+  Write(transaction / "new" / "partial", "partial");
+  assert(eternalsonata::PrepareContent(source, dest, out).empty());
+  assert(!fs::exists(transaction));
+  Write(dest / "keep.txt", "previous version");
+  Write(transaction / ".recomplauncher-content", owner);
+  fs::rename(dest, transaction / "old");
+  fail_install = true;
+  assert(!eternalsonata::PrepareContent(source, dest, out).empty());
+  fail_install = false;
+  assert(Text(dest / "keep.txt") == "previous version");
+  assert(!fs::exists(transaction));
+  // A live setup's transaction is never touched.
+  during_install = [&] {
+    std::ostringstream inner;
+    assert(!eternalsonata::PrepareContent(source, dest, inner).empty());
+    assert(fs::exists(transaction / ".recomplauncher-content"));
+  };
+  assert(eternalsonata::PrepareContent(source, dest, out).empty());
+  during_install = nullptr;
   assert(!eternalsonata::PrepareContent(source, source, out).empty());
   assert(!eternalsonata::PrepareContent(source, source / "child", out).empty());
   if (fs::exists(base / "MY DUMP"))

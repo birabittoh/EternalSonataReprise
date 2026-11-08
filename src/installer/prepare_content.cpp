@@ -11,11 +11,26 @@
 
 #include "install_pipeline.h"
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+
 namespace eternalsonata {
 namespace {
 namespace fs = std::filesystem;
 constexpr const char* kOwner = ".recomplauncher-content";
 constexpr const char* kOwnerText = "EternalSonataReprise content v1\n";
+constexpr const char* kLock = ".lock";
 
 fs::path FromUtf8(std::string_view value) {
   return fs::path(std::u8string(value.begin(), value.end()));
@@ -40,6 +55,67 @@ bool Contains(const fs::path& parent, const fs::path& child) {
 bool Owned(const fs::path& dir) {
   std::ifstream in(dir / kOwner, std::ios::binary);
   return std::string(std::istreambuf_iterator<char>(in), {}) == kOwnerText;
+}
+
+// Held by the setup that owns a transaction. The OS drops it when that process
+// dies, which is how a later setup tells an abandoned transaction from a live one.
+class TransactionLock {
+ public:
+  TransactionLock() = default;
+  TransactionLock(const TransactionLock&) = delete;
+  TransactionLock& operator=(const TransactionLock&) = delete;
+  ~TransactionLock() { Release(); }
+
+  bool Acquire(const fs::path& path) {
+    Release();
+#ifdef _WIN32
+    handle_ = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                          FILE_ATTRIBUTE_NORMAL, nullptr);
+    return handle_ != INVALID_HANDLE_VALUE;
+#else
+    fd_ = open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    if (fd_ >= 0 && flock(fd_, LOCK_EX | LOCK_NB) == 0) return true;
+    Release();
+    return false;
+#endif
+  }
+
+  // Before removing the transaction: Windows cannot delete an open file.
+  void Release() {
+#ifdef _WIN32
+    if (handle_ != INVALID_HANDLE_VALUE) CloseHandle(handle_);
+    handle_ = INVALID_HANDLE_VALUE;
+#else
+    if (fd_ >= 0) close(fd_);
+    fd_ = -1;
+#endif
+  }
+
+ private:
+#ifdef _WIN32
+  HANDLE handle_ = INVALID_HANDLE_VALUE;
+#else
+  int fd_ = -1;
+#endif
+};
+
+// Cleans up a transaction a killed setup left behind, putting the previous copy
+// back if it was moved aside. Unmarked or live transactions are kept.
+bool RecoverTransaction(const fs::path& transaction, const fs::path& destination) {
+  std::error_code ec;
+  if (fs::is_symlink(fs::symlink_status(transaction, ec)) ||
+      !fs::is_directory(transaction, ec) || !Owned(transaction))
+    return false;
+  TransactionLock lock;
+  if (!lock.Acquire(transaction / kLock)) return false;
+  const fs::path old = transaction / "old";
+  if (fs::exists(old, ec) && !fs::exists(destination, ec)) {
+    fs::rename(old, destination, ec);
+    if (ec) return false;
+  }
+  lock.Release();
+  fs::remove_all(transaction, ec);
+  return !ec;
 }
 
 void CopySource(const fs::path& source, const fs::path& dest) {
@@ -83,6 +159,7 @@ std::string PrepareContent(const fs::path& source_path, const fs::path& destinat
   bool moved_old = false;
   bool published = false;
   bool transaction_created = false;
+  TransactionLock lock;
   try {
     const fs::path source = fs::canonical(source_path);
     destination = fs::weakly_canonical(fs::absolute(destination_path));
@@ -108,13 +185,23 @@ std::string PrepareContent(const fs::path& source_path, const fs::path& destinat
     fs::create_directories(destination.parent_path());
     transaction = destination;
     transaction += ".preparing";
-    // Atomic reservation: another process or an interrupted run is never removed.
+    if (fs::exists(fs::symlink_status(transaction)) && RecoverTransaction(transaction, destination))
+      progress.Report(0, "Cleaned up an interrupted setup");
+    // Atomic reservation: a live setup or an unmarked folder is never removed.
     if (!fs::create_directory(transaction)) {
       transaction.clear();
       return "A previous setup is still present. Keep it for recovery or move it aside and retry.";
     }
     const fs::path staged = transaction / "new";
     transaction_created = true;
+    if (!lock.Acquire(transaction / kLock))
+      throw std::runtime_error("Could not lock the setup folder.");
+    {
+      std::ofstream marker(transaction / kOwner, std::ios::binary);
+      marker << kOwnerText;
+      marker.close();
+      if (!marker) throw std::runtime_error("Could not record the setup folder.");
+    }
     const fs::path extracted = ExtractedSource(Utf8(source));
     const uint64_t copy_bytes = [&] {
       uint64_t size = 0;
@@ -165,12 +252,14 @@ std::string PrepareContent(const fs::path& source_path, const fs::path& destinat
     published = true;
     // Only the transaction created by this invocation is cleaned up.
     std::error_code ec;
+    lock.Release();
     fs::remove_all(transaction, ec);
     if (ec) out << "Prepared content is ready; previous files remain in the .preparing folder.\n";
     progress.Report(1, "Ready to play");
     return {};
   } catch (const std::exception& error) {
     std::error_code ec;
+    lock.Release();
     if (moved_old && !published) {
       fs::rename(transaction / "old", destination, ec);
       // Preserve the previous version if rollback itself fails.
