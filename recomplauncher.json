@@ -64,13 +64,12 @@
       "id": "resolution", "label": "Draw resolution",
       "help": "Draws at a fraction of the window size. Higher values need a faster graphics card.",
       "choices": [
-        { "label": "Match the window", "set": { "render_scale": "0" } },
         { "label": "50%", "set": { "render_scale": "0.5" } },
         { "label": "100%", "set": { "render_scale": "1" } },
         { "label": "150%", "set": { "render_scale": "1.5" } },
         { "label": "200%", "set": { "render_scale": "2" } }
       ],
-      "defaults": { "render_scale": "0" }
+      "defaults": { "render_scale": "1" }
     },
     {
       "id": "frame_rate", "label": "Frame rate",
