@@ -5,7 +5,7 @@
   "repo": "birabittoh/EternalSonataReprise",
   "game": {
     "kind": "iso_or_folder",
-    "label": "Your Eternal Sonata Xbox 360 or PS3 disc image (.iso), or its extracted folder, from Europe, North America or Japan. Encrypted PS3 images need a matching .dkey beside the image.",
+    "label": "Your Eternal Sonata Xbox 360 or PS3 disc image (.iso), or its extracted folder, from Europe, North America or Japan.",
     "dumps": [
       { "name": "Xbox 360 Europe", "size": 7835492352, "crc32": "2cec7d69" },
       { "name": "Xbox 360 North America", "size": 7835492352, "crc32": "59e012cd" },
