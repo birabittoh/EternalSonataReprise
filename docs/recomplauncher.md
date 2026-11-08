@@ -15,9 +15,9 @@ executable against the supported releases before installing. A random folder
 or disc is rejected. The manifest deliberately leaves `game.check` empty: the
 launcher cannot express Xbox 360 **or** PS3 format checks in one profile.
 
-An encrypted PS3 image needs its matching `.dkey` or `.key` beside the image,
-unless the installer already knows its key. Headless setup never opens a key
-picker. A folder converted by an older version must be replaced from the
+Encrypted PS3 images from Redump are decrypted with built in disc keys. Any
+other encrypted image needs its matching `.dkey` or `.key` beside it, since
+headless setup never opens a key picker. A folder converted by an older version must be replaced from the
 original dump rather than silently accepted.
 
 The launcher invokes:
