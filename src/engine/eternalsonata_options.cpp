@@ -251,8 +251,11 @@ constexpr u32 kTextNodeNext = 932u;
 constexpr u32 kTextNodeBuffer = 8u;
 constexpr u32 kTextNodeWalkMax = 4096u;
 constexpr u32 kNumberRegistry = 0x82555690u;
-// The game writes an eleven-digit number and a sign into this same buffer.
-constexpr u32 kReadoutMaxChars = 12u;
+// sub_821D2600 copies the text to +8; the next field is the position at +408.
+constexpr u32 kReadoutMaxChars = 400u;
+// The text box's width and height, (size + 4) * chars / 2 and size + 5.
+constexpr u32 kTextNodeWidth = 844u;
+constexpr u32 kTextNodeHeight = 846u;
 static_assert(ETERNALSONATA_MAX_SLIDER_TEXT < kReadoutMaxChars, "a mod readout fits the buffer");
 // Live gauge object: maximum, current value.
 constexpr u32 kSliderObjMaxOffset = 100u;
@@ -1138,7 +1141,26 @@ RowStore& Rows() {
     trigger.values.push_back(LabelValue(kLabelRtCamera));
     trigger.values.push_back(LabelValue(kLabelRtSpecial));
     BindChoiceCvar(trigger, "right_trigger_behavior", {"auto", "camera", "special"});
-    platform_row(kLabelBattleOverview, "battle_intro_overview", {"auto", "360", "ps3"});
+    // Seconds, from Auto and Off up.
+    constexpr const char* kOverview = "battle_intro_overview_time";
+    OptionRow& overview = add(kPagePlatform);
+    MakeSliderRow(overview, kLabelBattleOverview, eternalsonata::MultiplierOptionCount(kOverview),
+                  [](int idx) {
+                    const double seconds = eternalsonata::MultiplierOptionValue(kOverview, idx);
+                    if (seconds < 0.0) {
+                      return DrawnLabel(kLabelValueAuto);
+                    }
+                    if (seconds == 0.0) {
+                      return DrawnLabel(kLabelValueOff) + " (Xbox 360)";
+                    }
+                    // The PS3's own hold, 1000 ticks of 1/300 s.
+                    const bool ps3 = std::abs(seconds * 300.0 - 1000.0) < 1e-6;
+                    char text[24];
+                    std::snprintf(text, sizeof(text), ps3 ? "%.3gs (PS3)" : "%.3gs", seconds);
+                    return std::string(text);
+                  });
+    overview.get_index = [] { return eternalsonata::MultiplierOptionIndex(kOverview); };
+    overview.set_index = [](u8*, int idx) { eternalsonata::SetMultiplierOption(kOverview, idx); };
 
     // Page 4, balance.
     MakeMultiplierRow(add(kPageBalance), kLabelExp, "enemy_exp_multiplier");
@@ -1909,7 +1931,7 @@ u32 TextNodeFor(u8* base, u32 text_obj) {
 // "Off" rather than a bare number, re-setting the flags that call sets. The
 // digit test guards against the second buffer it uses for one particular
 // object.
-void SetReadoutText(u8* base, u32 text_obj, const std::string& text) {
+void SetReadoutText(u8* base, u32 text_obj, const std::string& text, u32 chars) {
   const u32 node = TextNodeFor(base, text_obj);
   if (!node || text.size() >= kReadoutMaxChars) {
     return;
@@ -1920,6 +1942,11 @@ void SetReadoutText(u8* base, u32 text_obj, const std::string& text) {
     return;
   }
   WriteGuestString(base, buf, text.c_str());
+  // sub_821F00F0 sizes the box for at most ten characters.
+  const u32 width = (REX_LOAD_U16(node + kTextNodeHeight) - 1u) * chars / 2u;
+  if (width > REX_LOAD_U16(node + kTextNodeWidth)) {
+    REX_STORE_U16(node + kTextNodeWidth, static_cast<u16>(width));
+  }
   REX_STORE_U8(node + 518, 0);
   REX_STORE_U8(node + 840, 0);
   REX_STORE_U8(node + 841, 0);
@@ -1931,7 +1958,8 @@ void SetReadoutText(u8* base, u32 text_obj, const std::string& text) {
 // Puts `value` on a gauge and its readout, the way sub_82200FE8 seeds the
 // volume ones: clamp to the gauge's maximum, store, redraw. An empty `text`
 // leaves the number as sub_821D3AC8 writes it.
-void RefreshGauge(u8* base, u32 gauge_id, u32 number_id, int value, const std::string& text) {
+void RefreshGauge(u8* base, u32 gauge_id, u32 number_id, int value, const std::string& text,
+                  u32 chars = 0) {
   const u32 root = REX_LOAD_U32(g_ui_root);
   if (gauge_id == 0xFFFFFFFFu || !GuestPtr(root)) {
     return;
@@ -1956,7 +1984,7 @@ void RefreshGauge(u8* base, u32 gauge_id, u32 number_id, int value, const std::s
   }
   g_set_number(kNumberRegistry, text_obj, static_cast<u32>(shown));
   if (!text.empty()) {
-    SetReadoutText(base, text_obj, text);
+    SetReadoutText(base, text_obj, text, std::max<u32>(chars, static_cast<u32>(text.size())));
   }
 }
 
@@ -1969,6 +1997,8 @@ std::string SliderReadout(const OptionRow& row, int index) {
   return std::to_string(value) + "%";
 }
 
+u32 ReadoutWidth(const OptionRow& row);
+
 // Draws `row`'s current step on its gauge and beside it.
 void RefreshSlider(u8* base, int page, u32 row) {
   const PageState& st = Page(page);
@@ -1979,7 +2009,7 @@ void RefreshSlider(u8* base, int page, u32 row) {
   const int index = def.get_index();
   const int value = def.slider_display ? def.slider_display(index) : index;
   RefreshGauge(base, st.slider_id[row], st.slider_num_id[row], value,
-               SliderReadout(def, index));
+               SliderReadout(def, index), ReadoutWidth(def));
 }
 
 // Parks every one of `page`'s bars off-screen instantly, once the cursor hook
@@ -2717,7 +2747,7 @@ u32 ReadoutWidth(const OptionRow& row) {
   for (int i = 0; i < row.slider_steps; ++i) {
     longest = std::max(longest, row.slider_text(i).size());
   }
-  return std::clamp<u32>(static_cast<u32>(longest), kSliderNumWidth, kSliderNumWidthMax);
+  return std::max<u32>(static_cast<u32>(longest), kSliderNumWidth);
 }
 
 // Master Volume, a fourth entry at the top of the stock volume block: its label
@@ -2971,7 +3001,8 @@ void EnsurePageRows(u8* base, int page, int lang_idx) {
     // the same column they do.
     if (row.slider) {
       at += WriteSliderRecords(base, at, tpl_list, st.value_base_x,
-                               y + kSliderRecordDY, row.slider_max, ReadoutWidth(row),
+                               y + kSliderRecordDY, row.slider_max,
+                               std::min(ReadoutWidth(row), kSliderNumWidthMax),
                                row.readout_dx);
     }
     if (!IsExtraPage(page)) {

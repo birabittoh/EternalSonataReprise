@@ -17,7 +17,6 @@
 #include <bit>
 #include <cmath>
 #include <numbers>
-#include <string>
 
 #include <rex/cvar.h>
 #include <rex/hook.h>
@@ -27,10 +26,9 @@
 #include "eternalsonata_hooks_internal.h"
 #include "target.h"
 
-REXCVAR_DEFINE_STRING(battle_intro_overview, "auto", "Eternal Sonata",
-                      "Whether the battle opens on a look over the battlefield: 360 (no), "
-                      "ps3 (yes, A or B skips it) or auto (follows the game data)")
-    .allowed({"auto", "360", "ps3"})
+REXCVAR_DEFINE_DOUBLE(battle_intro_overview_time, -1.0, "Eternal Sonata",
+                      "Seconds the battle opens on a look over the battlefield, A or B "
+                      "skips it: 0 never, negative follows the game data (PS3 3.33, 360 none)")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
 namespace {
@@ -71,6 +69,7 @@ constexpr uint32_t kCamSmoothedTarget = 1008u;
 constexpr uint32_t kCamSnapTarget = 1147u;
 
 double g_elapsed = 0.0;
+double g_hold = kHoldTicks;
 uint32_t g_camera = 0;
 bool g_have_pose = false;
 float g_target[3];
@@ -103,9 +102,12 @@ double FrameTicks() {
          eternalsonata_hooks::FrameDeltaScale();
 }
 
-bool OverviewEnabled() {
-  const std::string& value = REXCVAR_GET(battle_intro_overview);
-  return value == "ps3" || (value == "auto" && eternalsonata::IsPs3Target());
+// The hold in 1/300 s ticks, zero for none.
+double HoldTicks() {
+  const double seconds = REXCVAR_GET(battle_intro_overview_time);
+  if (seconds < 0.0)
+    return eternalsonata::IsPs3Target() ? kHoldTicks : 0.0;
+  return seconds * 300.0;
 }
 
 bool SkipPressed() {
@@ -152,13 +154,14 @@ void EndOverview() {
 extern "C++" bool EternalSonataBattleIntroOverview();
 
 bool EternalSonataBattleIntroOverview() {
-  if (!OverviewEnabled()) {
+  g_hold = HoldTicks();
+  if (g_hold <= 0.0) {
     EndOverview();
     return false;
   }
   TakeCamera();
   g_elapsed += FrameTicks();
-  if (g_elapsed > kHoldTicks || SkipPressed()) {
+  if (g_elapsed > g_hold || SkipPressed()) {
     EndOverview();
     return false;
   }
@@ -193,7 +196,7 @@ void EternalSonataBattleOverviewCamera() {
   // right axis across the field's width.
   for (uint32_t i = 0; i < kOrbitSpeedCount; ++i)
     StoreFloat(kOrbitSpeed + 4 * i, 0.0f);
-  const float t = float(std::fmin(g_elapsed / kHoldTicks, 1.0));
+  const float t = float(std::fmin(g_elapsed / g_hold, 1.0));
   const float blend = (1.0f - std::cos(std::numbers::pi_v<float> * t)) * 0.5f;
   const float slide = LoadFloat(kFieldHalfWidth) * kSlideScale * (2.0f * blend - 1.0f);
   const float right[3] = {std::cos(g_yaw), 0.0f, -std::sin(g_yaw)};

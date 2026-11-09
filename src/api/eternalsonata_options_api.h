@@ -167,7 +167,7 @@ typedef int (*EternalSonataSetOptionRowPageFn)(int row, int page);
 typedef int (*EternalSonataOptionTextFn)(int index, char* out, int out_size, void* user);
 
 #define ETERNALSONATA_MAX_SLIDER_STEPS 1001
-#define ETERNALSONATA_MAX_SLIDER_TEXT 11
+#define ETERNALSONATA_MAX_SLIDER_TEXT 31
 
 // Registers a slider row (ABI version 3): the game's own volume gauge, moved
 // one step per left/right and repeating while a direction is held. get/set

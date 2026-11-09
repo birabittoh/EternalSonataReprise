@@ -305,7 +305,7 @@ constexpr std::array kBasicCvarNames = {
     "enemy_hp_multiplier",
     "enemy_damage_multiplier", "auto_parry", "party_level_select", "ui_scale",
     "right_trigger_behavior", "special_hold_time", "ranged_special_buffer",
-    "battle_intro_overview", "battle_start_positions",
+    "battle_intro_overview_time", "battle_start_positions",
     "party_tactical_time_multiplier", "party_action_time_multiplier",
     "enemy_action_time_multiplier",
     "save_row_portraits", "force_japanese_font", "skip_intro", "show_start_screen",
@@ -324,6 +324,10 @@ constexpr std::array kTacticalTimeSteps = {0.0, 0.25, 0.5, 0.75, 1.0, 1.5,
 constexpr std::array kActionTimeSteps = {0.25, 0.5, 0.75, 1.0, 1.5, 2.0,
                                          3.0,  4.0, 5.0,  10.0, 11.0};
 constexpr std::array kHpMultiplierSteps ={0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0};
+// Seconds; the first step is auto and 10/3 is the PS3's hold.
+constexpr double kOverviewPs3Seconds = 1000.0 / 300.0;
+constexpr std::array kOverviewTimeSteps = {-1.0, 0.0, 1.0, 2.0, kOverviewPs3Seconds,
+                                           5.0,  7.5, 10.0};
 
 // audio_volume is stored (and applied to samples by the SDL audio driver) as
 // linear amplitude, but human loudness perception is roughly logarithmic --
@@ -822,7 +826,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         DrawPlatformChoiceRow("photo_price_algorithm");
         DrawPlatformChoiceRow("progression_curves");
         DrawPlatformChoiceRow("ranged_special_buffer");
-        DrawPlatformChoiceRow("battle_intro_overview");
+        DrawOverviewTimeRow();
         DrawPlatformChoiceRow("battle_start_positions");
         DrawRightTriggerRow();
         if (EternalSonataGetEffectiveRightTriggerBehavior() ==
@@ -831,15 +835,15 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
         }
         ImGui::Separator();
         if (ImGui::Button(WithId(T("all_auto"), "all_auto"))) {
-          SetAllPlatform("auto", "disabled", "auto");
+          SetAllPlatform("auto", "disabled", "auto", -1.0);
         }
         ImGui::SameLine();
         if (ImGui::Button(WithId(T("all_xbox"), "all_xbox"))) {
-          SetAllPlatform("360", "xbox", "camera");
+          SetAllPlatform("360", "xbox", "camera", 0.0);
         }
         ImGui::SameLine();
         if (ImGui::Button(WithId(T("all_ps3"), "all_ps3"))) {
-          SetAllPlatform("ps3", "ps3", "special");
+          SetAllPlatform("ps3", "ps3", "special", kOverviewPs3Seconds);
         }
         ImGui::EndTabItem();
       }
@@ -1619,12 +1623,16 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
     ImGui::PopID();
   }
 
-  void SetAllPlatform(const char* choice, const char* glyphs, const char* trigger) {
+  void SetAllPlatform(const char* choice, const char* glyphs, const char* trigger,
+                      double overview) {
     for (const char* name :
          {"photo_price_algorithm", "progression_curves", "ranged_special_buffer",
-          "battle_intro_overview", "battle_start_positions"}) {
+          "battle_start_positions"}) {
       rex::cvar::SetFlagByName(name, choice, /*persist=*/true);
     }
+    char seconds[24];
+    std::snprintf(seconds, sizeof(seconds), "%.17g", overview);
+    rex::cvar::SetFlagByName("battle_intro_overview_time", seconds, /*persist=*/true);
     rex::cvar::SetFlagByName("override_button_glyphs", glyphs, /*persist=*/true);
     rex::cvar::SetFlagByName("right_trigger_behavior", trigger, /*persist=*/true);
     SaveBasic();
@@ -1660,6 +1668,38 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
       }
     }
     ImGui::PopID();
+  }
+
+  void DrawOverviewTimeRow() {
+    constexpr const char* kName = "battle_intro_overview_time";
+    if (!rex::cvar::GetFlagInfo(kName))
+      return;
+    int idx = MultiplierOptionIndex(kName);
+    const char* text = OverviewTimeText(idx);
+    if (DrawRowLabel(kName, kName)) {
+      ImGui::SetTooltip("%s", Tip(kName, kName));
+    }
+    ImGui::SameLine(Px(180.0f));
+    ImGui::SetNextItemWidth(Px(160.0f));
+    ImGui::PushID(kName);
+    if (ImGui::SliderInt("##v", &idx, 0, static_cast<int>(kOverviewTimeSteps.size()) - 1, text,
+                         ImGuiSliderFlags_NoInput)) {
+      SetMultiplierOption(kName, idx);
+    }
+    ImGui::PopID();
+  }
+
+  const char* OverviewTimeText(int idx) {
+    const double value = kOverviewTimeSteps[idx];
+    if (value < 0.0)
+      return T("auto");
+    if (value == 0.0) {
+      std::snprintf(overview_text_, sizeof(overview_text_), "%s (Xbox 360)", T("value_off"));
+    } else {
+      std::snprintf(overview_text_, sizeof(overview_text_),
+                    value == kOverviewPs3Seconds ? "%.3gs (PS3)" : "%.3gs", value);
+    }
+    return overview_text_;
   }
 
   void DrawPlatformChoiceRow(const char* name) {
@@ -1826,6 +1866,7 @@ class CuratedSettingsDialog : public rex::ui::ImGuiDialog {
   rex::input::InputSystem* input_system_;
   // The UI Scale step being dragged to, or -1 when not dragging.
   int ui_scale_drag_idx_ = -1;
+  char overview_text_[48] = {};
   // Game volumes set but not yet applied by the guest, or -1; see
   // DrawGameVolumeRow.
   int volume_drag_[3] = {-1, -1, -1};
@@ -2012,6 +2053,8 @@ std::span<const double> MultiplierSteps(const char* cvar) {
     return kTacticalTimeSteps;
   if (name == "party_action_time_multiplier")
     return kActionTimeSteps;
+  if (name == "battle_intro_overview_time")
+    return kOverviewTimeSteps;
   // The overlay leaves the "no limit" step off the enemy gauge.
   if (name == "enemy_action_time_multiplier")
     return std::span(kActionTimeSteps).first(kActionTimeSteps.size() - 1);
