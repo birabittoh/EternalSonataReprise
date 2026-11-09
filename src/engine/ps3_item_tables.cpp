@@ -19,6 +19,7 @@
 #include <cstring>
 #include <iterator>
 #include <mutex>
+#include <vector>
 
 #include <rex/logging.h>
 #include <rex/memory/utils.h>
@@ -75,6 +76,8 @@ rex::memory::Memory* Memory() {
 std::once_flag g_copies_once;
 uint32_t g_order = 0;
 uint32_t g_text[std::size(kPs3TextBlocks)] = {};
+// Blocks a text mod edited, in place of the compiled-in ones.
+std::vector<uint8_t> g_modded[std::size(kPs3TextBlocks)];
 std::once_flag g_icons_once;
 uint32_t g_icons = 0;
 
@@ -90,8 +93,12 @@ void MakeCopies() {
   if (!memory || !g_applied)
     return;
   g_order = Copy(memory, kPs3MagicOrder, sizeof(kPs3MagicOrder));
-  for (size_t i = 0; i < std::size(kPs3TextBlocks); ++i)
-    g_text[i] = Copy(memory, kPs3TextBlocks[i].data, kPs3TextBlocks[i].size);
+  for (size_t i = 0; i < std::size(kPs3TextBlocks); ++i) {
+    const auto& modded = g_modded[i];
+    g_text[i] = modded.empty()
+                    ? Copy(memory, kPs3TextBlocks[i].data, kPs3TextBlocks[i].size)
+                    : Copy(memory, modded.data(), uint32_t(modded.size()));
+  }
 }
 
 }  // namespace
@@ -120,6 +127,25 @@ uint32_t Ps3TextBlockFor(uint32_t block) {
     if (kPs3TextBlocks[i].block == block)
       return g_text[i];
   return 0;
+}
+
+std::span<const uint8_t> Ps3TextBlockSource(uint32_t block) {
+  if (!IsPs3Target())
+    return {};
+  for (size_t i = 0; i < std::size(kPs3TextBlocks); ++i) {
+    if (kPs3TextBlocks[i].block != block)
+      continue;
+    if (!g_modded[i].empty())
+      return g_modded[i];
+    return {kPs3TextBlocks[i].data, kPs3TextBlocks[i].size};
+  }
+  return {};
+}
+
+void SetPs3TextBlockSource(uint32_t block, std::vector<uint8_t> data) {
+  for (size_t i = 0; i < std::size(kPs3TextBlocks); ++i)
+    if (kPs3TextBlocks[i].block == block)
+      g_modded[i] = std::move(data);
 }
 
 uint32_t Ps3MagicOrderAddress() {

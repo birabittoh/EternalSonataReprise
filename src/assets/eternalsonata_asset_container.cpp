@@ -683,6 +683,34 @@ bool ApplyTextEditsInPlace(const std::vector<uint8_t>& data, std::vector<TextEdi
   return !writes->empty();
 }
 
+bool ApplyTextEditsToBlob(std::vector<uint8_t>& data, std::vector<TextEdit>& edits) {
+  const auto blobs = FindBtxBlobs(data);
+  if (blobs.size() != 1 || blobs[0].offset != 0) {
+    for (auto& e : edits)
+      e.status = EditStatus::kBadData;
+    return false;
+  }
+  std::vector<TextEdit*> mine;
+  for (auto& e : edits) {
+    e.allow_resize = true;
+    mine.push_back(&e);
+  }
+  std::vector<std::map<uint32_t, std::string>> entries;
+  std::vector<InPlaceWrite> preserved;
+  bool any_applied = false;
+  const bool fits = BuildPreserved(data, blobs[0], mine, &entries, &any_applied, &preserved);
+  if (!any_applied)
+    return false;
+  if (fits) {
+    for (const auto& w : preserved)
+      std::memcpy(data.data() + w.offset, w.bytes.data(), w.bytes.size());
+    return true;
+  }
+  const std::string rebuilt = BuildBlob(blobs[0], entries);
+  data.assign(rebuilt.begin(), rebuilt.end());
+  return true;
+}
+
 bool ReplaceContainerRange(std::vector<uint8_t>& data, size_t offset, size_t old_size,
                            const std::vector<uint8_t>& replacement) {
   if (offset > data.size() || old_size > data.size() - offset)

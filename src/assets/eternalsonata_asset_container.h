@@ -142,6 +142,11 @@ struct InPlaceWrite {
 bool ApplyTextEditsInPlace(const std::vector<uint8_t>& data, std::vector<TextEdit>& edits,
                            std::vector<InPlaceWrite>* writes);
 
+// For a buffer holding exactly one BTX blob and nothing else, such as the PS3
+// text blocks PS3 mode copies to the heap. Every edit targets that blob,
+// whatever its `blob` says, and the blob grows as needed.
+bool ApplyTextEditsToBlob(std::vector<uint8_t>& data, std::vector<TextEdit>& edits);
+
 // Replaces one range in the bulk section and adjusts the container header and
 // list B relocation values that point beyond it.
 bool ReplaceContainerRange(std::vector<uint8_t>& data, size_t offset, size_t old_size,

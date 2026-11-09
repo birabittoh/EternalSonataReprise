@@ -339,6 +339,22 @@ inside the executable rather than in a file:
   asset cache; these are written straight into guest memory at launch. There is
   no patched file to diff, so the log line is the confirmation.
 
+In PS3 mode, 14 of these blobs are read from the PS3's own copies on the
+heap instead: the items, skills, enemies and other blocks in
+`src/guest_data/ps3/text`, mapped below. Patches addressed to those
+blobs go to the copies, which may grow, and accept the ids only the PS3 has
+(items `402..431`, for instance):
+
+| blob | PS3 block | blob | PS3 block |
+|---|---|---|---|
+| 3 | shop_sort_orders | 13 | battle_commands |
+| 4 | battle_level_help | 14 | enemy_skills |
+| 5 | chopin_pieces | 15 | enemy_names |
+| 6 | score_titles | 17 | item_descriptions |
+| 7 | save_locations | 18 | items |
+| 11 | party_skill_help | 19 | characters |
+| 12 | party_skills | 22 | shop_checkout_lines |
+
 Spanish and German are the wordiest shipped languages, which makes them the
 most comfortable donor slots for a translation that needs the room.
 

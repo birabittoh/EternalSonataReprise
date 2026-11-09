@@ -44,6 +44,7 @@
 #include "eternalsonata_asset_texture.h"
 #include "intro_screen.h"
 #include "ps3_convert.h"
+#include "ps3_item_tables.h"
 #include "settings.h"
 #include "ui_text.h"
 #include "target.h"
@@ -2421,8 +2422,21 @@ void ApplyXexTextPatches(rex::Runtime* runtime) {
     return;
   }
 
+  // PS3 mode reads some blocks from its own copies instead (Ps3TextBlockFor),
+  // so their edits go to those, which may grow.
+  std::vector<assets::BtxBlob> image_blobs;
+  if (IsPs3Target())
+    image_blobs = assets::FindBtxBlobs(image);
+  auto ps3_block = [&](size_t blob) -> uint32_t {
+    if (blob >= image_blobs.size())
+      return 0;
+    const uint32_t addr = base + uint32_t(image_blobs[blob].offset);
+    return Ps3TextBlockSource(addr).empty() ? 0 : addr;
+  };
+
   std::vector<assets::TextEdit> edits;
   std::vector<const TextPatch*> owners;
+  std::map<uint32_t, std::pair<std::vector<assets::TextEdit>, std::vector<const TextPatch*>>> ps3;
   edits.reserve(container.text.size());
   for (const auto& [key, patch] : container.text) {
     assets::TextEdit edit;
@@ -2433,36 +2447,59 @@ void ApplyXexTextPatches(rex::Runtime* runtime) {
     // The blob cannot grow: it is pinned in the image with unrelated data
     // either side. Refused rather than honoured, however the mod asked.
     edit.allow_resize = false;
+    if (const uint32_t block = ps3_block(patch.blob)) {
+      ps3[block].first.push_back(std::move(edit));
+      ps3[block].second.push_back(&patch);
+      continue;
+    }
     edits.push_back(std::move(edit));
     owners.push_back(&patch);
   }
 
+  auto report = [](const std::vector<assets::TextEdit>& done,
+                   const std::vector<const TextPatch*>& by, std::string_view where) {
+    for (size_t i = 0; i < done.size(); ++i) {
+      switch (done[i].status) {
+        case EditStatus::kOk:
+          break;
+        case EditStatus::kNotFound:
+          REXLOG_WARN("assets: mod '{}' patches {}#text:{}/{}/{}, which the {} does not have",
+                      by[i]->owner, kXexContainer, by[i]->blob, by[i]->lang, by[i]->id, where);
+          break;
+        case EditStatus::kTooLarge:
+          REXLOG_WARN(
+              "assets: mod '{}' text {}#text:{}/{}/{} does not fit; the executable's blobs are "
+              "preserve-size only, so the whole language block must come in under the original",
+              by[i]->owner, kXexContainer, by[i]->blob, by[i]->lang, by[i]->id);
+          break;
+        case EditStatus::kBadData:
+          REXLOG_WARN("assets: mod '{}' patch for {} was rejected as malformed", by[i]->owner,
+                      kXexContainer);
+          break;
+      }
+    }
+  };
+
+  for (auto& [block, pending] : ps3) {
+    const auto source = Ps3TextBlockSource(block);
+    std::vector<uint8_t> data(source.begin(), source.end());
+    if (assets::ApplyTextEditsToBlob(data, pending.first)) {
+      REXLOG_INFO("assets: patched the PS3 text block for {:#010x}, now {} bytes", block,
+                  data.size());
+      SetPs3TextBlockSource(block, std::move(data));
+    }
+    report(pending.first, pending.second, "PS3 text block");
+  }
+  if (edits.empty())
+    return;
+
   std::vector<assets::InPlaceWrite> writes;
   assets::ApplyTextEditsInPlace(image, edits, &writes);
 
-  size_t applied = 0;
-  for (size_t i = 0; i < edits.size(); ++i) {
-    switch (edits[i].status) {
-      case EditStatus::kOk:
-        ++applied;
-        break;
-      case EditStatus::kNotFound:
-        REXLOG_WARN("assets: mod '{}' patches {}#text:{}/{}/{}, which the image does not have",
-                    owners[i]->owner, kXexContainer, owners[i]->blob, owners[i]->lang,
-                    owners[i]->id);
-        break;
-      case EditStatus::kTooLarge:
-        REXLOG_WARN(
-            "assets: mod '{}' text {}#text:{}/{}/{} does not fit; the executable's blobs are "
-            "preserve-size only, so the whole language block must come in under the original",
-            owners[i]->owner, kXexContainer, owners[i]->blob, owners[i]->lang, owners[i]->id);
-        break;
-      case EditStatus::kBadData:
-        REXLOG_WARN("assets: mod '{}' patch for {} was rejected as malformed", owners[i]->owner,
-                    kXexContainer);
-        break;
-    }
-  }
+  report(edits, owners, "image");
+  const size_t applied = size_t(std::count_if(edits.begin(), edits.end(), [](const auto& e) {
+    return e.status == EditStatus::kOk;
+  }));
   if (writes.empty())
     return;
 
