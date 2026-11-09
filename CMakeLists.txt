@@ -503,6 +503,7 @@ set(ETERNALSONATA_SOURCES
     src/engine/ps3_appkeep.cpp
     src/engine/ps3_battlekeep.cpp
     src/engine/ps3_buttons.cpp
+    src/engine/ps3_credits.cpp
     src/engine/ps3_enemies.cpp
     src/engine/ps3_item_tables.cpp
     src/engine/ps3_hit_effects.cpp

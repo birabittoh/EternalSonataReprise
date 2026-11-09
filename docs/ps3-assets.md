@@ -739,11 +739,15 @@ element at `TEX0` rect 0 at width 8.5, which is all
 per PAL language.
 
 The credits (`op.bmd`, `ed1.bmd`, `ed2.bmd`) are a `BMD ` header with ten
-list offsets, then 16 byte records whose text pointers are file offsets.
+list offsets, then records whose text pointers are file offsets: 16 bytes in
+`op.bmd` (seconds, x, y, text), 12 in the `ed` files (x, height, text).
 Both executables read list 0, 1 or 2 by the language
 (`dword_8243D36C`: Japanese, English, any other; `sub_82131E18`, PS3
 `0x32287C`); the PS3 fills lists 3..9 too, and the 360 leaves them empty.
-The PS3 files ship as they are.
+The PS3 files ship as they are. The 360 scrolls the ending credits at a fixed
+0.32 pixels per 1/300 s; the PS3 picks the speed by the scenario counter
+(8021: 0.2033, 8022: 0.211, 8023: 0.15, otherwise 0.3733; EBOOT `0x3237B0`)
+to fit its longer ending, which `src/engine/ps3_credits.cpp` applies in PS3 mode.
 
 `campdata/scp.bmd` holds the score pieces: `"SCP "`, total size, offset of
 a `CSL ` directory of 68 banks, the texture count (64), then one 1120x128
