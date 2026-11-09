@@ -10,7 +10,7 @@
 // (sub_1528D8) a pan whose aim sweeps from -x to x of the field's half width
 // over the same 1000 ticks, eased by the camera blend (1 - cos(pi t)) / 2.
 // While the state is held the orbit's first pose is kept and slid sideways
-// over a small part of that width instead.
+// across most of that width.
 
 #include "generated/eternalsonata_init.h"
 
@@ -52,8 +52,8 @@ constexpr uint32_t kStateIntroSetup = 4u;
 
 // Battlefield half width, the PS3's manager+0x80CF8.
 constexpr uint32_t kFieldHalfWidth = 0x825513B0u;
-// The whole width reads as a sweep over the field; a short drift looks right.
-constexpr float kSlideScale = 0.08f;
+// The full width overshoots the field from the orbit's framing.
+constexpr float kSlideScale = 0.75f;
 
 // Camera controller block 0 (0x824CEBDC): its aim (+184) and the yaw drift
 // sub_82199600 arms for the orbit (speed, limits, step).
