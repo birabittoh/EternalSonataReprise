@@ -1281,6 +1281,11 @@ bool EndsWith(std::string_view s, std::string_view suffix) {
 
 }  // namespace
 
+std::optional<Bytes> ConvertNtx3Chunk(const Bytes& chunk) {
+  Report report;
+  return ConvertNtx3(chunk, 0, report);
+}
+
 const char* const kBattleKeep = "btldata/battlekeep.bop";
 
 namespace {

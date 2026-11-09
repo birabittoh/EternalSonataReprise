@@ -41,6 +41,9 @@ struct Output {
 std::optional<Output> ConvertFile(const std::string& rel, const Bytes& d, Report& report,
                                   const AudioConverter* audio);
 
+// One NTX3 chunk as the NTEX chunk the 360 loads, or nothing if unsupported.
+std::optional<Bytes> ConvertNtx3Chunk(const Bytes& chunk);
+
 extern const char* const kBattleKeep;
 // Converted PS3 BattleKeep with null slots for the 360's dropped effects.
 Bytes AppendEmptyBattleKeep(const Bytes& d, Report& report);

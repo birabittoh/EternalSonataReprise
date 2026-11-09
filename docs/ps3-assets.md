@@ -748,6 +748,10 @@ The PS3 files ship as they are. The 360 scrolls the ending credits at a fixed
 0.32 pixels per 1/300 s; the PS3 picks the speed by the scenario counter
 (8021: 0.2033, 8022: 0.211, 8023: 0.15, otherwise 0.3733; EBOOT `0x3237B0`)
 to fit its longer ending, which `src/engine/ps3_credits.cpp` applies in PS3 mode.
+A negative height marks an image record whose text points at an `NTX3`
+chunk, drawn as a scrolling sprite (`0x323D38`, `0x324600`); the only one is
+the 活劇座 logo in the Japanese list of `ed1.bmd`. The 360 code has no such
+case, so the same file converts it to an `NTEX` sprite at run time.
 
 `campdata/scp.bmd` holds the score pieces: `"SCP "`, total size, offset of
 a `CSL ` directory of 68 banks, the texture count (64), then one 1120x128
