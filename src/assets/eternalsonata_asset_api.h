@@ -243,7 +243,8 @@ typedef EternalSonataAssetResult (*EternalSonataSetTextFn)(const char* ref, cons
 // than hardcoding what it thinks is there. Writes up to `capacity` bytes
 // including the terminator and returns the full byte length through
 // `out_length` (so a caller can size a buffer and call again). `buffer` may be
-// NULL when `capacity` is 0.
+// NULL when `capacity` is 0. `default.xex` is read from guest memory once the
+// image is loaded, so it has the mods' patches in it.
 typedef EternalSonataAssetResult (*EternalSonataGetTextFn)(const char* ref, char* buffer,
                                                            uint32_t capacity, uint32_t* out_length);
 

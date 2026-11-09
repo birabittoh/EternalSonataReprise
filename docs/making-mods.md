@@ -354,6 +354,11 @@ blobs go to the copies, which may grow, and accept the ids only the PS3 has
 | 7 | save_locations | 18 | items |
 | 11 | party_skill_help | 19 | characters |
 | 12 | party_skills | 22 | shop_checkout_lines |
+| 23 | scrapbook (PS3 only) | | |
+
+Blob `23` is the PS3 Scrapbook menu's text, which has no 360 counterpart.
+`EternalSonataGetText` and `EternalSonataEnumerateAssets` read the same view,
+with mod patches already applied.
 
 Spanish and German are the wordiest shipped languages, which makes them the
 most comfortable donor slots for a translation that needs the room.

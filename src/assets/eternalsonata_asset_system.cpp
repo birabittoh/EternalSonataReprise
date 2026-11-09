@@ -2405,6 +2405,25 @@ bool ReadGuestImage(rex::Runtime* runtime, std::vector<uint8_t>* out, uint32_t* 
   return true;
 }
 
+// default.xex's blobs as mods address them. PS3 mode swaps in the copies its
+// readers use and appends the Scrapbook, which only the PS3 has.
+std::vector<assets::BtxBlob> XexTextBlobs(const std::vector<uint8_t>& image, uint32_t base) {
+  auto blobs = assets::FindBtxBlobs(image);
+  if (!IsPs3Target())
+    return blobs;
+  auto parse = [](std::span<const uint8_t> source) {
+    auto found = assets::FindBtxBlobs({source.begin(), source.end()});
+    return found.empty() ? assets::BtxBlob{} : std::move(found[0]);
+  };
+  for (auto& blob : blobs) {
+    const auto source = Ps3TextBlockSource(base + uint32_t(blob.offset));
+    if (!source.empty())
+      blob = parse(source);
+  }
+  blobs.push_back(parse(Ps3TextBlockSource(kPs3ScrapbookBlock)));
+  return blobs;
+}
+
 }  // namespace
 
 void ApplyXexTextPatches(rex::Runtime* runtime) {
@@ -2423,15 +2442,20 @@ void ApplyXexTextPatches(rex::Runtime* runtime) {
   }
 
   // PS3 mode reads some blocks from its own copies instead (Ps3TextBlockFor),
-  // so their edits go to those, which may grow.
+  // so their edits go to those, which may grow. The Scrapbook is the blob
+  // after the image's last.
   std::vector<assets::BtxBlob> image_blobs;
   if (IsPs3Target())
     image_blobs = assets::FindBtxBlobs(image);
-  auto ps3_block = [&](size_t blob) -> uint32_t {
-    if (blob >= image_blobs.size())
-      return 0;
+  auto ps3_block = [&](size_t blob) -> std::optional<uint32_t> {
+    if (!IsPs3Target() || blob > image_blobs.size())
+      return std::nullopt;
+    if (blob == image_blobs.size())
+      return kPs3ScrapbookBlock;
     const uint32_t addr = base + uint32_t(image_blobs[blob].offset);
-    return Ps3TextBlockSource(addr).empty() ? 0 : addr;
+    if (Ps3TextBlockSource(addr).empty())
+      return std::nullopt;
+    return addr;
   };
 
   std::vector<assets::TextEdit> edits;
@@ -2447,9 +2471,9 @@ void ApplyXexTextPatches(rex::Runtime* runtime) {
     // The blob cannot grow: it is pinned in the image with unrelated data
     // either side. Refused rather than honoured, however the mod asked.
     edit.allow_resize = false;
-    if (const uint32_t block = ps3_block(patch.blob)) {
-      ps3[block].first.push_back(std::move(edit));
-      ps3[block].second.push_back(&patch);
+    if (const auto block = ps3_block(patch.blob)) {
+      ps3[*block].first.push_back(std::move(edit));
+      ps3[*block].second.push_back(&patch);
       continue;
     }
     edits.push_back(std::move(edit));
@@ -2484,8 +2508,11 @@ void ApplyXexTextPatches(rex::Runtime* runtime) {
     const auto source = Ps3TextBlockSource(block);
     std::vector<uint8_t> data(source.begin(), source.end());
     if (assets::ApplyTextEditsToBlob(data, pending.first)) {
-      REXLOG_INFO("assets: patched the PS3 text block for {:#010x}, now {} bytes", block,
-                  data.size());
+      if (block == kPs3ScrapbookBlock)
+        REXLOG_INFO("assets: patched the PS3 Scrapbook text, now {} bytes", data.size());
+      else
+        REXLOG_INFO("assets: patched the PS3 text block for {:#010x}, now {} bytes", block,
+                    data.size());
       SetPs3TextBlockSource(block, std::move(data));
     }
     report(pending.first, pending.second, "PS3 text block");
@@ -2647,9 +2674,17 @@ EternalSonataGetText(const char* ref, char* buffer, uint32_t capacity, uint32_t*
 
   std::lock_guard<std::recursive_mutex> lock(state().mutex);
   std::vector<uint8_t> data;
-  if (!LoadDecodedContainer(parsed.guest_path, data))
-    return ETERNALSONATA_ASSET_IO_ERROR;
-  const auto blobs = assets::FindBtxBlobs(data);
+  std::vector<assets::BtxBlob> blobs;
+  if (IsXexContainer(parsed.guest_path)) {
+    uint32_t base = 0;
+    if (!ReadGuestImage(state().runtime, &data, &base))
+      return ETERNALSONATA_ASSET_IO_ERROR;
+    blobs = XexTextBlobs(data, base);
+  } else {
+    if (!LoadDecodedContainer(parsed.guest_path, data))
+      return ETERNALSONATA_ASSET_IO_ERROR;
+    blobs = assets::FindBtxBlobs(data);
+  }
   if (blob >= blobs.size())
     return ETERNALSONATA_ASSET_NOT_FOUND;
   const assets::BtxLang* block = blobs[blob].Find(lang);
@@ -2686,7 +2721,7 @@ extern "C" REX_MOD_PLUGIN_EXPORT EternalSonataAssetResult EternalSonataEnumerate
     uint32_t base = 0;
     if (!ReadGuestImage(state().runtime, &data, &base))
       return ETERNALSONATA_ASSET_IO_ERROR;
-    const auto image_blobs = assets::FindBtxBlobs(data);
+    const auto image_blobs = XexTextBlobs(data, base);
     for (size_t bi = 0; bi < image_blobs.size(); ++bi) {
       for (const auto& lang : image_blobs[bi].langs) {
         for (const auto& [id, value] : lang.entries) {

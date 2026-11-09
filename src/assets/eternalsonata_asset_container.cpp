@@ -590,6 +590,10 @@ bool ApplyTextEdits(std::vector<uint8_t>& data, std::vector<TextEdit>& edits) {
     return false;
   }
 
+  for (auto& e : edits)
+    if (e.blob >= blobs.size())
+      e.status = EditStatus::kNotFound;
+
   bool modified = false;
   // Blobs come back in ascending file order, and each splice shifts everything
   // after it, so walking them in that order keeps the offsets of the ones we
@@ -651,6 +655,10 @@ bool ApplyTextEditsInPlace(const std::vector<uint8_t>& data, std::vector<TextEdi
       e.status = EditStatus::kNotFound;
     return false;
   }
+
+  for (auto& e : edits)
+    if (e.blob >= blobs.size())
+      e.status = EditStatus::kNotFound;
 
   // Nothing here moves, so unlike the .e path the blobs can be walked in any
   // order and every offset stays valid throughout.

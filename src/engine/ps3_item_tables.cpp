@@ -11,6 +11,7 @@
 
 #include "ps3_item_tables.h"
 
+#include "eternalsonata_asset_container.h"
 #include "ps3_appkeep.h"
 #include "generated/eternalsonata_init.h"
 #include "target.h"
@@ -78,6 +79,7 @@ uint32_t g_order = 0;
 uint32_t g_text[std::size(kPs3TextBlocks)] = {};
 // Blocks a text mod edited, in place of the compiled-in ones.
 std::vector<uint8_t> g_modded[std::size(kPs3TextBlocks)];
+std::vector<uint8_t> g_modded_scrapbook;
 std::once_flag g_icons_once;
 uint32_t g_icons = 0;
 
@@ -132,6 +134,11 @@ uint32_t Ps3TextBlockFor(uint32_t block) {
 std::span<const uint8_t> Ps3TextBlockSource(uint32_t block) {
   if (!IsPs3Target())
     return {};
+  if (block == kPs3ScrapbookBlock) {
+    if (!g_modded_scrapbook.empty())
+      return g_modded_scrapbook;
+    return kPs3ScrapbookBlob;
+  }
   for (size_t i = 0; i < std::size(kPs3TextBlocks); ++i) {
     if (kPs3TextBlocks[i].block != block)
       continue;
@@ -143,6 +150,10 @@ std::span<const uint8_t> Ps3TextBlockSource(uint32_t block) {
 }
 
 void SetPs3TextBlockSource(uint32_t block, std::vector<uint8_t> data) {
+  if (block == kPs3ScrapbookBlock) {
+    g_modded_scrapbook = std::move(data);
+    return;
+  }
   for (size_t i = 0; i < std::size(kPs3TextBlocks); ++i)
     if (kPs3TextBlocks[i].block == block)
       g_modded[i] = std::move(data);
@@ -178,9 +189,20 @@ int BaseItemIdMax() {
 }
 
 const char* Ps3ScrapbookText(uint32_t language, uint32_t id) {
-  if (language >= std::size(kPs3ScrapbookText))
+  // Parsed on first use, after any mod has edited the block.
+  static const std::vector<assets::BtxLang> langs = [] {
+    std::vector<uint8_t> source = g_modded_scrapbook;
+    if (source.empty())
+      source.assign(std::begin(kPs3ScrapbookBlob), std::end(kPs3ScrapbookBlob));
+    auto blobs = assets::FindBtxBlobs(source);
+    return blobs.empty() ? std::vector<assets::BtxLang>{} : std::move(blobs[0].langs);
+  }();
+  if (language >= langs.size())
     language = 1;
-  return id < std::size(kPs3ScrapbookText[0]) ? kPs3ScrapbookText[language][id] : "";
+  if (language >= langs.size())
+    return "";  // the block did not parse
+  const auto it = langs[language].entries.find(id);
+  return it != langs[language].entries.end() ? it->second.c_str() : "";
 }
 
 }  // namespace eternalsonata

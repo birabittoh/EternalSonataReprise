@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Compile src/guest_data/ps3/text/ into the PS3 item and magic text blocks
 (src/engine/ps3_item_text.generated.inc), each tagged with the 360 block its
-readers are pointed away from, and the Scrapbook's strings, which no 360 block
-holds.
+readers are pointed away from, and the Scrapbook's block, which no 360 block
+stands for.
 
 usage:
     python scripts/gen-ps3-item-text.py [output]
@@ -22,13 +22,11 @@ FILES = ["items", "item_descriptions", "party_skills", "party_skill_help", "enem
 SCRAPBOOK = "scrapbook"
 
 
-def c_string(raw):
-    # Octal escapes are fixed width, so a following digit cannot extend one.
-    out = []
-    for b in raw:
-        c = chr(b)
-        out.append(c if 0x20 <= b < 0x7F and c not in '"\\?' else "\\%03o" % b)
-    return '"' + "".join(out) + '"'
+def byte_array(name, blob):
+    lines = ["constexpr uint8_t %s[] = {" % name]
+    for k in range(0, len(blob), 32):
+        lines.append(",".join(str(b) for b in blob[k:k + 32]) + ",")
+    return lines + ["};"]
 
 
 def main():
@@ -37,19 +35,11 @@ def main():
     names = []
     for i, name in enumerate(FILES):
         address, langs = read_text(os.path.join(TEXT_DIR, name + ".txt"))
-        blob = encode_btx(langs)
-        lines.append("constexpr uint8_t kPs3TextBlock%d[] = {" % i)
-        for k in range(0, len(blob), 32):
-            lines.append(",".join(str(b) for b in blob[k:k + 32]) + ",")
-        lines.append("};")
+        lines += byte_array("kPs3TextBlock%d" % i, encode_btx(langs))
         names.append("{0x%08Xu, kPs3TextBlock%d, sizeof(kPs3TextBlock%d)}" % (address, i, i))
     lines.append("constexpr Ps3TextBlock kPs3TextBlocks[] = {%s};" % ", ".join(names))
     _, langs = read_text(os.path.join(TEXT_DIR, SCRAPBOOK + ".txt"))
-    count = len(next(iter(langs.values())))
-    lines.append("constexpr const char* kPs3ScrapbookText[%d][%d] = {" % (len(langs), count))
-    for strings in langs.values():
-        lines.append("    {" + ", ".join(c_string(s) for s in strings) + "},")
-    lines.append("};")
+    lines += byte_array("kPs3ScrapbookBlob", encode_btx(langs))
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
 

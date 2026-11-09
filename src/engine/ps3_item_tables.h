@@ -15,6 +15,9 @@ void ApplyPs3ItemTables();
 // block, or 0. Guest thread only.
 uint32_t Ps3TextBlockFor(uint32_t block);
 
+// The Scrapbook's block, which stands in for no 360 block.
+inline constexpr uint32_t kPs3ScrapbookBlock = 0;
+
 // The PS3 text block that stands in for the 360 block at `block` in PS3 mode,
 // or empty. Mod text edits for that block are made to it and handed back with
 // SetPs3TextBlockSource, before the guest runs.
