@@ -93,7 +93,7 @@ jobs:
 
       - name: Install LLVM, CMake, Ninja (Windows)
         if: matrix.platform == 'win-amd64'
-        run: choco install llvm cmake ninja -y
+        run: choco upgrade llvm cmake ninja -y
 
       - name: Install Android NDK
         if: matrix.platform == 'android-arm64'
