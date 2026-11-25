@@ -97,6 +97,11 @@ GuestRenderState ReadGuestRenderState(uint8_t* base, uint32_t device) {
   const uint32_t dst_a = (state.blend_control >> 24) & 0x1Fu;
   state.blend_enabled = !(src == 1 && dst == 0 && op == 0 && src_a == 1 && dst_a == 0 && op_a == 0);
 
+  for (uint32_t i = 0; i < 4; ++i) {
+    const uint32_t bits = REX_LOAD_U32(device + Reg2100(0x2105 + i));
+    std::memcpy(&state.blend_factor[i], &bits, sizeof(float));
+  }
+
   // RB_COLOR_MASK: four bits per target, RGBA from bit 0.
   state.write_mask = state.color_mask & 0xFu;
 

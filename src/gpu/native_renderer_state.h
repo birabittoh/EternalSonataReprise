@@ -103,6 +103,10 @@ struct GuestRenderState {
   bool blend_enabled = false;
   uint32_t write_mask = 0xF;  // RGBA bits for target 0
 
+  // RB_BLEND_RED..ALPHA (0x2105..0x2108), the constants the BLEND_FACTOR
+  // factors read. D3DRS_BLENDFACTOR stores them as floats in RGBA order.
+  float blend_factor[4] = {};
+
   // RB_COLORCONTROL (0x2202, shadow device+10428) and RB_ALPHA_REF (0x210E,
   // shadow device+10372). Alpha test is fixed function on the console and has
   // no host equivalent at all, so it is not part of a host pipeline: it is

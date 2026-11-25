@@ -112,7 +112,8 @@ bool SameRenderState(const GuestRenderState& a, const GuestRenderState& b) {
          a.param_gen_pos == b.param_gen_pos && a.point_diameter_x == b.point_diameter_x &&
          a.point_diameter_y == b.point_diameter_y &&
          a.point_diameter_min == b.point_diameter_min &&
-         a.point_diameter_max == b.point_diameter_max;
+         a.point_diameter_max == b.point_diameter_max &&
+         std::memcmp(a.blend_factor, b.blend_factor, sizeof(a.blend_factor)) == 0;
 }
 
 bool SpriteShape(const GuestDrawCall& call) {

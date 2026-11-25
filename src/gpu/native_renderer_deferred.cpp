@@ -4,6 +4,7 @@
 
 #include "native_renderer_deferred.h"
 
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <memory>
@@ -389,6 +390,12 @@ void DeferredCommandList::setDepthBias(float depthBias, float depthBiasClamp,
 
 void DeferredCommandList::setStencilReference(uint32_t stencilReference) {
   Push([=](Target& target) { target->setStencilReference(stencilReference); });
+}
+
+void DeferredCommandList::setBlendFactor(const float blendFactor[4]) {
+  const std::array<float, 4> factor = {blendFactor[0], blendFactor[1], blendFactor[2],
+                                       blendFactor[3]};
+  Push([=](Target& target) { target->setBlendFactor(factor.data()); });
 }
 
 void DeferredCommandList::clearColor(uint32_t attachmentIndex, RenderColor colorValue,

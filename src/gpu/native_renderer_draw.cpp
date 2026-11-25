@@ -2903,6 +2903,9 @@ bool RecordGuestDraw(const GuestDrawCall& call) {
   commands->setPipeline(GuestPipelineObject(call.pipeline));
   if (GuestPipelineUsesDynamicStencilRef(call.pipeline))
     commands->setStencilReference(call.state.stencil_ref);
+  float blend_factor[4];
+  if (GuestPipelineBlendFactor(call.pipeline, call.state, blend_factor))
+    commands->setBlendFactor(blend_factor);
   commands->setGraphicsRootDescriptor(vertex_floats, kRootVertexFloatConstants);
   commands->setGraphicsRootDescriptor(bool_loops, kRootVertexBoolConstants);
   commands->setGraphicsRootDescriptor(pixel_floats, kRootPixelFloatConstants);

@@ -473,6 +473,33 @@ RenderBlendOperation MapBlendOp(uint32_t op) {
   }
 }
 
+constexpr uint8_t kBlendFactorUsed = 1;
+constexpr uint8_t kBlendFactorAlphaSplat = 2;
+
+// The host has one BLEND_FACTOR, which the colour half reads as RGB, but the
+// guest also has CONSTANT_ALPHA (14, 15). Feeding the host (a, a, a, a) makes
+// those exact, as long as the same colour half does not also want the RGB.
+uint8_t BlendFactorUse(const GuestRenderState& state) {
+  if (!state.blend_enabled)
+    return 0;
+  const uint32_t factors[4] = {state.blend_control & 0x1Fu, (state.blend_control >> 8) & 0x1Fu,
+                               (state.blend_control >> 16) & 0x1Fu,
+                               (state.blend_control >> 24) & 0x1Fu};
+  bool used = false, colour_rgb = false, colour_alpha = false;
+  for (uint32_t i = 0; i < 4; ++i) {
+    if (factors[i] < 12 || factors[i] > 15)
+      continue;
+    used = true;
+    if (i < 2)
+      (factors[i] <= 13 ? colour_rgb : colour_alpha) = true;
+  }
+  if (!used)
+    return 0;
+  if (colour_rgb && colour_alpha)
+    ++g_blend_factor_unknown;
+  return uint8_t(kBlendFactorUsed | (colour_alpha && !colour_rgb ? kBlendFactorAlphaSplat : 0));
+}
+
 RenderBlendDesc MapBlend(const GuestRenderState& state) {
   RenderBlendDesc blend = RenderBlendDesc::Copy();
   blend.renderTargetWriteMask = uint8_t(state.write_mask);
@@ -600,6 +627,10 @@ struct GuestPipeline {
 
   // The stencil reference comes from the draw, not the pipeline.
   bool dynamic_stencil_ref = false;
+
+  // The blend reads the guest's constant, and kBlendFactorAlphaSplat when its
+  // colour half reads only the constant's alpha (see BlendFactorUse).
+  uint8_t blend_factor_use = 0;
 };
 
 namespace {
@@ -738,6 +769,16 @@ const RenderPipeline* GuestPipelineObject(const GuestPipeline* pipeline) {
 
 bool GuestPipelineUsesDynamicStencilRef(const GuestPipeline* pipeline) {
   return pipeline && pipeline->dynamic_stencil_ref;
+}
+
+bool GuestPipelineBlendFactor(const GuestPipeline* pipeline, const GuestRenderState& state,
+                              float factor[4]) {
+  if (pipeline == nullptr || pipeline->blend_factor_use == 0)
+    return false;
+  const bool splat = (pipeline->blend_factor_use & kBlendFactorAlphaSplat) != 0;
+  for (uint32_t i = 0; i < 4; ++i)
+    factor[i] = splat ? state.blend_factor[3] : state.blend_factor[i];
+  return true;
 }
 
 const RenderInputSlot* GuestPipelineInputSlots(const GuestPipeline* pipeline, uint32_t* count) {
@@ -1162,8 +1203,11 @@ const GuestPipeline* AcquireGuestPipeline(const PipelineRequest& request) {
   // flat brown while the identical draw was harmless on screen.
   desc.depthClipEnabled = true;
 
-  if (request.has_color_target && state.valid)
+  if (request.has_color_target && state.valid) {
     desc.renderTargetBlend[0] = MapBlend(state);
+    pipeline->blend_factor_use = BlendFactorUse(state);
+    desc.dynamicBlendFactorEnabled = pipeline->blend_factor_use != 0;
+  }
 
   desc.multisampling.sampleCount = request.samples;
   desc.alphaToCoverageEnabled = key.alpha_to_coverage != 0;

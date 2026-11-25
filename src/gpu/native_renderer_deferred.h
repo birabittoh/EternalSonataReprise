@@ -79,6 +79,7 @@ class DeferredCommandList final : public plume::RenderCommandList {
   void setFramebuffer(const plume::RenderFramebuffer* framebuffer) override;
   void setDepthBias(float depthBias, float depthBiasClamp, float slopeScaledDepthBias) override;
   void setStencilReference(uint32_t stencilReference) override;
+  void setBlendFactor(const float blendFactor[4]) override;
   void clearColor(uint32_t attachmentIndex, plume::RenderColor colorValue,
                   const plume::RenderRect* clearRects, uint32_t clearRectsCount) override;
   void clearDepthStencil(bool clearDepth, bool clearStencil, float depthValue,

@@ -80,6 +80,11 @@ bool GuestPipelineUsesNullSlot(const GuestPipeline* pipeline);
 // True when the draw has to set the stencil reference after binding the pipeline.
 bool GuestPipelineUsesDynamicStencilRef(const GuestPipeline* pipeline);
 
+// Fills the blend constant the draw has to set after binding the pipeline, and
+// returns false when its blend does not read one.
+bool GuestPipelineBlendFactor(const GuestPipeline* pipeline, const GuestRenderState& state,
+                              float factor[4]);
+
 // Which texture/sampler slots the bound pixel shader declares. The texture
 // mirror visits only these: the remaining stages hold stale fetch constants
 // that no shader names, and decoding one is at best wasted work and at worst a
