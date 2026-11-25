@@ -68,6 +68,10 @@ struct ImageLine {
 };
 
 uint32_t g_task = 0;
+// The scenario moves on mid credits (black screen to Tenuto field), so the
+// speed is latched per task like the PS3 does.
+uint32_t g_speed_task = 0;
+float g_speed = 0.0f;
 std::vector<ImageLine> g_images;
 // Sprites by a hash of the NTX3 they were built from, which each run of the
 // credits loads anew.
@@ -200,7 +204,11 @@ REX_HOOK_RAW(sub_82132100) {
   const auto x = static_cast<int32_t>(REX_LOAD_U32(record));
   const auto height = static_cast<int32_t>(REX_LOAD_U32(record + 4));
   const uint32_t text = REX_LOAD_U32(record + 8);
-  const float speed = Ps3Speed(Scenario(base));
+  if (task != g_speed_task) {
+    g_speed_task = task;
+    g_speed = Ps3Speed(Scenario(base));
+  }
+  const float speed = g_speed;
   if (height < 0 && text) {
     REX_STORE_U32(task + kRecord, record + 12);
     SpawnImage(ctx, base, task, x, REX_LOAD_U32(task + kData) + text, speed);
@@ -239,6 +247,7 @@ REX_HOOK_RAW(sub_821322A8) {
   // The update deletes the task once the last line has gone.
   if (!eternalsonata::IsPs3Target() || REX_LOAD_U32(kEdTask) != task) {
     g_images.clear();
+    g_speed_task = 0;
     return;
   }
   TickImages(ctx, base);
