@@ -29,6 +29,7 @@
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/xmemory.h>
+#include <rex/thread/mutex.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -157,7 +158,7 @@ const uint32_t kEApertureShift =
     rex::memory::allocation_granularity() > 0x1000 ? 0u : 0x1000u;
 
 const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t physical_address,
-                                    uint64_t bytes) {
+                                    uint64_t bytes, bool* readable = nullptr) {
   ProfileZone zone(kPhaseGuestPointer);
   const uint32_t offset = physical_address & 0x1FFFFFFFu;
   const uint8_t* first = nullptr;
@@ -166,11 +167,16 @@ const uint8_t* GuestPhysicalPointer(uint8_t* memory_base, uint32_t physical_addr
     const uint8_t* candidate = memory_base + (aperture | shifted);
     if (first == nullptr)
       first = candidate;
-    if (GuestRangeReadableBytes(candidate, bytes) >= bytes)
+    if (GuestRangeReadableBytes(candidate, bytes) >= bytes) {
+      if (readable != nullptr)
+        *readable = true;
       return candidate;
+    }
   }
   // Nothing spans it. Hand back the cached aperture anyway so the caller's own
   // readability check is what refuses, and reports against the usual one.
+  if (readable != nullptr)
+    *readable = false;
   return first;
 }
 
@@ -362,6 +368,9 @@ struct TextureSourceRange {
   uint64_t bytes = 0;
   const uint8_t* pointer = nullptr;
   uint64_t pointer_frame = ~0ull;
+  // Whether `pointer` spanned committed pages when it was chosen. The guest
+  // frees texture memory it may still bind, so reading an unreadable one faults.
+  bool readable = false;
 };
 
 struct MirroredTexture {
@@ -396,9 +405,8 @@ struct MirroredTexture {
   // is a property of the guest's memory map rather than of the frame, so it is
   // kept and revalidated occasionally.
   //
-  // Revalidation is cheap insurance, not a correctness requirement: when no
-  // aperture spans the range the walk returns the cached one and lets the read
-  // proceed.
+  // A free or decommit reaches the watch callback, and the bind that follows
+  // walks again before reading; see ForgetSourcePointers.
   // The frame this texture's source was last hashed in. The hash covers the
   // whole source and is too expensive to repeat on every bind, so it runs at
   // most once per texture per frame. See HashSource.
@@ -889,6 +897,10 @@ bool ReadTexels(const uint8_t* source, const TextureFetch& fetch, const FormatIn
   const uint32_t pitch_blocks = (pitch_texels + info.block - 1) / info.block;
 
   out.assign(size_t(dest_row_bytes) * height_blocks, 0);
+
+  // Another guest thread can free the source between the readability check and
+  // the copy. Its free takes this lock before revoking the pages.
+  auto lock = rex::thread::global_critical_region::AcquireDirect();
 
   if (fetch.tiled) {
     // A macro tile is 32x32 blocks. The hardware pads the pitch up to one, so a
@@ -2098,19 +2110,35 @@ const uint8_t* EntrySourcePointer(TextureSourceRange& source, uint8_t* memory_ba
   }
   if (stale) {
     ++g_aperture_walks;
-    source.pointer = GuestPhysicalPointer(memory_base, source.raw_address, source.bytes);
+    source.pointer =
+        GuestPhysicalPointer(memory_base, source.raw_address, source.bytes, &source.readable);
     source.pointer_frame = g_frame;
   } else {
     ++g_aperture_reuses;
   }
-  return source.pointer;
+  return source.readable ? source.pointer : nullptr;
+}
+
+// Makes the next read walk the apertures again, for a source that may have
+// been freed since its pointer was chosen.
+void ForgetSourcePointers(MirroredTexture* entry) {
+  for (TextureSourceRange& source : entry->sources)
+    source.pointer_frame = ~0ull;
+}
+
+bool SourcesReadable(MirroredTexture* entry, uint8_t* memory_base) {
+  for (TextureSourceRange& source : entry->sources)
+    if (EntrySourcePointer(source, memory_base) == nullptr)
+      return false;
+  return true;
 }
 
 uint64_t HashSources(MirroredTexture* entry, uint8_t* memory_base) {
   uint64_t combined = 1469598103934665603ull;
   for (size_t i = 0; i < entry->sources.size(); ++i) {
     TextureSourceRange& source = entry->sources[i];
-    const uint64_t hash = HashSource(EntrySourcePointer(source, memory_base), source.bytes);
+    const uint8_t* pointer = EntrySourcePointer(source, memory_base);
+    const uint64_t hash = pointer != nullptr ? HashSource(pointer, source.bytes) : 0;
     combined ^= hash + 0x9E3779B97F4A7C15ull + (combined << 6) + (combined >> 2);
     if (i != 0)
       ++g_mip_ranges_hashed;
@@ -2270,9 +2298,11 @@ bool FillTexture(MirroredTexture* entry, uint8_t* memory_base, const TextureFetc
   const TextureReplacementData* image = nullptr;
   if (replacement != nullptr) {
     TextureSourceRange& level0 = entry->sources.front();
+    auto lock = rex::thread::global_critical_region::AcquireDirect();
     const uint8_t* source = EntrySourcePointer(level0, memory_base);
     if (source != nullptr && GuestRangeReadable(source, level0.bytes))
       hash = TextureReplacement::HashGuestData(source, level0.bytes);
+    lock.unlock();
     if (hash != 0)
       image = replacement->FindReplacement(hash);
     if (image != nullptr && (image->width == 0 || image->height == 0 ||
@@ -2405,23 +2435,38 @@ void* TextureMirrorLookup(uint8_t* memory_base, const TextureFetch& fetch) {
     // Two ways in. A watch notification is precise and arrives between the
     // write and the next bind, which a per frame hash cannot do; the hash is the
     // periodic safety net behind it. See TextureWatch.
-    const bool dirty = candidate->watch_dirty.exchange(false, std::memory_order_relaxed);
+    const bool dirty = candidate->watch_dirty.load(std::memory_order_relaxed);
+    const bool armed = candidate->watch_armed.load(std::memory_order_relaxed);
     const uint64_t since_hash = g_frame - candidate->hashed_frame;
-    const bool due = candidate->watch_armed.load(std::memory_order_relaxed)
-                         ? since_hash >= kWatchRevalidateFrames
-                         : since_hash != 0;
+    const bool due = armed ? since_hash >= kWatchRevalidateFrames : since_hash != 0;
     if (dirty || due) {
-      candidate->hashed_frame = g_frame;
-      // Re-armed before the source is read rather than after it, so a write that
-      // lands while the hash is running sets the flag again instead of being
-      // swallowed by the hash that missed it.
-      ArmTextureWatch(candidate);
       // Before the hash rather than before the decode the hash may trigger: the
       // hash is what decides whether the contents changed, so hashing memory the
       // readback has not filled in yet would conclude that a render target that
       // changes every frame never changes at all.
       ReadbackFillForRead(fetch);
-      const uint64_t hash = HashSources(candidate, memory_base);
+      uint64_t hash = 0;
+      {
+        // A guest free takes this lock before it revokes the pages, so the
+        // readability check stays true for as long as the hash reads.
+        auto lock = rex::thread::global_critical_region::AcquireDirect();
+        // A free or decommit also arrives as a watch notification, and an
+        // unarmed source gets none, so neither can trust a cached pointer.
+        if (candidate->watch_dirty.exchange(false, std::memory_order_relaxed) || !armed)
+          ForgetSourcePointers(candidate);
+        if (!SourcesReadable(candidate, memory_base)) {
+          // Keeps the last upload and checks again on the next bind, until the
+          // guest commits the pages again or stops binding the address.
+          candidate->watch_dirty.store(true, std::memory_order_relaxed);
+          return candidate->texture.get();
+        }
+        candidate->hashed_frame = g_frame;
+        // Re-armed before the source is read rather than after it, so a write
+        // that lands while the hash is running sets the flag again instead of
+        // being swallowed by the hash that missed it.
+        ArmTextureWatch(candidate);
+        hash = HashSources(candidate, memory_base);
+      }
       if (hash != candidate->content_hash) {
         ++g_refreshed;
         if (candidate->sources.size() > 1)
@@ -2525,10 +2570,10 @@ uint32_t TextureMirrorRebaselineSources(uint32_t address, uint64_t bytes,
     entry->watch_dirty.store(false, std::memory_order_relaxed);
     bool readable = true;
     for (TextureSourceRange& source : entry->sources) {
-      source.pointer = GuestPhysicalPointer(memory_base, source.raw_address, source.bytes);
+      source.pointer =
+          GuestPhysicalPointer(memory_base, source.raw_address, source.bytes, &source.readable);
       source.pointer_frame = g_frame;
-      readable &= source.pointer != nullptr &&
-                  GuestRangeReadableBytes(source.pointer, source.bytes) >= source.bytes;
+      readable &= source.readable;
     }
     if (readable) {
       entry->content_hash = HashSources(entry.get(), memory_base);
