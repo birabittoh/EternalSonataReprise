@@ -82,6 +82,21 @@ std::unordered_map<u32, bool> g_fired;
 // Per battle object: a special is queued during the ranged attack.
 std::unordered_map<u32, bool> g_queued;
 
+// Harmony chain state (battle + 0x831B8). A chain follow up performs the
+// special not selected (sub_821C8438), and the 360's hold timer keeps the
+// selection fixed through the chain; RT would flip it, so the choice of the
+// special that opened the chain is kept until the chain ends.
+constexpr u32 kChainState = 0x825535F8u;
+u32 g_chain_object = 0;
+bool g_chain_second = false;
+
+bool ChainLatched(u8* base, u32 object) {
+  if (!REX_LOAD_U32(kChainState)) {
+    return false;
+  }
+  return g_chain_object == object;
+}
+
 int Behavior() {
   const std::string& value = REXCVAR_GET(right_trigger_behavior);
   if (value == "camera")
@@ -129,6 +144,8 @@ bool RightTriggerHeld(u8* base, u32 object) {
 
 bool UseSecond(u8* base, u32 object) {
   const float timer = LoadFloat(base, object + kObjectTimer);
+  if (AltSpecial() && ChainLatched(base, object))
+    return g_chain_second;
   if (timer > 0.0f)
     return timer > Threshold();
   return AltSpecial() && RightTriggerHeld(base, object);
@@ -163,6 +180,7 @@ REX_HOOK_RAW(sub_82128310) {
   if (!eternalsonata::GetRoomPresence().IsBattleActive()) {
     g_fired.clear();
     g_queued.clear();
+    g_chain_object = 0;
     return;
   }
   if (!AltSpecial())
@@ -239,9 +257,18 @@ REX_HOOK_RAW(sub_821C5900) {
     ctx.r4.u64 = 0;
   } else if (timer > 0.0f) {
     const float threshold = Threshold();
+    bool second;
+    if (ChainLatched(base, object)) {
+      second = g_chain_second;
+    } else {
+      second = RightTriggerHeld(base, object);
+      if (!REX_LOAD_U32(kChainState)) {
+        g_chain_object = object;
+        g_chain_second = second;
+      }
+    }
     StoreFloat(base, object + kObjectTimer,
-               RightTriggerHeld(base, object) ? threshold + 1.0f
-                                              : std::min(timer, threshold * 0.5f));
+               second ? threshold + 1.0f : std::min(timer, threshold * 0.5f));
     ctx.r4.u64 = 0;
     fired = true;
   }
