@@ -10,6 +10,8 @@ Static recompilation of **Eternal Sonata**.
 
 Join the community on [Discord](https://discord.gg/DJe2pXMH7S).
 
+[![Get it on RecompLauncher](https://recomplauncher.com/assets/press/launcher/badge-dark.svg)](https://recomplauncher.com/game/eternalsonatareprise)
+
 ## Keybinds:
 * **Ins**: Overlay menu
 * **F1**: Mod Manager
